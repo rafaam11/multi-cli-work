@@ -13,6 +13,7 @@ let tray: Tray | null = null;
 let runtime: DesktopRuntime | null = null;
 let isQuitting = false;
 let shouldFocusWhenReady = false;
+let quitRequestInProgress = false;
 
 if (process.env.MULTI_CLI_WORK_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.MULTI_CLI_WORK_USER_DATA));
@@ -74,7 +75,10 @@ function showMainWindow(): void {
 
 async function requestQuit(): Promise<void> {
   if (!runtime || isQuitting) return;
+  if (quitRequestInProgress) return;
+  quitRequestInProgress = true;
   if (runtime.coordinator.hasActiveSessions()) {
+    showMainWindow();
     const options: Electron.MessageBoxOptions = {
       type: "warning",
       title: "Quit Multi CLI Work",
@@ -88,7 +92,10 @@ async function requestQuit(): Promise<void> {
     const result = mainWindow
       ? await dialog.showMessageBox(mainWindow, options)
       : await dialog.showMessageBox(options);
-    if (result.response !== 1) return;
+    if (result.response !== 1) {
+      quitRequestInProgress = false;
+      return;
+    }
   }
   await runtime.dispose();
   isQuitting = true;
