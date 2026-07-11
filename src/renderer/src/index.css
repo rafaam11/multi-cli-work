@@ -466,7 +466,7 @@ button:focus-visible {
 }
 
 .workspace-message-area:empty {
-  display: none;
+  min-height: 0;
 }
 
 .workspace-header {

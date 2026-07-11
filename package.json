@@ -16,7 +16,7 @@
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w node-pty",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build && playwright test",
     "dist": "npm run build && electron-builder --win --publish never",
     "postinstall": "electron-builder install-app-deps"
   },

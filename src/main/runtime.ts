@@ -65,7 +65,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
       ...stringEnvironment(),
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
     },
-    idFactory: crypto.randomUUID,
+    idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
     codexSessions: new CodexSessionTracker({ sessionsDirectory: codexSessionsDirectory }),
   });
