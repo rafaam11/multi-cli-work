@@ -138,7 +138,7 @@ export function App() {
     [maximumSidebarWidth],
   );
 
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = useCallback(async (preservedSelection?: { projectId: string | null; sessionId: string | null }) => {
     setLoading(true);
     setLoadError(null);
     try {
@@ -164,9 +164,11 @@ export function App() {
       const visibleProjects = Object.values(registrySnapshot.registry.projects)
         .filter((project) => !project.hidden)
         .sort((left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER));
-      const restoredProject = visibleProjects.find((project) => project.id === appState.state.selectedProjectId) ?? null;
+      const preferredProjectId = preservedSelection ? preservedSelection.projectId : appState.state.selectedProjectId;
+      const restoredProject = visibleProjects.find((project) => project.id === preferredProjectId) ?? null;
       const initialProject = restoredProject ?? visibleProjects[0] ?? null;
-      const restoredSession = terminalSessions.find((session) => session.id === appState.state.selectedSessionId) ?? null;
+      const preferredSessionId = preservedSelection ? preservedSelection.sessionId : appState.state.selectedSessionId;
+      const restoredSession = terminalSessions.find((session) => session.id === preferredSessionId) ?? null;
       const initialSession = restoredProject
         ? restoredSession?.projectId === restoredProject.id
           ? restoredSession
@@ -395,6 +397,16 @@ export function App() {
         <nav className="project-navigation" aria-label="Projects">
           <div className="section-heading">
             <span>Projects</span>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => void loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId })}
+              disabled={loading}
+              aria-label="Refresh projects"
+              title="Refresh projects"
+            >
+              <RefreshCw size={16} />
+            </button>
             <button className="icon-button" type="button" onClick={() => void addProject()} disabled={Boolean(snapshot && !snapshot.writable)} aria-label="Add project" title="Add project">
               <FolderPlus size={16} />
             </button>

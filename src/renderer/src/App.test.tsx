@@ -317,6 +317,74 @@ describe("project workspace", () => {
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(dashboardSession.id));
   });
 
+  it("renders a refresh button that reloads projects and sessions on click", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    expect(harness.api.projects.refresh).toHaveBeenCalledOnce();
+
+    const refreshButton = screen.getByRole("button", { name: "Refresh projects" });
+    fireEvent.click(refreshButton);
+    expect(refreshButton).toBeDisabled();
+
+    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
+    expect(harness.api.projects.list).toHaveBeenCalledTimes(2);
+    expect(harness.api.terminals.list).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(refreshButton).toBeEnabled());
+  });
+
+  it("keeps the selected project and session across a manual refresh when they still exist", async () => {
+    const dashboardSession: TerminalSessionView = {
+      ...powershellSession,
+      id: "session-dashboard",
+      projectId: dashboard.id,
+      cwd: dashboard.rootPath,
+    };
+    // appState stays pinned to Atlas/PowerShell throughout, simulating stale persisted state.
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession, dashboardSession],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Atlas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select project Dashboard" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open PowerShell session" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
+    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole("button", { name: "Select project Dashboard" }).closest(".project-row")).toHaveClass(
+      "selected",
+    );
+    expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "Open PowerShell session");
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard");
+  });
+
+  it("falls back to another project when the selected project disappears during a manual refresh", async () => {
+    const harness = createApi({ projects: [atlas, dashboard], sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    expect(screen.getByRole("button", { name: "Select project Atlas" }).closest(".project-row")).toHaveClass(
+      "selected",
+    );
+
+    vi.mocked(harness.api.projects.refresh).mockResolvedValueOnce(registry([dashboard]));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
+
+    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: "Select project Atlas" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select project Dashboard" }).closest(".project-row")).toHaveClass(
+      "selected",
+    );
+  });
+
   it("persists selection and creates only available provider sessions", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
