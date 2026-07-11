@@ -50,4 +50,15 @@ describe("CodexSessionTracker", () => {
 
     await expect(tracker.waitForNew("C:\\Work", new Set())).resolves.toBeNull();
   });
+
+  it("stops polling when app shutdown aborts correlation", async () => {
+    const sessionsDirectory = await tempRoot();
+    const tracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 10_000, maxAttempts: 20 });
+    const controller = new AbortController();
+
+    const pending = tracker.waitForNew("C:\\Work", new Set(), controller.signal);
+    controller.abort();
+
+    await expect(pending).resolves.toBeNull();
+  });
 });

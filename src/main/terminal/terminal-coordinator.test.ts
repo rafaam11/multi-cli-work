@@ -86,7 +86,7 @@ async function coordinator(
   worker = new FakeWorker(),
   codexSessions?: {
     snapshot(cwd: string): Promise<ReadonlySet<string>>;
-    waitForNew(cwd: string, knownIds: ReadonlySet<string>): Promise<string | null>;
+    waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null>;
   },
   appendLog?: (logDir: string, sessionId: string, data: string, maxBytes: number, trimSlackBytes?: number) => Promise<void>,
 ) {
@@ -205,7 +205,11 @@ describe("TerminalCoordinator", () => {
     await instance.flush();
 
     expect(codexSessions.snapshot).toHaveBeenCalledWith("C:\\Work");
-    expect(codexSessions.waitForNew).toHaveBeenCalledWith("C:\\Work", new Set(["codex-existing"]));
+    expect(codexSessions.waitForNew).toHaveBeenCalledWith(
+      "C:\\Work",
+      new Set(["codex-existing"]),
+      expect.any(AbortSignal),
+    );
     expect(instance.list()[0].providerConversationId).toBe("codex-created");
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions["session-1"].providerConversationId).toBe("codex-created");
@@ -329,6 +333,27 @@ describe("TerminalCoordinator", () => {
     await instance.shutdown();
 
     expect(worker.stop).toHaveBeenCalledWith("session-1");
+  });
+
+  it("aborts pending Codex correlation instead of delaying shutdown", async () => {
+    const root = await tempRoot();
+    let receivedSignal: AbortSignal | undefined;
+    const codexSessions = {
+      snapshot: vi.fn(async () => new Set<string>()),
+      waitForNew: vi.fn(
+        async (_cwd: string, _ids: ReadonlySet<string>, signal?: AbortSignal) =>
+          new Promise<null>((resolve) => {
+            receivedSignal = signal;
+            signal?.addEventListener("abort", () => resolve(null), { once: true });
+          }),
+      ),
+    };
+    const { instance } = await coordinator(root, new FakeWorker(), codexSessions);
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+
+    await instance.shutdown();
+
+    expect(receivedSignal?.aborted).toBe(true);
   });
 
   it("marks and broadcasts active sessions as errors when the utility process exits", async () => {

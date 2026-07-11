@@ -48,7 +48,7 @@ interface TerminalCoordinatorOptions {
   now(): string;
   codexSessions?: {
     snapshot(cwd: string): Promise<ReadonlySet<string>>;
-    waitForNew(cwd: string, knownIds: ReadonlySet<string>): Promise<string | null>;
+    waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null>;
   };
   appendLog?: typeof appendSessionLog;
   logFlushMs?: number;
@@ -82,6 +82,7 @@ export class TerminalCoordinator {
   private readonly logFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly logWrites = new Map<string, Promise<void>>();
   private readonly removedSessionIds = new Set<string>();
+  private readonly codexCorrelationAbort = new AbortController();
   private eventChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: TerminalCoordinatorOptions) {
@@ -222,10 +223,10 @@ export class TerminalCoordinator {
     this.enqueueEvent(() => this.handleWorkerEvent({ type: "status", sessionId, status }));
   }
 
-  async flush(): Promise<void> {
+  async flush(includeBackgroundTasks = true): Promise<void> {
     await this.eventChain;
     await this.flushPendingLogs();
-    await Promise.all([...this.backgroundTasks]);
+    if (includeBackgroundTasks) await Promise.all([...this.backgroundTasks]);
     await this.eventChain;
     await this.flushPendingLogs();
   }
@@ -235,11 +236,12 @@ export class TerminalCoordinator {
   }
 
   async shutdown(): Promise<void> {
+    this.codexCorrelationAbort.abort();
     const active = this.list().filter(
       (session) => session.pid !== null && session.status !== "exited" && session.status !== "error",
     );
     await Promise.all(active.map((session) => this.options.worker.stop(session.id).catch(() => undefined)));
-    await this.flush();
+    await this.flush(false);
   }
 
   private async launch(input: {
@@ -293,7 +295,7 @@ export class TerminalCoordinator {
     const tracker = this.options.codexSessions;
     if (!tracker) return;
     const task = tracker
-      .waitForNew(cwd, knownIds)
+      .waitForNew(cwd, knownIds, this.codexCorrelationAbort.signal)
       .then(async (conversationId) => {
         if (!conversationId) return;
         const view = this.views.get(sessionId);

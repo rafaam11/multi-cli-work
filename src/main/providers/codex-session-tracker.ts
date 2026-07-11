@@ -88,11 +88,19 @@ export class CodexSessionTracker {
     return new Set((await this.sessionsForCwd(cwd)).map((session) => session.id));
   }
 
-  async waitForNew(cwd: string, knownIds: ReadonlySet<string>): Promise<string | null> {
+  async waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null> {
     for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
+      if (signal?.aborted) return null;
       const created = (await this.sessionsForCwd(cwd)).find((session) => !knownIds.has(session.id));
       if (created) return created.id;
-      if (attempt + 1 < this.maxAttempts) await delay(this.pollIntervalMs);
+      if (attempt + 1 < this.maxAttempts) {
+        try {
+          await delay(this.pollIntervalMs, undefined, { signal });
+        } catch (error) {
+          if (signal?.aborted || (error as Error).name === "AbortError") return null;
+          throw error;
+        }
+      }
     }
     return null;
   }
