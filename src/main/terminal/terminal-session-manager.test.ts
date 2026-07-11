@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TerminalLaunchSpec } from "../../shared/terminal-types";
 import {
+  OutputRingBuffer,
   TerminalSessionManager,
   type ManagedPty,
   type ManagedPtyFactory,
@@ -147,5 +148,17 @@ describe("TerminalSessionManager", () => {
 
     expect(() => manager.create(launchSpec())).not.toThrow();
     expect(factory.spawn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("OutputRingBuffer", () => {
+  it("trims multi-byte output on a UTF-8 character boundary instead of splitting it", () => {
+    const buffer = new OutputRingBuffer(8);
+
+    buffer.append("Hi가나다");
+
+    expect(Buffer.byteLength(buffer.toString())).toBeLessThanOrEqual(8);
+    expect(buffer.toString()).not.toContain("�");
+    expect(buffer.toString()).toBe("나다");
   });
 });
