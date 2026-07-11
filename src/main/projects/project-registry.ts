@@ -67,8 +67,9 @@ function uuidString(value: unknown, label: string): string {
 
 function isoString(value: unknown, label: string): string {
   const raw = requiredString(value, label);
-  if (!Number.isFinite(Date.parse(raw))) throw new ProjectRegistryError(`${label} must be an ISO timestamp`);
-  return raw;
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) throw new ProjectRegistryError(`${label} must be an ISO timestamp`);
+  return new Date(parsed).toISOString();
 }
 
 function uniqueStringArray(value: unknown, label: string): string[] {

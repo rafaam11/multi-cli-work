@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ProjectRegistryV1 } from "../../shared/project-types";
 import {
   ProjectRegistryError,
   emptyProjectRegistry,
@@ -294,5 +295,71 @@ describe("project registry storage", () => {
     expect(Object.keys(snapshot.registry.projects).sort()).toEqual([PROJECT_ONE, PROJECT_TWO]);
     expect(snapshot.source).toBe("primary");
     expect(snapshot.writable).toBe(true);
+  });
+});
+
+describe("project registry timestamp normalization", () => {
+  // Mirrors harness-manager's canonical-ISO round-trip check: milliseconds + "Z", no other offset form.
+  const isCanonical = (value: string): boolean =>
+    Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value;
+
+  const NON_CANONICAL_REGISTRY_UPDATED_AT = "2026-07-11T12:00:00Z";
+  const NON_CANONICAL_MIGRATED_AT = "2026-07-11T21:00:00.000+09:00";
+  const NON_CANONICAL_PROJECT_CREATED_AT = "2026-07-11T12:00:00Z";
+  const NON_CANONICAL_PROJECT_UPDATED_AT = "2026-07-11T21:00:00.000+09:00";
+
+  function nonCanonicalRegistryFixture(): ProjectRegistryV1 {
+    const registry = emptyProjectRegistry(NON_CANONICAL_REGISTRY_UPDATED_AT);
+    registry.migratedFromBoardAt = NON_CANONICAL_MIGRATED_AT;
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["manual"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: NON_CANONICAL_PROJECT_CREATED_AT,
+      updatedAt: NON_CANONICAL_PROJECT_UPDATED_AT,
+    };
+    return registry;
+  }
+
+  it("normalizes non-canonical ISO timestamps to canonical form while preserving the instant", () => {
+    const fixture = nonCanonicalRegistryFixture();
+    const parsed = parseProjectRegistry(fixture);
+
+    expect(isCanonical(parsed.updatedAt)).toBe(true);
+    expect(isCanonical(parsed.migratedFromBoardAt!)).toBe(true);
+    expect(isCanonical(parsed.projects[PROJECT_ONE].createdAt)).toBe(true);
+    expect(isCanonical(parsed.projects[PROJECT_ONE].updatedAt)).toBe(true);
+
+    expect(Date.parse(parsed.updatedAt)).toBe(Date.parse(fixture.updatedAt));
+    expect(Date.parse(parsed.migratedFromBoardAt!)).toBe(Date.parse(fixture.migratedFromBoardAt!));
+    expect(Date.parse(parsed.projects[PROJECT_ONE].createdAt)).toBe(Date.parse(fixture.projects[PROJECT_ONE].createdAt));
+    expect(Date.parse(parsed.projects[PROJECT_ONE].updatedAt)).toBe(Date.parse(fixture.projects[PROJECT_ONE].updatedAt));
+  });
+
+  it("self-heals non-canonical timestamps on disk when the registry file is rewritten", async () => {
+    const registryPath = await tempRegistryPath();
+    const fixture = nonCanonicalRegistryFixture();
+    await fs.writeFile(registryPath, JSON.stringify(fixture), "utf8");
+
+    await updateProjectRegistry((registry) => registry, { registryPath });
+
+    const onDisk = JSON.parse(await fs.readFile(registryPath, "utf8"));
+    expect(isCanonical(onDisk.updatedAt)).toBe(true);
+    expect(isCanonical(onDisk.migratedFromBoardAt)).toBe(true);
+    expect(isCanonical(onDisk.projects[PROJECT_ONE].createdAt)).toBe(true);
+    expect(isCanonical(onDisk.projects[PROJECT_ONE].updatedAt)).toBe(true);
+  });
+
+  it("still rejects timestamps that cannot be parsed at all", () => {
+    const fixture = nonCanonicalRegistryFixture();
+    fixture.updatedAt = "not-a-timestamp";
+    expect(() => parseProjectRegistry(fixture)).toThrow(/ISO timestamp/i);
   });
 });
