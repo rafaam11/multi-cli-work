@@ -77,29 +77,30 @@ async function requestQuit(): Promise<void> {
   if (!runtime || isQuitting) return;
   if (quitRequestInProgress) return;
   quitRequestInProgress = true;
-  if (runtime.coordinator.hasActiveSessions()) {
-    showMainWindow();
-    const options: Electron.MessageBoxOptions = {
-      type: "warning",
-      title: "Quit Multi CLI Work",
-      message: "Quit and stop all running sessions?",
-      detail: "Open Codex, Claude, and PowerShell processes managed by this app will be terminated.",
-      buttons: ["Cancel", "Quit"],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    };
-    const result = mainWindow
-      ? await dialog.showMessageBox(mainWindow, options)
-      : await dialog.showMessageBox(options);
-    if (result.response !== 1) {
-      quitRequestInProgress = false;
-      return;
+  try {
+    if (runtime.coordinator.hasActiveSessions()) {
+      showMainWindow();
+      const options: Electron.MessageBoxOptions = {
+        type: "warning",
+        title: "Quit Multi CLI Work",
+        message: "Quit and stop all running sessions?",
+        detail: "Open Codex, Claude, and PowerShell processes managed by this app will be terminated.",
+        buttons: ["Cancel", "Quit"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const result = mainWindow
+        ? await dialog.showMessageBox(mainWindow, options)
+        : await dialog.showMessageBox(options);
+      if (result.response !== 1) return;
     }
+    await runtime.dispose();
+    isQuitting = true;
+    app.quit();
+  } finally {
+    quitRequestInProgress = false;
   }
-  await runtime.dispose();
-  isQuitting = true;
-  app.quit();
 }
 
 function createTray(): Tray {
