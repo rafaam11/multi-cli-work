@@ -1,0 +1,69 @@
+{
+  "name": "multi-cli-work",
+  "version": "0.1.0",
+  "description": "Project-oriented Windows workspace for Codex, Claude Code, and PowerShell sessions",
+  "main": "out/main/index.js",
+  "private": true,
+  "author": "uiop3847",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "electron-vite preview",
+    "dist": "npm run build && electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "lucide-react": "1.18.0",
+    "node-pty": "1.1.0",
+    "proper-lockfile": "4.1.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "3.7.2",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@types/node": "22.10.5",
+    "@types/proper-lockfile": "4.1.4",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react": "4.3.4",
+    "electron": "34.0.0",
+    "electron-builder": "25.1.8",
+    "electron-vite": "3.1.0",
+    "jsdom": "26.0.0",
+    "typescript": "5.7.3",
+    "vite": "6.0.11",
+    "vitest": "3.2.6"
+  },
+  "build": {
+    "appId": "com.rafaam11.multicliwork",
+    "productName": "Multi CLI Work",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**"
+    ],
+    "artifactName": "Multi-CLI-Work-Setup-${version}.${ext}",
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Multi CLI Work"
+    }
+  }
+}
+

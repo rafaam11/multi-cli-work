@@ -1,0 +1,257 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --bg: #161918;
+  --sidebar: #1c201f;
+  --surface: #202524;
+  --surface-hover: #282e2c;
+  --line: #343b38;
+  --line-strong: #46504c;
+  --text: #e7ebe8;
+  --muted: #919b96;
+  --quiet: #69736e;
+  --teal: #4fb7a4;
+  --amber: #d8a24a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 286px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.project-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+}
+
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--teal);
+  background: #242a28;
+}
+
+.brand-block h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.brand-context {
+  display: block;
+  margin-top: 2px;
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.project-navigation {
+  min-height: 0;
+  padding: 10px 8px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 6px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.icon-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.sidebar-empty {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  margin-top: 3px;
+  padding: 0 10px;
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+  color: var(--quiet);
+  font-size: 12px;
+}
+
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+}
+
+.connection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--teal);
+  box-shadow: 0 0 0 3px rgb(79 183 164 / 12%);
+}
+
+.terminal-workspace {
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 14px 0 17px;
+  border-bottom: 1px solid var(--line);
+  background: #191d1c;
+}
+
+.workspace-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.new-session-button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--quiet);
+  background: var(--surface);
+}
+
+.new-session-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.terminal-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-width: 0;
+  padding: 32px;
+  color: var(--muted);
+}
+
+.empty-glyph {
+  display: grid;
+  width: 72px;
+  height: 48px;
+  margin-bottom: 18px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #1b201e;
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.empty-glyph span {
+  color: var(--teal);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 15px;
+}
+
+.terminal-empty h2 {
+  max-width: min(100%, 420px);
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+@media (max-width: 1000px) {
+  .app-shell {
+    grid-template-columns: 238px minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
