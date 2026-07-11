@@ -11,8 +11,9 @@ let app: ElectronApplication;
 let page: Page;
 
 async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
+  const packagedExecutable = process.env.MULTI_CLI_WORK_E2E_EXECUTABLE;
   const nextApp = await electron.launch({
-    args: [path.resolve("out/main/index.js")],
+    ...(packagedExecutable ? { executablePath: packagedExecutable, args: [] } : { args: [path.resolve("out/main/index.js")] }),
     env: {
       ...process.env,
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
