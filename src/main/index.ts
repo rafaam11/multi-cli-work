@@ -7,6 +7,10 @@ let tray: Tray | null = null;
 let runtime: DesktopRuntime | null = null;
 let isQuitting = false;
 
+if (process.env.MULTI_CLI_WORK_USER_DATA) {
+  app.setPath("userData", path.resolve(process.env.MULTI_CLI_WORK_USER_DATA));
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,

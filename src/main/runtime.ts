@@ -33,8 +33,15 @@ export interface DesktopRuntime {
 
 export async function createDesktopRuntime(showMainWindow: () => void): Promise<DesktopRuntime> {
   const userData = app.getPath("userData");
+  const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
+  const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
+  const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData);
-  const projectService = new ProjectService();
+  const projectService = new ProjectService({
+    registryPath,
+    claudeProjectsDirectory,
+    codexSessionsDirectory,
+  });
   await projectService.discoverAndReconcile().catch((error) => {
     console.error("Project discovery failed", error);
   });
@@ -51,7 +58,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     logDir: path.join(userData, "session-logs"),
     claudeSettingsPath: claudeIntegration.settingsPath,
     async getProject(projectId) {
-      return (await readProjectRegistry()).registry.projects[projectId] ?? null;
+      return (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;
     },
     getExecutables,
     env: {
@@ -60,7 +67,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     },
     idFactory: crypto.randomUUID,
     now: () => new Date().toISOString(),
-    codexSessions: new CodexSessionTracker(),
+    codexSessions: new CodexSessionTracker({ sessionsDirectory: codexSessionsDirectory }),
   });
   await coordinator.initialize();
 
@@ -71,7 +78,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
   registerMainIpc(ipcMain, {
     projectService,
     coordinator,
-    readRegistry: () => readProjectRegistry(),
+    readRegistry: () => readProjectRegistry({ registryPath }),
     async chooseDirectory() {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       const result = window

@@ -15,7 +15,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
-    "dist": "npm run build && electron-builder --win --publish never"
+    "rebuild:native": "electron-rebuild -f -w node-pty",
+    "test:e2e": "playwright test",
+    "dist": "npm run build && electron-builder --win --publish never",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
@@ -28,6 +31,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "3.7.2",
+    "@playwright/test": "1.61.1",
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.1.0",
     "@types/node": "22.10.5",
@@ -66,4 +70,3 @@
     }
   }
 }
-

@@ -3,6 +3,8 @@ out/
 dist/
 release/
 coverage/
+test-results/
+playwright-report/
 .vite/
 .cache/
 .superpowers/
@@ -11,4 +13,3 @@ coverage/
 .env
 .env.*
 !.env.example
-
