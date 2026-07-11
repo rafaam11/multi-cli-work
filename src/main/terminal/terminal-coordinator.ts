@@ -14,6 +14,7 @@ import type {
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
 import { buildProviderLaunch, type ProviderExecutables } from "../providers/provider-launch";
+import { cleanupProviderStatusFiles, deleteProviderStatusFile } from "../providers/provider-status";
 import {
   appendSessionLog,
   deleteSessionLog,
@@ -40,6 +41,7 @@ interface TerminalCoordinatorOptions {
   worker: TerminalWorkerGateway;
   statePath: string;
   logDir: string;
+  statusDir?: string;
   claudeSettingsPath: string;
   getProject(projectId: string): Promise<SharedProject | null>;
   getExecutables(): Promise<ProviderExecutables>;
@@ -98,6 +100,11 @@ export class TerminalCoordinator {
   async initialize(): Promise<void> {
     const snapshot = await readAppState({ statePath: this.options.statePath });
     for (const session of Object.values(snapshot.state.sessions)) this.views.set(session.id, exitedView(session));
+    if (this.options.statusDir) {
+      await cleanupProviderStatusFiles(this.options.statusDir, new Set(this.views.keys())).catch((error) =>
+        this.reportAsyncError("Provider status cleanup failed", error),
+      );
+    }
   }
 
   list(): TerminalSessionView[] {
@@ -196,6 +203,9 @@ export class TerminalCoordinator {
       { statePath: this.options.statePath },
     );
     await deleteSessionLog(this.options.logDir, sessionId);
+    if (this.options.statusDir) {
+      await deleteProviderStatusFile(this.options.statusDir, sessionId);
+    }
   }
 
   async select(projectId: string | null, sessionId: string | null) {

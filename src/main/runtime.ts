@@ -62,6 +62,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     worker,
     statePath: path.join(userData, "state.json"),
     logDir: path.join(userData, "session-logs"),
+    statusDir: claudeIntegration.statusDir,
     claudeSettingsPath: claudeIntegration.settingsPath,
     async getProject(projectId) {
       return (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;

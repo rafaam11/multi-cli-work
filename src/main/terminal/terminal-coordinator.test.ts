@@ -89,6 +89,7 @@ async function coordinator(
     waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null>;
   },
   appendLog?: (logDir: string, sessionId: string, data: string, maxBytes: number, trimSlackBytes?: number) => Promise<void>,
+  statusDir?: string,
 ) {
   const instance = new TerminalCoordinator({
     worker,
@@ -103,6 +104,7 @@ async function coordinator(
     codexSessions,
     appendLog,
     logFlushMs: 60_000,
+    statusDir,
   });
   await instance.initialize();
   return { instance, worker };
@@ -416,5 +418,34 @@ describe("TerminalCoordinator", () => {
 
     expect(instance.list()[0]).toMatchObject({ status: "error", pid: null, exitCode: null });
     expect(listener).toHaveBeenCalledWith({ type: "status", sessionId: "session-1", status: "error" });
+  });
+
+  it("deletes the provider status file when a session is removed", async () => {
+    const root = await tempRoot();
+    const statusDir = await tempRoot();
+    const { instance } = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    const statusFile = path.join(statusDir, "session-1.json");
+    await fs.writeFile(statusFile, "{}");
+
+    await instance.remove("session-1");
+
+    await expect(fs.stat(statusFile)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("sweeps orphaned provider status files at startup but keeps restored sessions", async () => {
+    const root = await tempRoot();
+    const statusDir = await tempRoot();
+    const first = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    const keptFile = path.join(statusDir, "session-1.json");
+    const orphanFile = path.join(statusDir, "orphan-session.json");
+    await fs.writeFile(keptFile, "{}");
+    await fs.writeFile(orphanFile, "{}");
+
+    await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
+
+    await expect(fs.stat(keptFile)).resolves.toBeTruthy();
+    await expect(fs.stat(orphanFile)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
