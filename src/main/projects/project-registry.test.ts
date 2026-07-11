@@ -149,6 +149,84 @@ describe("project registry contract", () => {
     expect(() => parseProjectRegistry(registry)).toThrow(/provider ref|source/i);
   });
 
+  it("rejects an empty sources array", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: [],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+
+    expect(() => parseProjectRegistry(registry)).toThrow(ProjectRegistryError);
+    expect(() => parseProjectRegistry(registry)).toThrow(/sources/i);
+  });
+
+  it("rejects duplicate entries within sources", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["claude", "claude"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+
+    expect(() => parseProjectRegistry(registry)).toThrow(ProjectRegistryError);
+    expect(() => parseProjectRegistry(registry)).toThrow(/sources/i);
+  });
+
+  it("accepts valid sources arrays and preserves canonical order", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["manual"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+    registry.projects[PROJECT_TWO] = {
+      id: PROJECT_TWO,
+      rootPath: "C:\\Other",
+      displayName: null,
+      sources: ["codex", "claude"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+
+    const parsed = parseProjectRegistry(registry);
+    expect(parsed.projects[PROJECT_ONE].sources).toEqual(["manual"]);
+    expect(parsed.projects[PROJECT_TWO].sources).toEqual(["claude", "codex"]);
+  });
+
   it("rejects duplicate normalized roots and provider refs across UUIDs", () => {
     const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
     const common = {

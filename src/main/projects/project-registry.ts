@@ -112,6 +112,12 @@ function parseProject(value: unknown, key: string): SharedProject {
   if (!Array.isArray(value.sources) || value.sources.some((source) => !SOURCES.includes(source as ProjectSource))) {
     throw new ProjectRegistryError(`project ${key}.sources is invalid`);
   }
+  if (value.sources.length === 0) {
+    throw new ProjectRegistryError(`project ${key}.sources must not be empty`);
+  }
+  if (new Set(value.sources).size !== value.sources.length) {
+    throw new ProjectRegistryError(`project ${key}.sources contains duplicate values`);
+  }
   if (!isRecord(value.providerRefs)) throw new ProjectRegistryError(`project ${key}.providerRefs must be an object`);
   assertExactKeys(value.providerRefs, ["claude", "codex"], `project ${key}.providerRefs`);
   const sources = SOURCES.filter((source) => (value.sources as unknown[]).includes(source));
