@@ -56,6 +56,7 @@ interface SessionRecord {
   session: TerminalSession;
   pty: ManagedPty;
   output: OutputRingBuffer;
+  controlBuffer: string;
 }
 
 export class TerminalSessionManager {
@@ -87,13 +88,19 @@ export class TerminalSessionManager {
       updatedAt: spec.createdAt,
       exitCode: null,
     };
-    const record: SessionRecord = { session, pty, output: new OutputRingBuffer(this.maxReplayBytes) };
+    const record: SessionRecord = {
+      session,
+      pty,
+      output: new OutputRingBuffer(this.maxReplayBytes),
+      controlBuffer: "",
+    };
     this.sessions.set(session.id, record);
     pty.onData((data) => {
       record.output.append(data);
       record.session.updatedAt = new Date().toISOString();
       this.publish({ type: "data", sessionId: session.id, data });
       if (record.session.status === "starting") this.setStatus(record, "idle");
+      if (record.session.kind === "codex") this.applyCodexNotifications(record, data);
     });
     pty.onExit(({ exitCode, signal }) => {
       record.session.exitCode = exitCode;
@@ -111,7 +118,9 @@ export class TerminalSessionManager {
   }
 
   write(sessionId: string, data: string): void {
-    this.requireSession(sessionId).pty.write(data);
+    const record = this.requireSession(sessionId);
+    record.pty.write(data);
+    if (record.session.kind !== "powershell" && /[\r\n]/.test(data)) this.setStatus(record, "working");
   }
 
   resize(sessionId: string, cols: number, rows: number): void {
@@ -138,5 +147,21 @@ export class TerminalSessionManager {
     record.session.updatedAt = new Date().toISOString();
     this.publish({ type: "status", sessionId: record.session.id, status });
   }
-}
 
+  private applyCodexNotifications(record: SessionRecord, data: string): void {
+    record.controlBuffer = `${record.controlBuffer}${data}`.slice(-2_048);
+    const notificationPattern = /\u001b\]9;([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g;
+    let match: RegExpExecArray | null;
+    let consumed = 0;
+    while ((match = notificationPattern.exec(record.controlBuffer)) !== null) {
+      consumed = notificationPattern.lastIndex;
+      const message = match[1].trim().toLocaleLowerCase("en-US");
+      if (message.includes("approval-requested") || message.includes("approval requested")) {
+        this.setStatus(record, "awaiting-approval");
+      } else if (message.includes("agent-turn-complete") || message.includes("turn complete")) {
+        this.setStatus(record, "awaiting-input");
+      }
+    }
+    if (consumed > 0) record.controlBuffer = record.controlBuffer.slice(consumed);
+  }
+}

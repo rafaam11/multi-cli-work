@@ -108,5 +108,26 @@ describe("TerminalSessionManager", () => {
     expect(pty.kill).toHaveBeenCalledTimes(1);
     expect(() => manager.write("missing", "x")).toThrow(/unknown terminal session/i);
   });
-});
 
+  it("maps Codex OSC notifications and submitted input to unified states", () => {
+    const pty = new FakePty();
+    const events = vi.fn();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, events);
+    manager.create({ ...launchSpec(), kind: "codex" });
+    pty.emitData("\u001b]9;approval-requested\u0007");
+    pty.emitData("\u001b]9;agent-turn-complete\u0007");
+    manager.write("session-1", "continue\r");
+
+    expect(events).toHaveBeenCalledWith({
+      type: "status",
+      sessionId: "session-1",
+      status: "awaiting-approval",
+    });
+    expect(events).toHaveBeenCalledWith({
+      type: "status",
+      sessionId: "session-1",
+      status: "awaiting-input",
+    });
+    expect(events).toHaveBeenLastCalledWith({ type: "status", sessionId: "session-1", status: "working" });
+  });
+});
