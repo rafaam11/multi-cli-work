@@ -10,7 +10,10 @@ import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
-import { TerminalWorkerClient } from "./terminal/terminal-worker-client";
+import {
+  RestartingTerminalWorker,
+  type RestartableTerminalWorkerTransport,
+} from "./terminal/restarting-terminal-worker";
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -46,14 +49,16 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     console.error("Project discovery failed", error);
   });
 
-  const worker = utilityProcess.fork(path.join(__dirname, "terminal-worker.js"), [], {
-    serviceName: "Multi CLI Work PTY",
-  });
-  const workerClient = new TerminalWorkerClient(worker);
+  const worker = new RestartingTerminalWorker(
+    () =>
+      utilityProcess.fork(path.join(__dirname, "terminal-worker.js"), [], {
+        serviceName: "Multi CLI Work PTY",
+      }) as RestartableTerminalWorkerTransport,
+  );
   let executablePromise: ReturnType<typeof detectProviderExecutables> | null = null;
   const getExecutables = () => (executablePromise ??= detectProviderExecutables());
   const coordinator = new TerminalCoordinator({
-    worker: workerClient,
+    worker,
     statePath: path.join(userData, "state.json"),
     logDir: path.join(userData, "session-logs"),
     claudeSettingsPath: claudeIntegration.settingsPath,
@@ -112,7 +117,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     async dispose() {
       statusWatcher.close();
       await coordinator.shutdown();
-      worker.kill();
+      worker.dispose();
     },
   };
 }
