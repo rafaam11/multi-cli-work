@@ -107,6 +107,41 @@ test.describe.serial("Multi CLI Work desktop", () => {
       expect(bound.bottom).toBeLessThanOrEqual(600);
     }
     await attachScreenshot("compact-900x600");
+
+    await page.evaluate(() => {
+      const state = window as typeof window & {
+        __multiCliWorkE2eOutput?: string;
+        __multiCliWorkE2eUnsubscribe?: () => void;
+      };
+      state.__multiCliWorkE2eOutput = "";
+      state.__multiCliWorkE2eUnsubscribe = window.multiCliWork.terminals.onEvent((event) => {
+        if (event.type === "data") state.__multiCliWorkE2eOutput += event.data;
+      });
+    });
+    await terminal.click();
+    await page.keyboard.type(
+      "[Console]::Write(([char]27).ToString() + '[32mMCW_ANSI_GREEN' + ([char]27).ToString() + '[0m' + [Environment]::NewLine); " +
+        "[Console]::Write(([char]27).ToString() + ']9;MCW_OSC_SIGNAL' + ([char]7).ToString()); " +
+        "1..250 | ForEach-Object { 'MCW_BURST_' + $_ }; exit 7",
+    );
+    await page.keyboard.press("Enter");
+
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_ANSI_GREEN");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_BURST_250");
+    await expect(page.locator(".active-status")).toHaveText("Exited");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as typeof window & { __multiCliWorkE2eOutput?: string })
+              .__multiCliWorkE2eOutput,
+        ),
+      )
+      .toContain("\u001b]9;MCW_OSC_SIGNAL\u0007");
+    await page.evaluate(() => {
+      const state = window as typeof window & { __multiCliWorkE2eUnsubscribe?: () => void };
+      state.__multiCliWorkE2eUnsubscribe?.();
+    });
   });
 
   test("hides to the tray and restores saved tabs after a relaunch", async () => {
