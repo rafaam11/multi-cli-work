@@ -1,0 +1,14 @@
+node_modules/
+out/
+dist/
+release/
+coverage/
+.vite/
+.cache/
+.superpowers/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
