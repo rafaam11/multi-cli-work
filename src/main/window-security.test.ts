@@ -24,6 +24,8 @@ describe("isLoopbackRendererUrl", () => {
     "https://example.com",
     "http://localhost.example.com",
     "http://0.0.0.0:5173",
+    "http://127.999.999.999:5173",
+    "http://127.256.0.1:5173",
     "file:///tmp/index.html",
     "javascript:alert(1)",
     "not a url",

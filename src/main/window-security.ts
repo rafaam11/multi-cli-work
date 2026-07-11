@@ -18,6 +18,19 @@ export type RendererTarget =
   | { kind: "url"; value: string }
   | { kind: "file"; value: string };
 
+function isIpv4Loopback(hostname: string): boolean {
+  const octets = hostname.split(".");
+  return (
+    octets.length === 4 &&
+    octets[0] === "127" &&
+    octets.every((octet) => {
+      if (!/^\d{1,3}$/.test(octet)) return false;
+      const value = Number(octet);
+      return value >= 0 && value <= 255;
+    })
+  );
+}
+
 export function isLoopbackRendererUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -27,7 +40,7 @@ export function isLoopbackRendererUrl(value: string): boolean {
     return (
       url.hostname === "localhost" ||
       url.hostname === "[::1]" ||
-      /^127(?:\.\d{1,3}){3}$/.test(url.hostname)
+      isIpv4Loopback(url.hostname)
     );
   } catch {
     return false;
