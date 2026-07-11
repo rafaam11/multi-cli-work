@@ -142,5 +142,25 @@ describe("TerminalCoordinator", () => {
       }),
     );
   });
-});
 
+  it("accepts structured provider hook status without exposing it to renderer IPC", async () => {
+    const root = await tempRoot();
+    const { instance } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+
+    instance.applyProviderStatus("session-1", "awaiting-approval");
+    await instance.flush();
+
+    expect(instance.list()[0].status).toBe("awaiting-approval");
+  });
+
+  it("stops every running PTY during explicit app shutdown", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    await instance.shutdown();
+
+    expect(worker.stop).toHaveBeenCalledWith("session-1");
+  });
+});

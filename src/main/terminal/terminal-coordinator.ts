@@ -10,6 +10,7 @@ import type {
   TerminalAttachment,
   TerminalLaunchSpec,
   TerminalSession,
+  TerminalStatus,
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
 import { buildProviderLaunch, type ProviderExecutables } from "../providers/provider-launch";
@@ -180,8 +181,26 @@ export class TerminalCoordinator {
     return () => this.subscribers.delete(listener);
   }
 
+  applyProviderStatus(sessionId: string, status: TerminalStatus): void {
+    this.eventChain = this.eventChain.then(() =>
+      this.handleWorkerEvent({ type: "status", sessionId, status }),
+    );
+  }
+
   async flush(): Promise<void> {
     await this.eventChain;
+  }
+
+  hasActiveSessions(): boolean {
+    return this.list().some((session) => session.pid !== null && session.status !== "exited" && session.status !== "error");
+  }
+
+  async shutdown(): Promise<void> {
+    const active = this.list().filter(
+      (session) => session.pid !== null && session.status !== "exited" && session.status !== "error",
+    );
+    await Promise.all(active.map((session) => this.options.worker.stop(session.id).catch(() => undefined)));
+    await this.flush();
   }
 
   private async launch(input: {
@@ -258,4 +277,3 @@ export class TerminalCoordinator {
     }
   }
 }
-
