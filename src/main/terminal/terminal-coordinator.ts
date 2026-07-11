@@ -81,6 +81,7 @@ export class TerminalCoordinator {
   private readonly pendingLogChunks = new Map<string, string[]>();
   private readonly logFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly logWrites = new Map<string, Promise<void>>();
+  private readonly removedSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: TerminalCoordinatorOptions) {
@@ -180,9 +181,11 @@ export class TerminalCoordinator {
   async remove(sessionId: string): Promise<void> {
     const view = this.views.get(sessionId);
     if (!view) return;
-    if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
+    this.removedSessionIds.add(sessionId);
     this.views.delete(sessionId);
     this.dropPendingLog(sessionId);
+    if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
+    await this.logWrites.get(sessionId)?.catch(() => undefined);
     await updateAppState(
       (state) => {
         const sessions = { ...state.sessions };
@@ -209,7 +212,13 @@ export class TerminalCoordinator {
 
   applyProviderStatus(sessionId: string, status: TerminalStatus): void {
     const view = this.views.get(sessionId);
-    if (!view || view.pid === null || view.status === "exited" || view.status === "error") return;
+    if (
+      !view ||
+      view.kind !== "claude" ||
+      view.pid === null ||
+      view.status === "exited" ||
+      view.status === "error"
+    ) return;
     this.enqueueEvent(() => this.handleWorkerEvent({ type: "status", sessionId, status }));
   }
 
@@ -313,6 +322,7 @@ export class TerminalCoordinator {
   private async handleWorkerEvent(event: TerminalWorkerEvent): Promise<void> {
     const view = this.views.get(event.sessionId);
     if (view && event.type === "status") {
+      if (view.status === event.status) return;
       view.status = event.status;
       view.updatedAt = this.options.now();
       await this.persistView(view);
@@ -342,6 +352,7 @@ export class TerminalCoordinator {
   }
 
   private handleDataEvent(event: Extract<TerminalWorkerEvent, { type: "data" }>): void {
+    if (this.removedSessionIds.has(event.sessionId)) return;
     this.publish(event);
     const chunks = this.pendingLogChunks.get(event.sessionId) ?? [];
     chunks.push(event.data);

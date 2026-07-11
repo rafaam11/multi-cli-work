@@ -207,6 +207,43 @@ describe("project registry contract", () => {
     expect(reconciled.projects[PROJECT_TWO].providerRefs.codex).toEqual([]);
     expect(() => parseProjectRegistry(reconciled)).not.toThrow();
   });
+
+  it("preserves an existing shared display name when a manual add supplies the folder basename", () => {
+    const initial = reconcileProject(
+      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
+      { rootPath: "C:\\Work", source: "codex", providerRef: "codex:C--Work", displayName: "Harness name" },
+      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
+    );
+
+    const manuallyAdded = reconcileProject(
+      initial,
+      { rootPath: "C:\\Work", source: "manual", displayName: "Work" },
+      { now: "2026-07-11T02:00:00.000Z", platform: "win32" },
+    );
+
+    expect(manuallyAdded.projects[PROJECT_ONE].displayName).toBe("Harness name");
+  });
+
+  it("keeps a manual root authoritative when stale provider history reports another path", () => {
+    const discovered = reconcileProject(
+      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
+      { rootPath: "C:\\Chosen", source: "codex", providerRef: "codex:C--Chosen" },
+      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
+    );
+    const manual = reconcileProject(
+      discovered,
+      { rootPath: "C:\\Chosen", source: "manual" },
+      { now: "2026-07-11T01:30:00.000Z", platform: "win32" },
+    );
+
+    const refreshed = reconcileProject(
+      manual,
+      { rootPath: "D:\\Stale", source: "codex", providerRef: "codex:C--Chosen" },
+      { now: "2026-07-11T02:00:00.000Z", platform: "win32" },
+    );
+
+    expect(refreshed.projects[PROJECT_ONE].rootPath).toBe("C:\\Chosen");
+  });
 });
 
 describe("project registry storage", () => {
@@ -221,6 +258,17 @@ describe("project registry storage", () => {
     expect(snapshot.source).toBe("backup");
     expect(snapshot.writable).toBe(false);
     expect(snapshot.registry).toEqual(backup);
+  });
+
+  it("prefers a valid backup over an empty registry when the primary is missing", async () => {
+    const registryPath = await tempRegistryPath();
+    const backup = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    await fs.writeFile(`${registryPath}.bak`, JSON.stringify(backup), "utf8");
+
+    const snapshot = await readProjectRegistry({ registryPath });
+
+    expect(snapshot).toMatchObject({ source: "backup", writable: false, registry: backup });
+    expect(snapshot.warning).toMatch(/missing/i);
   });
 
   it("serializes concurrent updates without dropping either project", async () => {

@@ -9,6 +9,7 @@ const DEFAULT_MAX_FILES = 200;
 
 interface DiscoveryOptions {
   maxFiles?: number;
+  platform?: NodeJS.Platform;
 }
 
 export interface ClaudeDiscoveryOptions extends DiscoveryOptions {
@@ -27,9 +28,14 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-function absoluteProjectPath(value: unknown): string | undefined {
+function absoluteProjectPath(value: unknown, platform: NodeJS.Platform): string | undefined {
   const rootPath = nonEmptyString(value);
-  return rootPath && (path.win32.isAbsolute(rootPath) || path.posix.isAbsolute(rootPath)) ? rootPath : undefined;
+  if (!rootPath) return undefined;
+  if (platform === "win32") {
+    const hasWindowsRoot = /^[a-z]:[\\/]/i.test(rootPath) || /^[\\/]{2}[^\\/]/.test(rootPath);
+    return hasWindowsRoot && path.win32.isAbsolute(rootPath) ? rootPath : undefined;
+  }
+  return path.posix.isAbsolute(rootPath) ? rootPath : undefined;
 }
 
 function claudeProjectRef(projectsDirectory: string, transcriptPath: string): string | undefined {
@@ -124,7 +130,7 @@ export async function discoverClaudeProjects(options: ClaudeDiscoveryOptions = {
   const discoveries = await Promise.all(
     files.map((filePath) =>
       findJsonRecord(filePath, (record) => {
-        const rootPath = absoluteProjectPath(record.cwd);
+        const rootPath = absoluteProjectPath(record.cwd, options.platform ?? process.platform);
         if (!rootPath) return undefined;
         const providerRef = claudeProjectRef(projectsDirectory, filePath);
         return { rootPath, source: "claude", ...(providerRef ? { providerRef } : {}) };
@@ -141,7 +147,7 @@ export async function discoverCodexProjects(options: CodexDiscoveryOptions = {})
     files.map((filePath) =>
       findJsonRecord(filePath, (record) => {
         if (record.type !== "session_meta" || !isRecord(record.payload)) return undefined;
-        const rootPath = absoluteProjectPath(record.payload.cwd);
+        const rootPath = absoluteProjectPath(record.payload.cwd, options.platform ?? process.platform);
         if (!rootPath) return undefined;
         return { rootPath, source: "codex", providerRef: codexProjectRefFromCwd(rootPath) };
       }),

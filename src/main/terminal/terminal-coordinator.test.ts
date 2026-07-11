@@ -10,7 +10,7 @@ import type {
   TerminalSession,
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
-import { readAppState } from "../state/app-state";
+import { readAppState, readSessionLog } from "../state/app-state";
 import { TerminalCoordinator, type TerminalWorkerGateway } from "./terminal-coordinator";
 
 const roots: string[] = [];
@@ -273,6 +273,40 @@ describe("TerminalCoordinator", () => {
     await instance.flush();
 
     expect(instance.list()[0].status).toBe("awaiting-approval");
+  });
+
+  it("ignores duplicate Claude statuses and provider hooks targeting PowerShell", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    const received = vi.fn();
+    first.instance.onEvent(received);
+
+    first.instance.applyProviderStatus("session-1", "awaiting-input");
+    first.instance.applyProviderStatus("session-1", "awaiting-input");
+    await first.instance.flush();
+
+    expect(received).toHaveBeenCalledOnce();
+
+    const otherRoot = await tempRoot();
+    const second = await coordinator(otherRoot);
+    await second.instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    second.instance.applyProviderStatus("session-1", "awaiting-approval");
+    await second.instance.flush();
+    expect(second.instance.list()[0].status).toBe("starting");
+  });
+
+  it("does not recreate a removed session log from delayed worker output", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    worker.emit({ type: "data", sessionId: "session-1", data: "before removal", sequence: 1 });
+
+    await instance.remove("session-1");
+    worker.emit({ type: "data", sessionId: "session-1", data: "late output", sequence: 2 });
+    await instance.flush();
+
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe("");
   });
 
   it("ignores stale provider hook files for restored sessions without a running PTY", async () => {

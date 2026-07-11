@@ -134,6 +134,17 @@ describe("Codex project discovery", () => {
       "2026-07-11T00:00:00.000Z",
     );
 
-    await expect(discoverCodexProjects({ sessionsDirectory })).resolves.toEqual([]);
+    await expect(discoverCodexProjects({ sessionsDirectory, platform: "win32" })).resolves.toEqual([]);
+  });
+
+  it("ignores POSIX roots that belong to excluded WSL sessions on Windows", async () => {
+    const sessionsDirectory = await tempDirectory("codex-wsl");
+    await writeTranscript(
+      path.join(sessionsDirectory, "wsl.jsonl"),
+      [{ type: "session_meta", payload: { cwd: "/home/user/project", id: "wsl-session" } }],
+      "2026-07-11T00:00:00.000Z",
+    );
+
+    await expect(discoverCodexProjects({ sessionsDirectory, platform: "win32" })).resolves.toEqual([]);
   });
 });

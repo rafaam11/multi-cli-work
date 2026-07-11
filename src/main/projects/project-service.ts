@@ -81,12 +81,14 @@ export class ProjectService {
     const [claudeDiscoveries, codexDiscoveries] = await Promise.all([
       discoverClaudeProjects({
         ...discoveryOptions,
+        ...(this.options.platform ? { platform: this.options.platform } : {}),
         ...(this.options.claudeProjectsDirectory
           ? { projectsDirectory: this.options.claudeProjectsDirectory }
           : {}),
       }),
       discoverCodexProjects({
         ...discoveryOptions,
+        ...(this.options.platform ? { platform: this.options.platform } : {}),
         ...(this.options.codexSessionsDirectory ? { sessionsDirectory: this.options.codexSessionsDirectory } : {}),
       }),
     ]);
@@ -168,7 +170,12 @@ export class ProjectService {
         updatedAt: now,
         projects: {
           ...registry.projects,
-          [projectId]: { ...project, rootPath: validatedPath, updatedAt: now },
+          [projectId]: {
+            ...project,
+            rootPath: validatedPath,
+            sources: project.sources.includes("manual") ? project.sources : ["manual", ...project.sources],
+            updatedAt: now,
+          },
         },
       };
     });

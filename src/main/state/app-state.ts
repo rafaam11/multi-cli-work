@@ -95,22 +95,30 @@ async function readJson(filePath: string): Promise<unknown> {
 }
 
 export async function readAppState(options: StateOptions): Promise<AppStateSnapshot> {
+  let primaryError: unknown;
   try {
     return { state: parseAppState(await readJson(options.statePath)), source: "primary", writable: true };
-  } catch (primaryError) {
-    if ((primaryError as NodeJS.ErrnoException).code === "ENOENT") {
+  } catch (error) {
+    primaryError = error;
+  }
+  try {
+    const missing = (primaryError as NodeJS.ErrnoException).code === "ENOENT";
+    return {
+      state: parseAppState(await readJson(`${options.statePath}.bak`)),
+      source: "backup",
+      writable: false,
+      warning: missing
+        ? "Primary app state is missing; using the backup read-only."
+        : `Primary app state is invalid: ${(primaryError as Error).message}`,
+    };
+  } catch (backupError) {
+    if (
+      (primaryError as NodeJS.ErrnoException).code === "ENOENT" &&
+      (backupError as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
       return { state: emptyAppState(), source: "empty", writable: true };
     }
-    try {
-      return {
-        state: parseAppState(await readJson(`${options.statePath}.bak`)),
-        source: "backup",
-        writable: false,
-        warning: `Primary app state is invalid: ${(primaryError as Error).message}`,
-      };
-    } catch (backupError) {
-      throw new AppStateError("App state and backup are unreadable", { cause: backupError });
-    }
+    throw new AppStateError("App state and backup are unreadable", { cause: backupError });
   }
 }
 

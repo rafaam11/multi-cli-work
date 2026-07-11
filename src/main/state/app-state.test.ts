@@ -64,6 +64,18 @@ describe("app state", () => {
     expect(snapshot.writable).toBe(false);
   });
 
+  it("prefers a valid backup when the primary state file is missing", async () => {
+    const root = await tempRoot();
+    const statePath = path.join(root, "state.json");
+    const backup = emptyAppState("2026-07-11T00:00:00.000Z");
+    await fs.writeFile(`${statePath}.bak`, JSON.stringify(backup), "utf8");
+
+    const snapshot = await readAppState({ statePath });
+
+    expect(snapshot).toMatchObject({ source: "backup", writable: false, state: backup });
+    expect(snapshot.warning).toMatch(/missing/i);
+  });
+
   it("keeps only the newest bounded terminal output", async () => {
     const root = await tempRoot();
     await appendSessionLog(root, "session-1", "123456", 10);

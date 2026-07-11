@@ -257,8 +257,11 @@ export function reconcileProject(
   }
   const next: SharedProject = {
     id,
-    rootPath: providerMatch && !pathMatch ? path.resolve(discovery.rootPath) : existing?.rootPath ?? path.resolve(discovery.rootPath),
-    displayName: discovery.displayName ?? existing?.displayName ?? null,
+    rootPath:
+      providerMatch && !pathMatch && !existing?.sources.includes("manual")
+        ? path.resolve(discovery.rootPath)
+        : existing?.rootPath ?? path.resolve(discovery.rootPath),
+    displayName: existing?.displayName ?? discovery.displayName ?? null,
     sources,
     providerRefs,
     status: existing?.status ?? null,
@@ -287,22 +290,30 @@ async function readJson(filePath: string): Promise<unknown> {
 
 export async function readProjectRegistry(options: RegistryStorageOptions = {}): Promise<ProjectRegistrySnapshot> {
   const registryPath = options.registryPath ?? PROJECT_REGISTRY_PATH;
+  let primaryError: unknown;
   try {
     return { registry: parseProjectRegistry(await readJson(registryPath)), source: "primary", writable: true };
-  } catch (primaryError) {
-    if ((primaryError as NodeJS.ErrnoException).code === "ENOENT") {
+  } catch (error) {
+    primaryError = error;
+  }
+  try {
+    const missing = (primaryError as NodeJS.ErrnoException).code === "ENOENT";
+    return {
+      registry: parseProjectRegistry(await readJson(`${registryPath}.bak`)),
+      source: "backup",
+      writable: false,
+      warning: missing
+        ? "Primary project registry is missing; using the backup read-only."
+        : `Primary project registry is invalid: ${(primaryError as Error).message}`,
+    };
+  } catch (backupError) {
+    if (
+      (primaryError as NodeJS.ErrnoException).code === "ENOENT" &&
+      (backupError as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
       return { registry: emptyProjectRegistry(), source: "empty", writable: true };
     }
-    try {
-      return {
-        registry: parseProjectRegistry(await readJson(`${registryPath}.bak`)),
-        source: "backup",
-        writable: false,
-        warning: `Primary project registry is invalid: ${(primaryError as Error).message}`,
-      };
-    } catch (backupError) {
-      throw new ProjectRegistryError("Project registry and backup are unreadable", { cause: backupError });
-    }
+    throw new ProjectRegistryError("Project registry and backup are unreadable", { cause: backupError });
   }
 }
 
