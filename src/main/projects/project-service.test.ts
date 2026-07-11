@@ -7,6 +7,14 @@ import { readProjectRegistry, reconcileProject, updateProjectRegistry } from "./
 import { ProjectService, ProjectServiceError } from "./project-service";
 
 const tempRoots: string[] = [];
+const PROJECT_IDS = {
+  missing: "11111111-1111-4111-8111-111111111111",
+  shared: "22222222-2222-4222-8222-222222222222",
+  manual: "33333333-3333-4333-8333-333333333333",
+  project: "44444444-4444-4444-8444-444444444444",
+  first: "55555555-5555-4555-8555-555555555555",
+  second: "66666666-6666-4666-8666-666666666666",
+} as const;
 
 async function tempWorkspace(name: string): Promise<string> {
   const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), `mcw-${name}-`));
@@ -43,7 +51,7 @@ describe("ProjectService discovery", () => {
         reconcileProject(
           registry,
           { rootPath: missingProject, source: "manual", displayName: "Keep me" },
-          { now: "2026-07-11T00:00:00.000Z", idFactory: () => "missing-id" },
+          { now: "2026-07-11T00:00:00.000Z", idFactory: () => PROJECT_IDS.missing },
         ),
       { registryPath },
     );
@@ -54,16 +62,16 @@ describe("ProjectService discovery", () => {
       codexSessionsDirectory,
       registryUpdater,
       now: () => "2026-07-11T01:00:00.000Z",
-      idFactory: () => "shared-id",
+      idFactory: () => PROJECT_IDS.shared,
     });
 
     const registry = await service.discoverAndReconcile();
     const codexProjectRef = `codex:${sharedProject[0].toUpperCase()}--${sharedProject.slice(3).replace(/[\\/]+/g, "-")}`;
 
     expect(registryUpdater).toHaveBeenCalledTimes(1);
-    expect(Object.keys(registry.projects).sort()).toEqual(["missing-id", "shared-id"]);
-    expect(registry.projects["missing-id"].displayName).toBe("Keep me");
-    expect(registry.projects["shared-id"]).toMatchObject({
+    expect(Object.keys(registry.projects).sort()).toEqual([PROJECT_IDS.missing, PROJECT_IDS.shared]);
+    expect(registry.projects[PROJECT_IDS.missing].displayName).toBe("Keep me");
+    expect(registry.projects[PROJECT_IDS.shared]).toMatchObject({
       rootPath: sharedProject,
       sources: ["claude", "codex"],
       providerRefs: { claude: ["project"], codex: [codexProjectRef] },
@@ -80,7 +88,7 @@ describe("ProjectService project management", () => {
     const service = new ProjectService({
       registryPath,
       now: () => "2026-07-11T02:00:00.000Z",
-      idFactory: () => "manual-id",
+      idFactory: () => PROJECT_IDS.manual,
     });
 
     await expect(service.registerManualFolder("relative-project")).rejects.toThrow(ProjectServiceError);
@@ -88,7 +96,7 @@ describe("ProjectService project management", () => {
 
     const registry = await service.registerManualFolder(projectDirectory, "Manual project");
 
-    expect(registry.projects["manual-id"]).toMatchObject({
+    expect(registry.projects[PROJECT_IDS.manual]).toMatchObject({
       rootPath: projectDirectory,
       displayName: "Manual project",
       sources: ["manual"],
@@ -103,11 +111,11 @@ describe("ProjectService project management", () => {
     const service = new ProjectService({
       registryPath,
       now: () => "2026-07-11T03:00:00.000Z",
-      idFactory: () => "project-id",
+      idFactory: () => PROJECT_IDS.project,
     });
     await service.registerManualFolder(projectDirectory);
 
-    const registry = await service.updateProjectMetadata("project-id", {
+    const registry = await service.updateProjectMetadata(PROJECT_IDS.project, {
       displayName: "Renamed",
       status: "진행중",
       memo: "Next step",
@@ -116,8 +124,8 @@ describe("ProjectService project management", () => {
       order: 3,
     });
 
-    expect(registry.projects["project-id"]).toMatchObject({
-      id: "project-id",
+    expect(registry.projects[PROJECT_IDS.project]).toMatchObject({
+      id: PROJECT_IDS.project,
       rootPath: projectDirectory,
       displayName: "Renamed",
       sources: ["manual"],
@@ -127,7 +135,7 @@ describe("ProjectService project management", () => {
       hidden: true,
       order: 3,
     });
-    expect(registry.projects["project-id"].updatedAt).toBe("2026-07-11T03:00:00.000Z");
+    expect(registry.projects[PROJECT_IDS.project].updatedAt).toBe("2026-07-11T03:00:00.000Z");
   });
 
   it("relinks an existing project to a validated directory without changing its id or metadata", async () => {
@@ -139,15 +147,15 @@ describe("ProjectService project management", () => {
     const service = new ProjectService({
       registryPath,
       now: () => "2026-07-11T04:00:00.000Z",
-      idFactory: () => "project-id",
+      idFactory: () => PROJECT_IDS.project,
     });
     await service.registerManualFolder(originalDirectory, "Relocatable");
 
-    const registry = await service.relinkProject("project-id", relocatedDirectory);
+    const registry = await service.relinkProject(PROJECT_IDS.project, relocatedDirectory);
 
-    expect(Object.keys(registry.projects)).toEqual(["project-id"]);
-    expect(registry.projects["project-id"]).toMatchObject({
-      id: "project-id",
+    expect(Object.keys(registry.projects)).toEqual([PROJECT_IDS.project]);
+    expect(registry.projects[PROJECT_IDS.project]).toMatchObject({
+      id: PROJECT_IDS.project,
       rootPath: relocatedDirectory,
       displayName: "Relocatable",
       sources: ["manual"],
@@ -161,12 +169,12 @@ describe("ProjectService project management", () => {
     const firstDirectory = path.join(workspace, "first");
     const secondDirectory = path.join(workspace, "second");
     await Promise.all([fs.mkdir(firstDirectory), fs.mkdir(secondDirectory)]);
-    const ids = ["first-id", "second-id"];
-    const service = new ProjectService({ registryPath, idFactory: () => ids.shift() ?? "unexpected-id" });
+    const ids: string[] = [PROJECT_IDS.first, PROJECT_IDS.second];
+    const service = new ProjectService({ registryPath, idFactory: () => ids.shift() ?? PROJECT_IDS.manual });
     await service.registerManualFolder(firstDirectory);
     await service.registerManualFolder(secondDirectory);
 
     await expect(service.updateProjectMetadata("unknown-id", { memo: "No project" })).rejects.toThrow(/not found/i);
-    await expect(service.relinkProject("first-id", secondDirectory)).rejects.toThrow(/already registered/i);
+    await expect(service.relinkProject(PROJECT_IDS.first, secondDirectory)).rejects.toThrow(/already registered/i);
   });
 });

@@ -29,6 +29,7 @@ const PROJECT_KEYS = [
   "createdAt",
   "updatedAt",
 ] as const;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const PROJECT_REGISTRY_PATH = path.join(os.homedir(), ".harness-manager", "projects.json");
 
@@ -56,6 +57,12 @@ function requiredString(value: unknown, label: string): string {
 function plainString(value: unknown, label: string): string {
   if (typeof value !== "string") throw new ProjectRegistryError(`${label} must be a string`);
   return value;
+}
+
+function uuidString(value: unknown, label: string): string {
+  const raw = requiredString(value, label);
+  if (!UUID_PATTERN.test(raw)) throw new ProjectRegistryError(`${label} must be a UUID`);
+  return raw;
 }
 
 function isoString(value: unknown, label: string): string {
@@ -97,7 +104,7 @@ function parseTracks(value: unknown): ProjectTrack[] {
 function parseProject(value: unknown, key: string): SharedProject {
   if (!isRecord(value)) throw new ProjectRegistryError(`project ${key} must be an object`);
   assertExactKeys(value, PROJECT_KEYS, `project ${key}`);
-  const id = requiredString(value.id, `project ${key}.id`);
+  const id = uuidString(value.id, `project ${key}.id`);
   if (id !== key) throw new ProjectRegistryError(`Project key ${key} does not match project id ${id}`);
   if (!Array.isArray(value.sources) || value.sources.some((source) => !SOURCES.includes(source as ProjectSource))) {
     throw new ProjectRegistryError(`project ${key}.sources is invalid`);

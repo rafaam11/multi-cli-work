@@ -14,6 +14,8 @@ import {
 } from "./project-registry";
 
 const tempRoots: string[] = [];
+const PROJECT_ONE = "11111111-1111-4111-8111-111111111111";
+const PROJECT_TWO = "22222222-2222-4222-8222-222222222222";
 
 async function tempRegistryPath(): Promise<string> {
   const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-registry-"));
@@ -26,6 +28,31 @@ afterEach(async () => {
 });
 
 describe("project registry contract", () => {
+  it("rejects project ids that are not UUIDs", () => {
+    expect(() =>
+      parseProjectRegistry({
+        schemaVersion: 1,
+        updatedAt: "2026-07-11T00:00:00.000Z",
+        projects: {
+          "project-1": {
+            id: "project-1",
+            rootPath: "C:\\work",
+            displayName: null,
+            sources: ["manual"],
+            providerRefs: { claude: [], codex: [] },
+            status: null,
+            memo: "",
+            tracks: [],
+            hidden: false,
+            order: null,
+            createdAt: "2026-07-11T00:00:00.000Z",
+            updatedAt: "2026-07-11T00:00:00.000Z",
+          },
+        },
+      }),
+    ).toThrow(/UUID/i);
+  });
+
   it("rejects unsupported schemas and project keys that do not match their ids", () => {
     expect(() => parseProjectRegistry({ schemaVersion: 2, updatedAt: "2026-07-11T00:00:00.000Z", projects: {} })).toThrow(
       ProjectRegistryError,
@@ -36,8 +63,8 @@ describe("project registry contract", () => {
         schemaVersion: 1,
         updatedAt: "2026-07-11T00:00:00.000Z",
         projects: {
-          wrong: {
-            id: "actual",
+          [PROJECT_ONE]: {
+            id: PROJECT_TWO,
             rootPath: "C:\\work",
             displayName: null,
             sources: ["manual"],
@@ -66,16 +93,16 @@ describe("project registry contract", () => {
     const withManual = reconcileProject(
       initial,
       { rootPath: "C:\\Work\\Example", source: "manual" },
-      { now, idFactory: () => "project-1", platform: "win32" },
+      { now, idFactory: () => PROJECT_ONE, platform: "win32" },
     );
     const discovered = reconcileProject(
       withManual,
       { rootPath: "c:/work/example/", source: "codex", providerRef: "codex:C--work-example" },
-      { now: "2026-07-11T02:00:00.000Z", idFactory: () => "project-2", platform: "win32" },
+      { now: "2026-07-11T02:00:00.000Z", idFactory: () => PROJECT_TWO, platform: "win32" },
     );
 
-    expect(Object.keys(discovered.projects)).toEqual(["project-1"]);
-    expect(discovered.projects["project-1"]).toMatchObject({
+    expect(Object.keys(discovered.projects)).toEqual([PROJECT_ONE]);
+    expect(discovered.projects[PROJECT_ONE]).toMatchObject({
       sources: ["manual", "codex"],
       providerRefs: { claude: [], codex: ["codex:C--work-example"] },
     });
@@ -83,8 +110,8 @@ describe("project registry contract", () => {
 
   it("accepts blank track titles and item text while an editor is creating them", () => {
     const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
-    registry.projects["project-1"] = {
-      id: "project-1",
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
       rootPath: "C:\\Work",
       displayName: null,
       sources: ["manual"],
@@ -98,7 +125,7 @@ describe("project registry contract", () => {
       updatedAt: "2026-07-11T00:00:00.000Z",
     };
 
-    expect(parseProjectRegistry(registry).projects["project-1"].tracks[0]).toEqual(registry.projects["project-1"].tracks[0]);
+    expect(parseProjectRegistry(registry).projects[PROJECT_ONE].tracks[0]).toEqual(registry.projects[PROJECT_ONE].tracks[0]);
   });
 });
 
@@ -124,7 +151,11 @@ describe("project registry storage", () => {
           reconcileProject(
             registry,
             { rootPath, source: "manual" },
-            { now: `2026-07-11T00:00:0${id}.000Z`, idFactory: () => `project-${id}`, platform: "win32" },
+            {
+              now: `2026-07-11T00:00:0${id}.000Z`,
+              idFactory: () => (id === "1" ? PROJECT_ONE : PROJECT_TWO),
+              platform: "win32",
+            },
           ),
         { registryPath, lockRetryMs: 2_000 },
       );
@@ -132,7 +163,7 @@ describe("project registry storage", () => {
     await Promise.all([addProject("1", "C:\\One"), addProject("2", "C:\\Two")]);
 
     const snapshot = await readProjectRegistry({ registryPath });
-    expect(Object.keys(snapshot.registry.projects).sort()).toEqual(["project-1", "project-2"]);
+    expect(Object.keys(snapshot.registry.projects).sort()).toEqual([PROJECT_ONE, PROJECT_TWO]);
     expect(snapshot.source).toBe("primary");
     expect(snapshot.writable).toBe(true);
   });
