@@ -127,6 +127,86 @@ describe("project registry contract", () => {
 
     expect(parseProjectRegistry(registry).projects[PROJECT_ONE].tracks[0]).toEqual(registry.projects[PROJECT_ONE].tracks[0]);
   });
+
+  it("rejects provider refs with the wrong shape or missing source membership", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["manual"],
+      providerRefs: { claude: ["claude:C--Work"], codex: ["C--Work"] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+
+    expect(() => parseProjectRegistry(registry)).toThrow(/provider ref|source/i);
+  });
+
+  it("rejects duplicate normalized roots and provider refs across UUIDs", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    const common = {
+      displayName: null,
+      sources: ["codex" as const],
+      providerRefs: { claude: [], codex: ["codex:C--Work"] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+    registry.projects[PROJECT_ONE] = { ...common, id: PROJECT_ONE, rootPath: "C:\\Work" };
+    registry.projects[PROJECT_TWO] = { ...common, id: PROJECT_TWO, rootPath: "c:/work/" };
+
+    expect(() => parseProjectRegistry(registry)).toThrow(/duplicate/i);
+  });
+
+  it("keeps a UUID when a known provider ref reports a moved root", () => {
+    const initial = reconcileProject(
+      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
+      { rootPath: "C:\\Old", source: "codex", providerRef: "codex:C--Work" },
+      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
+    );
+
+    const moved = reconcileProject(
+      initial,
+      { rootPath: "D:\\New", source: "codex", providerRef: "codex:C--Work" },
+      { now: "2026-07-11T02:00:00.000Z", idFactory: () => PROJECT_TWO, platform: "win32" },
+    );
+
+    expect(Object.keys(moved.projects)).toEqual([PROJECT_ONE]);
+    expect(moved.projects[PROJECT_ONE].rootPath).toBe("D:\\New");
+  });
+
+  it("treats rootPath as primary and atomically reassigns a conflicting provider alias", () => {
+    const withPathOwner = reconcileProject(
+      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
+      { rootPath: "C:\\Target", source: "manual" },
+      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
+    );
+    const withAliasOwner = reconcileProject(
+      withPathOwner,
+      { rootPath: "C:\\Old", source: "codex", providerRef: "codex:C--Target" },
+      { now: "2026-07-11T01:30:00.000Z", idFactory: () => PROJECT_TWO, platform: "win32" },
+    );
+
+    const reconciled = reconcileProject(
+      withAliasOwner,
+      { rootPath: "C:\\Target", source: "codex", providerRef: "codex:C--Target" },
+      { now: "2026-07-11T02:00:00.000Z", platform: "win32" },
+    );
+
+    expect(reconciled.projects[PROJECT_ONE].providerRefs.codex).toEqual(["codex:C--Target"]);
+    expect(reconciled.projects[PROJECT_TWO].providerRefs.codex).toEqual([]);
+    expect(() => parseProjectRegistry(reconciled)).not.toThrow();
+  });
 });
 
 describe("project registry storage", () => {

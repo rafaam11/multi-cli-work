@@ -75,7 +75,9 @@ function uniqueStringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.length === 0)) {
     throw new ProjectRegistryError(`${label} must be a string array`);
   }
-  return [...new Set(value)];
+  const unique = [...new Set(value)];
+  if (unique.length !== value.length) throw new ProjectRegistryError(`${label} contains duplicate values`);
+  return unique;
 }
 
 function parseTracks(value: unknown): ProjectTrack[] {
@@ -111,6 +113,23 @@ function parseProject(value: unknown, key: string): SharedProject {
   }
   if (!isRecord(value.providerRefs)) throw new ProjectRegistryError(`project ${key}.providerRefs must be an object`);
   assertExactKeys(value.providerRefs, ["claude", "codex"], `project ${key}.providerRefs`);
+  const sources = SOURCES.filter((source) => (value.sources as unknown[]).includes(source));
+  const providerRefs = {
+    claude: uniqueStringArray(value.providerRefs.claude, `project ${key}.providerRefs.claude`),
+    codex: uniqueStringArray(value.providerRefs.codex, `project ${key}.providerRefs.codex`),
+  };
+  if (providerRefs.claude.some((providerRef) => providerRef.includes(":"))) {
+    throw new ProjectRegistryError(`project ${key} has an invalid Claude provider ref`);
+  }
+  if (providerRefs.codex.some((providerRef) => !/^codex:.+/.test(providerRef))) {
+    throw new ProjectRegistryError(`project ${key} has an invalid Codex provider ref`);
+  }
+  if (providerRefs.claude.length > 0 && !sources.includes("claude")) {
+    throw new ProjectRegistryError(`project ${key} has Claude provider refs without the Claude source`);
+  }
+  if (providerRefs.codex.length > 0 && !sources.includes("codex")) {
+    throw new ProjectRegistryError(`project ${key} has Codex provider refs without the Codex source`);
+  }
   if (value.displayName !== null && typeof value.displayName !== "string") {
     throw new ProjectRegistryError(`project ${key}.displayName must be string or null`);
   }
@@ -127,11 +146,8 @@ function parseProject(value: unknown, key: string): SharedProject {
     id,
     rootPath: requiredString(value.rootPath, `project ${key}.rootPath`),
     displayName: value.displayName,
-    sources: SOURCES.filter((source) => (value.sources as unknown[]).includes(source)),
-    providerRefs: {
-      claude: uniqueStringArray(value.providerRefs.claude, `project ${key}.providerRefs.claude`),
-      codex: uniqueStringArray(value.providerRefs.codex, `project ${key}.providerRefs.codex`),
-    },
+    sources,
+    providerRefs,
     status: value.status as ProjectStatus | null,
     memo: value.memo,
     tracks: parseTracks(value.tracks),
@@ -148,6 +164,26 @@ export function parseProjectRegistry(value: unknown): ProjectRegistryV1 {
   if (value.schemaVersion !== 1) throw new ProjectRegistryError(`Unsupported project registry schema: ${String(value.schemaVersion)}`);
   if (!isRecord(value.projects)) throw new ProjectRegistryError("Project registry projects must be an object");
   const projects = Object.fromEntries(Object.entries(value.projects).map(([key, project]) => [key, parseProject(project, key)]));
+  const rootOwners = new Map<string, string>();
+  const refOwners = new Map<string, string>();
+  for (const project of Object.values(projects)) {
+    const root = normalizeProjectPath(project.rootPath);
+    const rootOwner = rootOwners.get(root);
+    if (rootOwner && rootOwner !== project.id) {
+      throw new ProjectRegistryError(`Projects ${rootOwner} and ${project.id} have duplicate normalized roots`);
+    }
+    rootOwners.set(root, project.id);
+    for (const kind of ["claude", "codex"] as const) {
+      for (const providerRef of project.providerRefs[kind]) {
+        const key = `${kind}:${providerRef}`;
+        const refOwner = refOwners.get(key);
+        if (refOwner && refOwner !== project.id) {
+          throw new ProjectRegistryError(`Projects ${refOwner} and ${project.id} have duplicate provider refs`);
+        }
+        refOwners.set(key, project.id);
+      }
+    }
+  }
   const registry: ProjectRegistryV1 = {
     schemaVersion: 1,
     updatedAt: isoString(value.updatedAt, "Project registry updatedAt"),
@@ -187,9 +223,29 @@ export function reconcileProject(
 ): ProjectRegistryV1 {
   const now = options.now ?? new Date().toISOString();
   const normalized = normalizeProjectPath(discovery.rootPath, options.platform);
-  const existing = Object.values(registry.projects).find(
+  const pathMatch = Object.values(registry.projects).find(
     (project) => normalizeProjectPath(project.rootPath, options.platform) === normalized,
   );
+  const discoveryProvider = discovery.source === "manual" ? null : discovery.source;
+  const providerMatch =
+    discovery.providerRef && discoveryProvider
+      ? Object.values(registry.projects).find((project) => project.providerRefs[discoveryProvider].includes(discovery.providerRef!))
+      : undefined;
+  const existing = pathMatch ?? providerMatch;
+  let baseProjects = registry.projects;
+  if (pathMatch && providerMatch && pathMatch.id !== providerMatch.id && discovery.providerRef && discoveryProvider) {
+    const provider = discoveryProvider;
+    const displacedRefs = {
+      ...providerMatch.providerRefs,
+      [provider]: providerMatch.providerRefs[provider].filter(
+        (providerRef) => providerRef !== discovery.providerRef,
+      ),
+    };
+    baseProjects = {
+      ...baseProjects,
+      [providerMatch.id]: { ...providerMatch, providerRefs: displacedRefs, updatedAt: now },
+    };
+  }
   const id = existing?.id ?? (options.idFactory ?? randomUUID)();
   const sources = SOURCES.filter((source) => [...(existing?.sources ?? []), discovery.source].includes(source));
   const providerRefs = {
@@ -201,7 +257,7 @@ export function reconcileProject(
   }
   const next: SharedProject = {
     id,
-    rootPath: existing?.rootPath ?? path.resolve(discovery.rootPath),
+    rootPath: providerMatch && !pathMatch ? path.resolve(discovery.rootPath) : existing?.rootPath ?? path.resolve(discovery.rootPath),
     displayName: discovery.displayName ?? existing?.displayName ?? null,
     sources,
     providerRefs,
@@ -216,7 +272,7 @@ export function reconcileProject(
   return {
     ...registry,
     updatedAt: now,
-    projects: { ...registry.projects, [id]: next },
+    projects: { ...baseProjects, [id]: next },
   };
 }
 
