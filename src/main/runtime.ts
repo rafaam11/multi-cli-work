@@ -9,6 +9,7 @@ import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
+import { shouldShowTerminalStatusNotification } from "./notification-policy";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
 import {
   RestartingTerminalWorker,
@@ -99,17 +100,35 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
   coordinator.onEvent((event: TerminalWorkerEvent) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("terminal:event", event);
     if (event.type !== "status" || (event.status !== "awaiting-input" && event.status !== "awaiting-approval")) return;
-    const window = BrowserWindow.getAllWindows()[0];
-    if (window?.isFocused() || !Notification.isSupported()) return;
-    const session = coordinator.list().find((candidate) => candidate.id === event.sessionId);
-    const title = session ? `${session.kind === "claude" ? "Claude" : "Codex"} · ${path.basename(session.cwd)}` : "Multi CLI Work";
-    const notification = new Notification({
-      title,
-      body: event.status === "awaiting-approval" ? "Approval required" : "Waiting for input",
-      silent: false,
-    });
-    notification.on("click", showMainWindow);
-    notification.show();
+    void (async () => {
+      if (!Notification.isSupported()) return;
+      const windows = BrowserWindow.getAllWindows();
+      let selectedSessionId: string | null = null;
+      try {
+        selectedSessionId = (await coordinator.state()).state.selectedSessionId;
+      } catch (error) {
+        console.error("Failed to read the selected terminal session", error);
+      }
+      if (
+        !shouldShowTerminalStatusNotification({
+          eventSessionId: event.sessionId,
+          selectedSessionId,
+          windowVisible: windows.some((window) => window.isVisible()),
+          windowFocused: windows.some((window) => window.isVisible() && window.isFocused()),
+        })
+      ) return;
+      const session = coordinator.list().find((candidate) => candidate.id === event.sessionId);
+      const title = session
+        ? `${session.kind === "claude" ? "Claude" : "Codex"} · ${path.basename(session.cwd)}`
+        : "Multi CLI Work";
+      const notification = new Notification({
+        title,
+        body: event.status === "awaiting-approval" ? "Approval required" : "Waiting for input",
+        silent: false,
+      });
+      notification.on("click", showMainWindow);
+      notification.show();
+    })().catch((error) => console.error("Failed to show terminal notification", error));
   });
 
   return {
