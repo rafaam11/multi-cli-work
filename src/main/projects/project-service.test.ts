@@ -181,6 +181,20 @@ describe("ProjectService project management", () => {
       idFactory: () => PROJECT_IDS.project,
     });
     await service.registerManualFolder(originalDirectory, "Relocatable");
+    await updateProjectRegistry(
+      (current) => ({
+        ...current,
+        projects: {
+          ...current.projects,
+          [PROJECT_IDS.project]: {
+            ...current.projects[PROJECT_IDS.project],
+            sources: ["codex"],
+            providerRefs: { claude: [], codex: ["codex:C--relocatable"] },
+          },
+        },
+      }),
+      { registryPath },
+    );
 
     const registry = await service.relinkProject(PROJECT_IDS.project, relocatedDirectory);
 
@@ -189,7 +203,7 @@ describe("ProjectService project management", () => {
       id: PROJECT_IDS.project,
       rootPath: relocatedDirectory,
       displayName: "Relocatable",
-      sources: ["manual"],
+      sources: ["manual", "codex"],
     });
     expect((await readProjectRegistry({ registryPath })).registry).toEqual(registry);
   });

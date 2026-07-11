@@ -180,6 +180,7 @@ describe("TerminalCoordinator", () => {
     const root = await tempRoot();
     const { instance, worker } = await coordinator(root);
     await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const subscriber = vi.fn(() => {
       if (subscriber.mock.calls.length === 1) throw new Error("renderer gone");
     });
@@ -191,6 +192,8 @@ describe("TerminalCoordinator", () => {
 
     expect(instance.list()[0].status).toBe("awaiting-input");
     expect(subscriber).toHaveBeenCalledTimes(2);
+    expect(consoleError).toHaveBeenCalledWith("Terminal event subscriber failed", expect.any(Error));
+    consoleError.mockRestore();
   });
 
   it("correlates a new Codex transcript and persists its resumable conversation id", async () => {
