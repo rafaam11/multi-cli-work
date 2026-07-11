@@ -7,7 +7,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve("src/main/index.ts"),
+        input: {
+          index: resolve("src/main/index.ts"),
+          "terminal-worker": resolve("src/main/terminal-worker.ts"),
+        },
       },
     },
   },
@@ -29,4 +32,3 @@ export default defineConfig({
     plugins: [react()],
   },
 });
-
