@@ -130,4 +130,16 @@ describe("TerminalSessionManager", () => {
     });
     expect(events).toHaveBeenLastCalledWith({ type: "status", sessionId: "session-1", status: "working" });
   });
+
+  it("allows an exited tab to be relaunched with the same app session id", () => {
+    const first = new FakePty();
+    const second = new FakePty();
+    const factory: ManagedPtyFactory = { spawn: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second) };
+    const manager = new TerminalSessionManager(factory, () => undefined);
+    manager.create(launchSpec());
+    first.emitExit(0);
+
+    expect(() => manager.create(launchSpec())).not.toThrow();
+    expect(factory.spawn).toHaveBeenCalledTimes(2);
+  });
 });

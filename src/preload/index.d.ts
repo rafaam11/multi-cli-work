@@ -1,10 +1,9 @@
 export {};
 
+import type { MultiCliWorkApi } from "../shared/api-types";
+
 declare global {
   interface Window {
-    multiCliWork: {
-      platform: NodeJS.Platform;
-    };
+    multiCliWork: MultiCliWorkApi;
   }
 }
-

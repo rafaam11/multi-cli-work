@@ -10,17 +10,11 @@ export interface ProviderExecutables {
   codex: string | null;
 }
 
-interface AvailableProviderExecutables {
-  powershell: string;
-  claude: string;
-  codex: string;
-}
-
 interface ProviderLaunchOptions {
   cwd: string;
   appSessionId: string;
   claudeSettingsPath: string;
-  executables: AvailableProviderExecutables;
+  executables: ProviderExecutables;
   resumeConversationId?: string | null;
 }
 
@@ -28,6 +22,11 @@ export interface ProviderLaunchCommand {
   executable: string;
   args: string[];
   providerConversationId: string | null;
+}
+
+function requireExecutable(value: string | null, label: string): string {
+  if (!value) throw new Error(`${label} executable is not available`);
+  return value;
 }
 
 const CODEX_NOTIFICATION_ARGS = [
@@ -41,7 +40,11 @@ const CODEX_NOTIFICATION_ARGS = [
 
 export function buildProviderLaunch(kind: TerminalKind, options: ProviderLaunchOptions): ProviderLaunchCommand {
   if (kind === "powershell") {
-    return { executable: options.executables.powershell, args: ["-NoLogo"], providerConversationId: null };
+    return {
+      executable: requireExecutable(options.executables.powershell, "PowerShell"),
+      args: ["-NoLogo"],
+      providerConversationId: null,
+    };
   }
   if (kind === "claude") {
     const conversationId = options.resumeConversationId ?? options.appSessionId;
@@ -49,14 +52,14 @@ export function buildProviderLaunch(kind: TerminalKind, options: ProviderLaunchO
       ? ["--resume", options.resumeConversationId]
       : ["--session-id", options.appSessionId];
     return {
-      executable: options.executables.claude,
+      executable: requireExecutable(options.executables.claude, "Claude"),
       args: [...conversationArgs, "--settings", options.claudeSettingsPath],
       providerConversationId: conversationId,
     };
   }
   const conversationArgs = options.resumeConversationId ? ["resume", options.resumeConversationId] : [];
   return {
-    executable: options.executables.codex,
+    executable: requireExecutable(options.executables.codex, "Codex"),
     args: [...conversationArgs, "-C", options.cwd, ...CODEX_NOTIFICATION_ARGS],
     providerConversationId: options.resumeConversationId ?? null,
   };
@@ -92,4 +95,3 @@ export async function detectProviderExecutables(): Promise<ProviderExecutables> 
   ]);
   return { powershell: pwsh ?? windowsPowerShell, claude, codex };
 }
-

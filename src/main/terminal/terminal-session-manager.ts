@@ -69,7 +69,9 @@ export class TerminalSessionManager {
   ) {}
 
   create(spec: TerminalLaunchSpec): TerminalSession {
-    if (this.sessions.has(spec.sessionId)) throw new Error(`Terminal session already exists: ${spec.sessionId}`);
+    const existing = this.sessions.get(spec.sessionId);
+    if (existing?.session.status === "exited") this.sessions.delete(spec.sessionId);
+    else if (existing) throw new Error(`Terminal session already exists: ${spec.sessionId}`);
     const pty = this.factory.spawn(spec.executable, spec.args, {
       cwd: spec.cwd,
       env: spec.env,
