@@ -82,6 +82,15 @@ function statusFromEvent(session: TerminalSessionView, event: TerminalWorkerEven
   return session;
 }
 
+function providerSessionLabel(session: TerminalSessionView, projectSessions: TerminalSessionView[]): string {
+  const base = providerDetails[session.kind].label;
+  const peers = projectSessions
+    .filter((candidate) => candidate.kind === session.kind)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+  if (peers.length < 2) return base;
+  return `${base} ${peers.findIndex((candidate) => candidate.id === session.id) + 1}`;
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<ProjectWorkspaceSnapshot | null>(null);
   const [sessions, setSessions] = useState<TerminalSessionView[]>([]);
@@ -109,6 +118,12 @@ export function App() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedSessionLabel = selectedSession
+    ? providerSessionLabel(
+        selectedSession,
+        sessions.filter((session) => session.projectId === selectedSession.projectId),
+      )
+    : null;
   const selectedProjectMissing = Boolean(
     selectedProject && snapshot?.missingRootProjectIds.includes(selectedProject.id),
   );
@@ -433,17 +448,18 @@ export function App() {
                         {projectSessions.map((session) => {
                           const details = providerDetails[session.kind];
                           const ProviderIcon = details.icon;
+                          const label = providerSessionLabel(session, projectSessions);
                           return (
                             <li key={session.id}>
                               <button
                                 className={`session-row ${selectedSessionId === session.id ? "selected" : ""}`}
                                 type="button"
                                 onClick={() => selectSession(session)}
-                                aria-label={`Open ${details.label} session`}
+                                aria-label={`Open ${label} session`}
                               >
                                 <span className={`status-dot status-${session.status}`} aria-hidden="true" />
                                 <ProviderIcon size={14} />
-                                <span className="session-name">{details.label}</span>
+                                <span className="session-name">{label}</span>
                                 <span className="session-status">{statusLabels[session.status]}</span>
                               </button>
                             </li>
@@ -485,7 +501,7 @@ export function App() {
             <div className="workspace-copy">
               <span className="workspace-title">
                 {selectedProject ? projectName(selectedProject) : "No project selected"}
-                {selectedSession ? <><span className="breadcrumb-separator">/</span>{providerDetails[selectedSession.kind].label}</> : null}
+                {selectedSession ? <><span className="breadcrumb-separator">/</span>{selectedSessionLabel}</> : null}
               </span>
               <span className="workspace-path" title={selectedProject?.rootPath}>{selectedProject?.rootPath ?? "Local terminal workspace"}</span>
             </div>

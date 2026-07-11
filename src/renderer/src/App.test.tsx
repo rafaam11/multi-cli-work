@@ -278,6 +278,22 @@ describe("project workspace", () => {
     expect(harness.api.providers.availability).toHaveBeenCalledOnce();
   });
 
+  it("gives same-provider sessions stable visible and accessible ordinals", async () => {
+    const secondPowerShell: TerminalSessionView = {
+      ...powershellSession,
+      id: "session-pwsh-second",
+      createdAt: "2026-07-11T03:00:00.000Z",
+      updatedAt: "2026-07-11T03:00:00.000Z",
+    };
+    const harness = createApi({ sessions: [secondPowerShell, powershellSession] });
+    window.multiCliWork = harness.api;
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Open PowerShell 1 session" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open PowerShell 2 session" })).toBeInTheDocument();
+  });
+
   it("restores a persisted project and session selection when both still exist", async () => {
     const dashboardSession: TerminalSessionView = {
       ...powershellSession,
