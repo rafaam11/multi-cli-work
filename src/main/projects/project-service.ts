@@ -106,6 +106,19 @@ export class ProjectService {
     );
   }
 
+  async findMissingProjectRoots(registry: ProjectRegistryV1): Promise<string[]> {
+    const checks = await Promise.all(
+      Object.values(registry.projects).map(async (project) => {
+        try {
+          return (await fs.stat(project.rootPath)).isDirectory() ? null : project.id;
+        } catch {
+          return project.id;
+        }
+      }),
+    );
+    return checks.filter((projectId): projectId is string => projectId !== null);
+  }
+
   async registerManualFolder(rootPath: string, displayName?: string | null): Promise<ProjectRegistryV1> {
     validateDisplayName(displayName);
     const validatedPath = await this.validateDirectory(rootPath);

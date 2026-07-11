@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { TerminalLaunchSpec, TerminalWorkerRequest, TerminalWorkerResponse } from "../../shared/terminal-types";
 import { TerminalWorkerClient, type TerminalWorkerTransport } from "./terminal-worker-client";
 
@@ -89,5 +89,15 @@ describe("TerminalWorkerClient", () => {
 
     await expect(pending).rejects.toThrow(/worker exited.*7/i);
   });
-});
 
+  it("notifies lifecycle subscribers when the utility process exits", () => {
+    const worker = new FakeWorker();
+    const client = new TerminalWorkerClient(worker);
+    const listener = vi.fn();
+    client.onExit(listener);
+
+    worker.emitExit(9);
+
+    expect(listener).toHaveBeenCalledWith(9);
+  });
+});

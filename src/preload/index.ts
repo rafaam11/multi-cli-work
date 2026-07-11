@@ -16,6 +16,7 @@ const api: MultiCliWorkApi = {
   },
   terminals: {
     list: () => ipcRenderer.invoke("terminals:list"),
+    state: () => ipcRenderer.invoke("terminals:state"),
     create: (input) => ipcRenderer.invoke("terminals:create", input),
     attach: (sessionId) => ipcRenderer.invoke("terminals:attach", sessionId),
     write: (sessionId, data) => ipcRenderer.invoke("terminals:write", sessionId, data),

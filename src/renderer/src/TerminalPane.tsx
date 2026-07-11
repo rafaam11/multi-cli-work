@@ -78,6 +78,28 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       if (!disposed) onErrorRef.current(getErrorMessage(error));
     };
 
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (!event.ctrlKey || !event.shiftKey) return true;
+      const key = event.code || event.key;
+      if (key !== "KeyC" && key !== "KeyV") return true;
+      if (event.type !== "keydown") return false;
+
+      if (key === "KeyC") {
+        const selection = terminal.getSelection();
+        if (selection) void navigator.clipboard.writeText(selection).catch(reportError);
+      } else if (!isReadOnly(sessionRef.current)) {
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (!disposed && text && !isReadOnly(sessionRef.current)) {
+              return window.multiCliWork.terminals.write(session.id, text);
+            }
+          })
+          .catch(reportError);
+      }
+      return false;
+    });
+
     const resize = () => {
       if (disposed || isReadOnly(sessionRef.current)) return;
       try {

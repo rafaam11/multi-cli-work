@@ -80,6 +80,37 @@ describe("ProjectService discovery", () => {
 });
 
 describe("ProjectService project management", () => {
+  it("reports missing roots without mutating project registry records", async () => {
+    const workspace = await tempWorkspace("service-missing-roots");
+    const existingDirectory = path.join(workspace, "existing");
+    const missingDirectory = path.join(workspace, "missing");
+    await fs.mkdir(existingDirectory);
+    const service = new ProjectService();
+    const existing = {
+      id: PROJECT_IDS.first,
+      rootPath: existingDirectory,
+      displayName: null,
+      sources: ["manual" as const],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: "2026-07-11T00:00:00.000Z",
+      updatedAt: "2026-07-11T00:00:00.000Z",
+    };
+    const missing = { ...existing, id: PROJECT_IDS.second, rootPath: missingDirectory };
+    const registry = {
+      schemaVersion: 1 as const,
+      updatedAt: "2026-07-11T00:00:00.000Z",
+      projects: { [existing.id]: existing, [missing.id]: missing },
+    };
+
+    await expect(service.findMissingProjectRoots(registry)).resolves.toEqual([PROJECT_IDS.second]);
+    expect(Object.keys(registry.projects[PROJECT_IDS.second])).not.toContain("rootMissing");
+  });
+
   it("registers an existing absolute directory and rejects invalid manual paths", async () => {
     const workspace = await tempWorkspace("service-register");
     const registryPath = path.join(workspace, "registry", "projects.json");

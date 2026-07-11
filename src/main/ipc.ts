@@ -14,6 +14,7 @@ export interface IpcRegistrar {
 
 interface ProjectServiceGateway {
   discoverAndReconcile(): Promise<ProjectRegistryV1>;
+  findMissingProjectRoots(registry: ProjectRegistryV1): Promise<string[]>;
   registerManualFolder(rootPath: string, displayName?: string | null): Promise<ProjectRegistryV1>;
   updateProjectMetadata(projectId: string, update: ProjectMetadataUpdate): Promise<ProjectRegistryV1>;
   relinkProject(projectId: string, rootPath: string): Promise<ProjectRegistryV1>;
@@ -21,6 +22,7 @@ interface ProjectServiceGateway {
 
 interface TerminalCoordinatorGateway {
   list(): unknown;
+  state(): Promise<unknown>;
   create(input: CreateTerminalInput): Promise<unknown>;
   attach(sessionId: string): Promise<unknown>;
   write(sessionId: string, data: string): Promise<void>;
@@ -102,12 +104,18 @@ function projectForPath(registry: ProjectRegistryV1, rootPath: string): SharedPr
 }
 
 export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependencies): void {
-  ipc.handle("projects:list", () => dependencies.readRegistry());
-  ipc.handle("projects:refresh", async () => ({
-    registry: await dependencies.projectService.discoverAndReconcile(),
-    source: "primary" as const,
-    writable: true,
-  }));
+  const annotateMissingRoots = async (snapshot: ProjectRegistrySnapshot) => ({
+    ...snapshot,
+    missingRootProjectIds: await dependencies.projectService.findMissingProjectRoots(snapshot.registry),
+  });
+  ipc.handle("projects:list", async () => annotateMissingRoots(await dependencies.readRegistry()));
+  ipc.handle("projects:refresh", async () =>
+    annotateMissingRoots({
+      registry: await dependencies.projectService.discoverAndReconcile(),
+      source: "primary" as const,
+      writable: true,
+    }),
+  );
   ipc.handle("projects:add-folder", async () => {
     const rootPath = await dependencies.chooseDirectory();
     if (!rootPath) return null;
@@ -126,6 +134,7 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   });
   ipc.handle("providers:availability", () => dependencies.getAvailability());
   ipc.handle("terminals:list", () => dependencies.coordinator.list());
+  ipc.handle("terminals:state", () => dependencies.coordinator.state());
   ipc.handle("terminals:create", async (_event, input: unknown) => dependencies.coordinator.create(validateCreateInput(input)));
   ipc.handle("terminals:attach", (_event, sessionId: unknown) =>
     dependencies.coordinator.attach(nonEmptyString(sessionId, "Session id")),

@@ -45,14 +45,24 @@ class FakeWorker implements TerminalWorkerGateway {
   readonly resize = vi.fn(async () => undefined);
   readonly stop = vi.fn(async () => undefined);
   private listener: (event: TerminalWorkerEvent) => void = () => undefined;
+  private exitListener: (code: number) => void = () => undefined;
 
   onEvent(listener: (event: TerminalWorkerEvent) => void): () => void {
     this.listener = listener;
     return () => undefined;
   }
 
+  onExit(listener: (code: number) => void): () => void {
+    this.exitListener = listener;
+    return () => undefined;
+  }
+
   emit(event: TerminalWorkerEvent): void {
     this.listener(event);
+  }
+
+  emitWorkerExit(code: number): void {
+    this.exitListener(code);
   }
 }
 
@@ -169,6 +179,40 @@ describe("TerminalCoordinator", () => {
     );
   });
 
+  it("exposes the persisted project and session selection after initialization", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    const second = await coordinator(root);
+    const snapshot = await second.instance.state();
+
+    expect(snapshot.state).toMatchObject({
+      selectedProjectId: "project-1",
+      selectedSessionId: "session-1",
+    });
+    expect(snapshot.source).toBe("primary");
+  });
+
+  it("never forwards resize requests for exited or errored sessions", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    const restoredWorker = new FakeWorker();
+    const restored = await coordinator(root, restoredWorker);
+    await restored.instance.resize("session-1", 100, 30);
+    expect(restoredWorker.resize).not.toHaveBeenCalled();
+
+    const activeWorker = new FakeWorker();
+    const active = await coordinator(await tempRoot(), activeWorker);
+    await active.instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    activeWorker.emit({ type: "status", sessionId: "session-1", status: "error" });
+    await active.instance.flush();
+    await active.instance.resize("session-1", 100, 30);
+    expect(activeWorker.resize).not.toHaveBeenCalled();
+  });
+
   it("accepts structured provider hook status without exposing it to renderer IPC", async () => {
     const root = await tempRoot();
     const { instance } = await coordinator(root);
@@ -180,6 +224,18 @@ describe("TerminalCoordinator", () => {
     expect(instance.list()[0].status).toBe("awaiting-approval");
   });
 
+  it("ignores stale provider hook files for restored sessions without a running PTY", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    const restored = await coordinator(root);
+
+    restored.instance.applyProviderStatus("session-1", "awaiting-approval");
+    await restored.instance.flush();
+
+    expect(restored.instance.list()[0]).toMatchObject({ status: "exited", pid: null });
+  });
+
   it("stops every running PTY during explicit app shutdown", async () => {
     const root = await tempRoot();
     const { instance, worker } = await coordinator(root);
@@ -188,5 +244,19 @@ describe("TerminalCoordinator", () => {
     await instance.shutdown();
 
     expect(worker.stop).toHaveBeenCalledWith("session-1");
+  });
+
+  it("marks and broadcasts active sessions as errors when the utility process exits", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    const listener = vi.fn();
+    instance.onEvent(listener);
+
+    worker.emitWorkerExit(9);
+    await instance.flush();
+
+    expect(instance.list()[0]).toMatchObject({ status: "error", pid: null, exitCode: null });
+    expect(listener).toHaveBeenCalledWith({ type: "status", sessionId: "session-1", status: "error" });
   });
 });

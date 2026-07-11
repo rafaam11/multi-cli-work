@@ -31,6 +31,7 @@ export interface TerminalWorkerGateway {
   resize(sessionId: string, cols: number, rows: number): Promise<void>;
   stop(sessionId: string): Promise<void>;
   onEvent(listener: (event: TerminalWorkerEvent) => void): () => void;
+  onExit(listener: (code: number) => void): () => void;
 }
 
 interface TerminalCoordinatorOptions {
@@ -79,6 +80,9 @@ export class TerminalCoordinator {
     options.worker.onEvent((event) => {
       this.eventChain = this.eventChain.then(() => this.handleWorkerEvent(event));
     });
+    options.worker.onExit((code) => {
+      this.eventChain = this.eventChain.then(() => this.handleWorkerExit(code));
+    });
   }
 
   async initialize(): Promise<void> {
@@ -88,6 +92,10 @@ export class TerminalCoordinator {
 
   list(): TerminalSessionView[] {
     return [...this.views.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  state() {
+    return readAppState({ statePath: this.options.statePath });
   }
 
   async create(input: CreateTerminalInput): Promise<TerminalSessionView> {
@@ -149,6 +157,9 @@ export class TerminalCoordinator {
 
   resize(sessionId: string, cols: number, rows: number): Promise<void> {
     this.validateDimensions(cols, rows);
+    const view = this.views.get(sessionId);
+    if (!view) throw new Error(`Unknown terminal session: ${sessionId}`);
+    if (view.pid === null || view.status === "exited" || view.status === "error") return Promise.resolve();
     return this.options.worker.resize(sessionId, cols, rows);
   }
 
@@ -187,6 +198,8 @@ export class TerminalCoordinator {
   }
 
   applyProviderStatus(sessionId: string, status: TerminalStatus): void {
+    const view = this.views.get(sessionId);
+    if (!view || view.pid === null || view.status === "exited" || view.status === "error") return;
     this.eventChain = this.eventChain.then(() =>
       this.handleWorkerEvent({ type: "status", sessionId, status }),
     );
@@ -303,6 +316,21 @@ export class TerminalCoordinator {
       await this.persistView(view);
     }
     this.subscribers.forEach((listener) => listener(event));
+  }
+
+  private async handleWorkerExit(_code: number): Promise<void> {
+    const active = this.list().filter(
+      (view) => view.pid !== null && view.status !== "exited" && view.status !== "error",
+    );
+    for (const view of active) {
+      view.status = "error";
+      view.pid = null;
+      view.exitCode = null;
+      view.updatedAt = this.options.now();
+      await this.persistView(view);
+      const event: TerminalWorkerEvent = { type: "status", sessionId: view.id, status: "error" };
+      this.subscribers.forEach((listener) => listener(event));
+    }
   }
 
   private validateDimensions(cols: number, rows: number): void {

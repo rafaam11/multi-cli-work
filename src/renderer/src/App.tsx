@@ -1,5 +1,5 @@
-import type { ProviderAvailability, TerminalSessionView } from "@shared/api-types";
-import type { ProjectRegistrySnapshot, SharedProject } from "@shared/project-types";
+import type { ProjectWorkspaceSnapshot, ProviderAvailability, TerminalSessionView } from "@shared/api-types";
+import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, TerminalStatus, TerminalWorkerEvent } from "@shared/terminal-types";
 import {
   Bot,
@@ -10,6 +10,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  FolderX,
   MonitorDot,
   Plus,
   RefreshCw,
@@ -19,11 +20,16 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { TerminalPane } from "./TerminalPane";
 
 const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
 const EMPTY_AVAILABILITY: ProviderAvailability = { powershell: false, claude: false, codex: false };
+const DEFAULT_SIDEBAR_WIDTH = 264;
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 420;
+const MIN_WORKSPACE_WIDTH = 480;
+const SIDEBAR_RESIZER_WIDTH = 4;
 
 const providerDetails: Record<
   TerminalKind,
@@ -59,6 +65,15 @@ function replaceSession(sessions: TerminalSessionView[], next: TerminalSessionVi
   return sessions.map((session) => (session.id === next.id ? next : session));
 }
 
+function mergeAttachedSession(sessions: TerminalSessionView[], attached: TerminalSessionView): TerminalSessionView[] {
+  return sessions.map((current) => {
+    if (current.id !== attached.id) return current;
+    const currentFinished = current.status === "exited" || current.status === "error";
+    const attachedFinished = attached.status === "exited" || attached.status === "error";
+    return currentFinished && !attachedFinished ? current : attached;
+  });
+}
+
 function statusFromEvent(session: TerminalSessionView, event: TerminalWorkerEvent): TerminalSessionView {
   if (event.type === "status") return { ...session, status: event.status };
   if (event.type === "exit") {
@@ -68,7 +83,7 @@ function statusFromEvent(session: TerminalSessionView, event: TerminalWorkerEven
 }
 
 export function App() {
-  const [snapshot, setSnapshot] = useState<ProjectRegistrySnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<ProjectWorkspaceSnapshot | null>(null);
   const [sessions, setSessions] = useState<TerminalSessionView[]>([]);
   const [availability, setAvailability] = useState(EMPTY_AVAILABILITY);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -79,6 +94,7 @@ export function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -93,38 +109,65 @@ export function App() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedProjectMissing = Boolean(
+    selectedProject && snapshot?.missingRootProjectIds.includes(selectedProject.id),
+  );
+
+  const maximumSidebarWidth = useCallback(
+    () => Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - MIN_WORKSPACE_WIDTH - SIDEBAR_RESIZER_WIDTH)),
+    [],
+  );
+
+  const clampSidebarWidth = useCallback(
+    (width: number) => Math.min(maximumSidebarWidth(), Math.max(MIN_SIDEBAR_WIDTH, width)),
+    [maximumSidebarWidth],
+  );
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [listed, refreshed, terminalSessions, providers] = await Promise.all([
+      const refreshResultPromise = window.multiCliWork.projects.refresh().then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      const [listed, refreshResult, terminalSessions, providers, appState] = await Promise.all([
         window.multiCliWork.projects.list(),
-        window.multiCliWork.projects.refresh(),
+        refreshResultPromise,
         window.multiCliWork.terminals.list(),
         window.multiCliWork.providers.availability(),
+        window.multiCliWork.terminals.state(),
       ]);
-      const registrySnapshot = refreshed ?? listed;
+      const registrySnapshot = refreshResult.ok
+        ? refreshResult.value
+        : {
+            ...listed,
+            warning: [listed.warning, `Project discovery refresh failed: ${errorMessage(refreshResult.error)}`]
+              .filter(Boolean)
+              .join(" "),
+          };
       const visibleProjects = Object.values(registrySnapshot.registry.projects)
         .filter((project) => !project.hidden)
         .sort((left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER));
-      const initialProject = visibleProjects[0] ?? null;
-      const initialSession = initialProject
-        ? terminalSessions
-            .filter((session) => session.projectId === initialProject.id)
-            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
-        : null;
+      const restoredProject = visibleProjects.find((project) => project.id === appState.state.selectedProjectId) ?? null;
+      const initialProject = restoredProject ?? visibleProjects[0] ?? null;
+      const restoredSession = terminalSessions.find((session) => session.id === appState.state.selectedSessionId) ?? null;
+      const initialSession = restoredProject
+        ? restoredSession?.projectId === restoredProject.id
+          ? restoredSession
+          : null
+        : initialProject
+          ? terminalSessions
+              .filter((session) => session.projectId === initialProject.id)
+              .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null
+          : null;
 
       setSnapshot(registrySnapshot);
       setSessions(terminalSessions);
       setAvailability(providers);
       setExpandedProjects(new Set(visibleProjects.map((project) => project.id)));
-      setSelectedProjectId((current) =>
-        current && visibleProjects.some((project) => project.id === current) ? current : initialProject?.id ?? null,
-      );
-      setSelectedSessionId((current) =>
-        current && terminalSessions.some((session) => session.id === current) ? current : initialSession?.id ?? null,
-      );
+      setSelectedProjectId(initialProject?.id ?? null);
+      setSelectedSessionId(initialSession?.id ?? null);
     } catch (error) {
       setLoadError(errorMessage(error));
     } finally {
@@ -135,6 +178,28 @@ export function App() {
   useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace]);
+
+  useEffect(() => {
+    const handleWindowResize = () => setSidebarWidth((current) => clampSidebarWidth(current));
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [clampSidebarWidth]);
+
+  const beginSidebarResize = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      document.body.classList.add("sidebar-resizing");
+      const handleMouseMove = (moveEvent: MouseEvent) => setSidebarWidth(clampSidebarWidth(moveEvent.clientX));
+      const handleMouseUp = () => {
+        document.body.classList.remove("sidebar-resizing");
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+      };
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    },
+    [clampSidebarWidth],
+  );
 
   useEffect(
     () =>
@@ -204,7 +269,7 @@ export function App() {
   };
 
   const startSession = async (kind: TerminalKind) => {
-    if (!selectedProject || !availability[kind]) return;
+    if (!selectedProject || selectedProjectMissing || !availability[kind]) return;
     setSessionMenuOpen(false);
     setPendingAction(true);
     setActionError(null);
@@ -225,7 +290,7 @@ export function App() {
   };
 
   const resumeSession = async () => {
-    if (!selectedSession) return;
+    if (!selectedSession || selectedProjectMissing) return;
     setPendingAction(true);
     setActionError(null);
     try {
@@ -282,6 +347,7 @@ export function App() {
         if (!current) return current;
         return {
           ...current,
+          missingRootProjectIds: current.missingRootProjectIds.filter((id) => id !== relinked.id),
           registry: {
             ...current.registry,
             projects: { ...current.registry.projects, [relinked.id]: relinked },
@@ -296,7 +362,10 @@ export function App() {
   const finished = selectedSession?.status === "exited" || selectedSession?.status === "error";
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
       <aside className="project-sidebar">
         <header className="brand-block">
           <span className="brand-mark" aria-hidden="true">
@@ -311,7 +380,7 @@ export function App() {
         <nav className="project-navigation" aria-label="Projects">
           <div className="section-heading">
             <span>Projects</span>
-            <button className="icon-button" type="button" onClick={() => void addProject()} aria-label="Add project" title="Add project">
+            <button className="icon-button" type="button" onClick={() => void addProject()} disabled={Boolean(snapshot && !snapshot.writable)} aria-label="Add project" title="Add project">
               <FolderPlus size={16} />
             </button>
           </div>
@@ -334,12 +403,13 @@ export function App() {
               {projects.map((project) => {
                 const name = projectName(project);
                 const expanded = expandedProjects.has(project.id);
+                const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
                 const projectSessions = sessions
                   .filter((session) => session.projectId === project.id)
                   .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
                 return (
                   <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
-                    <div className={`project-row ${selectedProjectId === project.id ? "selected" : ""}`}>
+                    <div className={`project-row ${selectedProjectId === project.id ? "selected" : ""} ${rootMissing ? "missing" : ""}`}>
                       <button
                         className="tree-toggle"
                         type="button"
@@ -350,12 +420,12 @@ export function App() {
                         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
                       <button className="project-select" type="button" onClick={() => selectProject(project.id)} aria-label={`Select project ${name}`}>
-                        {expanded ? <FolderOpen size={15} /> : <Folder size={15} />}
+                        {rootMissing ? <FolderX size={15} aria-label="Project folder missing" /> : expanded ? <FolderOpen size={15} /> : <Folder size={15} />}
                         <span className="project-copy">
                           <span className="project-name">{name}</span>
                           <span className="project-path" title={project.rootPath}>{project.rootPath}</span>
                         </span>
-                        {project.status ? <span className="project-status">{project.status}</span> : null}
+                        {rootMissing ? <span className="project-status missing-status">Missing</span> : project.status ? <span className="project-status">{project.status}</span> : null}
                       </button>
                     </div>
                     {expanded ? (
@@ -397,6 +467,17 @@ export function App() {
         </footer>
       </aside>
 
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-label="Resize project sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={MIN_SIDEBAR_WIDTH}
+        aria-valuemax={maximumSidebarWidth()}
+        aria-valuenow={sidebarWidth}
+        onMouseDown={beginSidebarResize}
+      />
+
       <main className="terminal-workspace" aria-label="Terminal workspace">
         <header className="workspace-header">
           <div className="workspace-identity">
@@ -418,12 +499,12 @@ export function App() {
               </span>
             ) : null}
             {selectedProject ? (
-              <button className="icon-button" type="button" onClick={() => void relinkProject()} aria-label="Relink project folder" title="Relink project folder">
+              <button className="icon-button" type="button" onClick={() => void relinkProject()} disabled={Boolean(snapshot && !snapshot.writable)} aria-label="Relink project folder" title="Relink project folder">
                 <FolderOpen size={15} />
               </button>
             ) : null}
             {selectedSession && finished ? (
-              <button className="command-button" type="button" onClick={() => void resumeSession()} disabled={pendingAction} aria-label="Resume session" title="Resume session">
+              <button className="command-button" type="button" onClick={() => void resumeSession()} disabled={pendingAction || selectedProjectMissing} aria-label="Resume session" title={selectedProjectMissing ? "Relink the project folder before resuming" : "Resume session"}>
                 <RotateCcw size={14} /><span>Resume</span>
               </button>
             ) : null}
@@ -441,7 +522,8 @@ export function App() {
               <button
                 className="new-session-button"
                 type="button"
-                disabled={!selectedProject || pendingAction}
+                disabled={!selectedProject || selectedProjectMissing || pendingAction}
+                title={selectedProjectMissing ? "Relink the project folder before starting a session" : "New session"}
                 aria-expanded={sessionMenuOpen}
                 aria-haspopup="menu"
                 onClick={() => setSessionMenuOpen((open) => !open)}
@@ -479,6 +561,13 @@ export function App() {
 
         <div className="workspace-body">
           <div className="workspace-message-area">
+            {selectedProjectMissing ? (
+              <div className="missing-root-notice" role="status">
+                <FolderX size={14} />
+                <span>Project folder is missing</span>
+                <button type="button" onClick={() => void relinkProject()} disabled={Boolean(snapshot && !snapshot.writable)} aria-label="Relink missing project folder">Relink</button>
+              </div>
+            ) : null}
             {actionError ? (
               <div className="action-error" role="alert">
                 <TriangleAlert size={14} />
@@ -496,7 +585,7 @@ export function App() {
             <TerminalPane
               key={selectedSession.id}
               session={selectedSession}
-              onAttached={(attached) => setSessions((current) => replaceSession(current, attached))}
+              onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
               onError={(message) => setActionError(message)}
             />
           ) : (

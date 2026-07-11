@@ -40,11 +40,15 @@ export interface TerminalAttachResult {
   replay: string;
 }
 
+export interface ProjectWorkspaceSnapshot extends ProjectRegistrySnapshot {
+  missingRootProjectIds: string[];
+}
+
 export interface MultiCliWorkApi {
   platform: NodeJS.Platform;
   projects: {
-    list(): Promise<ProjectRegistrySnapshot>;
-    refresh(): Promise<ProjectRegistrySnapshot>;
+    list(): Promise<ProjectWorkspaceSnapshot>;
+    refresh(): Promise<ProjectWorkspaceSnapshot>;
     addFolder(): Promise<SharedProject | null>;
     update(projectId: string, patch: ProjectMetadataPatch): Promise<SharedProject>;
     relink(projectId: string): Promise<SharedProject | null>;
@@ -54,6 +58,7 @@ export interface MultiCliWorkApi {
   };
   terminals: {
     list(): Promise<TerminalSessionView[]>;
+    state(): Promise<AppStateSnapshot>;
     create(input: CreateTerminalInput): Promise<TerminalSessionView>;
     attach(sessionId: string): Promise<TerminalAttachResult>;
     write(sessionId: string, data: string): Promise<void>;
@@ -65,4 +70,3 @@ export interface MultiCliWorkApi {
     onEvent(listener: (event: TerminalWorkerEvent) => void): () => void;
   };
 }
-

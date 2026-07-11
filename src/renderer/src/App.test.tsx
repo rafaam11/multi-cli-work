@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { MultiCliWorkApi, TerminalSessionView } from "@shared/api-types";
-import type { ProjectRegistrySnapshot, SharedProject } from "@shared/project-types";
+import type { AppStateSnapshot } from "@shared/app-state-types";
+import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
+import type { SharedProject } from "@shared/project-types";
 import type { TerminalWorkerEvent } from "@shared/terminal-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -11,8 +12,11 @@ const terminalHarness = vi.hoisted(() => ({
     rows: number;
     write: ReturnType<typeof vi.fn>;
     emitInput(data: string): void;
+    emitKey(event: Partial<KeyboardEvent>): boolean;
+    selection: string;
   }>,
   fit: vi.fn(),
+  resizeObservers: [] as ResizeObserverCallback[],
 }));
 
 vi.mock("@xterm/xterm", () => ({
@@ -20,7 +24,9 @@ vi.mock("@xterm/xterm", () => ({
     cols = 96;
     rows = 28;
     write = vi.fn();
+    selection = "";
     private readonly inputListeners = new Set<(data: string) => void>();
+    private keyHandler: ((event: KeyboardEvent) => boolean) | null = null;
 
     constructor() {
       terminalHarness.instances.push(this);
@@ -36,8 +42,20 @@ vi.mock("@xterm/xterm", () => ({
       return { dispose: () => this.inputListeners.delete(listener) };
     }
 
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
+      this.keyHandler = handler;
+    }
+
+    getSelection() {
+      return this.selection;
+    }
+
     emitInput(data: string) {
       for (const listener of this.inputListeners) listener(data);
+    }
+
+    emitKey(event: Partial<KeyboardEvent>) {
+      return this.keyHandler?.(event as KeyboardEvent) ?? true;
     }
   },
 }));
@@ -62,6 +80,15 @@ const atlas: SharedProject = {
   order: 0,
   createdAt: "2026-07-11T00:00:00.000Z",
   updatedAt: "2026-07-11T01:00:00.000Z",
+};
+
+const dashboard: SharedProject = {
+  ...atlas,
+  id: "project-dashboard",
+  rootPath: "C:\\work\\dashboard",
+  displayName: "Dashboard",
+  providerRefs: { claude: ["dashboard"], codex: [] },
+  order: 1,
 };
 
 const powershellSession: TerminalSessionView = {
@@ -89,10 +116,11 @@ const claudeSession: TerminalSessionView = {
   updatedAt: "2026-07-11T02:30:00.000Z",
 };
 
-function registry(projects: SharedProject[] = [atlas]): ProjectRegistrySnapshot {
+function registry(projects: SharedProject[] = [atlas]): ProjectWorkspaceSnapshot {
   return {
     source: "primary",
     writable: true,
+    missingRootProjectIds: [],
     registry: {
       schemaVersion: 1,
       updatedAt: "2026-07-11T03:00:00.000Z",
@@ -105,11 +133,22 @@ function createApi(options?: {
   projects?: SharedProject[];
   sessions?: TerminalSessionView[];
   warning?: string;
+  source?: ProjectWorkspaceSnapshot["source"];
+  writable?: boolean;
+  missingRootProjectIds?: string[];
+  refreshError?: Error;
+  selection?: Pick<AppStateSnapshot["state"], "selectedProjectId" | "selectedSessionId">;
 }) {
   const listeners = new Set<(event: TerminalWorkerEvent) => void>();
   const projects = options?.projects ?? [atlas];
   const sessions = options?.sessions ?? [powershellSession, claudeSession];
-  const snapshot = { ...registry(projects), warning: options?.warning };
+  const snapshot = {
+    ...registry(projects),
+    source: options?.source ?? "primary",
+    writable: options?.writable ?? true,
+    warning: options?.warning,
+    missingRootProjectIds: options?.missingRootProjectIds ?? [],
+  };
   const created: TerminalSessionView = {
     ...powershellSession,
     id: "session-new",
@@ -119,12 +158,25 @@ function createApi(options?: {
     updatedAt: "2026-07-11T04:00:00.000Z",
   };
   let resumedSession: TerminalSessionView | null = null;
+  const appState: AppStateSnapshot = {
+    source: "primary",
+    writable: true,
+    state: {
+      schemaVersion: 1,
+      updatedAt: "2026-07-11T04:00:00.000Z",
+      selectedProjectId: options?.selection?.selectedProjectId ?? atlas.id,
+      selectedSessionId: options?.selection?.selectedSessionId ?? sessions[0]?.id ?? null,
+      sessions: {},
+    },
+  };
 
   const api: MultiCliWorkApi = {
     platform: "win32",
     projects: {
       list: vi.fn().mockResolvedValue(snapshot),
-      refresh: vi.fn().mockResolvedValue(snapshot),
+      refresh: options?.refreshError
+        ? vi.fn().mockRejectedValue(options.refreshError)
+        : vi.fn().mockResolvedValue(snapshot),
       addFolder: vi.fn().mockResolvedValue(null),
       update: vi.fn(),
       relink: vi.fn().mockResolvedValue(null),
@@ -134,6 +186,7 @@ function createApi(options?: {
     },
     terminals: {
       list: vi.fn().mockResolvedValue(sessions),
+      state: vi.fn().mockResolvedValue(appState),
       create: vi.fn().mockResolvedValue(created),
       attach: vi.fn().mockImplementation(async (sessionId: string) => ({
         session: sessionId === claudeSession.id ? resumedSession ?? claudeSession : sessionId === created.id ? created : powershellSession,
@@ -177,10 +230,21 @@ function createApi(options?: {
 beforeEach(() => {
   terminalHarness.instances.length = 0;
   terminalHarness.fit.mockReset();
+  terminalHarness.resizeObservers.length = 0;
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024, writable: true });
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      readText: vi.fn().mockResolvedValue("clipboard paste"),
+      writeText: vi.fn().mockResolvedValue(undefined),
+    },
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class ResizeObserverMock {
-      constructor(private readonly listener: ResizeObserverCallback) {}
+      constructor(private readonly listener: ResizeObserverCallback) {
+        terminalHarness.resizeObservers.push(listener);
+      }
       observe() {
         this.listener([], this as unknown as ResizeObserver);
       }
@@ -207,7 +271,31 @@ describe("project workspace", () => {
     expect(harness.api.projects.list).toHaveBeenCalledOnce();
     expect(harness.api.projects.refresh).toHaveBeenCalledOnce();
     expect(harness.api.terminals.list).toHaveBeenCalledOnce();
+    expect(harness.api.terminals.state).toHaveBeenCalledOnce();
     expect(harness.api.providers.availability).toHaveBeenCalledOnce();
+  });
+
+  it("restores a persisted project and session selection when both still exist", async () => {
+    const dashboardSession: TerminalSessionView = {
+      ...powershellSession,
+      id: "session-dashboard",
+      projectId: dashboard.id,
+      cwd: dashboard.rootPath,
+    };
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession, dashboardSession],
+      selection: { selectedProjectId: dashboard.id, selectedSessionId: dashboardSession.id },
+    });
+    window.multiCliWork = harness.api;
+
+    render(<App />);
+
+    const selectedProject = await screen.findByRole("button", { name: "Select project Dashboard" });
+    expect(selectedProject.closest(".project-row")).toHaveClass("selected");
+    expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "Open PowerShell session");
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard");
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(dashboardSession.id));
   });
 
   it("persists selection and creates only available provider sessions", async () => {
@@ -293,6 +381,94 @@ describe("project workspace", () => {
     });
     expect(terminal.write).toHaveBeenCalledWith("C:\\work\\atlas\r\n");
     await waitFor(() => expect(harness.api.terminals.resize).toHaveBeenCalledWith(powershellSession.id, 96, 28));
+  });
+
+  it("maps Ctrl+Shift+C and Ctrl+Shift+V to the system clipboard without consuming normal terminal keys", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell terminal" });
+    const terminal = terminalHarness.instances.at(-1)!;
+    terminal.selection = "selected output";
+
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyC" })).toBe(false);
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output"));
+
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyV" })).toBe(false);
+    await waitFor(() =>
+      expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "clipboard paste"),
+    );
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, code: "KeyC" })).toBe(true);
+  });
+
+  it("does not resize after a running session transitions to exited", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "powershell terminal" });
+    await waitFor(() => expect(harness.api.terminals.resize).toHaveBeenCalled());
+    vi.mocked(harness.api.terminals.resize).mockClear();
+
+    await act(async () => {
+      harness.emit({ type: "exit", sessionId: powershellSession.id, exitCode: 0 });
+    });
+    for (const observer of terminalHarness.resizeObservers) {
+      observer([], {} as ResizeObserver);
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 60));
+
+    expect(harness.api.terminals.resize).not.toHaveBeenCalled();
+  });
+
+  it("keeps backup registry data visible when provider discovery refresh fails", async () => {
+    const harness = createApi({
+      source: "backup",
+      writable: false,
+      warning: "Registry backup is in use.",
+      refreshError: new Error("Provider discovery unavailable"),
+    });
+    window.multiCliWork = harness.api;
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Select project Atlas" })).toBeInTheDocument();
+    expect(screen.getByText(/Registry backup is in use/)).toBeInTheDocument();
+    expect(screen.getByText(/Provider discovery unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText("Workspace could not be loaded")).not.toBeInTheDocument();
+  });
+
+  it("marks missing project roots, offers relink, and disables new sessions until relinked", async () => {
+    const harness = createApi({ missingRootProjectIds: [atlas.id] });
+    vi.mocked(harness.api.projects.relink).mockResolvedValue({ ...atlas, rootPath: "D:\\restored\\atlas" });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    expect(await screen.findByText("Project folder is missing")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New session" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Relink project folder" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Relink project folder" }));
+    await waitFor(() => expect(harness.api.projects.relink).toHaveBeenCalledWith(atlas.id));
+    expect(screen.queryByText("Project folder is missing")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New session" })).toBeEnabled();
+  });
+
+  it("clamps a draggable sidebar between stable minimum and viewport-aware maximum widths", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 900 });
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    const separator = screen.getByRole("separator", { name: "Resize project sidebar" });
+    const shell = separator.parentElement!;
+
+    fireEvent.mouseDown(separator, { clientX: 260 });
+    fireEvent.mouseMove(window, { clientX: 800 });
+    expect(shell.style.getPropertyValue("--sidebar-width")).toBe("416px");
+    fireEvent.mouseMove(window, { clientX: 40 });
+    expect(shell.style.getPropertyValue("--sidebar-width")).toBe("200px");
+    fireEvent.mouseUp(window);
   });
 
   it("shows actionable empty, warning, and load-error states", async () => {

@@ -49,11 +49,38 @@ button:focus-visible {
 
 .app-shell {
   display: grid;
-  grid-template-columns: clamp(238px, 24vw, 294px) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 264px) 4px minmax(0, 1fr);
   width: 100%;
   height: 100%;
   background: var(--bg);
   color: var(--text);
+}
+
+.sidebar-resizer {
+  position: relative;
+  z-index: 4;
+  width: 4px;
+  min-height: 0;
+  background: var(--line);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer::after {
+  position: absolute;
+  inset: 0 -2px;
+  content: "";
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer:focus-visible {
+  background: var(--teal);
+  outline: 0;
+}
+
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .project-sidebar {
@@ -231,6 +258,11 @@ button:focus-visible {
 
 .project-row.selected {
   box-shadow: inset 2px 0 0 var(--teal);
+}
+
+.project-row.missing .project-select > svg,
+.missing-status {
+  color: var(--red);
 }
 
 .tree-toggle {
@@ -467,6 +499,41 @@ button:focus-visible {
 
 .workspace-message-area:empty {
   min-height: 0;
+}
+
+.missing-root-notice {
+  display: flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-bottom: 1px solid rgb(216 162 74 / 28%);
+  color: #e3c081;
+  background: rgb(216 162 74 / 8%);
+  font-size: 11px;
+}
+
+.missing-root-notice span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.missing-root-notice button {
+  padding: 3px 7px;
+  border: 1px solid rgb(216 162 74 / 34%);
+  border-radius: 4px;
+  color: #e3c081;
+  background: transparent;
+  cursor: pointer;
+}
+
+.missing-root-notice button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .workspace-header {
@@ -732,10 +799,6 @@ button:focus-visible {
 }
 
 @media (max-width: 880px) {
-  .app-shell {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-
   .project-status,
   .active-status,
   .workspace-actions > .icon-button:not(.danger-button) {
@@ -748,10 +811,6 @@ button:focus-visible {
 }
 
 @media (max-width: 680px) {
-  .app-shell {
-    grid-template-columns: 188px minmax(0, 1fr);
-  }
-
   .brand-context,
   .project-path,
   .session-status,

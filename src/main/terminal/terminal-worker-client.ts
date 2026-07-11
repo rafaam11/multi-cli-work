@@ -43,6 +43,7 @@ function isWorkerEvent(message: unknown): message is TerminalWorkerEvent {
 export class TerminalWorkerClient {
   private readonly pending = new Map<string, PendingCall>();
   private readonly subscribers = new Set<(event: TerminalWorkerEvent) => void>();
+  private readonly exitSubscribers = new Set<(code: number) => void>();
   private readonly idFactory: () => string;
   private readonly timeoutMs: number;
 
@@ -81,6 +82,11 @@ export class TerminalWorkerClient {
     return () => this.subscribers.delete(listener);
   }
 
+  onExit(listener: (code: number) => void): () => void {
+    this.exitSubscribers.add(listener);
+    return () => this.exitSubscribers.delete(listener);
+  }
+
   private call<T>(buildRequest: (requestId: string) => TerminalWorkerRequest): Promise<T> {
     const requestId = this.idFactory();
     return new Promise<T>((resolve, reject) => {
@@ -113,6 +119,6 @@ export class TerminalWorkerClient {
       pending.reject(error);
     }
     this.pending.clear();
+    this.exitSubscribers.forEach((listener) => listener(code));
   }
 }
-

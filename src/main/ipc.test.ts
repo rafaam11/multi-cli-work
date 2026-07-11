@@ -27,6 +27,7 @@ function setup() {
   const registry = { schemaVersion: 1 as const, updatedAt: project.updatedAt, projects: { [project.id]: project } };
   const projectService = {
     discoverAndReconcile: vi.fn(async () => registry),
+    findMissingProjectRoots: vi.fn(async () => [project.id]),
     registerManualFolder: vi.fn(async () => registry),
     updateProjectMetadata: vi.fn(async () => registry),
     relinkProject: vi.fn(async () => registry),
@@ -41,6 +42,17 @@ function setup() {
     resume: vi.fn(),
     remove: vi.fn(),
     select: vi.fn(),
+    state: vi.fn(async () => ({
+      source: "primary" as const,
+      writable: true,
+      state: {
+        schemaVersion: 1 as const,
+        updatedAt: project.updatedAt,
+        selectedProjectId: project.id,
+        selectedSessionId: null,
+        sessions: {},
+      },
+    })),
   };
   registerMainIpc(ipc, {
     projectService,
@@ -85,5 +97,27 @@ describe("main IPC boundary", () => {
     ).rejects.toThrow(/unknown fields/i);
     expect(projectService.updateProjectMetadata).not.toHaveBeenCalled();
   });
-});
 
+  it("annotates project snapshots with missing root ids without changing registry projects", async () => {
+    const { handlers, projectService, project } = setup();
+
+    const listed = await handlers.get("projects:list")!({});
+    const refreshed = await handlers.get("projects:refresh")!({});
+
+    expect(listed).toMatchObject({ missingRootProjectIds: [project.id] });
+    expect(refreshed).toMatchObject({ missingRootProjectIds: [project.id] });
+    expect(projectService.findMissingProjectRoots).toHaveBeenCalledTimes(2);
+    expect((listed as { registry: { projects: Record<string, unknown> } }).registry.projects[project.id]).not.toHaveProperty(
+      "rootMissing",
+    );
+  });
+
+  it("exposes the persisted selection through a read-only terminal state channel", async () => {
+    const { handlers, coordinator, project } = setup();
+
+    await expect(handlers.get("terminals:state")!({})).resolves.toMatchObject({
+      state: { selectedProjectId: project.id, selectedSessionId: null },
+    });
+    expect(coordinator.state).toHaveBeenCalledOnce();
+  });
+});
