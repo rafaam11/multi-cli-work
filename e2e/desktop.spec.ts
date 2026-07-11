@@ -27,7 +27,9 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
 }
 
 async function attachScreenshot(name: string): Promise<void> {
-  await test.info().attach(name, { body: await page.screenshot(), contentType: "image/png" });
+  const screenshotPath = test.info().outputPath(`${name}.png`);
+  await page.screenshot({ path: screenshotPath });
+  await test.info().attach(name, { path: screenshotPath, contentType: "image/png" });
 }
 
 test.describe.serial("Multi CLI Work desktop", () => {
