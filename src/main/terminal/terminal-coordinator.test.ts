@@ -237,6 +237,36 @@ describe("TerminalCoordinator", () => {
     );
   });
 
+  it("resumes a correlated Codex conversation without claiming a new transcript", async () => {
+    const root = await tempRoot();
+    const initialTracker = {
+      snapshot: vi.fn(async () => new Set<string>()),
+      waitForNew: vi.fn(async () => "codex-existing"),
+    };
+    const first = await coordinator(root, new FakeWorker(), initialTracker);
+    await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await first.instance.flush();
+
+    const resumeTracker = {
+      snapshot: vi.fn(async () => new Set<string>()),
+      waitForNew: vi.fn(async () => "codex-unexpected"),
+    };
+    const resumedWorker = new FakeWorker();
+    const resumed = await coordinator(root, resumedWorker, resumeTracker);
+
+    await resumed.instance.resume({ sessionId: "session-1", cols: 100, rows: 32 });
+
+    expect(resumedWorker.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-1",
+        args: expect.arrayContaining(["resume", "codex-existing", "-C", "C:\\Work"]),
+        providerConversationId: "codex-existing",
+      }),
+    );
+    expect(resumeTracker.snapshot).not.toHaveBeenCalled();
+    expect(resumeTracker.waitForNew).not.toHaveBeenCalled();
+  });
+
   it("exposes the persisted project and session selection after initialization", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
@@ -280,6 +310,21 @@ describe("TerminalCoordinator", () => {
     await instance.flush();
 
     expect(instance.list()[0].status).toBe("awaiting-approval");
+  });
+
+  it("does not let provider hooks terminalize a live Claude PTY", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+
+    instance.applyProviderStatus("session-1", "error");
+    await instance.flush();
+
+    expect(instance.list()[0]).toMatchObject({ status: "starting", pid: 123 });
+    expect(instance.hasActiveSessions()).toBe(true);
+
+    await instance.shutdown();
+    expect(worker.stop).toHaveBeenCalledWith("session-1");
   });
 
   it("ignores duplicate Claude statuses and provider hooks targeting PowerShell", async () => {

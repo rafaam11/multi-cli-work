@@ -61,4 +61,19 @@ describe("CodexSessionTracker", () => {
 
     await expect(pending).resolves.toBeNull();
   });
+
+  it("atomically reserves different transcripts for concurrent trackers", async () => {
+    const sessionsDirectory = await tempRoot();
+    await writeSession(sessionsDirectory, "created-first", "codex-created-first", "C:\\Work");
+    await writeSession(sessionsDirectory, "created-second", "codex-created-second", "C:\\Work");
+    const firstTracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 2 });
+    const secondTracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 2 });
+
+    const correlated = await Promise.all([
+      firstTracker.waitForNew("C:\\Work", new Set()),
+      secondTracker.waitForNew("C:\\Work", new Set()),
+    ]);
+
+    expect(new Set(correlated)).toEqual(new Set(["codex-created-first", "codex-created-second"]));
+  });
 });

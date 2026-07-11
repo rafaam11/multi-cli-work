@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildClaudeSettings, ensureClaudeIntegration } from "./claude-integration";
+import { buildClaudeSettings, CLAUDE_STATUS_HOOK, ensureClaudeIntegration } from "./claude-integration";
 
 const roots: string[] = [];
 
@@ -54,5 +54,9 @@ describe("Claude app-owned integration", () => {
     );
     expect(await fs.readFile(integration.hookPath, "utf8")).toContain("MULTI_CLI_WORK_SESSION_ID");
   });
-});
 
+  it("treats a failed turn as waiting for input instead of a terminal process error", () => {
+    expect(CLAUDE_STATUS_HOOK).toContain('"StopFailure" { "awaiting-input"; break }');
+    expect(CLAUDE_STATUS_HOOK).not.toContain('"StopFailure" { "error"; break }');
+  });
+});

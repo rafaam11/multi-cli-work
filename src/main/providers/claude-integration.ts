@@ -52,7 +52,7 @@ $status = switch ($eventName) {
   "SessionEnd" { "exited"; break }
   "PermissionRequest" { "awaiting-approval"; break }
   "Stop" { "awaiting-input"; break }
-  "StopFailure" { "error"; break }
+  "StopFailure" { "awaiting-input"; break }
   "Notification" {
     $notificationType = [string]$inputValue.notification_type
     if ($notificationType -eq "permission_prompt") { "awaiting-approval" }
@@ -98,4 +98,3 @@ export async function ensureClaudeIntegration(userDataPath: string): Promise<{
   await replaceFile(settingsPath, `${JSON.stringify(buildClaudeSettings(hookPath), null, 2)}\n`);
   return { settingsPath, hookPath, statusDir };
 }
-

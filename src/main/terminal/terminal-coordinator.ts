@@ -217,6 +217,8 @@ export class TerminalCoordinator {
       !view ||
       view.kind !== "claude" ||
       view.pid === null ||
+      status === "exited" ||
+      status === "error" ||
       view.status === "exited" ||
       view.status === "error"
     ) return;
