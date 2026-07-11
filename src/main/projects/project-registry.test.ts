@@ -80,6 +80,26 @@ describe("project registry contract", () => {
       providerRefs: { claude: [], codex: ["codex:C--work-example"] },
     });
   });
+
+  it("accepts blank track titles and item text while an editor is creating them", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects["project-1"] = {
+      id: "project-1",
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["manual"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [{ id: "track-1", title: "", items: [{ id: "item-1", text: "", done: false }] }],
+      hidden: false,
+      order: null,
+      createdAt: "2026-07-11T00:00:00.000Z",
+      updatedAt: "2026-07-11T00:00:00.000Z",
+    };
+
+    expect(parseProjectRegistry(registry).projects["project-1"].tracks[0]).toEqual(registry.projects["project-1"].tracks[0]);
+  });
 });
 
 describe("project registry storage", () => {
@@ -117,4 +137,3 @@ describe("project registry storage", () => {
     expect(snapshot.writable).toBe(true);
   });
 });
-

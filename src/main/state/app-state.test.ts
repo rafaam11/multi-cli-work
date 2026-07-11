@@ -74,5 +74,16 @@ describe("app state", () => {
     expect(replay).toBe("34567890AB");
     expect(Buffer.byteLength(replay)).toBe(10);
   });
-});
 
+  it("appends output without replacing a log that remains below its limit", async () => {
+    const root = await tempRoot();
+    await appendSessionLog(root, "session-1", "first", 100);
+    const logPath = path.join(root, "session-1.log");
+    const before = await fs.stat(logPath);
+
+    await appendSessionLog(root, "session-1", "-second", 100);
+
+    expect(await fs.readFile(logPath, "utf8")).toBe("first-second");
+    expect((await fs.stat(logPath)).ino).toBe(before.ino);
+  });
+});

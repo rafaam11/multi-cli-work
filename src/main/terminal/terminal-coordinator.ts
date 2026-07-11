@@ -43,6 +43,10 @@ interface TerminalCoordinatorOptions {
   env: Record<string, string>;
   idFactory(): string;
   now(): string;
+  codexSessions?: {
+    snapshot(cwd: string): Promise<ReadonlySet<string>>;
+    waitForNew(cwd: string, knownIds: ReadonlySet<string>): Promise<string | null>;
+  };
 }
 
 function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
@@ -68,6 +72,7 @@ function exitedView(session: PersistedTerminalSession): TerminalSessionView {
 export class TerminalCoordinator {
   private readonly views = new Map<string, TerminalSessionView>();
   private readonly subscribers = new Set<(event: TerminalWorkerEvent) => void>();
+  private readonly backgroundTasks = new Set<Promise<void>>();
   private eventChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: TerminalCoordinatorOptions) {
@@ -189,6 +194,8 @@ export class TerminalCoordinator {
 
   async flush(): Promise<void> {
     await this.eventChain;
+    await Promise.all([...this.backgroundTasks]);
+    await this.eventChain;
   }
 
   hasActiveSessions(): boolean {
@@ -212,6 +219,10 @@ export class TerminalCoordinator {
     createdAt: string;
     resumeConversationId: string | null;
   }): Promise<TerminalSessionView> {
+    const knownCodexIds =
+      input.kind === "codex" && !input.resumeConversationId && this.options.codexSessions
+        ? await this.options.codexSessions.snapshot(input.project.rootPath).catch(() => new Set<string>())
+        : null;
     const executables = await this.options.getExecutables();
     const command = buildProviderLaunch(input.kind, {
       cwd: input.project.rootPath,
@@ -240,7 +251,30 @@ export class TerminalCoordinator {
       selectedProjectId: view.projectId,
       selectedSessionId: view.id,
     }));
+    if (knownCodexIds && this.options.codexSessions) {
+      this.correlateCodexConversation(view.id, view.cwd, knownCodexIds);
+    }
     return { ...view };
+  }
+
+  private correlateCodexConversation(sessionId: string, cwd: string, knownIds: ReadonlySet<string>): void {
+    const tracker = this.options.codexSessions;
+    if (!tracker) return;
+    const task = tracker
+      .waitForNew(cwd, knownIds)
+      .then(async (conversationId) => {
+        if (!conversationId) return;
+        const view = this.views.get(sessionId);
+        if (!view || view.kind !== "codex" || view.providerConversationId) return;
+        view.providerConversationId = conversationId;
+        view.updatedAt = this.options.now();
+        await this.persistView(view);
+      })
+      .catch((error) => {
+        console.error("Codex session correlation failed", error);
+      });
+    this.backgroundTasks.add(task);
+    void task.finally(() => this.backgroundTasks.delete(task));
   }
 
   private async persistView(view: TerminalSessionView, transform: (state: AppStateV1) => AppStateV1 = (state) => state) {

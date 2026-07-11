@@ -53,6 +53,11 @@ function requiredString(value: unknown, label: string): string {
   return value;
 }
 
+function plainString(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new ProjectRegistryError(`${label} must be a string`);
+  return value;
+}
+
 function isoString(value: unknown, label: string): string {
   const raw = requiredString(value, label);
   if (!Number.isFinite(Date.parse(raw))) throw new ProjectRegistryError(`${label} must be an ISO timestamp`);
@@ -74,14 +79,14 @@ function parseTracks(value: unknown): ProjectTrack[] {
     if (!Array.isArray(track.items)) throw new ProjectRegistryError(`tracks[${trackIndex}].items must be an array`);
     return {
       id: requiredString(track.id, `tracks[${trackIndex}].id`),
-      title: requiredString(track.title, `tracks[${trackIndex}].title`),
+      title: plainString(track.title, `tracks[${trackIndex}].title`),
       items: track.items.map((item, itemIndex) => {
         if (!isRecord(item)) throw new ProjectRegistryError(`tracks[${trackIndex}].items[${itemIndex}] must be an object`);
         assertExactKeys(item, ["id", "text", "done"], `tracks[${trackIndex}].items[${itemIndex}]`);
         if (typeof item.done !== "boolean") throw new ProjectRegistryError(`tracks[${trackIndex}].items[${itemIndex}].done must be boolean`);
         return {
           id: requiredString(item.id, `tracks[${trackIndex}].items[${itemIndex}].id`),
-          text: requiredString(item.text, `tracks[${trackIndex}].items[${itemIndex}].text`),
+          text: plainString(item.text, `tracks[${trackIndex}].items[${itemIndex}].text`),
           done: item.done,
         };
       }),

@@ -156,10 +156,12 @@ function safeSessionLogPath(logDir: string, sessionId: string): string {
 export async function appendSessionLog(logDir: string, sessionId: string, data: string, maxBytes: number): Promise<void> {
   const logPath = safeSessionLogPath(logDir, sessionId);
   await fs.mkdir(logDir, { recursive: true });
-  const current = await fs.readFile(logPath).catch(() => Buffer.alloc(0));
-  const combined = Buffer.concat([current, Buffer.from(data)]);
-  const bounded = combined.length > maxBytes ? combined.subarray(combined.length - maxBytes) : combined;
-  const tempPath = `${logPath}.${process.pid}.tmp`;
+  await fs.appendFile(logPath, data);
+  const size = (await fs.stat(logPath)).size;
+  if (size <= maxBytes) return;
+  const current = await fs.readFile(logPath);
+  const bounded = current.subarray(current.length - maxBytes);
+  const tempPath = `${logPath}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(tempPath, bounded);
     await fs.rename(tempPath, logPath);
@@ -176,4 +178,3 @@ export async function readSessionLog(logDir: string, sessionId: string, maxBytes
 export async function deleteSessionLog(logDir: string, sessionId: string): Promise<void> {
   await fs.rm(safeSessionLogPath(logDir, sessionId), { force: true });
 }
-

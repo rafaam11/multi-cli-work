@@ -71,7 +71,14 @@ const project: SharedProject = {
   updatedAt: "2026-07-11T00:00:00.000Z",
 };
 
-async function coordinator(root: string, worker = new FakeWorker()) {
+async function coordinator(
+  root: string,
+  worker = new FakeWorker(),
+  codexSessions?: {
+    snapshot(cwd: string): Promise<ReadonlySet<string>>;
+    waitForNew(cwd: string, knownIds: ReadonlySet<string>): Promise<string | null>;
+  },
+) {
   const instance = new TerminalCoordinator({
     worker,
     statePath: path.join(root, "state.json"),
@@ -82,6 +89,7 @@ async function coordinator(root: string, worker = new FakeWorker()) {
     env: { SYSTEMROOT: "C:\\Windows" },
     idFactory: () => "session-1",
     now: () => "2026-07-11T01:00:00.000Z",
+    codexSessions,
   });
   await instance.initialize();
   return { instance, worker };
@@ -122,6 +130,24 @@ describe("TerminalCoordinator", () => {
     ]);
     const attachment = await instance.attach("session-1");
     expect(attachment.replay).toContain("hello");
+  });
+
+  it("correlates a new Codex transcript and persists its resumable conversation id", async () => {
+    const root = await tempRoot();
+    const codexSessions = {
+      snapshot: vi.fn(async () => new Set(["codex-existing"])),
+      waitForNew: vi.fn(async () => "codex-created"),
+    };
+    const { instance } = await coordinator(root, new FakeWorker(), codexSessions);
+
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await instance.flush();
+
+    expect(codexSessions.snapshot).toHaveBeenCalledWith("C:\\Work");
+    expect(codexSessions.waitForNew).toHaveBeenCalledWith("C:\\Work", new Set(["codex-existing"]));
+    expect(instance.list()[0].providerConversationId).toBe("codex-created");
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-1"].providerConversationId).toBe("codex-created");
   });
 
   it("restores saved tabs as exited and resumes the provider conversation explicitly", async () => {

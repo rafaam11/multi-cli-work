@@ -6,6 +6,7 @@ import { registerMainIpc } from "./ipc";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry } from "./projects/project-registry";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
+import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
@@ -59,6 +60,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     },
     idFactory: crypto.randomUUID,
     now: () => new Date().toISOString(),
+    codexSessions: new CodexSessionTracker(),
   });
   await coordinator.initialize();
 
@@ -107,4 +109,3 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     },
   };
 }
-
