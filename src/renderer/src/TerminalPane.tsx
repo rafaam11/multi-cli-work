@@ -23,6 +23,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
   const sessionRef = useRef(session);
   const onAttachedRef = useRef(onAttached);
   const onErrorRef = useRef(onError);
+  const scheduleResizeRef = useRef<() => void>(() => undefined);
   const [attaching, setAttaching] = useState(true);
   const readOnly = isReadOnly(session);
 
@@ -118,6 +119,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(resize, 40);
     };
+    scheduleResizeRef.current = scheduleResize;
 
     const inputDisposable = terminal.onData((data) => {
       if (isReadOnly(sessionRef.current)) return;
@@ -159,8 +161,13 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       inputDisposable.dispose();
       fitAddon.dispose();
       terminal.dispose();
+      scheduleResizeRef.current = () => undefined;
     };
-  }, [session.id, readOnly]);
+  }, [session.id]);
+
+  useEffect(() => {
+    if (!readOnly) scheduleResizeRef.current();
+  }, [readOnly]);
 
   return (
     <section className="terminal-surface" aria-label={`${session.kind} terminal`}>

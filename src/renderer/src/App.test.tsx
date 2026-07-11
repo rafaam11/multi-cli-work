@@ -470,6 +470,30 @@ describe("project workspace", () => {
     expect(harness.api.terminals.resize).not.toHaveBeenCalled();
   });
 
+  it("keeps the mounted terminal and final live output when a session exits", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell terminal" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledOnce());
+    const terminal = terminalHarness.instances.at(-1)!;
+
+    await act(async () => {
+      harness.emit({
+        type: "data",
+        sessionId: powershellSession.id,
+        data: "final output\r\n",
+        sequence: 1,
+      });
+      harness.emit({ type: "exit", sessionId: powershellSession.id, exitCode: 0 });
+    });
+
+    expect(terminal.write).toHaveBeenCalledWith("final output\r\n");
+    expect(terminalHarness.instances).toHaveLength(1);
+    expect(harness.api.terminals.attach).toHaveBeenCalledOnce();
+  });
+
   it("keeps backup registry data visible when provider discovery refresh fails", async () => {
     const harness = createApi({
       source: "backup",
