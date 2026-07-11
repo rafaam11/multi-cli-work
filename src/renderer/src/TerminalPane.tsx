@@ -92,7 +92,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
           .readText()
           .then((text) => {
             if (!disposed && text && !isReadOnly(sessionRef.current)) {
-              return window.multiCliWork.terminals.write(session.id, text);
+              terminal.paste(text);
             }
           })
           .catch(reportError);

@@ -11,6 +11,7 @@ const terminalHarness = vi.hoisted(() => ({
     cols: number;
     rows: number;
     write: ReturnType<typeof vi.fn>;
+    paste: ReturnType<typeof vi.fn>;
     emitInput(data: string): void;
     emitKey(event: Partial<KeyboardEvent>): boolean;
     selection: string;
@@ -24,6 +25,7 @@ vi.mock("@xterm/xterm", () => ({
     cols = 96;
     rows = 28;
     write = vi.fn();
+    paste = vi.fn();
     selection = "";
     private readonly inputListeners = new Set<(data: string) => void>();
     private keyHandler: ((event: KeyboardEvent) => boolean) | null = null;
@@ -395,10 +397,10 @@ describe("project workspace", () => {
     expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyC" })).toBe(false);
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output"));
 
+    vi.mocked(harness.api.terminals.write).mockClear();
     expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyV" })).toBe(false);
-    await waitFor(() =>
-      expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "clipboard paste"),
-    );
+    await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith("clipboard paste"));
+    expect(harness.api.terminals.write).not.toHaveBeenCalled();
     expect(terminal.emitKey({ type: "keydown", ctrlKey: true, code: "KeyC" })).toBe(true);
   });
 
