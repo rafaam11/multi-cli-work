@@ -1,11 +1,17 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, dialog } from "electron";
 import path from "node:path";
 import { createDesktopRuntime, type DesktopRuntime } from "./runtime";
+import {
+  rendererTargetNavigationUrl,
+  resolveRendererTarget,
+  secureBrowserWindow,
+} from "./window-security";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let runtime: DesktopRuntime | null = null;
 let isQuitting = false;
+let shouldFocusWhenReady = false;
 
 if (process.env.MULTI_CLI_WORK_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.MULTI_CLI_WORK_USER_DATA));
@@ -38,15 +44,26 @@ function createWindow(): BrowserWindow {
     if (mainWindow === window) mainWindow = null;
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL);
+  const rendererTarget = resolveRendererTarget({
+    isPackaged: app.isPackaged,
+    rendererUrl: process.env.ELECTRON_RENDERER_URL,
+    rendererFilePath: path.join(__dirname, "../renderer/index.html"),
+  });
+  secureBrowserWindow(window, rendererTargetNavigationUrl(rendererTarget));
+
+  if (rendererTarget.kind === "url") {
+    void window.loadURL(rendererTarget.value);
   } else {
-    void window.loadFile(path.join(__dirname, "../renderer/index.html"));
+    void window.loadFile(rendererTarget.value);
   }
   return window;
 }
 
 function showMainWindow(): void {
+  if (!runtime) {
+    shouldFocusWhenReady = true;
+    return;
+  }
   if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -94,31 +111,47 @@ function createTray(): Tray {
   return nextTray;
 }
 
-app.whenReady().then(async () => {
-  try {
-    runtime = await createDesktopRuntime(showMainWindow);
-    mainWindow = createWindow();
-    tray = createTray();
-  } catch (error) {
-    await dialog.showMessageBox({
-      type: "error",
-      title: "Multi CLI Work",
-      message: "The app could not start.",
-      detail: error instanceof Error ? error.message : String(error),
-    });
-    app.quit();
-    return;
-  }
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
-  app.on("activate", () => {
+if (!hasSingleInstanceLock) {
+  isQuitting = true;
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!runtime || !mainWindow) {
+      shouldFocusWhenReady = true;
+      return;
+    }
     showMainWindow();
   });
-});
 
-app.on("before-quit", () => {
-  isQuitting = true;
-});
+  void app.whenReady().then(async () => {
+    try {
+      runtime = await createDesktopRuntime(showMainWindow);
+      mainWindow = createWindow();
+      tray = createTray();
+      if (shouldFocusWhenReady) showMainWindow();
+    } catch (error) {
+      await dialog.showMessageBox({
+        type: "error",
+        title: "Multi CLI Work",
+        message: "The app could not start.",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      app.quit();
+      return;
+    }
 
-app.on("window-all-closed", () => {
-  // The tray owns app lifetime; explicit Quit is the only normal exit path.
-});
+    app.on("activate", () => {
+      showMainWindow();
+    });
+  });
+
+  app.on("before-quit", () => {
+    isQuitting = true;
+  });
+
+  app.on("window-all-closed", () => {
+    // The tray owns app lifetime; explicit Quit is the only normal exit path.
+  });
+}
