@@ -6,14 +6,19 @@
   --bg: #161918;
   --sidebar: #1c201f;
   --surface: #202524;
-  --surface-hover: #282e2c;
+  --surface-raised: #252b29;
+  --surface-hover: #2a302e;
   --line: #343b38;
   --line-strong: #46504c;
   --text: #e7ebe8;
-  --muted: #919b96;
-  --quiet: #69736e;
+  --muted: #9aa49f;
+  --quiet: #717b76;
   --teal: #4fb7a4;
   --amber: #d8a24a;
+  --blue: #6ea8d8;
+  --red: #d46a6a;
+  --green: #73b987;
+  --violet: #aa8ccc;
 }
 
 * {
@@ -29,18 +34,22 @@ body,
   overflow: hidden;
 }
 
+body {
+  background: var(--bg);
+}
+
 button {
   font: inherit;
 }
 
 button:focus-visible {
   outline: 2px solid var(--teal);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .app-shell {
   display: grid;
-  grid-template-columns: 286px minmax(0, 1fr);
+  grid-template-columns: clamp(238px, 24vw, 294px) minmax(0, 1fr);
   width: 100%;
   height: 100%;
   background: var(--bg);
@@ -49,8 +58,9 @@ button:focus-visible {
 
 .project-sidebar {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-width: 0;
+  min-height: 0;
   border-right: 1px solid var(--line);
   background: var(--sidebar);
 }
@@ -59,8 +69,8 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 64px;
-  padding: 12px 15px;
+  min-height: 62px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -68,18 +78,29 @@ button:focus-visible {
   display: grid;
   width: 32px;
   height: 32px;
+  flex: 0 0 32px;
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   color: var(--teal);
   background: #242a28;
+  box-shadow: inset 3px 0 0 rgb(79 183 164 / 72%);
+}
+
+.brand-copy,
+.workspace-copy,
+.project-copy {
+  min-width: 0;
 }
 
 .brand-block h1 {
   margin: 0;
+  overflow: hidden;
   font-size: 14px;
   font-weight: 650;
   letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-context {
@@ -93,15 +114,18 @@ button:focus-visible {
 
 .project-navigation {
   min-height: 0;
-  padding: 10px 8px;
+  overflow: auto;
+  padding: 8px;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
 }
 
 .section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 32px;
-  padding: 0 6px 0 8px;
+  height: 34px;
+  padding: 0 4px 0 8px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 650;
@@ -110,8 +134,9 @@ button:focus-visible {
 
 .icon-button {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
   padding: 0;
   place-items: center;
   border: 0;
@@ -121,16 +146,28 @@ button:focus-visible {
   cursor: pointer;
 }
 
-.icon-button:hover {
+.icon-button:hover:not(:disabled) {
   color: var(--text);
   background: var(--surface-hover);
 }
 
+.icon-button:disabled,
+.command-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.danger-button:hover:not(:disabled) {
+  color: #f09595;
+  background: rgb(212 106 106 / 11%);
+}
+
+.sidebar-state,
 .sidebar-empty {
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 40px;
+  min-height: 42px;
   margin-top: 3px;
   padding: 0 10px;
   border: 1px dashed var(--line);
@@ -139,40 +176,306 @@ button:focus-visible {
   font-size: 12px;
 }
 
-.sidebar-footer {
-  display: flex;
+.sidebar-failure {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px;
+  border-left: 2px solid var(--red);
+  color: var(--muted);
+  background: rgb(212 106 106 / 7%);
+  font-size: 11px;
+}
+
+.sidebar-failure svg {
+  color: var(--red);
+}
+
+.sidebar-failure span {
+  overflow-wrap: anywhere;
+}
+
+.sidebar-failure button {
+  grid-column: 2;
+  width: max-content;
+  padding: 2px 0;
+  border: 0;
+  color: var(--teal);
+  background: transparent;
+  cursor: pointer;
+}
+
+.project-tree,
+.session-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-node + .project-node {
+  margin-top: 2px;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  min-height: 48px;
+  border-radius: 5px;
+}
+
+.project-row:hover,
+.project-row.selected {
+  background: var(--surface-hover);
+}
+
+.project-row.selected {
+  box-shadow: inset 2px 0 0 var(--teal);
+}
+
+.tree-toggle {
+  display: grid;
+  width: 26px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  color: var(--quiet);
+  background: transparent;
+  cursor: pointer;
+}
+
+.tree-toggle:hover {
+  color: var(--text);
+}
+
+.project-select {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  padding: 0 16px;
-  border-top: 1px solid var(--line);
+  padding: 5px 7px 5px 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-select > svg {
+  color: var(--amber);
+}
+
+.project-copy {
+  display: block;
+  overflow: hidden;
+}
+
+.project-name,
+.project-path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-name {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 580;
+}
+
+.project-path {
+  margin-top: 2px;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 9px;
+}
+
+.project-status {
+  max-width: 48px;
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-tree {
+  position: relative;
+  margin: 1px 0 4px 25px;
+  padding-left: 10px;
+}
+
+.session-tree::before {
+  position: absolute;
+  inset: 0 auto 3px 0;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.session-row {
+  display: grid;
+  grid-template-columns: 8px 15px minmax(0, 1fr) auto;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-row:hover,
+.session-row.selected {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.session-row.selected {
+  box-shadow: inset 2px 0 0 var(--blue);
+}
+
+.session-name,
+.session-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-name {
+  font-size: 11px;
+}
+
+.session-status {
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 8px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--quiet);
+}
+
+.status-starting .status-dot,
+.status-dot.status-starting {
+  background: var(--blue);
+}
+
+.status-working .status-dot,
+.status-dot.status-working {
+  background: var(--teal);
+}
+
+.status-awaiting-input .status-dot,
+.status-dot.status-awaiting-input {
+  background: var(--violet);
+}
+
+.status-awaiting-approval .status-dot,
+.status-dot.status-awaiting-approval {
+  background: var(--amber);
+}
+
+.status-idle .status-dot,
+.status-dot.status-idle {
+  background: var(--green);
+}
+
+.status-exited .status-dot,
+.status-dot.status-exited {
+  background: var(--quiet);
+}
+
+.status-error .status-dot,
+.status-dot.status-error {
+  background: var(--red);
+}
+
+.registry-warning {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  color: #d9b36f;
+  background: rgb(216 162 74 / 7%);
   font-size: 10px;
 }
 
+.registry-warning svg {
+  flex: 0 0 auto;
+}
+
+.registry-warning span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-top: 1px solid var(--line);
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 9px;
+}
+
 .connection-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
   border-radius: 50%;
   background: var(--teal);
-  box-shadow: 0 0 0 3px rgb(79 183 164 / 12%);
+  box-shadow: 0 0 0 3px rgb(79 183 164 / 10%);
+}
+
+.footer-separator {
+  color: var(--line-strong);
 }
 
 .terminal-workspace {
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: 54px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   background: var(--bg);
 }
 
+.workspace-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-message-area:empty {
+  display: none;
+}
+
 .workspace-header {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
-  min-width: 0;
-  padding: 0 14px 0 17px;
+  gap: 16px;
+  padding: 0 12px 0 16px;
   border-bottom: 1px solid var(--line);
   background: #191d1c;
 }
@@ -181,33 +484,207 @@ button:focus-visible {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   color: var(--muted);
-  font-size: 12px;
 }
 
+.workspace-identity > svg {
+  flex: 0 0 auto;
+  color: var(--blue);
+}
+
+.workspace-title,
+.workspace-path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-path {
+  max-width: min(46vw, 620px);
+  margin-top: 2px;
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 9px;
+}
+
+.breadcrumb-separator {
+  margin: 0 7px;
+  color: var(--line-strong);
+}
+
+.workspace-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.active-status {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  margin-right: 5px;
+  color: var(--muted);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.command-button,
 .new-session-button {
   display: inline-flex;
   min-height: 30px;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 0 10px;
+  padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 5px;
-  color: var(--quiet);
+  color: var(--muted);
   background: var(--surface);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.command-button:hover:not(:disabled),
+.new-session-button:hover:not(:disabled),
+.new-session-button[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 .new-session-button:disabled {
   cursor: not-allowed;
-  opacity: 0.58;
+  opacity: 0.5;
+}
+
+.session-menu-anchor {
+  position: relative;
+  margin-left: 4px;
+}
+
+.provider-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 206px;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 36%);
+}
+
+.provider-menu button {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.provider-menu button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.provider-menu button:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+}
+
+.provider-unavailable {
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 8px;
+}
+
+.action-error {
+  display: flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-bottom: 1px solid rgb(212 106 106 / 28%);
+  color: #e9a2a2;
+  background: rgb(212 106 106 / 8%);
+  font-size: 11px;
+}
+
+.action-error span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-error button {
+  padding: 2px 4px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.terminal-surface {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.terminal-host {
+  position: absolute;
+  inset: 0;
+  padding: 10px 8px 7px 12px;
+}
+
+.terminal-host .xterm,
+.terminal-host .xterm-viewport,
+.terminal-host .xterm-screen {
+  height: 100%;
+}
+
+.terminal-progress {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--quiet);
+  background: var(--surface);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 9px;
+  pointer-events: none;
 }
 
 .terminal-empty {
   display: grid;
+  min-width: 0;
+  min-height: 0;
   align-content: center;
   justify-items: center;
-  min-width: 0;
   padding: 32px;
   color: var(--muted);
 }
@@ -232,7 +709,7 @@ button:focus-visible {
 
 .terminal-empty h2 {
   max-width: min(100%, 420px);
-  margin: 0;
+  margin: 12px 0 0;
   color: var(--muted);
   font-size: 14px;
   font-weight: 500;
@@ -240,9 +717,72 @@ button:focus-visible {
   letter-spacing: 0;
 }
 
-@media (max-width: 1000px) {
+.terminal-empty .empty-glyph + h2 {
+  margin-top: 0;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 880px) {
   .app-shell {
-    grid-template-columns: 238px minmax(0, 1fr);
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .project-status,
+  .active-status,
+  .workspace-actions > .icon-button:not(.danger-button) {
+    display: none;
+  }
+
+  .workspace-path {
+    max-width: 30vw;
+  }
+}
+
+@media (max-width: 680px) {
+  .app-shell {
+    grid-template-columns: 188px minmax(0, 1fr);
+  }
+
+  .brand-context,
+  .project-path,
+  .session-status,
+  .workspace-path,
+  .command-button span {
+    display: none;
+  }
+
+  .project-row {
+    min-height: 38px;
+  }
+
+  .workspace-header {
+    padding-right: 8px;
+  }
+
+  .new-session-button {
+    width: 31px;
+    padding: 0;
+    overflow: hidden;
+    color: transparent;
+    font-size: 0;
+    gap: 0;
+  }
+
+  .new-session-button svg:first-child {
+    color: var(--muted);
+  }
+
+  .new-session-button svg:last-child {
+    display: none;
   }
 }
 
@@ -251,7 +791,8 @@ button:focus-visible {
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
-
