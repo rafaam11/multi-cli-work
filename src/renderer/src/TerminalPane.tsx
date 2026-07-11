@@ -37,7 +37,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
     let disposed = false;
     let replayAttached = false;
     let resizeTimer: number | undefined;
-    const pendingOutput: string[] = [];
+    const pendingOutput: Array<{ data: string; sequence: number }> = [];
     const terminal = new Terminal({
       allowTransparency: false,
       cursorBlink: true,
@@ -126,7 +126,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
     const unsubscribe = window.multiCliWork.terminals.onEvent((event) => {
       if (event.sessionId !== session.id || event.type !== "data") return;
       if (replayAttached) terminal.write(event.data);
-      else pendingOutput.push(event.data);
+      else pendingOutput.push({ data: event.data, sequence: event.sequence });
     });
     const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(host);
@@ -137,7 +137,9 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
         if (disposed) return;
         terminal.write(attachment.replay);
         replayAttached = true;
-        for (const output of pendingOutput) terminal.write(output);
+        for (const output of pendingOutput) {
+          if (output.sequence > attachment.sequence) terminal.write(output.data);
+        }
         pendingOutput.length = 0;
         onAttachedRef.current(attachment.session);
         setAttaching(false);

@@ -38,10 +38,11 @@ export interface TerminalLaunchSpec {
 export interface TerminalAttachment {
   session: TerminalSession;
   replay: string;
+  sequence: number;
 }
 
 export type TerminalWorkerEvent =
-  | { type: "data"; sessionId: string; data: string }
+  | { type: "data"; sessionId: string; data: string; sequence: number }
   | { type: "status"; sessionId: string; status: TerminalStatus }
   | { type: "exit"; sessionId: string; exitCode: number; signal?: number };
 
@@ -55,4 +56,3 @@ export type TerminalWorkerRequest =
 export type TerminalWorkerResponse =
   | { requestId: string; ok: true; result?: TerminalSession | TerminalAttachment }
   | { requestId: string; ok: false; error: string };
-

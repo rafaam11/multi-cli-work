@@ -23,6 +23,8 @@ import {
 } from "../state/app-state";
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
+const LOG_TRIM_SLACK_BYTES = 256 * 1024;
+const DEFAULT_LOG_FLUSH_MS = 100;
 
 export interface TerminalWorkerGateway {
   create(spec: TerminalLaunchSpec): Promise<TerminalSession>;
@@ -48,6 +50,8 @@ interface TerminalCoordinatorOptions {
     snapshot(cwd: string): Promise<ReadonlySet<string>>;
     waitForNew(cwd: string, knownIds: ReadonlySet<string>): Promise<string | null>;
   };
+  appendLog?: typeof appendSessionLog;
+  logFlushMs?: number;
 }
 
 function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
@@ -74,14 +78,18 @@ export class TerminalCoordinator {
   private readonly views = new Map<string, TerminalSessionView>();
   private readonly subscribers = new Set<(event: TerminalWorkerEvent) => void>();
   private readonly backgroundTasks = new Set<Promise<void>>();
+  private readonly pendingLogChunks = new Map<string, string[]>();
+  private readonly logFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly logWrites = new Map<string, Promise<void>>();
   private eventChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: TerminalCoordinatorOptions) {
     options.worker.onEvent((event) => {
-      this.eventChain = this.eventChain.then(() => this.handleWorkerEvent(event));
+      if (event.type === "data") this.handleDataEvent(event);
+      else this.enqueueEvent(() => this.handleWorkerEvent(event));
     });
     options.worker.onExit((code) => {
-      this.eventChain = this.eventChain.then(() => this.handleWorkerExit(code));
+      this.enqueueEvent(() => this.handleWorkerExit(code));
     });
   }
 
@@ -140,7 +148,7 @@ export class TerminalCoordinator {
     if (view.pid !== null && view.status !== "exited" && view.status !== "error") {
       try {
         const attachment = await this.options.worker.attach(sessionId);
-        return { session: runningView(attachment.session), replay: attachment.replay };
+        return { session: runningView(attachment.session), replay: attachment.replay, sequence: attachment.sequence };
       } catch {
         // The worker may have exited between list and attach; the persisted log is still usable.
       }
@@ -148,6 +156,7 @@ export class TerminalCoordinator {
     return {
       session: { ...view, status: "exited", pid: null },
       replay: await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES),
+      sequence: 0,
     };
   }
 
@@ -173,6 +182,7 @@ export class TerminalCoordinator {
     if (!view) return;
     if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
     this.views.delete(sessionId);
+    this.dropPendingLog(sessionId);
     await updateAppState(
       (state) => {
         const sessions = { ...state.sessions };
@@ -200,15 +210,15 @@ export class TerminalCoordinator {
   applyProviderStatus(sessionId: string, status: TerminalStatus): void {
     const view = this.views.get(sessionId);
     if (!view || view.pid === null || view.status === "exited" || view.status === "error") return;
-    this.eventChain = this.eventChain.then(() =>
-      this.handleWorkerEvent({ type: "status", sessionId, status }),
-    );
+    this.enqueueEvent(() => this.handleWorkerEvent({ type: "status", sessionId, status }));
   }
 
   async flush(): Promise<void> {
     await this.eventChain;
+    await this.flushPendingLogs();
     await Promise.all([...this.backgroundTasks]);
     await this.eventChain;
+    await this.flushPendingLogs();
   }
 
   hasActiveSessions(): boolean {
@@ -302,9 +312,7 @@ export class TerminalCoordinator {
 
   private async handleWorkerEvent(event: TerminalWorkerEvent): Promise<void> {
     const view = this.views.get(event.sessionId);
-    if (event.type === "data") {
-      await appendSessionLog(this.options.logDir, event.sessionId, event.data, MAX_LOG_BYTES);
-    } else if (view && event.type === "status") {
+    if (view && event.type === "status") {
       view.status = event.status;
       view.updatedAt = this.options.now();
       await this.persistView(view);
@@ -315,7 +323,7 @@ export class TerminalCoordinator {
       view.updatedAt = this.options.now();
       await this.persistView(view);
     }
-    this.subscribers.forEach((listener) => listener(event));
+    this.publish(event);
   }
 
   private async handleWorkerExit(_code: number): Promise<void> {
@@ -329,8 +337,82 @@ export class TerminalCoordinator {
       view.updatedAt = this.options.now();
       await this.persistView(view);
       const event: TerminalWorkerEvent = { type: "status", sessionId: view.id, status: "error" };
-      this.subscribers.forEach((listener) => listener(event));
+      this.publish(event);
     }
+  }
+
+  private handleDataEvent(event: Extract<TerminalWorkerEvent, { type: "data" }>): void {
+    this.publish(event);
+    const chunks = this.pendingLogChunks.get(event.sessionId) ?? [];
+    chunks.push(event.data);
+    this.pendingLogChunks.set(event.sessionId, chunks);
+    if (this.logFlushTimers.has(event.sessionId)) return;
+    const timer = setTimeout(() => {
+      this.logFlushTimers.delete(event.sessionId);
+      void this.flushSessionLog(event.sessionId);
+    }, this.options.logFlushMs ?? DEFAULT_LOG_FLUSH_MS);
+    timer.unref?.();
+    this.logFlushTimers.set(event.sessionId, timer);
+  }
+
+  private async flushPendingLogs(): Promise<void> {
+    for (const timer of this.logFlushTimers.values()) clearTimeout(timer);
+    this.logFlushTimers.clear();
+    while (this.pendingLogChunks.size > 0) {
+      await Promise.all([...this.pendingLogChunks.keys()].map((sessionId) => this.flushSessionLog(sessionId)));
+    }
+    await Promise.all([...this.logWrites.values()]);
+  }
+
+  private async flushSessionLog(sessionId: string): Promise<void> {
+    const chunks = this.pendingLogChunks.get(sessionId);
+    if (!chunks || chunks.length === 0) return;
+    this.pendingLogChunks.delete(sessionId);
+    const previous = this.logWrites.get(sessionId) ?? Promise.resolve();
+    const appendLog = this.options.appendLog ?? appendSessionLog;
+    const write = previous
+      .catch((error) => this.reportAsyncError("Previous terminal log write failed", error))
+      .then(() =>
+        appendLog(
+          this.options.logDir,
+          sessionId,
+          chunks.join(""),
+          MAX_LOG_BYTES,
+          LOG_TRIM_SLACK_BYTES,
+        ),
+      )
+      .catch((error) => this.reportAsyncError("Terminal log write failed", error));
+    this.logWrites.set(sessionId, write);
+    await write;
+    if (this.logWrites.get(sessionId) === write) this.logWrites.delete(sessionId);
+  }
+
+  private dropPendingLog(sessionId: string): void {
+    const timer = this.logFlushTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.logFlushTimers.delete(sessionId);
+    this.pendingLogChunks.delete(sessionId);
+  }
+
+  private enqueueEvent(task: () => Promise<void>): void {
+    this.eventChain = this.eventChain
+      .catch((error) => this.reportAsyncError("Terminal event failed", error))
+      .then(task)
+      .catch((error) => this.reportAsyncError("Terminal event failed", error));
+  }
+
+  private publish(event: TerminalWorkerEvent): void {
+    for (const listener of this.subscribers) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.reportAsyncError("Terminal event subscriber failed", error);
+      }
+    }
+  }
+
+  private reportAsyncError(message: string, error: unknown): void {
+    console.error(message, error);
   }
 
   private validateDimensions(cols: number, rows: number): void {

@@ -68,7 +68,12 @@ describe("TerminalSessionManager", () => {
       rows: 32,
     });
     expect(session).toMatchObject({ id: "session-1", pid: 4123, status: "starting" });
-    expect(events).toHaveBeenCalledWith({ type: "data", sessionId: "session-1", data: "PowerShell ready\r\n" });
+    expect(events).toHaveBeenCalledWith({
+      type: "data",
+      sessionId: "session-1",
+      data: "PowerShell ready\r\n",
+      sequence: 1,
+    });
     expect(events).toHaveBeenCalledWith({ type: "status", sessionId: "session-1", status: "idle" });
     expect(events).toHaveBeenCalledWith({ type: "exit", sessionId: "session-1", exitCode: 0 });
   });
@@ -95,6 +100,7 @@ describe("TerminalSessionManager", () => {
     const attachment = manager.attach("session-1");
 
     expect(attachment.replay).toBe("7890AB");
+    expect(attachment.sequence).toBe(2);
     expect(Buffer.byteLength(attachment.replay)).toBeLessThanOrEqual(10);
   });
 

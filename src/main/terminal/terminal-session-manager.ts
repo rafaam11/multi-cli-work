@@ -57,6 +57,7 @@ interface SessionRecord {
   pty: ManagedPty;
   output: OutputRingBuffer;
   controlBuffer: string;
+  outputSequence: number;
 }
 
 export class TerminalSessionManager {
@@ -95,12 +96,14 @@ export class TerminalSessionManager {
       pty,
       output: new OutputRingBuffer(this.maxReplayBytes),
       controlBuffer: "",
+      outputSequence: 0,
     };
     this.sessions.set(session.id, record);
     pty.onData((data) => {
+      record.outputSequence += 1;
       record.output.append(data);
       record.session.updatedAt = new Date().toISOString();
-      this.publish({ type: "data", sessionId: session.id, data });
+      this.publish({ type: "data", sessionId: session.id, data, sequence: record.outputSequence });
       if (record.session.status === "starting") this.setStatus(record, "idle");
       if (record.session.kind === "codex") this.applyCodexNotifications(record, data);
     });
@@ -116,7 +119,7 @@ export class TerminalSessionManager {
 
   attach(sessionId: string): TerminalAttachment {
     const record = this.requireSession(sessionId);
-    return { session: { ...record.session }, replay: record.output.toString() };
+    return { session: { ...record.session }, replay: record.output.toString(), sequence: record.outputSequence };
   }
 
   write(sessionId: string, data: string): void {

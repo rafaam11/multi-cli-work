@@ -193,6 +193,7 @@ function createApi(options?: {
       attach: vi.fn().mockImplementation(async (sessionId: string) => ({
         session: sessionId === claudeSession.id ? resumedSession ?? claudeSession : sessionId === created.id ? created : powershellSession,
         replay: `${sessionId} replay\r\n`,
+        sequence: 0,
       })),
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
@@ -379,10 +380,40 @@ describe("project workspace", () => {
     expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "Get-Location\r");
 
     await act(async () => {
-      harness.emit({ type: "data", sessionId: powershellSession.id, data: "C:\\work\\atlas\r\n" });
+      harness.emit({ type: "data", sessionId: powershellSession.id, data: "C:\\work\\atlas\r\n", sequence: 1 });
     });
     expect(terminal.write).toHaveBeenCalledWith("C:\\work\\atlas\r\n");
     await waitFor(() => expect(harness.api.terminals.resize).toHaveBeenCalledWith(powershellSession.id, 96, 28));
+  });
+
+  it("does not duplicate live output that is already included in attach replay", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    let resolveAttach!: (value: Awaited<ReturnType<MultiCliWorkApi["terminals"]["attach"]>>) => void;
+    vi.mocked(harness.api.terminals.attach).mockImplementation(
+      () => new Promise((resolve) => { resolveAttach = resolve; }),
+    );
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell terminal" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
+    const terminal = terminalHarness.instances.at(-1)!;
+    await act(async () => {
+      harness.emit({ type: "data", sessionId: powershellSession.id, data: "during attach\r\n", sequence: 2 });
+      resolveAttach({
+        session: powershellSession,
+        replay: "before\r\nduring attach\r\n",
+        sequence: 2,
+      });
+    });
+
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith("before\r\nduring attach\r\n"));
+    expect(terminal.write).not.toHaveBeenCalledWith("during attach\r\n");
+
+    await act(async () => {
+      harness.emit({ type: "data", sessionId: powershellSession.id, data: "after attach\r\n", sequence: 3 });
+    });
+    expect(terminal.write).toHaveBeenCalledWith("after attach\r\n");
   });
 
   it("maps Ctrl+Shift+C and Ctrl+Shift+V to the system clipboard without consuming normal terminal keys", async () => {

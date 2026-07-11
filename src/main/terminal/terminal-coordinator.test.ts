@@ -88,6 +88,7 @@ async function coordinator(
     snapshot(cwd: string): Promise<ReadonlySet<string>>;
     waitForNew(cwd: string, knownIds: ReadonlySet<string>): Promise<string | null>;
   },
+  appendLog?: (logDir: string, sessionId: string, data: string, maxBytes: number, trimSlackBytes?: number) => Promise<void>,
 ) {
   const instance = new TerminalCoordinator({
     worker,
@@ -100,6 +101,8 @@ async function coordinator(
     idFactory: () => "session-1",
     now: () => "2026-07-11T01:00:00.000Z",
     codexSessions,
+    appendLog,
+    logFlushMs: 60_000,
   });
   await instance.initialize();
   return { instance, worker };
@@ -131,7 +134,7 @@ describe("TerminalCoordinator", () => {
     const { instance, worker } = await coordinator(root);
     await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
 
-    worker.emit({ type: "data", sessionId: "session-1", data: "hello\r\n" });
+    worker.emit({ type: "data", sessionId: "session-1", data: "hello\r\n", sequence: 1 });
     worker.emit({ type: "status", sessionId: "session-1", status: "awaiting-input" });
     await instance.flush();
 
@@ -140,6 +143,54 @@ describe("TerminalCoordinator", () => {
     ]);
     const attachment = await instance.attach("session-1");
     expect(attachment.replay).toContain("hello");
+  });
+
+  it("publishes output immediately and batches adjacent chunks into one log write", async () => {
+    const root = await tempRoot();
+    const appendLog = vi.fn(async () => undefined);
+    const { instance, worker } = await coordinator(root, new FakeWorker(), undefined, appendLog);
+    const received = vi.fn();
+    instance.onEvent(received);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    worker.emit({ type: "data", sessionId: "session-1", data: "first", sequence: 1 });
+    worker.emit({ type: "data", sessionId: "session-1", data: "second", sequence: 2 });
+
+    expect(received).toHaveBeenNthCalledWith(1, {
+      type: "data",
+      sessionId: "session-1",
+      data: "first",
+      sequence: 1,
+    });
+    expect(received).toHaveBeenNthCalledWith(2, {
+      type: "data",
+      sessionId: "session-1",
+      data: "second",
+      sequence: 2,
+    });
+    expect(appendLog).not.toHaveBeenCalled();
+
+    await instance.flush();
+
+    expect(appendLog).toHaveBeenCalledOnce();
+    expect(appendLog).toHaveBeenCalledWith(expect.any(String), "session-1", "firstsecond", 5 * 1024 * 1024, 256 * 1024);
+  });
+
+  it("continues processing status events after a subscriber throws", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    const subscriber = vi.fn(() => {
+      if (subscriber.mock.calls.length === 1) throw new Error("renderer gone");
+    });
+    instance.onEvent(subscriber);
+
+    worker.emit({ type: "status", sessionId: "session-1", status: "working" });
+    worker.emit({ type: "status", sessionId: "session-1", status: "awaiting-input" });
+    await instance.flush();
+
+    expect(instance.list()[0].status).toBe("awaiting-input");
+    expect(subscriber).toHaveBeenCalledTimes(2);
   });
 
   it("correlates a new Codex transcript and persists its resumable conversation id", async () => {

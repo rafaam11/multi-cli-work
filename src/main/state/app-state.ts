@@ -153,12 +153,18 @@ function safeSessionLogPath(logDir: string, sessionId: string): string {
   return path.join(logDir, `${sessionId}.log`);
 }
 
-export async function appendSessionLog(logDir: string, sessionId: string, data: string, maxBytes: number): Promise<void> {
+export async function appendSessionLog(
+  logDir: string,
+  sessionId: string,
+  data: string,
+  maxBytes: number,
+  trimSlackBytes = 0,
+): Promise<void> {
   const logPath = safeSessionLogPath(logDir, sessionId);
   await fs.mkdir(logDir, { recursive: true });
   await fs.appendFile(logPath, data);
   const size = (await fs.stat(logPath)).size;
-  if (size <= maxBytes) return;
+  if (size <= maxBytes + Math.max(0, trimSlackBytes)) return;
   const current = await fs.readFile(logPath);
   const bounded = current.subarray(current.length - maxBytes);
   const tempPath = `${logPath}.${process.pid}.${randomUUID()}.tmp`;

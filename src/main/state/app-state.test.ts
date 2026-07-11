@@ -86,4 +86,17 @@ describe("app state", () => {
     expect(await fs.readFile(logPath, "utf8")).toBe("first-second");
     expect((await fs.stat(logPath)).ino).toBe(before.ino);
   });
+
+  it("uses bounded trim slack to amortize full log compaction", async () => {
+    const root = await tempRoot();
+    const logPath = path.join(root, "session-1.log");
+
+    await appendSessionLog(root, "session-1", "123456789012", 10, 5);
+    expect((await fs.stat(logPath)).size).toBe(12);
+    expect(await readSessionLog(root, "session-1", 10)).toBe("3456789012");
+
+    await appendSessionLog(root, "session-1", "ABCD", 10, 5);
+    expect((await fs.stat(logPath)).size).toBe(10);
+    expect(await readSessionLog(root, "session-1", 10)).toBe("789012ABCD");
+  });
 });

@@ -38,6 +38,7 @@ export interface ResumeTerminalInput {
 export interface TerminalAttachResult {
   session: TerminalSessionView;
   replay: string;
+  sequence: number;
 }
 
 export interface ProjectWorkspaceSnapshot extends ProjectRegistrySnapshot {
