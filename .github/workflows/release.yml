@@ -3,18 +3,23 @@ name: release
 # v* 태그를 푸시하면 Windows 설치본(NSIS)을 빌드해 GitHub 릴리스(draft)에 올린다.
 # electron-builder의 GitHub publish 기본값이 draft이므로, 자산이 채워진 draft를 사람이 검토하고
 # GitHub에서 수동 publish한다. 이 앱은 ConPTY·PowerShell 의존이라 Windows 단일 잡이다.
+# workflow_dispatch로 수동 실행하면 publish 없이 패키징만 검증한다(태그를 다시 밀지 않아도 됨).
+#
+# 러너는 windows-2022로 고정한다. windows-latest는 Visual Studio 2026만 담긴 이미지로 옮겨갔고,
+# electron-rebuild가 쓰는 node-gyp이 VS 2026을 인식하지 못해 node-pty 리빌드가 실패한다.
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +36,6 @@ jobs:
         run: npm run build
 
       - name: Package & publish (draft)
-        run: npx electron-builder --win --publish always
+        run: npx electron-builder --win --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
