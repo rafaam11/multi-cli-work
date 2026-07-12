@@ -31,6 +31,12 @@ afterEach(async () => {
 });
 
 describe("CodexSessionTracker", () => {
+  it("waits up to two minutes for a delayed transcript by default", () => {
+    const tracker = new CodexSessionTracker({ sessionsDirectory: "C:\\sessions" });
+
+    expect((tracker as unknown as { maxAttempts: number }).maxAttempts).toBe(300);
+  });
+
   it("returns only a newly created session for the requested working directory", async () => {
     const sessionsDirectory = await tempRoot();
     await writeSession(sessionsDirectory, "existing", "codex-existing", "C:\\Work");

@@ -19,6 +19,7 @@ interface SessionMetadata {
 }
 
 const transcriptClaims = new Map<string, Set<string>>();
+const DEFAULT_MAX_ATTEMPTS = 300;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -92,7 +93,7 @@ export class CodexSessionTracker {
   constructor(options: CodexSessionTrackerOptions = {}) {
     this.sessionsDirectory = options.sessionsDirectory ?? path.join(os.homedir(), ".codex", "sessions");
     this.pollIntervalMs = options.pollIntervalMs ?? 400;
-    this.maxAttempts = options.maxAttempts ?? 25;
+    this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.maxFiles = options.maxFiles ?? 300;
     this.claimedTranscriptIds = claimsForDirectory(this.sessionsDirectory);
   }
