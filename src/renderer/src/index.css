@@ -246,7 +246,7 @@ body.sidebar-resizing {
 
 .project-row {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr) auto;
   min-height: 48px;
   border-radius: 5px;
 }
@@ -332,6 +332,114 @@ body.sidebar-resizing {
   font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.project-row .project-edit {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  align-self: center;
+  margin-right: 4px;
+  visibility: hidden;
+}
+
+.project-row:hover .project-edit,
+.project-row.selected .project-edit,
+.project-row .project-edit:focus-visible {
+  visibility: visible;
+}
+
+.project-row.hidden-project .project-copy {
+  opacity: 0.55;
+}
+
+.hidden-status {
+  color: var(--quiet);
+  font-style: italic;
+}
+
+.project-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 6px 8px 25px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-hover);
+}
+
+.project-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.project-editor-field label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.project-editor-field input[type="text"],
+.project-editor-field select,
+.project-editor-field textarea {
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.project-editor-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-editor-error {
+  color: #f09595;
+  font-size: 10px;
+}
+
+.project-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.project-editor-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.project-editor-actions button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.project-editor-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.hidden-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--quiet);
+  font-size: 10px;
+  cursor: pointer;
 }
 
 .session-tree {
@@ -455,6 +563,22 @@ body.sidebar-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.registry-warning button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid rgb(216 162 74 / 45%);
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.registry-warning button:hover {
+  background: rgb(216 162 74 / 14%);
 }
 
 .sidebar-footer {

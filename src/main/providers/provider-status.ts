@@ -41,6 +41,32 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
   };
 }
 
+function safeStatusFilePath(statusDir: string, sessionId: string): string {
+  if (!/^[a-zA-Z0-9-]+$/.test(sessionId)) throw new Error("Provider status session id is unsafe for a file path");
+  return path.join(statusDir, `${sessionId}.json`);
+}
+
+export async function deleteProviderStatusFile(statusDir: string, sessionId: string): Promise<void> {
+  await fs.rm(safeStatusFilePath(statusDir, sessionId), { force: true });
+}
+
+export async function cleanupProviderStatusFiles(
+  statusDir: string,
+  keepSessionIds: ReadonlySet<string>,
+): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(statusDir);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries
+      .filter((name) => name.endsWith(".json") && !keepSessionIds.has(name.slice(0, -".json".length)))
+      .map((name) => fs.rm(path.join(statusDir, name), { force: true }).catch(() => undefined)),
+  );
+}
+
 async function readStatusFile(filePath: string): Promise<ProviderStatusEvent | null> {
   try {
     return parseProviderStatusEvent(JSON.parse(await fs.readFile(filePath, "utf8")));

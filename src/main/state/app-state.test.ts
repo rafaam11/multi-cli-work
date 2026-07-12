@@ -111,4 +111,15 @@ describe("app state", () => {
     expect((await fs.stat(logPath)).size).toBe(10);
     expect(await readSessionLog(root, "session-1", 10)).toBe("789012ABCD");
   });
+
+  it("trims multi-byte log content on a UTF-8 character boundary instead of splitting it", async () => {
+    const root = await tempRoot();
+
+    await appendSessionLog(root, "session-1", "Hi가나다", 8);
+    const replay = await readSessionLog(root, "session-1", 8);
+
+    expect(Buffer.byteLength(replay)).toBeLessThanOrEqual(8);
+    expect(replay).not.toContain("�");
+    expect(replay).toBe("나다");
+  });
 });

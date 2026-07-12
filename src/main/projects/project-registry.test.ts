@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ProjectRegistryV1 } from "../../shared/project-types";
 import {
   ProjectRegistryError,
   emptyProjectRegistry,
@@ -10,6 +11,7 @@ import {
   parseProjectRegistry,
   readProjectRegistry,
   reconcileProject,
+  restoreProjectRegistryFromBackup,
   updateProjectRegistry,
 } from "./project-registry";
 
@@ -146,6 +148,84 @@ describe("project registry contract", () => {
     };
 
     expect(() => parseProjectRegistry(registry)).toThrow(/provider ref|source/i);
+  });
+
+  it("rejects an empty sources array", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: [],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+
+    expect(() => parseProjectRegistry(registry)).toThrow(ProjectRegistryError);
+    expect(() => parseProjectRegistry(registry)).toThrow(/sources/i);
+  });
+
+  it("rejects duplicate entries within sources", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["claude", "claude"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+
+    expect(() => parseProjectRegistry(registry)).toThrow(ProjectRegistryError);
+    expect(() => parseProjectRegistry(registry)).toThrow(/sources/i);
+  });
+
+  it("accepts valid sources arrays and preserves canonical order", () => {
+    const registry = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["manual"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+    registry.projects[PROJECT_TWO] = {
+      id: PROJECT_TWO,
+      rootPath: "C:\\Other",
+      displayName: null,
+      sources: ["codex", "claude"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: registry.updatedAt,
+      updatedAt: registry.updatedAt,
+    };
+
+    const parsed = parseProjectRegistry(registry);
+    expect(parsed.projects[PROJECT_ONE].sources).toEqual(["manual"]);
+    expect(parsed.projects[PROJECT_TWO].sources).toEqual(["claude", "codex"]);
   });
 
   it("rejects duplicate normalized roots and provider refs across UUIDs", () => {
@@ -294,5 +374,151 @@ describe("project registry storage", () => {
     expect(Object.keys(snapshot.registry.projects).sort()).toEqual([PROJECT_ONE, PROJECT_TWO]);
     expect(snapshot.source).toBe("primary");
     expect(snapshot.writable).toBe(true);
+  });
+});
+
+describe("project registry timestamp normalization", () => {
+  // Mirrors harness-manager's canonical-ISO round-trip check: milliseconds + "Z", no other offset form.
+  const isCanonical = (value: string): boolean =>
+    Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value;
+
+  const NON_CANONICAL_REGISTRY_UPDATED_AT = "2026-07-11T12:00:00Z";
+  const NON_CANONICAL_MIGRATED_AT = "2026-07-11T21:00:00.000+09:00";
+  const NON_CANONICAL_PROJECT_CREATED_AT = "2026-07-11T12:00:00Z";
+  const NON_CANONICAL_PROJECT_UPDATED_AT = "2026-07-11T21:00:00.000+09:00";
+
+  function nonCanonicalRegistryFixture(): ProjectRegistryV1 {
+    const registry = emptyProjectRegistry(NON_CANONICAL_REGISTRY_UPDATED_AT);
+    registry.migratedFromBoardAt = NON_CANONICAL_MIGRATED_AT;
+    registry.projects[PROJECT_ONE] = {
+      id: PROJECT_ONE,
+      rootPath: "C:\\Work",
+      displayName: null,
+      sources: ["manual"],
+      providerRefs: { claude: [], codex: [] },
+      status: null,
+      memo: "",
+      tracks: [],
+      hidden: false,
+      order: null,
+      createdAt: NON_CANONICAL_PROJECT_CREATED_AT,
+      updatedAt: NON_CANONICAL_PROJECT_UPDATED_AT,
+    };
+    return registry;
+  }
+
+  it("normalizes non-canonical ISO timestamps to canonical form while preserving the instant", () => {
+    const fixture = nonCanonicalRegistryFixture();
+    const parsed = parseProjectRegistry(fixture);
+
+    expect(isCanonical(parsed.updatedAt)).toBe(true);
+    expect(isCanonical(parsed.migratedFromBoardAt!)).toBe(true);
+    expect(isCanonical(parsed.projects[PROJECT_ONE].createdAt)).toBe(true);
+    expect(isCanonical(parsed.projects[PROJECT_ONE].updatedAt)).toBe(true);
+
+    expect(Date.parse(parsed.updatedAt)).toBe(Date.parse(fixture.updatedAt));
+    expect(Date.parse(parsed.migratedFromBoardAt!)).toBe(Date.parse(fixture.migratedFromBoardAt!));
+    expect(Date.parse(parsed.projects[PROJECT_ONE].createdAt)).toBe(Date.parse(fixture.projects[PROJECT_ONE].createdAt));
+    expect(Date.parse(parsed.projects[PROJECT_ONE].updatedAt)).toBe(Date.parse(fixture.projects[PROJECT_ONE].updatedAt));
+  });
+
+  it("self-heals non-canonical timestamps on disk when the registry file is rewritten", async () => {
+    const registryPath = await tempRegistryPath();
+    const fixture = nonCanonicalRegistryFixture();
+    await fs.writeFile(registryPath, JSON.stringify(fixture), "utf8");
+
+    await updateProjectRegistry((registry) => registry, { registryPath });
+
+    const onDisk = JSON.parse(await fs.readFile(registryPath, "utf8"));
+    expect(isCanonical(onDisk.updatedAt)).toBe(true);
+    expect(isCanonical(onDisk.migratedFromBoardAt)).toBe(true);
+    expect(isCanonical(onDisk.projects[PROJECT_ONE].createdAt)).toBe(true);
+    expect(isCanonical(onDisk.projects[PROJECT_ONE].updatedAt)).toBe(true);
+  });
+
+  it("still rejects timestamps that cannot be parsed at all", () => {
+    const fixture = nonCanonicalRegistryFixture();
+    fixture.updatedAt = "not-a-timestamp";
+    expect(() => parseProjectRegistry(fixture)).toThrow(/ISO timestamp/i);
+  });
+});
+
+describe("project registry backup restore", () => {
+  function validRegistryJson(memo: string): string {
+    return `${JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: "2026-07-11T00:00:00.000Z",
+      projects: {
+        [PROJECT_ONE]: {
+          id: PROJECT_ONE,
+          rootPath: "C:\work\atlas",
+          displayName: "Atlas",
+          sources: ["manual"],
+          providerRefs: { claude: [], codex: [] },
+          status: null,
+          memo,
+          tracks: [],
+          hidden: false,
+          order: null,
+          createdAt: "2026-07-11T00:00:00.000Z",
+          updatedAt: "2026-07-11T00:00:00.000Z",
+        },
+      },
+    })}\n`;
+  }
+
+  it("restores a corrupt primary from a valid backup and becomes writable again", async () => {
+    const registryPath = await tempRegistryPath();
+    await fs.writeFile(registryPath, "{ not json", "utf8");
+    await fs.writeFile(`${registryPath}.bak`, validRegistryJson("from backup"), "utf8");
+
+    const restored = await restoreProjectRegistryFromBackup({ registryPath });
+
+    expect(restored.projects[PROJECT_ONE].memo).toBe("from backup");
+    const snapshot = await readProjectRegistry({ registryPath });
+    expect(snapshot.source).toBe("primary");
+    expect(snapshot.writable).toBe(true);
+    expect(snapshot.registry.projects[PROJECT_ONE].memo).toBe("from backup");
+  });
+
+  it("never overwrites the valid backup with the corrupt primary during a restore", async () => {
+    const registryPath = await tempRegistryPath();
+    const backupJson = validRegistryJson("last good");
+    await fs.writeFile(registryPath, "{ not json", "utf8");
+    await fs.writeFile(`${registryPath}.bak`, backupJson, "utf8");
+
+    await restoreProjectRegistryFromBackup({ registryPath });
+
+    const backupOnDisk = JSON.parse(await fs.readFile(`${registryPath}.bak`, "utf8"));
+    expect(backupOnDisk.projects[PROJECT_ONE].memo).toBe("last good");
+  });
+
+  it("fails clearly when the backup is missing or invalid", async () => {
+    const registryPath = await tempRegistryPath();
+    await fs.writeFile(registryPath, "{ not json", "utf8");
+
+    await expect(restoreProjectRegistryFromBackup({ registryPath })).rejects.toThrow(ProjectRegistryError);
+
+    await fs.writeFile(`${registryPath}.bak`, "also { not json", "utf8");
+    await expect(restoreProjectRegistryFromBackup({ registryPath })).rejects.toThrow(ProjectRegistryError);
+  });
+
+  it("keeps backing up a valid primary before normal rewrites", async () => {
+    const registryPath = await tempRegistryPath();
+    await fs.writeFile(registryPath, validRegistryJson("first"), "utf8");
+
+    await updateProjectRegistry(
+      (registry) => ({
+        ...registry,
+        projects: {
+          ...registry.projects,
+          [PROJECT_ONE]: { ...registry.projects[PROJECT_ONE], memo: "second" },
+        },
+      }),
+      { registryPath },
+    );
+
+    const backupOnDisk = JSON.parse(await fs.readFile(`${registryPath}.bak`, "utf8"));
+    expect(backupOnDisk.projects[PROJECT_ONE].memo).toBe("first");
   });
 });

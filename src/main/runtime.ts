@@ -4,12 +4,12 @@ import type { ProviderAvailability } from "../shared/api-types";
 import type { TerminalWorkerEvent } from "../shared/terminal-types";
 import { registerMainIpc } from "./ipc";
 import { ProjectService } from "./projects/project-service";
-import { readProjectRegistry } from "./projects/project-registry";
+import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
-import { shouldShowTerminalStatusNotification } from "./notification-policy";
+import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
 import {
   RestartingTerminalWorker,
@@ -62,6 +62,7 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     worker,
     statePath: path.join(userData, "state.json"),
     logDir: path.join(userData, "session-logs"),
+    statusDir: claudeIntegration.statusDir,
     claudeSettingsPath: claudeIntegration.settingsPath,
     async getProject(projectId) {
       return (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;
@@ -85,6 +86,9 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     projectService,
     coordinator,
     readRegistry: () => readProjectRegistry({ registryPath }),
+    async restoreRegistryBackup() {
+      await restoreProjectRegistryFromBackup({ registryPath });
+    },
     async chooseDirectory() {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       const result = window
@@ -97,9 +101,16 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     },
   });
 
+  const notificationDeduper = createTerminalNotificationDeduper();
   coordinator.onEvent((event: TerminalWorkerEvent) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("terminal:event", event);
-    if (event.type !== "status" || (event.status !== "awaiting-input" && event.status !== "awaiting-approval")) return;
+    if (event.type === "exit") notificationDeduper.reset(event.sessionId);
+    if (event.type !== "status") return;
+    if (event.status === "working" || event.status === "exited" || event.status === "error") {
+      notificationDeduper.reset(event.sessionId);
+      return;
+    }
+    if (event.status !== "awaiting-input" && event.status !== "awaiting-approval") return;
     void (async () => {
       if (!Notification.isSupported()) return;
       const windows = BrowserWindow.getAllWindows();
@@ -116,7 +127,11 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
           windowVisible: windows.some((window) => window.isVisible()),
           windowFocused: windows.some((window) => window.isVisible() && window.isFocused()),
         })
-      ) return;
+      ) {
+        notificationDeduper.reset(event.sessionId);
+        return;
+      }
+      if (!notificationDeduper.shouldNotify(event.sessionId, event.status)) return;
       const session = coordinator.list().find((candidate) => candidate.id === event.sessionId);
       const title = session
         ? `${session.kind === "claude" ? "Claude" : "Codex"} · ${path.basename(session.cwd)}`

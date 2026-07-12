@@ -37,6 +37,7 @@ interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
   coordinator: TerminalCoordinatorGateway;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
+  restoreRegistryBackup(): Promise<void>;
   chooseDirectory(): Promise<string | null>;
   getAvailability(): Promise<ProviderAvailability>;
 }
@@ -125,6 +126,10 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("projects:update", async (_event, projectId: unknown, patch: unknown) => {
     const id = nonEmptyString(projectId, "Project id");
     return selectedProject(await dependencies.projectService.updateProjectMetadata(id, validateProjectPatch(patch)), id);
+  });
+  ipc.handle("projects:restore-backup", async () => {
+    await dependencies.restoreRegistryBackup();
+    return annotateMissingRoots(await dependencies.readRegistry());
   });
   ipc.handle("projects:relink", async (_event, projectId: unknown) => {
     const id = nonEmptyString(projectId, "Project id");

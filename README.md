@@ -27,11 +27,13 @@ npm run dist
 
 ## Local Data
 
-- Shared projects: `~/.harness-manager/projects.json`
+- Shared projects: `~/.harness-manager/projects.json` — contract with Harness Manager documented in [`docs/superpowers/specs/registry-contract.md`](docs/superpowers/specs/registry-contract.md)
 - Window, tab, and resume state: Electron `userData/state.json`
 - Bounded terminal replay logs: Electron `userData/session-logs/`
 - App-owned Claude hook overlay: Electron `userData/hooks/` and `claude-settings.json`
 
 Closing the window hides the app to the system tray and keeps managed PTYs alive. Explicit Quit stops those PTYs. Saved AI sessions are resumed only through the visible Resume action.
+
+The sidebar can refresh discovered projects on demand, edit project metadata (display name, status, memo, hidden) shared with Harness Manager, reveal hidden projects, and restore the shared registry from its backup when the primary file is corrupted.
 
 The approved architecture and implementation plan are in [`docs/superpowers/specs/2026-07-11-multi-cli-work-design.md`](docs/superpowers/specs/2026-07-11-multi-cli-work-design.md) and [`docs/superpowers/plans/2026-07-11-multi-cli-work.md`](docs/superpowers/plans/2026-07-11-multi-cli-work.md).

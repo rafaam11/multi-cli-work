@@ -12,6 +12,11 @@ export interface RestartableTerminalWorkerTransport extends TerminalWorkerTransp
   kill(): boolean;
 }
 
+const MAX_CONSECUTIVE_CRASHES = 5;
+const SURVIVAL_RESET_MS = 30_000;
+const BASE_BACKOFF_MS = 500;
+const MAX_BACKOFF_MS = 8_000;
+
 export class RestartingTerminalWorker {
   private readonly eventSubscribers = new Set<(event: TerminalWorkerEvent) => void>();
   private readonly exitSubscribers = new Set<(code: number) => void>();
@@ -19,6 +24,9 @@ export class RestartingTerminalWorker {
   private client: TerminalWorkerClient | null = null;
   private restartError: unknown;
   private disposed = false;
+  private consecutiveCrashes = 0;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private survivalTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly spawn: () => RestartableTerminalWorkerTransport) {
     this.start();
@@ -57,6 +65,14 @@ export class RestartingTerminalWorker {
   dispose(): void {
     this.disposed = true;
     this.client = null;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    if (this.survivalTimer) {
+      clearTimeout(this.survivalTimer);
+      this.survivalTimer = null;
+    }
     const transport = this.transport;
     this.transport = null;
     transport?.kill();
@@ -68,6 +84,11 @@ export class RestartingTerminalWorker {
     this.transport = transport;
     this.client = client;
     this.restartError = undefined;
+    this.survivalTimer = setTimeout(() => {
+      this.survivalTimer = null;
+      this.consecutiveCrashes = 0;
+    }, SURVIVAL_RESET_MS);
+    this.survivalTimer.unref?.();
     client.onEvent((event) => {
       if (this.client !== client || this.disposed) return;
       for (const listener of this.eventSubscribers) listener(event);
@@ -76,11 +97,27 @@ export class RestartingTerminalWorker {
       if (this.client !== client || this.disposed) return;
       this.client = null;
       this.transport = null;
-      try {
-        this.start();
-      } catch (error) {
-        this.restartError = error;
-        console.error("Terminal worker restart failed", error);
+      if (this.survivalTimer) {
+        clearTimeout(this.survivalTimer);
+        this.survivalTimer = null;
+      }
+      this.consecutiveCrashes += 1;
+      if (this.consecutiveCrashes > MAX_CONSECUTIVE_CRASHES) {
+        this.restartError = new Error(
+          `Terminal worker crashed ${MAX_CONSECUTIVE_CRASHES} times consecutively; giving up`,
+        );
+      } else {
+        const delay = Math.min(BASE_BACKOFF_MS * 2 ** (this.consecutiveCrashes - 1), MAX_BACKOFF_MS);
+        this.restartTimer = setTimeout(() => {
+          this.restartTimer = null;
+          try {
+            this.start();
+          } catch (error) {
+            this.restartError = error;
+            console.error("Terminal worker restart failed", error);
+          }
+        }, delay);
+        this.restartTimer.unref?.();
       }
       for (const listener of this.exitSubscribers) listener(code);
     });

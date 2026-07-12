@@ -5,6 +5,7 @@ import type {
   TerminalStatus,
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
+import { tailOnUtf8Boundary } from "../utf8";
 
 export interface ManagedPty {
   readonly pid: number;
@@ -26,7 +27,7 @@ export interface ManagedPtyFactory {
   spawn(executable: string, args: string[], options: PtySpawnOptions): ManagedPty;
 }
 
-class OutputRingBuffer {
+export class OutputRingBuffer {
   private readonly chunks: string[] = [];
   private bytes = 0;
 
@@ -36,7 +37,7 @@ class OutputRingBuffer {
     let chunk = data;
     const chunkBytes = Buffer.byteLength(chunk);
     if (chunkBytes > this.maxBytes) {
-      chunk = Buffer.from(chunk).subarray(chunkBytes - this.maxBytes).toString("utf8");
+      chunk = tailOnUtf8Boundary(Buffer.from(chunk), this.maxBytes).toString("utf8");
       this.chunks.length = 0;
       this.bytes = 0;
     }

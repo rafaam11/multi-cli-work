@@ -7,6 +7,7 @@ import type {
   PersistedTerminalSession,
 } from "../../shared/app-state-types";
 import type { TerminalKind } from "../../shared/terminal-types";
+import { tailOnUtf8Boundary } from "../utf8";
 
 const TERMINAL_KINDS: readonly TerminalKind[] = ["powershell", "claude", "codex"];
 const SESSION_KEYS = [
@@ -174,7 +175,7 @@ export async function appendSessionLog(
   const size = (await fs.stat(logPath)).size;
   if (size <= maxBytes + Math.max(0, trimSlackBytes)) return;
   const current = await fs.readFile(logPath);
-  const bounded = current.subarray(current.length - maxBytes);
+  const bounded = tailOnUtf8Boundary(current, maxBytes);
   const tempPath = `${logPath}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(tempPath, bounded);
@@ -186,7 +187,7 @@ export async function appendSessionLog(
 
 export async function readSessionLog(logDir: string, sessionId: string, maxBytes: number): Promise<string> {
   const data = await fs.readFile(safeSessionLogPath(logDir, sessionId)).catch(() => Buffer.alloc(0));
-  return (data.length > maxBytes ? data.subarray(data.length - maxBytes) : data).toString("utf8");
+  return tailOnUtf8Boundary(data, maxBytes).toString("utf8");
 }
 
 export async function deleteSessionLog(logDir: string, sessionId: string): Promise<void> {

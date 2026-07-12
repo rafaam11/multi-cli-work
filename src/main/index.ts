@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, dialog } from "electron";
 import path from "node:path";
 import { createDesktopRuntime, type DesktopRuntime } from "./runtime";
+import { trayIconDataUrl } from "./tray-icon";
 import {
   rendererTargetNavigationUrl,
   resolveRendererTarget,
@@ -12,6 +13,7 @@ let tray: Tray | null = null;
 let runtime: DesktopRuntime | null = null;
 let isQuitting = false;
 let shouldFocusWhenReady = false;
+let quitRequestInProgress = false;
 
 if (process.env.MULTI_CLI_WORK_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.MULTI_CLI_WORK_USER_DATA));
@@ -26,6 +28,7 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: "#161918",
     title: "Multi CLI Work",
+    icon: nativeImage.createFromDataURL(trayIconDataUrl(32)),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       sandbox: true,
@@ -72,32 +75,40 @@ function showMainWindow(): void {
 
 async function requestQuit(): Promise<void> {
   if (!runtime || isQuitting) return;
-  if (runtime.coordinator.hasActiveSessions()) {
-    const options: Electron.MessageBoxOptions = {
-      type: "warning",
-      title: "Quit Multi CLI Work",
-      message: "Quit and stop all running sessions?",
-      detail: "Open Codex, Claude, and PowerShell processes managed by this app will be terminated.",
-      buttons: ["Cancel", "Quit"],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    };
-    const result = mainWindow
-      ? await dialog.showMessageBox(mainWindow, options)
-      : await dialog.showMessageBox(options);
-    if (result.response !== 1) return;
+  if (quitRequestInProgress) return;
+  quitRequestInProgress = true;
+  try {
+    if (runtime.coordinator.hasActiveSessions()) {
+      showMainWindow();
+      const options: Electron.MessageBoxOptions = {
+        type: "warning",
+        title: "Quit Multi CLI Work",
+        message: "Quit and stop all running sessions?",
+        detail: "Open Codex, Claude, and PowerShell processes managed by this app will be terminated.",
+        buttons: ["Cancel", "Quit"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const result = mainWindow
+        ? await dialog.showMessageBox(mainWindow, options)
+        : await dialog.showMessageBox(options);
+      if (result.response !== 1) return;
+    }
+    await runtime.dispose();
+    isQuitting = true;
+    app.quit();
+  } finally {
+    quitRequestInProgress = false;
   }
-  await runtime.dispose();
-  isQuitting = true;
-  app.quit();
 }
 
 function createTray(): Tray {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="6" fill="#202524"/><path d="M8 10l5 5-5 5M16 21h8" fill="none" stroke="#4fb7a4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  const icon = nativeImage
-    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`)
-    .resize({ width: 16, height: 16 });
+  const icon = nativeImage.createFromDataURL(trayIconDataUrl(16));
+  icon.addRepresentation({ scaleFactor: 2, dataURL: trayIconDataUrl(32) });
+  if (icon.isEmpty()) {
+    console.error("Tray icon failed to decode; the tray icon will be invisible.");
+  }
   const nextTray = new Tray(icon);
   nextTray.setToolTip("Multi CLI Work");
   nextTray.setContextMenu(

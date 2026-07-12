@@ -23,7 +23,7 @@ Provider adapters own command construction, lifecycle signals, and resume behavi
 
 ## MVP Boundaries
 
-Included: project discovery/manual add, nested multi-session tree, one terminal viewport, tray persistence, notifications, manual resume, local NSIS installer.
+Included: project discovery/manual add, nested multi-session tree, one terminal viewport, tray persistence, notifications, manual resume, local NSIS installer. Completeness pass additions: manual project refresh, project metadata editing (display name/status/memo/hidden) with a hidden-projects toggle, registry restore-from-backup, per-session notification dedupe, and the shared registry contract in `registry-contract.md`.
 
 Excluded: split panes, WSL, arbitrary shell profiles, file browsing, Git UI, cloud sync, automatic updates, Codex App Server integration, and public release publishing.
 

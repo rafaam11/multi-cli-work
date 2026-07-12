@@ -38,8 +38,12 @@ describe("Claude app-owned integration", () => {
         "-File",
         "C:\\App Data\\hooks\\claude-status.ps1",
       ],
-      timeout: 5,
+      timeout: 10,
     });
+  });
+
+  it("maps elicitation dialogs to awaiting-input", () => {
+    expect(CLAUDE_STATUS_HOOK).toContain("elicitation_dialog");
   });
 
   it("writes the settings overlay and hook script beneath app userData", async () => {

@@ -67,8 +67,9 @@ function uuidString(value: unknown, label: string): string {
 
 function isoString(value: unknown, label: string): string {
   const raw = requiredString(value, label);
-  if (!Number.isFinite(Date.parse(raw))) throw new ProjectRegistryError(`${label} must be an ISO timestamp`);
-  return raw;
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) throw new ProjectRegistryError(`${label} must be an ISO timestamp`);
+  return new Date(parsed).toISOString();
 }
 
 function uniqueStringArray(value: unknown, label: string): string[] {
@@ -110,6 +111,12 @@ function parseProject(value: unknown, key: string): SharedProject {
   if (id !== key) throw new ProjectRegistryError(`Project key ${key} does not match project id ${id}`);
   if (!Array.isArray(value.sources) || value.sources.some((source) => !SOURCES.includes(source as ProjectSource))) {
     throw new ProjectRegistryError(`project ${key}.sources is invalid`);
+  }
+  if (value.sources.length === 0) {
+    throw new ProjectRegistryError(`project ${key}.sources must not be empty`);
+  }
+  if (new Set(value.sources).size !== value.sources.length) {
+    throw new ProjectRegistryError(`project ${key}.sources contains duplicate values`);
   }
   if (!isRecord(value.providerRefs)) throw new ProjectRegistryError(`project ${key}.providerRefs must be an object`);
   assertExactKeys(value.providerRefs, ["claude", "codex"], `project ${key}.providerRefs`);
@@ -323,9 +330,13 @@ async function writeRegistry(registryPath: string, registry: ProjectRegistryV1):
   const tempPath = `${registryPath}.${process.pid}.${randomUUID()}.tmp`;
   try {
     try {
+      parseProjectRegistry(JSON.parse(await fs.readFile(registryPath, "utf8")));
       await fs.copyFile(registryPath, `${registryPath}.bak`);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
+      const corrupt = error instanceof ProjectRegistryError || error instanceof SyntaxError;
+      // A corrupt primary must never overwrite the last known-good backup.
+      if (!missing && !corrupt) throw error;
     }
     await fs.writeFile(tempPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
     await fs.rename(tempPath, registryPath);
@@ -334,14 +345,9 @@ async function writeRegistry(registryPath: string, registry: ProjectRegistryV1):
   }
 }
 
-export async function updateProjectRegistry(
-  update: (registry: ProjectRegistryV1) => ProjectRegistryV1 | Promise<ProjectRegistryV1>,
-  options: RegistryStorageOptions = {},
-): Promise<ProjectRegistryV1> {
-  const registryPath = options.registryPath ?? PROJECT_REGISTRY_PATH;
-  const lockRetryMs = options.lockRetryMs ?? 5_000;
+async function acquireRegistryLock(registryPath: string, lockRetryMs: number): Promise<() => Promise<void>> {
   await fs.mkdir(path.dirname(registryPath), { recursive: true });
-  const release = await lockfile.lock(registryPath, {
+  return lockfile.lock(registryPath, {
     realpath: false,
     lockfilePath: `${registryPath}.lock`,
     retries: {
@@ -351,12 +357,40 @@ export async function updateProjectRegistry(
       maxTimeout: 100,
     },
   });
+}
+
+export async function updateProjectRegistry(
+  update: (registry: ProjectRegistryV1) => ProjectRegistryV1 | Promise<ProjectRegistryV1>,
+  options: RegistryStorageOptions = {},
+): Promise<ProjectRegistryV1> {
+  const registryPath = options.registryPath ?? PROJECT_REGISTRY_PATH;
+  const release = await acquireRegistryLock(registryPath, options.lockRetryMs ?? 5_000);
   try {
     const snapshot = await readProjectRegistry({ registryPath });
     if (!snapshot.writable) throw new ProjectRegistryError(snapshot.warning ?? "Project registry is read-only");
     const next = parseProjectRegistry(await update(snapshot.registry));
     await writeRegistry(registryPath, next);
     return next;
+  } finally {
+    await release();
+  }
+}
+
+export async function restoreProjectRegistryFromBackup(
+  options: RegistryStorageOptions = {},
+): Promise<ProjectRegistryV1> {
+  const registryPath = options.registryPath ?? PROJECT_REGISTRY_PATH;
+  const release = await acquireRegistryLock(registryPath, options.lockRetryMs ?? 5_000);
+  try {
+    let backup: ProjectRegistryV1;
+    try {
+      backup = parseProjectRegistry(await readJson(`${registryPath}.bak`));
+    } catch (error) {
+      if (error instanceof ProjectRegistryError) throw error;
+      throw new ProjectRegistryError("Project registry backup is unreadable", { cause: error });
+    }
+    await writeRegistry(registryPath, backup);
+    return backup;
   } finally {
     await release();
   }

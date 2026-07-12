@@ -182,6 +182,7 @@ function createApi(options?: {
       addFolder: vi.fn().mockResolvedValue(null),
       update: vi.fn(),
       relink: vi.fn().mockResolvedValue(null),
+      restoreBackup: vi.fn().mockResolvedValue(registry(projects)),
     },
     providers: {
       availability: vi.fn().mockResolvedValue({ powershell: true, claude: true, codex: false }),
@@ -315,6 +316,144 @@ describe("project workspace", () => {
     expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "Open PowerShell session");
     expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard");
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(dashboardSession.id));
+  });
+
+  it("renders a refresh button that reloads projects and sessions on click", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    expect(harness.api.projects.refresh).toHaveBeenCalledOnce();
+
+    const refreshButton = screen.getByRole("button", { name: "Refresh projects" });
+    fireEvent.click(refreshButton);
+    expect(refreshButton).toBeDisabled();
+
+    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
+    expect(harness.api.projects.list).toHaveBeenCalledTimes(2);
+    expect(harness.api.terminals.list).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(refreshButton).toBeEnabled());
+  });
+
+  it("keeps the selected project and session across a manual refresh when they still exist", async () => {
+    const dashboardSession: TerminalSessionView = {
+      ...powershellSession,
+      id: "session-dashboard",
+      projectId: dashboard.id,
+      cwd: dashboard.rootPath,
+    };
+    // appState stays pinned to Atlas/PowerShell throughout, simulating stale persisted state.
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession, dashboardSession],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Atlas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select project Dashboard" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open PowerShell session" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
+    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole("button", { name: "Select project Dashboard" }).closest(".project-row")).toHaveClass(
+      "selected",
+    );
+    expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "Open PowerShell session");
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard");
+  });
+
+  it("falls back to another project when the selected project disappears during a manual refresh", async () => {
+    const harness = createApi({ projects: [atlas, dashboard], sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    expect(screen.getByRole("button", { name: "Select project Atlas" }).closest(".project-row")).toHaveClass(
+      "selected",
+    );
+
+    vi.mocked(harness.api.projects.refresh).mockResolvedValueOnce(registry([dashboard]));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
+
+    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: "Select project Atlas" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select project Dashboard" }).closest(".project-row")).toHaveClass(
+      "selected",
+    );
+  });
+
+  it("offers a restore action when the registry fell back to its backup", async () => {
+    const harness = createApi({
+      writable: false,
+      source: "backup",
+      warning: "Primary project registry is invalid: bad json",
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const restoreButton = await screen.findByRole("button", { name: "Restore registry from backup" });
+    fireEvent.click(restoreButton);
+
+    await waitFor(() => expect(harness.api.projects.restoreBackup).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Restore registry from backup" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("edits project metadata through the row editor and updates the tree", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.projects.update).mockResolvedValue({ ...atlas, displayName: "Atlas Prime" });
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit project Atlas" }));
+
+    const editor = screen.getByRole("dialog", { name: "Edit project Atlas" });
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Atlas Prime" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { displayName: "Atlas Prime" }),
+    );
+    await screen.findByRole("button", { name: "Select project Atlas Prime" });
+    expect(editor).not.toBeInTheDocument();
+  });
+
+  it("clears the selection when the selected project is hidden through the editor", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.projects.update).mockResolvedValue({ ...atlas, hidden: true });
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit project Atlas" }));
+    fireEvent.click(screen.getByLabelText("Hidden"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Select project Atlas" })).not.toBeInTheDocument(),
+    );
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("No project selected");
+  });
+
+  it("reveals hidden projects with a badge when the toggle is enabled", async () => {
+    const harness = createApi({ projects: [atlas, { ...dashboard, hidden: true }] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    expect(screen.queryByRole("button", { name: "Select project Dashboard" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Show hidden projects"));
+
+    const hiddenRow = await screen.findByRole("button", { name: "Select project Dashboard" });
+    expect(hiddenRow).toHaveTextContent("Hidden");
+    expect(hiddenRow.closest(".project-row")).toHaveClass("hidden-project");
   });
 
   it("persists selection and creates only available provider sessions", async () => {
