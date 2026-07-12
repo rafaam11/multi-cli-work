@@ -168,7 +168,7 @@ export function WorkspaceHeader({
                         : details.menuLabel
                   }
                 >
-                  <ProviderIcon size={15} className={providerAccentClass[kind]} />
+                  <ProviderIcon size={15} className={availability[kind] ? providerAccentClass[kind] : undefined} />
                   <span>{details.label}</span>
                 </button>
               );

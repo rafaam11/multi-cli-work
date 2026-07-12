@@ -146,7 +146,7 @@ export function HomeDashboard({
               const Icon = details.icon;
               return (
                 <li key={kind} className={availability[kind] ? "installed" : "missing"}>
-                  <Icon size={14} className={providerAccentClass[kind]} />
+                  <Icon size={14} className={availability[kind] ? providerAccentClass[kind] : undefined} />
                   <span>{details.label}</span>
                   <span className="cli-status-value">{availability[kind] ? "설치됨" : "찾을 수 없음"}</span>
                 </li>
@@ -202,7 +202,7 @@ export function HomeDashboard({
                           aria-label={`${projectName(project)}에서 ${details.label} 시작`}
                           onClick={() => onStartSession(project, kind)}
                         >
-                          <Icon size={13} className={providerAccentClass[kind]} />
+                          <Icon size={13} className={availability[kind] ? providerAccentClass[kind] : undefined} />
                         </button>
                       );
                     })}

@@ -178,7 +178,7 @@ export function ProjectDetailPage({
                       onClick={() => onStartSession(kind)}
                       aria-label={`${details.label} 세션 시작`}
                     >
-                      <Icon size={15} className={providerAccentClass[kind]} />
+                      <Icon size={15} className={availability[kind] ? providerAccentClass[kind] : undefined} />
                       <span>{details.label}</span>
                     </button>
                   );
