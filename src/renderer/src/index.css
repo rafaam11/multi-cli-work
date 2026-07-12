@@ -1590,6 +1590,17 @@ body.sidebar-resizing {
   text-transform: uppercase;
 }
 
+.detail-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.detail-card-header h2 {
+  margin: 0;
+}
+
 .detail-empty {
   margin: 0;
   color: var(--quiet);
@@ -1705,20 +1716,6 @@ body.sidebar-resizing {
 .git-changes {
   color: var(--quiet);
   font-size: 10px;
-}
-
-.detail-card [aria-label="Git status"] button,
-.detail-card button[aria-label="Refresh git status"] {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  color: var(--text);
-  background: transparent;
-  font-size: 10px;
-  cursor: pointer;
 }
 
 .detail-save-error {

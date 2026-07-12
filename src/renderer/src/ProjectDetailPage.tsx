@@ -232,7 +232,19 @@ export function ProjectDetailPage({
         </section>
 
         <section className="detail-card" aria-label="Git 상태">
-          <h2>Git 상태</h2>
+          <div className="detail-card-header">
+            <h2>Git 상태</h2>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={loadGitStatus}
+              disabled={gitStatusLoading}
+              aria-label="Git 상태 새로고침"
+              title="Git 상태 새로고침"
+            >
+              <RefreshCw size={14} className={gitStatusLoading ? "spin" : undefined} />
+            </button>
+          </div>
           {gitStatusLoading ? (
             <p className="detail-empty">Git 상태 확인 중…</p>
           ) : gitStatusError ? (
@@ -247,10 +259,6 @@ export function ProjectDetailPage({
           ) : (
             <p className="detail-empty">Git 저장소가 아닙니다</p>
           )}
-          <button type="button" onClick={loadGitStatus} disabled={gitStatusLoading} aria-label="Git 상태 새로고침">
-            <RefreshCw size={13} className={gitStatusLoading ? "spin" : undefined} />
-            <span>새로고침</span>
-          </button>
         </section>
 
         <section className="detail-card detail-card-notes" aria-label="메모">
