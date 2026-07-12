@@ -48,7 +48,8 @@
 
 - **폴더 트리** — 폴더 하나에 세션 여러 개를 중첩해 붙인다. **＋** 로 작업할 폴더를 열면 목록에 남고, 앱을 껐다 켜도 그대로다. 자동 발견은 하지 않는다 — **내가 연 폴더만** 보인다.
 - **폴더 우클릭 메뉴** — **파일 탐색기에서 열기** · **VS Code로 열기**(`code`) · **GitHub에서 열기**(`origin` 리모트를 브라우저로) · **이름 바꾸기** · **목록에서 제거**. 제거는 UI 목록에서만 빼는 것이고 **디스크의 폴더는 건드리지 않는다**(세션이 남아 있으면 먼저 확인한다).
-- **세션 상태 7종** — `starting` · `working` · `awaiting-input` · `awaiting-approval` · `idle` · `exited` · `error`. Claude는 앱 전용 **훅 오버레이**(`--settings`)로, Codex는 **OSC 알림**과 프로세스·입력 신호로 판정한다. 다만 아래 권한 플래그를 항상 붙이므로 `awaiting-approval`은 실질적으로 뜨지 않는다.
+- **세션 이름 = 하는 일** — Claude는 자기가 붙인 세션 제목(`ai-title`)을, Codex는 첫 프롬프트를 트랜스크립트에서 읽어 세션 이름으로 쓴다. 작업이 바뀌면 이름도 따라 바뀐다. 세션을 **우클릭 → Rename** 하면 직접 붙인 이름이 우선하고, **Use the provider's title** 로 되돌린다.
+- **세션 상태 7종** — `starting` · `working` · `awaiting-input` · `awaiting-approval` · `idle` · `exited` · `error`. 각 세션 행이 **상태 색으로 물든다**(작업 중=teal, 입력 대기=violet, 대기=green, 종료=회색, 오류=red). Claude는 앱 전용 **훅 오버레이**(`--settings`)로, Codex는 **OSC 알림**과 프로세스·입력 신호로 판정한다. 다만 아래 권한 플래그를 항상 붙이므로 `awaiting-approval`은 실질적으로 뜨지 않는다.
 - **권한 프롬프트 없이 실행** — Claude는 `--dangerously-skip-permissions`, Codex는 `--dangerously-bypass-approvals-and-sandbox` 로 항상 실행한다. 승인 대기로 멈추지 않는 대신 **에이전트가 확인 없이 파일을 고치고 명령을 돌린다** — 신뢰하는 저장소에서만 쓸 것.
 - **알림은 필요할 때만** — **화면에 없는** 세션이 입력 대기에 들어갈 때만 Windows 알림을 띄운다. 같은 상태로 계속 머물면 다시 울리지 않는다. 클릭하면 창이 뜬다.
 - **트레이 상주 · 세션 보존** — 창을 닫으면 트레이로 숨고 PTY는 살아 있다. **Quit**은 "돌고 있는 세션을 끄겠냐"고 확인한 뒤에만 종료한다. 재시작하면 폴더·탭·**바운드 스크롤백**이 복원되고, AI 세션은 눈에 보이는 **Resume**을 눌러야 재개된다(`claude --resume` / `codex resume`).

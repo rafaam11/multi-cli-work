@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type { AppStateSnapshot } from "@shared/app-state-types";
 import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
-import type { TerminalWorkerEvent } from "@shared/terminal-types";
+import type { TerminalEvent } from "@shared/terminal-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -97,6 +97,8 @@ const powershellSession: TerminalSessionView = {
   id: "session-pwsh",
   projectId: atlas.id,
   tool: null,
+  title: null,
+  name: null,
   kind: "powershell",
   cwd: atlas.rootPath,
   providerConversationId: null,
@@ -151,7 +153,7 @@ function createApi(options?: {
   missingRootProjectIds?: string[];
   selection?: Pick<AppStateSnapshot["state"], "selectedProjectId" | "selectedSessionId">;
 }) {
-  const listeners = new Set<(event: TerminalWorkerEvent) => void>();
+  const listeners = new Set<(event: TerminalEvent) => void>();
   const projects = options?.projects ?? [atlas];
   const sessions = options?.sessions ?? [powershellSession, claudeSession];
   const snapshot = {
@@ -219,6 +221,10 @@ function createApi(options?: {
         return resumedSession;
       }),
       remove: vi.fn().mockResolvedValue(undefined),
+      rename: vi.fn().mockImplementation(async (sessionId: string, name: string | null) => ({
+        ...[...sessions, created, toolSession].find((session) => session.id === sessionId)!,
+        name,
+      })),
       select: vi.fn().mockResolvedValue({
         source: "primary",
         writable: true,
@@ -248,7 +254,7 @@ function createApi(options?: {
   return {
     api,
     created,
-    emit(event: TerminalWorkerEvent) {
+    emit(event: TerminalEvent) {
       for (const listener of listeners) listener(event);
     },
   };
@@ -576,6 +582,56 @@ describe("folder workspace", () => {
     );
     expect(harness.api.terminals.select).toHaveBeenCalledWith(atlas.id, harness.created.id);
     expect((await screen.findAllByText("Starting")).length).toBeGreaterThan(0);
+  });
+
+  it("names a session after the work it is doing, and carries its status as a row colour", async () => {
+    const titled: TerminalSessionView = {
+      ...claudeSession,
+      id: "session-titled",
+      title: "레지스트리 분리",
+      status: "working",
+      pid: 4400,
+      exitCode: null,
+    };
+    const harness = createApi({ sessions: [powershellSession, titled] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: "Open 레지스트리 분리 session" });
+    expect(row).toHaveClass("status-working");
+    expect(screen.getByRole("button", { name: "Open PowerShell session" })).toHaveClass("status-idle");
+
+    // A title that arrives mid-session renames the row without a reload.
+    await act(async () => {
+      harness.emit({ type: "title", sessionId: powershellSession.id, title: "빌드 로그 확인" });
+    });
+
+    expect(await screen.findByRole("button", { name: "Open 빌드 로그 확인 session" })).toBeInTheDocument();
+  });
+
+  it("renames a session from its context menu and can hand the name back to the provider", async () => {
+    const titled: TerminalSessionView = { ...claudeSession, id: "session-titled", title: "레지스트리 분리" };
+    const harness = createApi({ sessions: [titled] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: "Open 레지스트리 분리 session" });
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+
+    const input = screen.getByLabelText("Session name");
+    expect(input).toHaveValue("레지스트리 분리");
+    fireEvent.change(input, { target: { value: "  내 작업  " } });
+    fireEvent.submit(screen.getByRole("form", { name: "Rename session" }));
+
+    await waitFor(() => expect(harness.api.terminals.rename).toHaveBeenCalledWith(titled.id, "내 작업"));
+    const renamed = await screen.findByRole("button", { name: "Open 내 작업 session" });
+
+    fireEvent.contextMenu(renamed);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Use the provider's title" }));
+
+    await waitFor(() => expect(harness.api.terminals.rename).toHaveBeenLastCalledWith(titled.id, null));
+    expect(await screen.findByRole("button", { name: "Open 레지스트리 분리 session" })).toBeInTheDocument();
   });
 
   it("keeps sessions in creation order when one is opened or changes status", async () => {

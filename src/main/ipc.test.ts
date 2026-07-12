@@ -49,6 +49,7 @@ function setup() {
     removeProjectSessions: vi.fn(async () => {
       calls.push("removeProjectSessions");
     }),
+    rename: vi.fn(async (sessionId: string, name: string | null) => ({ id: sessionId, name })),
     select: vi.fn(),
     state: vi.fn(async () => ({
       source: "primary" as const,
@@ -164,6 +165,20 @@ describe("main IPC boundary", () => {
     expect(projectActions.openInEditor).toHaveBeenCalledWith(project.rootPath);
     expect(projectActions.openOnGitHub).toHaveBeenCalledWith(project.rootPath);
     await expect(handlers.get("projects:reveal")!({}, "unknown-project")).rejects.toThrow(/not found/i);
+  });
+
+  it("accepts a session name or a null that clears it, and rejects anything else", async () => {
+    const { handlers, coordinator } = setup();
+
+    await expect(handlers.get("terminals:rename")!({}, "session-1", { evil: true })).rejects.toThrow(/string or null/i);
+    await expect(handlers.get("terminals:rename")!({}, "session-1", "x".repeat(121))).rejects.toThrow(/too long/i);
+    expect(coordinator.rename).not.toHaveBeenCalled();
+
+    await handlers.get("terminals:rename")!({}, "session-1", "레지스트리 분리");
+    await handlers.get("terminals:rename")!({}, "session-1", null);
+
+    expect(coordinator.rename).toHaveBeenNthCalledWith(1, "session-1", "레지스트리 분리");
+    expect(coordinator.rename).toHaveBeenNthCalledWith(2, "session-1", null);
   });
 
   it("only accepts the maintenance commands the main process knows about", async () => {

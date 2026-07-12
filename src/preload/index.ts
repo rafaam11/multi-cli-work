@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { MultiCliWorkApi, UpdaterStatus } from "../shared/api-types";
-import type { TerminalWorkerEvent } from "../shared/terminal-types";
+import type { TerminalEvent } from "../shared/terminal-types";
 
 const api: MultiCliWorkApi = {
   platform: process.platform,
@@ -29,9 +29,10 @@ const api: MultiCliWorkApi = {
     stop: (sessionId) => ipcRenderer.invoke("terminals:stop", sessionId),
     resume: (input) => ipcRenderer.invoke("terminals:resume", input),
     remove: (sessionId) => ipcRenderer.invoke("terminals:remove", sessionId),
+    rename: (sessionId, name) => ipcRenderer.invoke("terminals:rename", sessionId, name),
     select: (projectId, sessionId) => ipcRenderer.invoke("terminals:select", projectId, sessionId),
     onEvent(listener) {
-      const handler = (_event: Electron.IpcRendererEvent, terminalEvent: TerminalWorkerEvent) => listener(terminalEvent);
+      const handler = (_event: Electron.IpcRendererEvent, terminalEvent: TerminalEvent) => listener(terminalEvent);
       ipcRenderer.on("terminal:event", handler);
       return () => ipcRenderer.removeListener("terminal:event", handler);
     },

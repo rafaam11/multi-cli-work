@@ -37,6 +37,8 @@ describe("app state", () => {
             id: "session-1",
             projectId: "project-1",
             tool: null,
+            title: "레지스트리 분리",
+            name: null,
             kind: "claude",
             cwd: "C:\\Work",
             providerConversationId: "claude-1",
@@ -50,7 +52,12 @@ describe("app state", () => {
 
     const snapshot = await readAppState({ statePath });
     expect(snapshot.writable).toBe(true);
-    expect(snapshot.state.sessions["session-1"]).toMatchObject({ kind: "claude", providerConversationId: "claude-1" });
+    expect(snapshot.state.sessions["session-1"]).toMatchObject({
+      kind: "claude",
+      providerConversationId: "claude-1",
+      title: "레지스트리 분리",
+      name: null,
+    });
   });
 
   it("persists a maintenance session that belongs to no folder", async () => {
@@ -64,6 +71,8 @@ describe("app state", () => {
             id: "session-tool",
             projectId: null,
             tool: "claude-update",
+            title: null,
+            name: null,
             kind: "powershell",
             cwd: "C:\\Users\\me",
             providerConversationId: null,
@@ -79,7 +88,7 @@ describe("app state", () => {
     expect(snapshot.state.sessions["session-tool"]).toMatchObject({ projectId: null, tool: "claude-update" });
   });
 
-  it("reads state files written before maintenance sessions existed", async () => {
+  it("reads state files written before titles, names, and maintenance sessions existed", async () => {
     const root = await tempRoot();
     const statePath = path.join(root, "state.json");
     await fs.writeFile(
@@ -106,7 +115,7 @@ describe("app state", () => {
 
     const snapshot = await readAppState({ statePath });
     expect(snapshot.writable).toBe(true);
-    expect(snapshot.state.sessions["session-1"].tool).toBeNull();
+    expect(snapshot.state.sessions["session-1"]).toMatchObject({ tool: null, title: null, name: null });
   });
 
   it("rejects an unknown tool command", async () => {

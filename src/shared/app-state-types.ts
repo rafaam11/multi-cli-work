@@ -5,6 +5,10 @@ export interface PersistedTerminalSession {
   /** Null for maintenance sessions, which run outside any folder. */
   projectId: string | null;
   tool: ToolCommand | null;
+  /** What the provider calls this session; read from its transcript and refreshed as work moves on. */
+  title: string | null;
+  /** What the user calls this session. It wins over the provider's title. */
+  name: string | null;
   kind: TerminalKind;
   cwd: string;
   providerConversationId: string | null;

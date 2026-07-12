@@ -1,6 +1,6 @@
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, SharedProject } from "./project-types";
-import type { TerminalKind, TerminalStatus, TerminalWorkerEvent, ToolCommand } from "./terminal-types";
+import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -87,8 +87,9 @@ export interface MultiCliWorkApi {
     stop(sessionId: string): Promise<void>;
     resume(input: ResumeTerminalInput): Promise<TerminalSessionView>;
     remove(sessionId: string): Promise<void>;
+    rename(sessionId: string, name: string | null): Promise<TerminalSessionView>;
     select(projectId: string | null, sessionId: string | null): Promise<AppStateSnapshot>;
-    onEvent(listener: (event: TerminalWorkerEvent) => void): () => void;
+    onEvent(listener: (event: TerminalEvent) => void): () => void;
   };
   updates: {
     appVersion(): Promise<string>;

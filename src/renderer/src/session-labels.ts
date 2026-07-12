@@ -29,16 +29,25 @@ export function projectName(project: SharedProject): string {
   return project.displayName?.trim() || fallback || project.rootPath;
 }
 
+/** A session shows what it is working on: the name the user gave it, else the provider's title. */
+function ownName(session: TerminalSessionView): string | null {
+  const name = session.name?.trim();
+  if (name) return name;
+  if (session.tool) return toolDetails[session.tool].label;
+  return session.title?.trim() || null;
+}
+
 /**
- * Sessions of the same kind in the same folder are numbered so they stay tellable apart.
- * A maintenance session is named for its command, not for the shell that happens to run it.
+ * Sessions with nothing to show fall back to the provider name, and those are numbered so they stay
+ * tellable apart. Numbering only counts the other fallbacks, so it stays contiguous as titles arrive.
  */
 export function sessionLabel(session: TerminalSessionView, peers: TerminalSessionView[]): string {
-  if (session.tool) return toolDetails[session.tool].label;
+  const own = ownName(session);
+  if (own) return own;
   const base = providerDetails[session.kind].label;
-  const sameKind = peers
-    .filter((candidate) => !candidate.tool && candidate.kind === session.kind)
+  const unnamed = peers
+    .filter((candidate) => candidate.kind === session.kind && ownName(candidate) === null)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
-  if (sameKind.length < 2) return base;
-  return `${base} ${sameKind.findIndex((candidate) => candidate.id === session.id) + 1}`;
+  if (unnamed.length < 2) return base;
+  return `${base} ${unnamed.findIndex((candidate) => candidate.id === session.id) + 1}`;
 }

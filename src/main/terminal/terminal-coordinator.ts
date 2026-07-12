@@ -9,6 +9,7 @@ import type {
 import type { SharedProject } from "../../shared/project-types";
 import type {
   TerminalAttachment,
+  TerminalEvent,
   TerminalLaunchSpec,
   TerminalSession,
   TerminalStatus,
@@ -55,15 +56,22 @@ interface TerminalCoordinatorOptions {
     snapshot(cwd: string): Promise<ReadonlySet<string>>;
     waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null>;
   };
+  /** Reads what the provider currently calls this session. Absent in tests that do not need titles. */
+  readTitle?(session: TerminalSessionView): Promise<string | null>;
+  titlePollMs?: number;
   appendLog?: typeof appendSessionLog;
   logFlushMs?: number;
 }
+
+const DEFAULT_TITLE_POLL_MS = 2_000;
 
 function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
   return {
     id: view.id,
     projectId: view.projectId,
     tool: view.tool,
+    title: view.title,
+    name: view.name,
     kind: view.kind,
     cwd: view.cwd,
     providerConversationId: view.providerConversationId,
@@ -72,17 +80,13 @@ function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
   };
 }
 
-function runningView(session: TerminalSession): TerminalSessionView {
-  return { ...session };
-}
-
 function exitedView(session: PersistedTerminalSession): TerminalSessionView {
   return { ...session, status: "exited", pid: null, exitCode: null };
 }
 
 export class TerminalCoordinator {
   private readonly views = new Map<string, TerminalSessionView>();
-  private readonly subscribers = new Set<(event: TerminalWorkerEvent) => void>();
+  private readonly subscribers = new Set<(event: TerminalEvent) => void>();
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly pendingLogChunks = new Map<string, string[]>();
   private readonly logFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -90,6 +94,7 @@ export class TerminalCoordinator {
   private readonly removedSessionIds = new Set<string>();
   private readonly codexCorrelationAbort = new AbortController();
   private eventChain: Promise<void> = Promise.resolve();
+  private titleTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly options: TerminalCoordinatorOptions) {
     options.worker.onEvent((event) => {
@@ -171,6 +176,8 @@ export class TerminalCoordinator {
       sessionId: saved.id,
       projectId: saved.projectId,
       tool: saved.tool,
+      title: saved.title,
+      name: saved.name,
       cwd,
       kind: saved.kind,
       cols: input.cols,
@@ -186,7 +193,12 @@ export class TerminalCoordinator {
     if (view.pid !== null && view.status !== "exited" && view.status !== "error") {
       try {
         const attachment = await this.options.worker.attach(sessionId);
-        return { session: runningView(attachment.session), replay: attachment.replay, sequence: attachment.sequence };
+        // The worker knows nothing about titles, so keep the ones main is tracking.
+        return {
+          session: { ...attachment.session, title: view.title, name: view.name },
+          replay: attachment.replay,
+          sequence: attachment.sequence,
+        };
       } catch {
         // The worker may have exited between list and attach; the persisted log is still usable.
       }
@@ -265,7 +277,7 @@ export class TerminalCoordinator {
     return { state, source: "primary" as const, writable: true };
   }
 
-  onEvent(listener: (event: TerminalWorkerEvent) => void): () => void {
+  onEvent(listener: (event: TerminalEvent) => void): () => void {
     this.subscribers.add(listener);
     return () => this.subscribers.delete(listener);
   }
@@ -298,6 +310,7 @@ export class TerminalCoordinator {
 
   async shutdown(): Promise<void> {
     this.codexCorrelationAbort.abort();
+    this.stopTitlePolling();
     const active = this.list().filter(
       (session) => session.pid !== null && session.status !== "exited" && session.status !== "error",
     );
@@ -315,6 +328,8 @@ export class TerminalCoordinator {
     rows: number;
     createdAt: string;
     resumeConversationId: string | null;
+    title?: string | null;
+    name?: string | null;
   }): Promise<TerminalSessionView> {
     const knownCodexIds =
       input.kind === "codex" && !input.resumeConversationId && this.options.codexSessions
@@ -344,7 +359,11 @@ export class TerminalCoordinator {
       createdAt: input.createdAt,
       providerConversationId: command.providerConversationId,
     });
-    const view = runningView(session);
+    const view: TerminalSessionView = {
+      ...session,
+      title: input.title ?? null,
+      name: input.name ?? null,
+    };
     this.views.set(view.id, view);
     await this.persistView(view, (state) => ({
       ...state,
@@ -354,6 +373,74 @@ export class TerminalCoordinator {
     if (knownCodexIds && this.options.codexSessions) {
       this.correlateCodexConversation(view.id, view.cwd, knownCodexIds);
     }
+    this.startTitlePolling();
+    return { ...view };
+  }
+
+  /**
+   * Provider titles live in transcript files the CLI is still appending to, and for a fresh session
+   * the file does not exist yet. Polling the running sessions sidesteps both the missing-file race
+   * and fs.watch's habit of dropping creation events on Windows.
+   */
+  private startTitlePolling(): void {
+    if (this.titleTimer || !this.options.readTitle) return;
+    const timer = setInterval(() => {
+      void this.refreshTitles();
+    }, this.options.titlePollMs ?? DEFAULT_TITLE_POLL_MS);
+    timer.unref?.();
+    this.titleTimer = timer;
+  }
+
+  private stopTitlePolling(): void {
+    if (!this.titleTimer) return;
+    clearInterval(this.titleTimer);
+    this.titleTimer = null;
+  }
+
+  private titleCandidates(): TerminalSessionView[] {
+    return this.list().filter(
+      (session) =>
+        session.kind !== "powershell" &&
+        session.pid !== null &&
+        session.status !== "exited" &&
+        session.status !== "error",
+    );
+  }
+
+  async refreshTitles(): Promise<void> {
+    const readTitle = this.options.readTitle;
+    if (!readTitle) return;
+    const candidates = this.titleCandidates();
+    if (candidates.length === 0) {
+      this.stopTitlePolling();
+      return;
+    }
+    for (const candidate of candidates) {
+      let title: string | null;
+      try {
+        title = await readTitle(candidate);
+      } catch (error) {
+        this.reportAsyncError("Session title read failed", error);
+        continue;
+      }
+      // A read that comes back empty is treated as "nothing new yet", never as "forget the title".
+      if (title === null) continue;
+      const view = this.views.get(candidate.id);
+      if (!view || view.title === title) continue;
+      view.title = title;
+      view.updatedAt = this.options.now();
+      await this.persistView(view);
+      this.publish({ type: "title", sessionId: view.id, title });
+    }
+  }
+
+  async rename(sessionId: string, name: string | null): Promise<TerminalSessionView> {
+    const view = this.views.get(sessionId);
+    if (!view) throw new Error(`Unknown terminal session: ${sessionId}`);
+    const trimmed = name === null ? null : name.trim();
+    view.name = trimmed && trimmed.length > 0 ? trimmed : null;
+    view.updatedAt = this.options.now();
+    await this.persistView(view);
     return { ...view };
   }
 
@@ -480,7 +567,7 @@ export class TerminalCoordinator {
       .catch((error) => this.reportAsyncError("Terminal event failed", error));
   }
 
-  private publish(event: TerminalWorkerEvent): void {
+  private publish(event: TerminalEvent): void {
     for (const listener of this.subscribers) {
       try {
         listener(event);

@@ -50,6 +50,12 @@ export type TerminalWorkerEvent =
   | { type: "status"; sessionId: string; status: TerminalStatus }
   | { type: "exit"; sessionId: string; exitCode: number; signal?: number };
 
+/**
+ * What the renderer subscribes to. The PTY worker only knows about the events above; the title is
+ * read from the provider's transcript in the main process.
+ */
+export type TerminalEvent = TerminalWorkerEvent | { type: "title"; sessionId: string; title: string };
+
 export type TerminalWorkerRequest =
   | { requestId: string; type: "create"; spec: TerminalLaunchSpec }
   | { requestId: string; type: "attach"; sessionId: string }

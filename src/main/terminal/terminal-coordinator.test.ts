@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import type {
   TerminalAttachment,
+  TerminalEvent,
   TerminalLaunchSpec,
   TerminalSession,
   TerminalWorkerEvent,
@@ -31,6 +32,7 @@ class FakeWorker implements TerminalWorkerGateway {
     projectId: spec.projectId,
     tool: spec.tool,
     kind: spec.kind,
+    // The worker echoes the spec; titles are main's business and are merged in by the coordinator.
     cwd: spec.cwd,
     providerConversationId: spec.providerConversationId ?? null,
     status: "starting",
@@ -192,6 +194,77 @@ describe("TerminalCoordinator", () => {
     expect(worker.create).toHaveBeenLastCalledWith(
       expect.objectContaining({ args: ["-NoLogo", "-NoExit", "-Command", "claude update"], cwd: "C:\\Users\\me" }),
     );
+  });
+
+  it("picks up the provider's title, persists it, and tells the renderer", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    let providerTitle: string | null = null;
+    const events: TerminalEvent[] = [];
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async () => project,
+      getExecutables: async () => ({ powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd", vscode: null }),
+      toolSessionCwd: () => "C:\\Users\\me",
+      readTitle: async () => providerTitle,
+      env: {},
+      idFactory: () => "session-1",
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+    instance.onEvent((event) => events.push(event));
+    const created = await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    expect(created.title).toBeNull();
+
+    // Nothing to report yet: an empty read must not be mistaken for "the title went away".
+    await instance.refreshTitles();
+    expect(events.filter((event) => event.type === "title")).toHaveLength(0);
+
+    providerTitle = "레지스트리 분리";
+    await instance.refreshTitles();
+    await instance.refreshTitles();
+
+    expect(events.filter((event) => event.type === "title")).toEqual([
+      { type: "title", sessionId: "session-1", title: "레지스트리 분리" },
+    ]);
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-1"].title).toBe("레지스트리 분리");
+  });
+
+  it("keeps a user-given name across a title refresh and clears it on request", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async () => project,
+      getExecutables: async () => ({ powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd", vscode: null }),
+      toolSessionCwd: () => "C:\\Users\\me",
+      readTitle: async () => "프로바이더 제목",
+      env: {},
+      idFactory: () => "session-1",
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+
+    const named = await instance.rename("session-1", "  내 이름  ");
+    expect(named).toMatchObject({ name: "내 이름", title: null });
+
+    await instance.refreshTitles();
+    expect(instance.list()[0]).toMatchObject({ name: "내 이름", title: "프로바이더 제목" });
+
+    const cleared = await instance.rename("session-1", "   ");
+    expect(cleared.name).toBeNull();
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-1"]).toMatchObject({ name: null, title: "프로바이더 제목" });
   });
 
   it("removes every session of a folder so the folder can be unregistered", async () => {

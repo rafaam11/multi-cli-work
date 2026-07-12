@@ -15,6 +15,8 @@ const SESSION_KEYS = [
   "id",
   "projectId",
   "tool",
+  "title",
+  "name",
   "kind",
   "cwd",
   "providerConversationId",
@@ -61,6 +63,13 @@ function toolCommand(value: unknown, label: string): ToolCommand | null {
   return value as ToolCommand;
 }
 
+/** Likewise, sessions saved before titles and names existed simply omit those keys. */
+function optionalText(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new AppStateError(`${label} must be a string or null`);
+  return value.trim().length === 0 ? null : value;
+}
+
 function parseSession(value: unknown, key: string): PersistedTerminalSession {
   if (!isRecord(value)) throw new AppStateError(`Session ${key} must be an object`);
   exactKeys(value, SESSION_KEYS, `Session ${key}`);
@@ -71,6 +80,8 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
     id,
     projectId: nullableString(value.projectId, `Session ${key}.projectId`),
     tool: toolCommand(value.tool, `Session ${key}.tool`),
+    title: optionalText(value.title, `Session ${key}.title`),
+    name: optionalText(value.name, `Session ${key}.name`),
     kind: value.kind as TerminalKind,
     cwd: string(value.cwd, `Session ${key}.cwd`),
     providerConversationId: nullableString(value.providerConversationId, `Session ${key}.providerConversationId`),

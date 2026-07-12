@@ -455,7 +455,10 @@ body.sidebar-resizing {
   content: "";
 }
 
+/* The row carries its status as a colour: a faint wash plus a bar down its leading edge. */
 .session-row {
+  --session-accent: var(--quiet);
+
   display: grid;
   grid-template-columns: 8px 15px minmax(0, 1fr) auto;
   width: 100%;
@@ -466,19 +469,66 @@ body.sidebar-resizing {
   border: 0;
   border-radius: 4px;
   color: var(--muted);
-  background: transparent;
+  background: color-mix(in srgb, var(--session-accent) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--session-accent);
   text-align: left;
   cursor: pointer;
 }
 
-.session-row:hover,
-.session-row.selected {
-  color: var(--text);
-  background: var(--surface-hover);
+.session-row.status-starting {
+  --session-accent: var(--blue);
 }
 
+.session-row.status-working {
+  --session-accent: var(--teal);
+}
+
+.session-row.status-awaiting-input {
+  --session-accent: var(--violet);
+}
+
+.session-row.status-awaiting-approval {
+  --session-accent: var(--amber);
+}
+
+.session-row.status-idle {
+  --session-accent: var(--green);
+}
+
+.session-row.status-exited {
+  --session-accent: var(--quiet);
+}
+
+.session-row.status-error {
+  --session-accent: var(--red);
+}
+
+.session-row:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 18%, var(--surface-hover));
+}
+
+/* Selection has to stay legible on top of any status wash, so it adds a ring rather than a colour. */
 .session-row.selected {
-  box-shadow: inset 2px 0 0 var(--blue);
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
+  box-shadow: inset 3px 0 0 var(--session-accent), inset 0 0 0 1px var(--line-strong);
+}
+
+.session-rename {
+  padding: 2px 0 2px 6px;
+}
+
+.session-rename input {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 11px;
 }
 
 .session-name,

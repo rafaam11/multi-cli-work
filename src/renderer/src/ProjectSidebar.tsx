@@ -12,7 +12,7 @@ import {
   TriangleAlert,
   Wrench,
 } from "lucide-react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
 import { projectName, providerDetails, sessionLabel, statusLabels } from "./session-labels";
@@ -26,6 +26,7 @@ interface ProjectSidebarProps {
   selectedSessionId: string | null;
   expandedProjects: Set<string>;
   editingProjectId: string | null;
+  renamingSessionId: string | null;
   loading: boolean;
   loadError: string | null;
   onReload(): void;
@@ -34,6 +35,9 @@ interface ProjectSidebarProps {
   onSelectSession(session: TerminalSessionView): void;
   onToggleProject(projectId: string): void;
   onProjectContextMenu(project: SharedProject, event: ReactMouseEvent): void;
+  onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
+  onRenameSession(sessionId: string, name: string | null): void;
+  onCancelRename(): void;
   onProjectSaved(project: SharedProject): void;
   onCloseEditor(): void;
   onRestoreBackup(): void;
@@ -47,6 +51,43 @@ function byCreation(left: TerminalSessionView, right: TerminalSessionView): numb
   return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
 }
 
+function SessionNameInput({
+  initialName,
+  onSubmit,
+  onCancel,
+}: {
+  initialName: string;
+  onSubmit(name: string | null): void;
+  onCancel(): void;
+}) {
+  const [value, setValue] = useState(initialName);
+  return (
+    <form
+      className="session-rename"
+      aria-label="Rename session"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(value.trim() === "" ? null : value.trim());
+      }}
+    >
+      <input
+        type="text"
+        aria-label="Session name"
+        value={value}
+        autoFocus
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onCancel();
+          }
+        }}
+        onBlur={onCancel}
+      />
+    </form>
+  );
+}
+
 export function ProjectSidebar({
   snapshot,
   projects,
@@ -56,6 +97,7 @@ export function ProjectSidebar({
   selectedSessionId,
   expandedProjects,
   editingProjectId,
+  renamingSessionId,
   loading,
   loadError,
   onReload,
@@ -64,6 +106,9 @@ export function ProjectSidebar({
   onSelectSession,
   onToggleProject,
   onProjectContextMenu,
+  onSessionContextMenu,
+  onRenameSession,
+  onCancelRename,
   onProjectSaved,
   onCloseEditor,
   onRestoreBackup,
@@ -73,17 +118,31 @@ export function ProjectSidebar({
   const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
     const ProviderIcon = session.tool ? Wrench : providerDetails[session.kind].icon;
     const label = sessionLabel(session, peers);
+    if (renamingSessionId === session.id) {
+      return (
+        <li key={session.id}>
+          <SessionNameInput
+            initialName={session.name ?? label}
+            onSubmit={(name) => onRenameSession(session.id, name)}
+            onCancel={onCancelRename}
+          />
+        </li>
+      );
+    }
     return (
       <li key={session.id}>
         <button
-          className={`session-row ${selectedSessionId === session.id ? "selected" : ""}`}
+          className={`session-row status-${session.status} ${selectedSessionId === session.id ? "selected" : ""}`}
           type="button"
           onClick={() => onSelectSession(session)}
+          onContextMenu={(event) => onSessionContextMenu(session, event)}
           aria-label={`Open ${label} session`}
         >
           <span className={`status-dot status-${session.status}`} aria-hidden="true" />
           <ProviderIcon size={14} />
-          <span className="session-name">{label}</span>
+          <span className="session-name" title={label}>
+            {label}
+          </span>
           <span className="session-status">{statusLabels[session.status]}</span>
         </button>
       </li>

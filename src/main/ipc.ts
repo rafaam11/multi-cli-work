@@ -35,6 +35,7 @@ interface TerminalCoordinatorGateway {
   resume(input: ResumeTerminalInput): Promise<unknown>;
   remove(sessionId: string): Promise<void>;
   removeProjectSessions(projectId: string): Promise<void>;
+  rename(sessionId: string, name: string | null): Promise<unknown>;
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
 }
 
@@ -218,6 +219,11 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("terminals:remove", (_event, sessionId: unknown) =>
     dependencies.coordinator.remove(nonEmptyString(sessionId, "Session id")),
   );
+  ipc.handle("terminals:rename", async (_event, sessionId: unknown, name: unknown) => {
+    if (name !== null && typeof name !== "string") throw new Error("Session name must be a string or null");
+    if (typeof name === "string" && name.length > 120) throw new Error("Session name is too long");
+    return dependencies.coordinator.rename(nonEmptyString(sessionId, "Session id"), name);
+  });
   ipc.handle("terminals:select", (_event, projectId: unknown, sessionId: unknown) => {
     if (projectId !== null && typeof projectId !== "string") throw new Error("Selected project id is invalid");
     if (sessionId !== null && typeof sessionId !== "string") throw new Error("Selected session id is invalid");

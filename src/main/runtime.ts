@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Notification, utilityProcess } fro
 import os from "node:os";
 import path from "node:path";
 import type { ProviderAvailability } from "../shared/api-types";
-import type { TerminalWorkerEvent } from "../shared/terminal-types";
+import type { TerminalEvent } from "../shared/terminal-types";
 import { registerMainIpc } from "./ipc";
 import { createProjectActions } from "./projects/project-actions";
 import { ProjectService } from "./projects/project-service";
@@ -11,6 +11,7 @@ import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
+import { readSessionTitle } from "./providers/session-title";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
 import { checkForUpdates, openReleasesPage, updaterStatus } from "./updater";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
@@ -45,6 +46,8 @@ export async function createDesktopRuntime(
 ): Promise<DesktopRuntime> {
   const userData = app.getPath("userData");
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
+  // Both transcript directories are only overridden so tests can point at a fixture.
+  const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData);
   const projectService = new ProjectService({ registryPath });
@@ -68,6 +71,11 @@ export async function createDesktopRuntime(
     },
     getExecutables,
     toolSessionCwd: () => os.homedir(),
+    readTitle: (session) =>
+      readSessionTitle(session, {
+        ...(claudeProjectsDirectory ? { claudeProjectsDirectory } : {}),
+        ...(codexSessionsDirectory ? { codexSessionsDirectory } : {}),
+      }),
     env: {
       ...stringEnvironment(),
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
@@ -110,7 +118,7 @@ export async function createDesktopRuntime(
   });
 
   const notificationDeduper = createTerminalNotificationDeduper();
-  coordinator.onEvent((event: TerminalWorkerEvent) => {
+  coordinator.onEvent((event: TerminalEvent) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("terminal:event", event);
     if (event.type === "exit") notificationDeduper.reset(event.sessionId);
     if (event.type !== "status") return;

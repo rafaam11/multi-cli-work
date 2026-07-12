@@ -1,6 +1,6 @@
 import type { ProjectWorkspaceSnapshot, ProviderAvailability, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
-import type { TerminalKind, TerminalWorkerEvent, ToolCommand } from "@shared/terminal-types";
+import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, TriangleAlert } from "lucide-react";
 import {
   useCallback,
@@ -12,6 +12,7 @@ import {
 } from "react";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 import { ProjectSidebar } from "./ProjectSidebar";
+import { SessionContextMenu } from "./SessionContextMenu";
 import { TerminalPane } from "./TerminalPane";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { projectName, sessionLabel } from "./session-labels";
@@ -35,6 +36,13 @@ interface RemovalState {
   sessionCount: number;
 }
 
+interface SessionMenuState {
+  session: TerminalSessionView;
+  label: string;
+  x: number;
+  y: number;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -54,8 +62,9 @@ function mergeAttachedSession(sessions: TerminalSessionView[], attached: Termina
   });
 }
 
-function statusFromEvent(session: TerminalSessionView, event: TerminalWorkerEvent): TerminalSessionView {
+function applyEvent(session: TerminalSessionView, event: TerminalEvent): TerminalSessionView {
   if (event.type === "status") return { ...session, status: event.status };
+  if (event.type === "title") return { ...session, title: event.title };
   if (event.type === "exit") {
     return { ...session, status: "exited", pid: null, exitCode: event.exitCode };
   }
@@ -76,6 +85,8 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [removal, setRemoval] = useState<RemovalState | null>(null);
 
   const projects = useMemo(() => {
@@ -204,7 +215,7 @@ export function App() {
       window.multiCliWork.terminals.onEvent((event) => {
         if (event.type === "data") return;
         setSessions((current) =>
-          current.map((session) => (session.id === event.sessionId ? statusFromEvent(session, event) : session)),
+          current.map((session) => (session.id === event.sessionId ? applyEvent(session, event) : session)),
         );
       }),
     [],
@@ -350,6 +361,17 @@ export function App() {
     }
   };
 
+  const renameSession = async (sessionId: string, name: string | null) => {
+    setRenamingSessionId(null);
+    setActionError(null);
+    try {
+      const renamed = await window.multiCliWork.terminals.rename(sessionId, name);
+      setSessions((current) => replaceSession(current, renamed));
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
   const restoreFromBackup = async () => {
     setActionError(null);
     try {
@@ -446,6 +468,7 @@ export function App() {
         selectedSessionId={selectedSessionId}
         expandedProjects={expandedProjects}
         editingProjectId={editingProjectId}
+        renamingSessionId={renamingSessionId}
         loading={loading}
         loadError={loadError}
         onReload={() => void loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId })}
@@ -457,6 +480,20 @@ export function App() {
           event.preventDefault();
           setContextMenu({ project, x: event.clientX, y: event.clientY });
         }}
+        onSessionContextMenu={(session, event) => {
+          event.preventDefault();
+          setSessionMenu({
+            session,
+            label: sessionLabel(
+              session,
+              sessions.filter((candidate) => candidate.projectId === session.projectId),
+            ),
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
+        onRenameSession={(sessionId, name) => void renameSession(sessionId, name)}
+        onCancelRename={() => setRenamingSessionId(null)}
         onProjectSaved={handleProjectSaved}
         onCloseEditor={() => setEditingProjectId(null)}
         onRestoreBackup={() => void restoreFromBackup()}
@@ -564,6 +601,18 @@ export function App() {
           }}
           onRemove={() => requestRemoval(contextMenu.project)}
           onClose={() => setContextMenu(null)}
+        />
+      ) : null}
+
+      {sessionMenu ? (
+        <SessionContextMenu
+          sessionLabel={sessionMenu.label}
+          x={sessionMenu.x}
+          y={sessionMenu.y}
+          canResetName={Boolean(sessionMenu.session.name)}
+          onRename={() => setRenamingSessionId(sessionMenu.session.id)}
+          onResetName={() => void renameSession(sessionMenu.session.id, null)}
+          onClose={() => setSessionMenu(null)}
         />
       ) : null}
 
