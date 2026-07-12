@@ -8,6 +8,7 @@ playwright-report/
 .vite/
 .cache/
 .superpowers/
+.worktrees/
 *.log
 *.tsbuildinfo
 .env
