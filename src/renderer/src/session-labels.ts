@@ -1,12 +1,23 @@
 import type { TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
-import { Bot, Code2, Terminal as TerminalIcon } from "lucide-react";
+import { ClaudeCodeIcon, CodexIcon, PowerShellIcon } from "./brand-icons";
 
-export const providerDetails: Record<TerminalKind, { label: string; menuLabel: string; icon: typeof TerminalIcon }> = {
-  powershell: { label: "PowerShell", menuLabel: "새 PowerShell 세션", icon: TerminalIcon },
-  claude: { label: "Claude Code", menuLabel: "새 Claude Code 세션", icon: Bot },
-  codex: { label: "Codex", menuLabel: "새 Codex 세션", icon: Code2 },
+export type IconComponent = (props: { size?: number; className?: string }) => JSX.Element;
+
+export const providerDetails: Record<TerminalKind, { label: string; menuLabel: string; icon: IconComponent }> = {
+  powershell: { label: "PowerShell", menuLabel: "새 PowerShell 세션", icon: PowerShellIcon },
+  claude: { label: "Claude Code", menuLabel: "새 Claude Code 세션", icon: ClaudeCodeIcon },
+  codex: { label: "Codex", menuLabel: "새 Codex 세션", icon: CodexIcon },
+};
+
+/**
+ * Brand-accent CSS class for a provider's icon. Only applied at static call sites — session rows
+ * in ProjectSidebar.tsx color their icon by session status instead, so they never use this.
+ */
+export const providerAccentClass: Partial<Record<TerminalKind, string>> = {
+  powershell: "brand-icon-powershell",
+  claude: "brand-icon-claude",
 };
 
 export const toolDetails: Record<ToolCommand, { label: string; menuLabel: string }> = {
