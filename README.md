@@ -27,7 +27,7 @@ npm run dist
 
 ## Local Data
 
-- Shared projects: `~/.harness-manager/projects.json`
+- Shared projects: `~/.harness-manager/projects.json` — contract with Harness Manager documented in [`docs/superpowers/specs/registry-contract.md`](docs/superpowers/specs/registry-contract.md)
 - Window, tab, and resume state: Electron `userData/state.json`
 - Bounded terminal replay logs: Electron `userData/session-logs/`
 - App-owned Claude hook overlay: Electron `userData/hooks/` and `claude-settings.json`
