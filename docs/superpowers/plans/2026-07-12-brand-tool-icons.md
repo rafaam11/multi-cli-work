@@ -27,7 +27,7 @@
 **Interfaces:**
 - Produces: `BrandIconProps` (`{ size?: number; className?: string }`) and five components — `PowerShellIcon`, `VSCodeIcon`, `GitHubIcon`, `ClaudeCodeIcon`, `CodexIcon` — each `(props: BrandIconProps) => JSX.Element`, rendering a single `<svg fill="currentColor">` sized by `size` (default `24`, matching `lucide-react`'s default) with `className` passed through onto the `<svg>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `src/renderer/src/brand-icons.test.tsx`:
 
@@ -62,12 +62,12 @@ describe("brand icons", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run --pool=threads src/renderer/src/brand-icons.test.tsx`
 Expected: FAIL — `Cannot find module './brand-icons'` (the file doesn't exist yet).
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `src/renderer/src/brand-icons.tsx`:
 
@@ -140,12 +140,12 @@ export function CodexIcon({ size = 24, className }: BrandIconProps) {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run --pool=threads src/renderer/src/brand-icons.test.tsx`
 Expected: PASS (10 tests: 5 icons × 2 assertions each)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/renderer/src/brand-icons.tsx src/renderer/src/brand-icons.test.tsx
@@ -163,7 +163,7 @@ git commit -m "feat: add PowerShell, VS Code, GitHub, Claude Code, and Codex bra
 - Consumes: `PowerShellIcon`, `ClaudeCodeIcon`, `CodexIcon` from Task 1's `./brand-icons`.
 - Produces: exported `IconComponent` type (`(props: { size?: number; className?: string }) => JSX.Element`); `providerDetails.icon` now typed `IconComponent` (was `typeof TerminalIcon` from `lucide-react`); new exported `providerAccentClass: Partial<Record<TerminalKind, string>>` (`{ powershell: "brand-icon-powershell", claude: "brand-icon-claude" }` — `codex` intentionally omitted, stays monochrome).
 
-- [ ] **Step 1: Replace the lucide import and `providerDetails` block**
+- [x] **Step 1: Replace the lucide import and `providerDetails` block**
 
 In `src/renderer/src/session-labels.ts`, replace lines 1-10:
 
@@ -208,17 +208,17 @@ export const providerAccentClass: Partial<Record<TerminalKind, string>> = {
 
 This is a data-rewiring change with no new observable behavior of its own (the observable behavior — which icon shows where — is exercised by the consuming components in Tasks 4-8), so there is no meaningful failing test to write first here. Verify instead by running the existing tests that already render through this module, plus typecheck.
 
-- [ ] **Step 2: Run the existing tests that render provider icons through this module**
+- [x] **Step 2: Run the existing tests that render provider icons through this module**
 
 Run: `npx vitest run --pool=threads src/renderer/src/HomeDashboard.test.tsx src/renderer/src/ProjectDetailPage.test.tsx`
 Expected: PASS — these tests query by accessible name/role/text, not icon internals, so the shape swap doesn't change their outcome.
 
-- [ ] **Step 3: Run typecheck to confirm the whole app still compiles**
+- [x] **Step 3: Run typecheck to confirm the whole app still compiles**
 
 Run: `npm run typecheck`
 Expected: PASS — in particular this confirms `IconComponent` is structurally compatible with every existing `<ProviderIcon size={N} />` call site.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/renderer/src/session-labels.ts
@@ -235,7 +235,7 @@ git commit -m "feat: swap provider icons to brand marks and add an accent-class 
 **Interfaces:**
 - Produces: CSS custom properties `--brand-powershell`, `--brand-vscode`, `--brand-claude`; classes `.brand-icon-powershell`, `.brand-icon-vscode`, `.brand-icon-claude`, each setting `color` to the matching variable (read by the SVGs' `fill="currentColor"` from Task 1).
 
-- [ ] **Step 1: Add the tokens and utility classes**
+- [x] **Step 1: Add the tokens and utility classes**
 
 In `src/renderer/src/index.css`, replace:
 
@@ -276,14 +276,14 @@ with:
 }
 ```
 
-- [ ] **Step 2: Verify the file still parses as valid CSS**
+- [x] **Step 2: Verify the file still parses as valid CSS**
 
 No call site references these classes yet (that starts in Task 4), so there is nothing to render-test here. Run typecheck as a smoke check that the build pipeline as a whole is still healthy:
 
 Run: `npm run typecheck`
 Expected: PASS (this task doesn't touch any `.ts`/`.tsx` file, so this should be a no-op pass — it exists to catch an accidental syntax error breaking the Vite CSS import elsewhere would surface at build time, checked in Task 8).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/renderer/src/index.css
@@ -300,7 +300,7 @@ git commit -m "feat: add brand-accent color tokens for PowerShell/VS Code/Claude
 **Interfaces:**
 - Consumes: `providerAccentClass` from Task 2's `./session-labels`.
 
-- [ ] **Step 1: Import `providerAccentClass`**
+- [x] **Step 1: Import `providerAccentClass`**
 
 In `src/renderer/src/WorkspaceHeader.tsx`, replace line 6:
 
@@ -314,7 +314,7 @@ with:
 import { projectName, providerAccentClass, providerDetails, statusLabels, toolDetails } from "./session-labels";
 ```
 
-- [ ] **Step 2: Pass the accent class to the launcher icon**
+- [x] **Step 2: Pass the accent class to the launcher icon**
 
 Replace (lines 150-177):
 
@@ -382,12 +382,12 @@ with:
         ) : null}
 ```
 
-- [ ] **Step 3: Typecheck**
+- [x] **Step 3: Typecheck**
 
 Run: `npm run typecheck`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/renderer/src/WorkspaceHeader.tsx
@@ -404,7 +404,7 @@ git commit -m "feat: accent the workspace launcher icons with brand colors"
 **Interfaces:**
 - Consumes: `VSCodeIcon`, `GitHubIcon` from Task 1's `./brand-icons`; `providerAccentClass` from Task 2's `./session-labels`.
 
-- [ ] **Step 1: Swap the lucide import and add `providerAccentClass`**
+- [x] **Step 1: Swap the lucide import and add `providerAccentClass`**
 
 Replace lines 4-6:
 
@@ -423,7 +423,7 @@ import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 import { projectName, providerAccentClass, providerDetails, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 ```
 
-- [ ] **Step 2: Accent the empty-state session launcher icons**
+- [x] **Step 2: Accent the empty-state session launcher icons**
 
 Replace lines 168-185:
 
@@ -471,7 +471,7 @@ with:
               </div>
 ```
 
-- [ ] **Step 3: Swap the VS Code / GitHub buttons' icons**
+- [x] **Step 3: Swap the VS Code / GitHub buttons' icons**
 
 Replace lines 218-230:
 
@@ -509,17 +509,17 @@ with:
             </button>
 ```
 
-- [ ] **Step 4: Run the existing component test**
+- [x] **Step 4: Run the existing component test**
 
 Run: `npx vitest run --pool=threads src/renderer/src/ProjectDetailPage.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 Run: `npm run typecheck`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/renderer/src/ProjectDetailPage.tsx
@@ -536,7 +536,7 @@ git commit -m "feat: use brand icons for the project-detail launcher, VS Code, a
 **Interfaces:**
 - Consumes: `VSCodeIcon`, `GitHubIcon` from Task 1's `./brand-icons`.
 
-- [ ] **Step 1: Swap the import**
+- [x] **Step 1: Swap the import**
 
 Replace line 1:
 
@@ -551,7 +551,7 @@ import { FolderOpen, Pencil, Trash2 } from "lucide-react";
 import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 ```
 
-- [ ] **Step 2: Swap the menu item icons**
+- [x] **Step 2: Swap the menu item icons**
 
 Replace lines 63-76:
 
@@ -591,12 +591,12 @@ with:
       </button>
 ```
 
-- [ ] **Step 3: Typecheck**
+- [x] **Step 3: Typecheck**
 
 Run: `npm run typecheck`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/renderer/src/ProjectContextMenu.tsx
@@ -613,7 +613,7 @@ git commit -m "feat: use brand icons for VS Code/GitHub in the project context m
 **Interfaces:**
 - Consumes: `GitHubIcon` from Task 1's `./brand-icons`; `providerAccentClass` from Task 2's `./session-labels`.
 
-- [ ] **Step 1: Swap the import**
+- [x] **Step 1: Swap the import**
 
 Replace lines 4-14:
 
@@ -649,7 +649,7 @@ import {
 } from "./session-labels";
 ```
 
-- [ ] **Step 2: Accent the CLI status list icons**
+- [x] **Step 2: Accent the CLI status list icons**
 
 Replace lines 141-153:
 
@@ -687,7 +687,7 @@ with:
           </ul>
 ```
 
-- [ ] **Step 3: Accent the quick-launch icon buttons**
+- [x] **Step 3: Accent the quick-launch icon buttons**
 
 Replace lines 190-207:
 
@@ -735,7 +735,7 @@ with:
                   </span>
 ```
 
-- [ ] **Step 4: Swap the release-notes/repository buttons to the GitHub icon**
+- [x] **Step 4: Swap the release-notes/repository buttons to the GitHub icon**
 
 Replace lines 256-264:
 
@@ -767,17 +767,17 @@ with:
           </div>
 ```
 
-- [ ] **Step 5: Run the existing component test**
+- [x] **Step 5: Run the existing component test**
 
 Run: `npx vitest run --pool=threads src/renderer/src/HomeDashboard.test.tsx`
 Expected: PASS
 
-- [ ] **Step 6: Typecheck**
+- [x] **Step 6: Typecheck**
 
 Run: `npm run typecheck`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/renderer/src/HomeDashboard.tsx
@@ -794,7 +794,7 @@ git commit -m "feat: use brand icons across the home dashboard's CLI status, qui
 **Interfaces:**
 - Consumes: nothing new. This task is verification-only.
 
-- [ ] **Step 1: Full unit suite, typecheck, build, and e2e suite**
+- [x] **Step 1: Full unit suite, typecheck, build, and e2e suite**
 
 Run: `npx vitest run --pool=threads`
 Expected: PASS (all suites, including the ones untouched by this plan)
@@ -805,7 +805,7 @@ Expected: PASS (`typecheck` + `electron-vite build` succeed, confirming `index.c
 Run: `npx playwright test`
 Expected: PASS — `e2e/desktop.spec.ts` queries every button it touches by accessible name (`"새 PowerShell 세션"`, `"PowerShell 세션 보기"`, `"Sample Project 폴더 선택"`, etc.), all of which come from `providerDetails.label`/`menuLabel` text untouched by this plan, so the suite should be unaffected by the icon swap.
 
-- [ ] **Step 2: Launch the built app and screenshot every touched location**
+- [x] **Step 2: Launch the built app and screenshot every touched location**
 
 Create a throwaway verification script at the repo root (so `node_modules` resolves via normal Node module lookup), run it, then delete it in Step 4. It reuses the same `_electron` launch shape as `e2e/desktop.spec.ts`, with a temp project + temp registry so it doesn't touch real user data.
 
@@ -923,12 +923,12 @@ Then **look at each screenshot** (read the PNG files) and confirm:
 - `04-home-github-buttons.png`: both "릴리스 노트" and "GitHub 저장소" show the GitHub mark.
 - `08-sidebar-session-row.png`: the PowerShell session row's icon is recognizably the PowerShell mark, but colored by session status (`--session-accent`, e.g. teal for `working`/`starting`), **not** brand blue — this is the one place brand color must NOT appear.
 
-- [ ] **Step 3: Confirm no leftover references in the five touched files**
+- [x] **Step 3: Confirm no leftover references in the five touched files**
 
 Run: `grep -n "Bot\|Code2\|ExternalLink" src/renderer/src/session-labels.ts src/renderer/src/WorkspaceHeader.tsx src/renderer/src/ProjectDetailPage.tsx src/renderer/src/ProjectContextMenu.tsx src/renderer/src/HomeDashboard.tsx`
 Expected: no output — `Bot`, `Code2`, and `ExternalLink` (the three lucide icons this plan replaces) are fully removed from every file this plan touches.
 
-- [ ] **Step 4: Clean up the temp verification script**
+- [x] **Step 4: Clean up the temp verification script**
 
 ```bash
 rm -f .verify-brand-icons.mjs
