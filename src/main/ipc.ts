@@ -4,6 +4,7 @@ import type {
   ProjectMetadataPatch,
   ProviderAvailability,
   ResumeTerminalInput,
+  UpdaterStatus,
 } from "../shared/api-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type { ProjectMetadataUpdate } from "./projects/project-service";
@@ -33,9 +34,18 @@ interface TerminalCoordinatorGateway {
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
 }
 
+interface UpdaterGateway {
+  status(): UpdaterStatus;
+  check(): Promise<void>;
+  install(): Promise<void>;
+  openReleases(): void;
+}
+
 interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
   coordinator: TerminalCoordinatorGateway;
+  updater: UpdaterGateway;
+  appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
   chooseDirectory(): Promise<string | null>;
@@ -167,4 +177,9 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     if (sessionId !== null && typeof sessionId !== "string") throw new Error("Selected session id is invalid");
     return dependencies.coordinator.select(projectId, sessionId);
   });
+  ipc.handle("app:version", () => dependencies.appVersion());
+  ipc.handle("updater:status", () => dependencies.updater.status());
+  ipc.handle("updater:check", () => dependencies.updater.check());
+  ipc.handle("updater:install", () => dependencies.updater.install());
+  ipc.handle("app:open-releases", () => dependencies.updater.openReleases());
 }

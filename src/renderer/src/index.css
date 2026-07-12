@@ -581,6 +581,74 @@ body.sidebar-resizing {
   background: rgb(216 162 74 / 14%);
 }
 
+.update-badge {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.update-badge svg {
+  flex: 0 0 auto;
+}
+
+.update-badge .spinning {
+  animation: update-spin 1.4s linear infinite;
+}
+
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.update-badge .app-version {
+  flex: 0 0 auto;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.update-badge .update-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-badge .update-status.downloaded,
+.update-badge .update-status.available {
+  color: var(--teal);
+}
+
+.update-badge .update-status.error {
+  color: #d9b36f;
+}
+
+.update-badge button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.update-badge button:hover:not(:disabled) {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.update-badge button:disabled {
+  cursor: default;
+  opacity: 55%;
+}
+
 .sidebar-footer {
   display: flex;
   align-items: center;

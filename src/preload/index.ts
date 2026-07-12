@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { MultiCliWorkApi } from "../shared/api-types";
+import type { MultiCliWorkApi, UpdaterStatus } from "../shared/api-types";
 import type { TerminalWorkerEvent } from "../shared/terminal-types";
 
 const api: MultiCliWorkApi = {
@@ -30,6 +30,18 @@ const api: MultiCliWorkApi = {
       const handler = (_event: Electron.IpcRendererEvent, terminalEvent: TerminalWorkerEvent) => listener(terminalEvent);
       ipcRenderer.on("terminal:event", handler);
       return () => ipcRenderer.removeListener("terminal:event", handler);
+    },
+  },
+  updates: {
+    appVersion: () => ipcRenderer.invoke("app:version"),
+    status: () => ipcRenderer.invoke("updater:status"),
+    check: () => ipcRenderer.invoke("updater:check"),
+    install: () => ipcRenderer.invoke("updater:install"),
+    openReleases: () => ipcRenderer.invoke("app:open-releases"),
+    onEvent(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, status: UpdaterStatus) => listener(status);
+      ipcRenderer.on("updater:event", handler);
+      return () => ipcRenderer.removeListener("updater:event", handler);
     },
   },
 };

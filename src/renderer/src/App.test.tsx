@@ -220,6 +220,14 @@ function createApi(options?: {
         return () => listeners.delete(listener);
       }),
     },
+    updates: {
+      appVersion: vi.fn().mockResolvedValue("1.0.0"),
+      status: vi.fn().mockResolvedValue({ state: "idle" }),
+      check: vi.fn().mockResolvedValue(undefined),
+      install: vi.fn().mockResolvedValue(undefined),
+      openReleases: vi.fn().mockResolvedValue(undefined),
+      onEvent: vi.fn(() => () => undefined),
+    },
   };
 
   return {

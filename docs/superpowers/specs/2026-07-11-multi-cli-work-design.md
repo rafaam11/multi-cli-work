@@ -23,9 +23,9 @@ Provider adapters own command construction, lifecycle signals, and resume behavi
 
 ## MVP Boundaries
 
-Included: project discovery/manual add, nested multi-session tree, one terminal viewport, tray persistence, notifications, manual resume, local NSIS installer. Completeness pass additions: manual project refresh, project metadata editing (display name/status/memo/hidden) with a hidden-projects toggle, registry restore-from-backup, per-session notification dedupe, and the shared registry contract in `registry-contract.md`.
+Included: project discovery/manual add, nested multi-session tree, one terminal viewport, tray persistence, notifications, manual resume, local NSIS installer. Completeness pass additions: manual project refresh, project metadata editing (display name/status/memo/hidden) with a hidden-projects toggle, registry restore-from-backup, per-session notification dedupe, and the shared registry contract in `registry-contract.md`. Release additions (v1.0.0): public GitHub release publishing from a `v*` tag, and automatic updates through `electron-updater` — a startup check, background download, and a sidebar badge and tray entry for manual checks. Installing an update tears the runtime down through the same path as an explicit Quit, so PTY state is never lost to a restart.
 
-Excluded: split panes, WSL, arbitrary shell profiles, file browsing, Git UI, cloud sync, automatic updates, Codex App Server integration, and public release publishing.
+Excluded: split panes, WSL, arbitrary shell profiles, file browsing, Git UI, cloud sync, Codex App Server integration, and code signing.
 
 ## Acceptance
 

@@ -55,15 +55,23 @@ function setup() {
     })),
   };
   const restoreRegistryBackup = vi.fn(async () => undefined);
+  const updater = {
+    status: vi.fn(() => ({ state: "downloaded" as const, version: "1.1.0" })),
+    check: vi.fn(async () => undefined),
+    install: vi.fn(async () => undefined),
+    openReleases: vi.fn(() => undefined),
+  };
   registerMainIpc(ipc, {
     projectService,
     coordinator,
+    updater,
+    appVersion: vi.fn(() => "1.0.0"),
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,
     chooseDirectory: vi.fn(async () => "C:\\Work"),
     getAvailability: vi.fn(async () => ({ powershell: true, claude: true, codex: true })),
   });
-  return { handlers, projectService, coordinator, project, restoreRegistryBackup };
+  return { handlers, projectService, coordinator, project, restoreRegistryBackup, updater };
 }
 
 describe("main IPC boundary", () => {
@@ -130,5 +138,25 @@ describe("main IPC boundary", () => {
       state: { selectedProjectId: project.id, selectedSessionId: null },
     });
     expect(coordinator.state).toHaveBeenCalledOnce();
+  });
+
+  it("serves the current updater state so a late renderer does not miss the first check", async () => {
+    const { handlers, updater } = setup();
+
+    expect(handlers.get("app:version")!({})).toBe("1.0.0");
+    expect(handlers.get("updater:status")!({})).toEqual({ state: "downloaded", version: "1.1.0" });
+    expect(updater.status).toHaveBeenCalledOnce();
+  });
+
+  it("routes update checks, installs, and the manual releases fallback to the updater", async () => {
+    const { handlers, updater } = setup();
+
+    await handlers.get("updater:check")!({});
+    await handlers.get("updater:install")!({});
+    await handlers.get("app:open-releases")!({});
+
+    expect(updater.check).toHaveBeenCalledOnce();
+    expect(updater.install).toHaveBeenCalledOnce();
+    expect(updater.openReleases).toHaveBeenCalledOnce();
   });
 });

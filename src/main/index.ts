@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, nativeImage, Tray, dialog } from "electron";
 import path from "node:path";
 import { createDesktopRuntime, type DesktopRuntime } from "./runtime";
 import { trayIconDataUrl } from "./tray-icon";
+import { checkForUpdates, initUpdater, quitAndInstall } from "./updater";
 import {
   rendererTargetNavigationUrl,
   resolveRendererTarget,
@@ -73,31 +74,60 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+async function confirmStoppingSessions(title: string, message: string, confirmLabel: string): Promise<boolean> {
+  if (!runtime?.coordinator.hasActiveSessions()) return true;
+  showMainWindow();
+  const options: Electron.MessageBoxOptions = {
+    type: "warning",
+    title,
+    message,
+    detail: "Open Codex, Claude, and PowerShell processes managed by this app will be terminated.",
+    buttons: ["Cancel", confirmLabel],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const result = mainWindow
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
 async function requestQuit(): Promise<void> {
   if (!runtime || isQuitting) return;
   if (quitRequestInProgress) return;
   quitRequestInProgress = true;
   try {
-    if (runtime.coordinator.hasActiveSessions()) {
-      showMainWindow();
-      const options: Electron.MessageBoxOptions = {
-        type: "warning",
-        title: "Quit Multi CLI Work",
-        message: "Quit and stop all running sessions?",
-        detail: "Open Codex, Claude, and PowerShell processes managed by this app will be terminated.",
-        buttons: ["Cancel", "Quit"],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      };
-      const result = mainWindow
-        ? await dialog.showMessageBox(mainWindow, options)
-        : await dialog.showMessageBox(options);
-      if (result.response !== 1) return;
-    }
+    const confirmed = await confirmStoppingSessions(
+      "Quit Multi CLI Work",
+      "Quit and stop all running sessions?",
+      "Quit",
+    );
+    if (!confirmed) return;
     await runtime.dispose();
     isQuitting = true;
     app.quit();
+  } finally {
+    quitRequestInProgress = false;
+  }
+}
+
+// The updater must not call quitAndInstall on its own: this app owns PTYs whose state is only
+// persisted by runtime.dispose(), so the restart goes through the same teardown as an explicit Quit.
+async function installUpdateAndQuit(): Promise<void> {
+  if (!runtime || isQuitting) return;
+  if (quitRequestInProgress) return;
+  quitRequestInProgress = true;
+  try {
+    const confirmed = await confirmStoppingSessions(
+      "Install update",
+      "Restart now to install the update?",
+      "Restart",
+    );
+    if (!confirmed) return;
+    await runtime.dispose();
+    isQuitting = true;
+    quitAndInstall();
   } finally {
     quitRequestInProgress = false;
   }
@@ -114,6 +144,7 @@ function createTray(): Tray {
   nextTray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Show Multi CLI Work", click: showMainWindow },
+      { label: "Check for Updates", click: () => void checkForUpdates() },
       { type: "separator" },
       { label: "Quit", click: () => void requestQuit() },
     ]),
@@ -138,9 +169,10 @@ if (!hasSingleInstanceLock) {
 
   void app.whenReady().then(async () => {
     try {
-      runtime = await createDesktopRuntime(showMainWindow);
+      runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit);
       mainWindow = createWindow();
       tray = createTray();
+      initUpdater();
       if (shouldFocusWhenReady) showMainWindow();
     } catch (error) {
       await dialog.showMessageBox({
