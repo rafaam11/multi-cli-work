@@ -165,7 +165,7 @@ export class TerminalSessionManager {
       const message = match[1].trim().toLocaleLowerCase("en-US");
       if (message.includes("approval-requested") || message.includes("approval requested")) {
         this.setStatus(record, "awaiting-approval");
-      } else if (message.includes("agent-turn-complete") || message.includes("turn complete")) {
+      } else if (message) {
         this.setStatus(record, "awaiting-input");
       }
     }
