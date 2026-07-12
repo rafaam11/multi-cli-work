@@ -25,22 +25,30 @@ function setup() {
     updatedAt: "2026-07-11T00:00:00.000Z",
   };
   const registry = { schemaVersion: 1 as const, updatedAt: project.updatedAt, projects: { [project.id]: project } };
+  const calls: string[] = [];
   const projectService = {
-    discoverAndReconcile: vi.fn(async () => registry),
     findMissingProjectRoots: vi.fn(async () => [project.id]),
     registerManualFolder: vi.fn(async () => registry),
     updateProjectMetadata: vi.fn(async () => registry),
+    removeProject: vi.fn(async () => {
+      calls.push("removeProject");
+      return registry;
+    }),
     relinkProject: vi.fn(async () => registry),
   };
   const coordinator = {
     list: vi.fn(() => []),
     create: vi.fn(async (input) => input),
+    createTool: vi.fn(async (input) => input),
     attach: vi.fn(),
     write: vi.fn(),
     resize: vi.fn(),
     stop: vi.fn(),
     resume: vi.fn(),
     remove: vi.fn(),
+    removeProjectSessions: vi.fn(async () => {
+      calls.push("removeProjectSessions");
+    }),
     select: vi.fn(),
     state: vi.fn(async () => ({
       source: "primary" as const,
@@ -61,17 +69,23 @@ function setup() {
     install: vi.fn(async () => undefined),
     openReleases: vi.fn(() => undefined),
   };
+  const projectActions = {
+    reveal: vi.fn(async () => undefined),
+    openInEditor: vi.fn(async () => undefined),
+    openOnGitHub: vi.fn(async () => undefined),
+  };
   registerMainIpc(ipc, {
     projectService,
     coordinator,
     updater,
+    projectActions,
     appVersion: vi.fn(() => "1.0.0"),
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,
     chooseDirectory: vi.fn(async () => "C:\\Work"),
-    getAvailability: vi.fn(async () => ({ powershell: true, claude: true, codex: true })),
+    getAvailability: vi.fn(async () => ({ powershell: true, claude: true, codex: true, vscode: true })),
   });
-  return { handlers, projectService, coordinator, project, restoreRegistryBackup, updater };
+  return { handlers, projectService, coordinator, project, restoreRegistryBackup, updater, projectActions, calls };
 }
 
 describe("main IPC boundary", () => {
@@ -112,14 +126,59 @@ describe("main IPC boundary", () => {
     const { handlers, projectService, project } = setup();
 
     const listed = await handlers.get("projects:list")!({});
-    const refreshed = await handlers.get("projects:refresh")!({});
 
     expect(listed).toMatchObject({ missingRootProjectIds: [project.id] });
-    expect(refreshed).toMatchObject({ missingRootProjectIds: [project.id] });
-    expect(projectService.findMissingProjectRoots).toHaveBeenCalledTimes(2);
+    expect(projectService.findMissingProjectRoots).toHaveBeenCalledOnce();
     expect((listed as { registry: { projects: Record<string, unknown> } }).registry.projects[project.id]).not.toHaveProperty(
       "rootMissing",
     );
+  });
+
+  it("tears a folder's sessions down before unregistering the folder itself", async () => {
+    const { handlers, coordinator, projectService, calls, project } = setup();
+
+    const snapshot = await handlers.get("projects:remove")!({}, project.id);
+
+    expect(coordinator.removeProjectSessions).toHaveBeenCalledWith(project.id);
+    expect(projectService.removeProject).toHaveBeenCalledWith(project.id);
+    expect(calls).toEqual(["removeProjectSessions", "removeProject"]);
+    expect(snapshot).toMatchObject({ missingRootProjectIds: [project.id] });
+  });
+
+  it("leaves the folder registered when its sessions cannot be torn down", async () => {
+    const { handlers, coordinator, projectService, project } = setup();
+    coordinator.removeProjectSessions.mockRejectedValueOnce(new Error("pty is stuck"));
+
+    await expect(handlers.get("projects:remove")!({}, project.id)).rejects.toThrow(/pty is stuck/);
+    expect(projectService.removeProject).not.toHaveBeenCalled();
+  });
+
+  it("resolves folder actions from the registry so the renderer never supplies a path", async () => {
+    const { handlers, projectActions, project } = setup();
+
+    await handlers.get("projects:reveal")!({}, project.id);
+    await handlers.get("projects:open-editor")!({}, project.id);
+    await handlers.get("projects:open-github")!({}, project.id);
+
+    expect(projectActions.reveal).toHaveBeenCalledWith(project.rootPath);
+    expect(projectActions.openInEditor).toHaveBeenCalledWith(project.rootPath);
+    expect(projectActions.openOnGitHub).toHaveBeenCalledWith(project.rootPath);
+    await expect(handlers.get("projects:reveal")!({}, "unknown-project")).rejects.toThrow(/not found/i);
+  });
+
+  it("only accepts the maintenance commands the main process knows about", async () => {
+    const { handlers, coordinator } = setup();
+
+    await expect(
+      handlers.get("terminals:create-tool")!({}, { tool: "rm -rf /", cols: 80, rows: 24 }),
+    ).rejects.toThrow(/tool command is invalid/i);
+    await expect(
+      handlers.get("terminals:create-tool")!({}, { tool: "claude-update", cols: 80, rows: 24, command: "evil" }),
+    ).rejects.toThrow(/unknown fields/i);
+    expect(coordinator.createTool).not.toHaveBeenCalled();
+
+    await handlers.get("terminals:create-tool")!({}, { tool: "codex-update", cols: 80, rows: 24 });
+    expect(coordinator.createTool).toHaveBeenCalledWith({ tool: "codex-update", cols: 80, rows: 24 });
   });
 
   it("restores the registry backup and returns a fresh annotated snapshot", async () => {

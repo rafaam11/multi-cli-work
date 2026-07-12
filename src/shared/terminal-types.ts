@@ -1,4 +1,6 @@
 export type TerminalKind = "powershell" | "claude" | "codex";
+/** Maintenance commands that run in a session which belongs to no folder. */
+export type ToolCommand = "claude-update" | "codex-update";
 export type TerminalStatus =
   | "starting"
   | "working"
@@ -10,7 +12,8 @@ export type TerminalStatus =
 
 export interface TerminalSession {
   id: string;
-  projectId: string;
+  projectId: string | null;
+  tool: ToolCommand | null;
   kind: TerminalKind;
   cwd: string;
   providerConversationId: string | null;
@@ -23,7 +26,8 @@ export interface TerminalSession {
 
 export interface TerminalLaunchSpec {
   sessionId: string;
-  projectId: string;
+  projectId: string | null;
+  tool: ToolCommand | null;
   kind: TerminalKind;
   cwd: string;
   executable: string;

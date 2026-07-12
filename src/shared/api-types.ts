@@ -1,6 +1,6 @@
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, SharedProject } from "./project-types";
-import type { TerminalKind, TerminalStatus, TerminalWorkerEvent } from "./terminal-types";
+import type { TerminalKind, TerminalStatus, TerminalWorkerEvent, ToolCommand } from "./terminal-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -14,6 +14,7 @@ export interface ProviderAvailability {
   powershell: boolean;
   claude: boolean;
   codex: boolean;
+  vscode: boolean;
 }
 
 export interface TerminalSessionView extends PersistedTerminalSession {
@@ -25,6 +26,12 @@ export interface TerminalSessionView extends PersistedTerminalSession {
 export interface CreateTerminalInput {
   projectId: string;
   kind: TerminalKind;
+  cols: number;
+  rows: number;
+}
+
+export interface CreateToolTerminalInput {
+  tool: ToolCommand;
   cols: number;
   rows: number;
 }
@@ -57,11 +64,14 @@ export interface MultiCliWorkApi {
   platform: NodeJS.Platform;
   projects: {
     list(): Promise<ProjectWorkspaceSnapshot>;
-    refresh(): Promise<ProjectWorkspaceSnapshot>;
     addFolder(): Promise<SharedProject | null>;
     update(projectId: string, patch: ProjectMetadataPatch): Promise<SharedProject>;
+    remove(projectId: string): Promise<ProjectWorkspaceSnapshot>;
     relink(projectId: string): Promise<SharedProject | null>;
     restoreBackup(): Promise<ProjectWorkspaceSnapshot>;
+    reveal(projectId: string): Promise<void>;
+    openInEditor(projectId: string): Promise<void>;
+    openOnGitHub(projectId: string): Promise<void>;
   };
   providers: {
     availability(): Promise<ProviderAvailability>;
@@ -70,6 +80,7 @@ export interface MultiCliWorkApi {
     list(): Promise<TerminalSessionView[]>;
     state(): Promise<AppStateSnapshot>;
     create(input: CreateTerminalInput): Promise<TerminalSessionView>;
+    createTool(input: CreateToolTerminalInput): Promise<TerminalSessionView>;
     attach(sessionId: string): Promise<TerminalAttachResult>;
     write(sessionId: string, data: string): Promise<void>;
     resize(sessionId: string, cols: number, rows: number): Promise<void>;

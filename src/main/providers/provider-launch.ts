@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
-import type { TerminalKind } from "../../shared/terminal-types";
+import type { TerminalKind, ToolCommand } from "../../shared/terminal-types";
 
 const execFileAsync = promisify(execFile);
 
@@ -8,6 +9,7 @@ export interface ProviderExecutables {
   powershell: string | null;
   claude: string | null;
   codex: string | null;
+  vscode: string | null;
 }
 
 interface ProviderLaunchOptions {
@@ -38,6 +40,11 @@ const CODEX_NOTIFICATION_ARGS = [
   'tui.notification_condition="always"',
 ];
 
+const TOOL_SHELL_COMMANDS: Record<ToolCommand, string> = {
+  "claude-update": "claude update",
+  "codex-update": "codex update",
+};
+
 export function buildProviderLaunch(kind: TerminalKind, options: ProviderLaunchOptions): ProviderLaunchCommand {
   if (kind === "powershell") {
     return {
@@ -53,16 +60,63 @@ export function buildProviderLaunch(kind: TerminalKind, options: ProviderLaunchO
       : ["--session-id", options.appSessionId];
     return {
       executable: requireExecutable(options.executables.claude, "Claude"),
-      args: [...conversationArgs, "--settings", options.claudeSettingsPath],
+      args: [
+        ...conversationArgs,
+        "--settings",
+        options.claudeSettingsPath,
+        "--dangerously-skip-permissions",
+      ],
       providerConversationId: conversationId,
     };
   }
   const conversationArgs = options.resumeConversationId ? ["resume", options.resumeConversationId] : [];
   return {
     executable: requireExecutable(options.executables.codex, "Codex"),
-    args: [...conversationArgs, "-C", options.cwd, ...CODEX_NOTIFICATION_ARGS],
+    args: [
+      ...conversationArgs,
+      "-C",
+      options.cwd,
+      "--dangerously-bypass-approvals-and-sandbox",
+      ...CODEX_NOTIFICATION_ARGS,
+    ],
     providerConversationId: options.resumeConversationId ?? null,
   };
+}
+
+/**
+ * Tool sessions run a CLI maintenance command inside PowerShell. `-NoExit` keeps the shell
+ * alive so the output stays readable and interactive prompts can still be answered.
+ */
+export function buildToolLaunch(tool: ToolCommand, executables: ProviderExecutables): ProviderLaunchCommand {
+  return {
+    executable: requireExecutable(executables.powershell, "PowerShell"),
+    args: ["-NoLogo", "-NoExit", "-Command", TOOL_SHELL_COMMANDS[tool]],
+    providerConversationId: null,
+  };
+}
+
+/**
+ * `where code` resolves to the `bin\code.cmd` shim on Windows, and Node refuses to spawn a
+ * `.cmd` without a shell. The GUI executable sits one directory above the shim.
+ */
+export function vsCodeExecutableCandidate(cliPath: string): string | null {
+  const normalized = cliPath.replaceAll("/", "\\").toLocaleLowerCase("en-US");
+  if (!normalized.endsWith("\\bin\\code.cmd")) return null;
+  return path.win32.resolve(path.win32.dirname(cliPath), "..", "Code.exe");
+}
+
+export interface EditorSpawnCommand {
+  command: string;
+  args: string[];
+  shell: boolean;
+}
+
+export function buildEditorSpawn(cliPath: string, rootPath: string, resolvedExecutable: string | null): EditorSpawnCommand {
+  if (resolvedExecutable) return { command: resolvedExecutable, args: [rootPath], shell: false };
+  // Node does not escape arguments when `shell` is set, so quote them here. Windows paths cannot
+  // contain a double quote, and `&`/`^` are inert inside a quoted cmd.exe token.
+  if (/\.(cmd|bat)$/i.test(cliPath)) return { command: `"${cliPath}"`, args: [`"${rootPath}"`], shell: true };
+  return { command: cliPath, args: [rootPath], shell: false };
 }
 
 export function pickWindowsExecutable(candidates: string[]): string | null {
@@ -87,11 +141,12 @@ async function findOnPath(command: string): Promise<string | null> {
 }
 
 export async function detectProviderExecutables(): Promise<ProviderExecutables> {
-  const [pwsh, windowsPowerShell, claude, codex] = await Promise.all([
+  const [pwsh, windowsPowerShell, claude, codex, vscode] = await Promise.all([
     findOnPath("pwsh"),
     findOnPath("powershell"),
     findOnPath("claude"),
     findOnPath("codex"),
+    findOnPath("code"),
   ]);
-  return { powershell: pwsh ?? windowsPowerShell, claude, codex };
+  return { powershell: pwsh ?? windowsPowerShell, claude, codex, vscode };
 }

@@ -1,8 +1,10 @@
-import type { TerminalKind } from "./terminal-types";
+import type { TerminalKind, ToolCommand } from "./terminal-types";
 
 export interface PersistedTerminalSession {
   id: string;
-  projectId: string;
+  /** Null for maintenance sessions, which run outside any folder. */
+  projectId: string | null;
+  tool: ToolCommand | null;
   kind: TerminalKind;
   cwd: string;
   providerConversationId: string | null;

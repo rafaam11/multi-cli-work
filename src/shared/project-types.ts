@@ -45,10 +45,4 @@ export interface ProjectRegistrySnapshot {
   warning?: string;
 }
 
-export interface ProjectDiscovery {
-  rootPath: string;
-  source: ProjectSource;
-  providerRef?: string;
-  displayName?: string | null;
-}
 

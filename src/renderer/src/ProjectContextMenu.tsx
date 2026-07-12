@@ -1,0 +1,88 @@
+import { Code2, ExternalLink, FolderOpen, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useRef, type CSSProperties } from "react";
+
+export interface ProjectContextMenuProps {
+  projectName: string;
+  x: number;
+  y: number;
+  vscodeAvailable: boolean;
+  onReveal(): void;
+  onOpenInEditor(): void;
+  onOpenOnGitHub(): void;
+  onRename(): void;
+  onRemove(): void;
+  onClose(): void;
+}
+
+export function ProjectContextMenu({
+  projectName,
+  x,
+  y,
+  vscodeAvailable,
+  onReveal,
+  onOpenInEditor,
+  onOpenOnGitHub,
+  onRename,
+  onRemove,
+  onClose,
+}: ProjectContextMenuProps) {
+  const menu = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!menu.current?.contains(event.target as Node)) onClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const run = (action: () => void) => () => {
+    onClose();
+    action();
+  };
+
+  return (
+    <div
+      className="context-menu"
+      role="menu"
+      aria-label={`Actions for ${projectName}`}
+      ref={menu}
+      style={{ "--context-menu-x": `${x}px`, "--context-menu-y": `${y}px` } as CSSProperties}
+    >
+      <button type="button" role="menuitem" onClick={run(onReveal)}>
+        <FolderOpen size={15} />
+        <span>Open in File Explorer</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={!vscodeAvailable}
+        title={vscodeAvailable ? undefined : "VS Code was not found on PATH"}
+        onClick={run(onOpenInEditor)}
+      >
+        <Code2 size={15} />
+        <span>Open in VS Code</span>
+      </button>
+      <button type="button" role="menuitem" onClick={run(onOpenOnGitHub)}>
+        <ExternalLink size={15} />
+        <span>Open on GitHub</span>
+      </button>
+      <div className="context-menu-separator" role="separator" />
+      <button type="button" role="menuitem" onClick={run(onRename)}>
+        <Pencil size={15} />
+        <span>Rename</span>
+      </button>
+      <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
+        <Trash2 size={15} />
+        <span>Remove from list</span>
+      </button>
+    </div>
+  );
+}

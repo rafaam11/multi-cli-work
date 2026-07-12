@@ -10,8 +10,8 @@ const project: SharedProject = {
   displayName: "Atlas",
   sources: ["manual"],
   providerRefs: { claude: [], codex: [] },
-  status: "진행중",
-  memo: "old memo",
+  status: null,
+  memo: "",
   tracks: [],
   hidden: false,
   order: 0,
@@ -33,30 +33,29 @@ afterEach(() => {
 });
 
 describe("ProjectMetadataEditor", () => {
-  it("submits only the fields that changed", async () => {
-    const updated = { ...project, displayName: "Atlas Prime", status: "보류" as const };
+  it("renames the folder", async () => {
+    const updated = { ...project, displayName: "Atlas Prime" };
     const update = vi.fn().mockResolvedValue(updated);
     const { onSaved, onClose } = mountEditor(update);
 
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Atlas Prime" } });
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "보류" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated));
-    expect(update).toHaveBeenCalledWith(project.id, { displayName: "Atlas Prime", status: "보류" });
+    expect(update).toHaveBeenCalledWith(project.id, { displayName: "Atlas Prime" });
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("sends null when the display name is cleared and when status is set to none", async () => {
-    const updated = { ...project, displayName: null, status: null };
+  it("clears the name back to the folder basename when the field is emptied", async () => {
+    const updated = { ...project, displayName: null };
     const update = vi.fn().mockResolvedValue(updated);
     mountEditor(update);
 
+    expect(screen.getByLabelText("Display name")).toHaveAttribute("placeholder", "atlas");
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "   " } });
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith(project.id, { displayName: null, status: null }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(project.id, { displayName: null }));
   });
 
   it("closes without updating when nothing changed or when cancelled", async () => {
@@ -76,25 +75,13 @@ describe("ProjectMetadataEditor", () => {
     const update = vi.fn().mockRejectedValue(new Error("registry is read-only"));
     const { onSaved, onClose } = mountEditor(update);
 
-    fireEvent.change(screen.getByLabelText("Memo"), { target: { value: "new memo" } });
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Atlas Prime" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByRole("alert");
     expect(screen.getByRole("alert")).toHaveTextContent("registry is read-only");
     expect(onSaved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("toggles hidden through the checkbox", async () => {
-    const updated = { ...project, hidden: true };
-    const update = vi.fn().mockResolvedValue(updated);
-    const { onSaved } = mountEditor(update);
-
-    fireEvent.click(screen.getByLabelText("Hidden"));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(update).toHaveBeenCalledWith(project.id, { hidden: true }));
-    expect(onSaved).toHaveBeenCalledWith(updated);
   });
 
   it("closes on Escape without updating", () => {

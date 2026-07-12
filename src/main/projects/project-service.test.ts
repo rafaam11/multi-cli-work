@@ -2,8 +2,8 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { readProjectRegistry, reconcileProject, updateProjectRegistry } from "./project-registry";
+import { afterEach, describe, expect, it } from "vitest";
+import { readProjectRegistry, updateProjectRegistry } from "./project-registry";
 import { ProjectService, ProjectServiceError } from "./project-service";
 
 const tempRoots: string[] = [];
@@ -22,64 +22,30 @@ async function tempWorkspace(name: string): Promise<string> {
   return root;
 }
 
-async function writeTranscript(filePath: string, records: unknown[]): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
-}
-
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
-describe("ProjectService discovery", () => {
-  it("reconciles Claude and Codex discoveries in one registry update without deleting missing projects", async () => {
-    const workspace = await tempWorkspace("service-discovery");
-    const registryPath = path.join(workspace, "registry", "projects.json");
-    const claudeProjectsDirectory = path.join(workspace, "claude");
-    const codexSessionsDirectory = path.join(workspace, "codex");
-    const sharedProject = path.join(workspace, "shared-project");
-    const missingProject = path.join(workspace, "missing-project");
-    await fs.mkdir(sharedProject);
-    await writeTranscript(path.join(claudeProjectsDirectory, "project", "claude.jsonl"), [
-      { cwd: sharedProject, sessionId: "claude-session" },
-    ]);
-    await writeTranscript(path.join(codexSessionsDirectory, "2026", "07", "11", "codex.jsonl"), [
-      { type: "session_meta", payload: { cwd: sharedProject, id: "codex-session" } },
-    ]);
-    await updateProjectRegistry(
-      (registry) =>
-        reconcileProject(
-          registry,
-          { rootPath: missingProject, source: "manual", displayName: "Keep me" },
-          { now: "2026-07-11T00:00:00.000Z", idFactory: () => PROJECT_IDS.missing },
-        ),
-      { registryPath },
-    );
-    const registryUpdater = vi.fn(updateProjectRegistry);
-    const service = new ProjectService({
-      registryPath,
-      claudeProjectsDirectory,
-      codexSessionsDirectory,
-      registryUpdater,
-      now: () => "2026-07-11T01:00:00.000Z",
-      idFactory: () => PROJECT_IDS.shared,
-    });
-
-    const registry = await service.discoverAndReconcile();
-    const codexProjectRef = `codex:${sharedProject[0].toUpperCase()}--${sharedProject.slice(3).replace(/[\\/]+/g, "-")}`;
-
-    expect(registryUpdater).toHaveBeenCalledTimes(1);
-    expect(Object.keys(registry.projects).sort()).toEqual([PROJECT_IDS.missing, PROJECT_IDS.shared]);
-    expect(registry.projects[PROJECT_IDS.missing].displayName).toBe("Keep me");
-    expect(registry.projects[PROJECT_IDS.shared]).toMatchObject({
-      rootPath: sharedProject,
-      sources: ["claude", "codex"],
-      providerRefs: { claude: ["project"], codex: [codexProjectRef] },
-    });
-  });
-});
-
 describe("ProjectService project management", () => {
+  it("removes a project from the registry and leaves the folder on disk", async () => {
+    const workspace = await tempWorkspace("service-remove");
+    const registryPath = path.join(workspace, "registry", "projects.json");
+    const keptDirectory = path.join(workspace, "kept");
+    const removedDirectory = path.join(workspace, "removed");
+    await Promise.all([fs.mkdir(keptDirectory), fs.mkdir(removedDirectory)]);
+    const ids: string[] = [PROJECT_IDS.first, PROJECT_IDS.second];
+    const service = new ProjectService({ registryPath, idFactory: () => ids.shift() ?? PROJECT_IDS.manual });
+    await service.registerManualFolder(keptDirectory);
+    await service.registerManualFolder(removedDirectory);
+
+    const registry = await service.removeProject(PROJECT_IDS.second);
+
+    expect(Object.keys(registry.projects)).toEqual([PROJECT_IDS.first]);
+    expect((await readProjectRegistry({ registryPath })).registry.projects).not.toHaveProperty(PROJECT_IDS.second);
+    expect((await fs.stat(removedDirectory)).isDirectory()).toBe(true);
+    await expect(service.removeProject(PROJECT_IDS.second)).rejects.toThrow(/not found/i);
+  });
+
   it("reports missing roots without mutating project registry records", async () => {
     const workspace = await tempWorkspace("service-missing-roots");
     const existingDirectory = path.join(workspace, "existing");

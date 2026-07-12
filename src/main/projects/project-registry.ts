@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import lockfile from "proper-lockfile";
 import type {
-  ProjectDiscovery,
   ProjectRegistrySnapshot,
   ProjectRegistryV1,
   ProjectSource,
@@ -31,7 +30,7 @@ const PROJECT_KEYS = [
 ] as const;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export const PROJECT_REGISTRY_PATH = path.join(os.homedir(), ".harness-manager", "projects.json");
+export const PROJECT_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "projects.json");
 
 export class ProjectRegistryError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -217,60 +216,36 @@ export function normalizeProjectPath(rootPath: string, platform: NodeJS.Platform
   return normalized;
 }
 
-interface ReconcileOptions {
+interface UpsertOptions {
   now?: string;
   idFactory?: () => string;
   platform?: NodeJS.Platform;
 }
 
-export function reconcileProject(
+/**
+ * Registers a folder the user opened. Re-opening a folder that is already registered is a
+ * no-op on identity: the existing project keeps its id, name and creation time.
+ */
+export function upsertManualProject(
   registry: ProjectRegistryV1,
-  discovery: ProjectDiscovery,
-  options: ReconcileOptions = {},
+  folder: { rootPath: string; displayName?: string | null },
+  options: UpsertOptions = {},
 ): ProjectRegistryV1 {
   const now = options.now ?? new Date().toISOString();
-  const normalized = normalizeProjectPath(discovery.rootPath, options.platform);
-  const pathMatch = Object.values(registry.projects).find(
+  const normalized = normalizeProjectPath(folder.rootPath, options.platform);
+  const existing = Object.values(registry.projects).find(
     (project) => normalizeProjectPath(project.rootPath, options.platform) === normalized,
   );
-  const discoveryProvider = discovery.source === "manual" ? null : discovery.source;
-  const providerMatch =
-    discovery.providerRef && discoveryProvider
-      ? Object.values(registry.projects).find((project) => project.providerRefs[discoveryProvider].includes(discovery.providerRef!))
-      : undefined;
-  const existing = pathMatch ?? providerMatch;
-  let baseProjects = registry.projects;
-  if (pathMatch && providerMatch && pathMatch.id !== providerMatch.id && discovery.providerRef && discoveryProvider) {
-    const provider = discoveryProvider;
-    const displacedRefs = {
-      ...providerMatch.providerRefs,
-      [provider]: providerMatch.providerRefs[provider].filter(
-        (providerRef) => providerRef !== discovery.providerRef,
-      ),
-    };
-    baseProjects = {
-      ...baseProjects,
-      [providerMatch.id]: { ...providerMatch, providerRefs: displacedRefs, updatedAt: now },
-    };
-  }
   const id = existing?.id ?? (options.idFactory ?? randomUUID)();
-  const sources = SOURCES.filter((source) => [...(existing?.sources ?? []), discovery.source].includes(source));
-  const providerRefs = {
-    claude: [...(existing?.providerRefs.claude ?? [])],
-    codex: [...(existing?.providerRefs.codex ?? [])],
-  };
-  if (discovery.providerRef && discovery.source !== "manual") {
-    providerRefs[discovery.source] = [...new Set([...providerRefs[discovery.source], discovery.providerRef])];
-  }
   const next: SharedProject = {
     id,
-    rootPath:
-      providerMatch && !pathMatch && !existing?.sources.includes("manual")
-        ? path.resolve(discovery.rootPath)
-        : existing?.rootPath ?? path.resolve(discovery.rootPath),
-    displayName: existing?.displayName ?? discovery.displayName ?? null,
-    sources,
-    providerRefs,
+    rootPath: existing?.rootPath ?? path.resolve(folder.rootPath),
+    displayName: existing?.displayName ?? folder.displayName ?? null,
+    sources: SOURCES.filter((source) => [...(existing?.sources ?? []), "manual"].includes(source)),
+    providerRefs: {
+      claude: [...(existing?.providerRefs.claude ?? [])],
+      codex: [...(existing?.providerRefs.codex ?? [])],
+    },
     status: existing?.status ?? null,
     memo: existing?.memo ?? "",
     tracks: existing?.tracks ?? [],
@@ -279,11 +254,18 @@ export function reconcileProject(
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
-  return {
-    ...registry,
-    updatedAt: now,
-    projects: { ...baseProjects, [id]: next },
-  };
+  return { ...registry, updatedAt: now, projects: { ...registry.projects, [id]: next } };
+}
+
+export function removeProjectFromRegistry(
+  registry: ProjectRegistryV1,
+  projectId: string,
+  now = new Date().toISOString(),
+): ProjectRegistryV1 {
+  if (!registry.projects[projectId]) throw new ProjectRegistryError(`Project ${projectId} was not found`);
+  const projects = { ...registry.projects };
+  delete projects[projectId];
+  return { ...registry, updatedAt: now, projects };
 }
 
 interface RegistryStorageOptions {

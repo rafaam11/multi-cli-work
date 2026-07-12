@@ -431,15 +431,14 @@ body.sidebar-resizing {
   opacity: 0.5;
 }
 
-.hidden-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
+.tools-group {
+  margin-top: 10px;
+  padding-top: 4px;
   border-top: 1px solid var(--line);
-  color: var(--quiet);
-  font-size: 10px;
-  cursor: pointer;
+}
+
+.tools-group .session-tree {
+  margin-left: 14px;
 }
 
 .session-tree {
@@ -874,6 +873,148 @@ body.sidebar-resizing {
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: 8px;
+}
+
+.launcher-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.launcher-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.launcher-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.launcher-button:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  top: var(--context-menu-y);
+  left: var(--context-menu-x);
+  width: 212px;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 36%);
+}
+
+.context-menu button {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.context-menu button:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+}
+
+.context-menu button.danger-item {
+  color: #f09595;
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inset: 0;
+  background: rgb(0 0 0 / 52%);
+}
+
+.confirm-dialog {
+  width: min(400px, calc(100vw - 48px));
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 20px 48px rgb(0 0 0 / 44%);
+}
+
+.confirm-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.confirm-dialog p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-dialog-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.confirm-dialog-actions button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.confirm-dialog-actions button.danger-button {
+  border-color: #7a3b3b;
+  color: #f09595;
+}
+
+.confirm-dialog-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .action-error {

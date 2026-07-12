@@ -83,6 +83,7 @@ export class TerminalSessionManager {
     const session: TerminalSession = {
       id: spec.sessionId,
       projectId: spec.projectId,
+      tool: spec.tool,
       kind: spec.kind,
       cwd: spec.cwd,
       providerConversationId: spec.providerConversationId ?? null,

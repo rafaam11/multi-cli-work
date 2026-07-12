@@ -31,6 +31,7 @@ class FakeWorker implements TerminalWorkerTransport {
 const spec: TerminalLaunchSpec = {
   sessionId: "session-1",
   projectId: "project-1",
+  tool: null,
   kind: "powershell",
   cwd: "C:\\Work",
   executable: "pwsh.exe",
@@ -54,6 +55,7 @@ describe("TerminalWorkerClient", () => {
       result: {
         id: "session-1",
         projectId: "project-1",
+        tool: null,
         kind: "powershell",
         cwd: "C:\\Work",
         providerConversationId: null,

@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ProjectRegistryV1, ProjectStatus, ProjectTrack, SharedProject } from "../../shared/project-types";
-import { discoverClaudeProjects, discoverCodexProjects } from "./project-discovery";
 import {
   normalizeProjectPath,
   parseProjectRegistry,
-  reconcileProject,
+  removeProjectFromRegistry,
   updateProjectRegistry,
+  upsertManualProject,
 } from "./project-registry";
 
 const METADATA_KEYS = ["displayName", "status", "memo", "tracks", "hidden", "order"] as const;
@@ -24,9 +24,6 @@ export interface ProjectMetadataUpdate {
 
 export interface ProjectServiceOptions {
   registryPath?: string;
-  claudeProjectsDirectory?: string;
-  codexSessionsDirectory?: string;
-  maxDiscoveryFiles?: number;
   platform?: NodeJS.Platform;
   now?: () => string;
   idFactory?: () => string;
@@ -75,39 +72,6 @@ export class ProjectService {
     this.options = options;
   }
 
-  async discoverAndReconcile(): Promise<ProjectRegistryV1> {
-    const discoveryOptions =
-      this.options.maxDiscoveryFiles === undefined ? {} : { maxFiles: this.options.maxDiscoveryFiles };
-    const [claudeDiscoveries, codexDiscoveries] = await Promise.all([
-      discoverClaudeProjects({
-        ...discoveryOptions,
-        ...(this.options.platform ? { platform: this.options.platform } : {}),
-        ...(this.options.claudeProjectsDirectory
-          ? { projectsDirectory: this.options.claudeProjectsDirectory }
-          : {}),
-      }),
-      discoverCodexProjects({
-        ...discoveryOptions,
-        ...(this.options.platform ? { platform: this.options.platform } : {}),
-        ...(this.options.codexSessionsDirectory ? { sessionsDirectory: this.options.codexSessionsDirectory } : {}),
-      }),
-    ]);
-    const discoveries = [...claudeDiscoveries, ...codexDiscoveries];
-    const now = this.now();
-
-    return this.updateRegistry((registry) =>
-      discoveries.reduce(
-        (next, discovery) =>
-          reconcileProject(next, discovery, {
-            now,
-            idFactory: this.options.idFactory,
-            platform: this.options.platform,
-          }),
-        registry,
-      ),
-    );
-  }
-
   async findMissingProjectRoots(registry: ProjectRegistryV1): Promise<string[]> {
     const checks = await Promise.all(
       Object.values(registry.projects).map(async (project) => {
@@ -126,12 +90,20 @@ export class ProjectService {
     const validatedPath = await this.validateDirectory(rootPath);
     const now = this.now();
     return this.updateRegistry((registry) =>
-      reconcileProject(
+      upsertManualProject(
         registry,
-        { rootPath: validatedPath, source: "manual", ...(displayName !== undefined ? { displayName } : {}) },
+        { rootPath: validatedPath, ...(displayName !== undefined ? { displayName } : {}) },
         { now, idFactory: this.options.idFactory, platform: this.options.platform },
       ),
     );
+  }
+
+  async removeProject(projectId: string): Promise<ProjectRegistryV1> {
+    const now = this.now();
+    return this.updateRegistry((registry) => {
+      if (!registry.projects[projectId]) throw new ProjectServiceError(`Project ${projectId} was not found`);
+      return removeProjectFromRegistry(registry, projectId, now);
+    });
   }
 
   async updateProjectMetadata(projectId: string, update: ProjectMetadataUpdate): Promise<ProjectRegistryV1> {

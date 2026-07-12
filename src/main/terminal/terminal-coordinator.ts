@@ -1,6 +1,7 @@
 import type { AppStateV1, PersistedTerminalSession } from "../../shared/app-state-types";
 import type {
   CreateTerminalInput,
+  CreateToolTerminalInput,
   ResumeTerminalInput,
   TerminalAttachResult,
   TerminalSessionView,
@@ -12,8 +13,9 @@ import type {
   TerminalSession,
   TerminalStatus,
   TerminalWorkerEvent,
+  ToolCommand,
 } from "../../shared/terminal-types";
-import { buildProviderLaunch, type ProviderExecutables } from "../providers/provider-launch";
+import { buildProviderLaunch, buildToolLaunch, type ProviderExecutables } from "../providers/provider-launch";
 import { cleanupProviderStatusFiles, deleteProviderStatusFile } from "../providers/provider-status";
 import {
   appendSessionLog,
@@ -45,6 +47,7 @@ interface TerminalCoordinatorOptions {
   claudeSettingsPath: string;
   getProject(projectId: string): Promise<SharedProject | null>;
   getExecutables(): Promise<ProviderExecutables>;
+  toolSessionCwd(): string;
   env: Record<string, string>;
   idFactory(): string;
   now(): string;
@@ -60,6 +63,7 @@ function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
   return {
     id: view.id,
     projectId: view.projectId,
+    tool: view.tool,
     kind: view.kind,
     cwd: view.cwd,
     providerConversationId: view.providerConversationId,
@@ -119,11 +123,28 @@ export class TerminalCoordinator {
     this.validateDimensions(input.cols, input.rows);
     const project = await this.options.getProject(input.projectId);
     if (!project) throw new Error(`Unknown project: ${input.projectId}`);
-    const sessionId = this.options.idFactory();
     return this.launch({
-      sessionId,
-      project,
+      sessionId: this.options.idFactory(),
+      projectId: project.id,
+      tool: null,
+      cwd: project.rootPath,
       kind: input.kind,
+      cols: input.cols,
+      rows: input.rows,
+      createdAt: this.options.now(),
+      resumeConversationId: null,
+    });
+  }
+
+  /** Maintenance sessions run a fixed CLI command in the home directory and belong to no folder. */
+  async createTool(input: CreateToolTerminalInput): Promise<TerminalSessionView> {
+    this.validateDimensions(input.cols, input.rows);
+    return this.launch({
+      sessionId: this.options.idFactory(),
+      projectId: null,
+      tool: input.tool,
+      cwd: this.options.toolSessionCwd(),
+      kind: "powershell",
       cols: input.cols,
       rows: input.rows,
       createdAt: this.options.now(),
@@ -138,11 +159,19 @@ export class TerminalCoordinator {
     if (saved.kind !== "powershell" && !saved.providerConversationId) {
       throw new Error(`${saved.kind} session does not have a resumable conversation id`);
     }
-    const project = await this.options.getProject(saved.projectId);
-    if (!project) throw new Error(`Unknown project: ${saved.projectId}`);
+    // Folder sessions re-read the project so a relinked folder resumes at its new root.
+    // Maintenance sessions have no project, so their recorded cwd is authoritative.
+    let cwd = saved.cwd;
+    if (saved.projectId !== null) {
+      const project = await this.options.getProject(saved.projectId);
+      if (!project) throw new Error(`Unknown project: ${saved.projectId}`);
+      cwd = project.rootPath;
+    }
     return this.launch({
       sessionId: saved.id,
-      project,
+      projectId: saved.projectId,
+      tool: saved.tool,
+      cwd,
       kind: saved.kind,
       cols: input.cols,
       rows: input.rows,
@@ -208,6 +237,26 @@ export class TerminalCoordinator {
     }
   }
 
+  /**
+   * Tears down every session of a folder before the folder itself is unregistered. Each session is
+   * removed best-effort so one failure cannot strand the rest; the caller only deletes the project
+   * from the registry once this resolves, so a partial failure leaves the folder reachable to retry.
+   */
+  async removeProjectSessions(projectId: string): Promise<void> {
+    const sessions = this.list().filter((session) => session.projectId === projectId);
+    const failures: unknown[] = [];
+    for (const session of sessions) {
+      try {
+        await this.remove(session.id);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Failed to remove ${failures.length} of ${sessions.length} sessions`, { cause: failures[0] });
+    }
+  }
+
   async select(projectId: string | null, sessionId: string | null) {
     const state = await updateAppState(
       (current) => ({ ...current, selectedProjectId: projectId, selectedSessionId: sessionId }),
@@ -258,7 +307,9 @@ export class TerminalCoordinator {
 
   private async launch(input: {
     sessionId: string;
-    project: SharedProject;
+    projectId: string | null;
+    tool: ToolCommand | null;
+    cwd: string;
     kind: TerminalSessionView["kind"];
     cols: number;
     rows: number;
@@ -267,21 +318,24 @@ export class TerminalCoordinator {
   }): Promise<TerminalSessionView> {
     const knownCodexIds =
       input.kind === "codex" && !input.resumeConversationId && this.options.codexSessions
-        ? await this.options.codexSessions.snapshot(input.project.rootPath).catch(() => new Set<string>())
+        ? await this.options.codexSessions.snapshot(input.cwd).catch(() => new Set<string>())
         : null;
     const executables = await this.options.getExecutables();
-    const command = buildProviderLaunch(input.kind, {
-      cwd: input.project.rootPath,
-      appSessionId: input.sessionId,
-      claudeSettingsPath: this.options.claudeSettingsPath,
-      executables,
-      resumeConversationId: input.resumeConversationId,
-    });
+    const command = input.tool
+      ? buildToolLaunch(input.tool, executables)
+      : buildProviderLaunch(input.kind, {
+          cwd: input.cwd,
+          appSessionId: input.sessionId,
+          claudeSettingsPath: this.options.claudeSettingsPath,
+          executables,
+          resumeConversationId: input.resumeConversationId,
+        });
     const session = await this.options.worker.create({
       sessionId: input.sessionId,
-      projectId: input.project.id,
+      projectId: input.projectId,
+      tool: input.tool,
       kind: input.kind,
-      cwd: input.project.rootPath,
+      cwd: input.cwd,
       executable: command.executable,
       args: command.args,
       env: { ...this.options.env, MULTI_CLI_WORK_SESSION_ID: input.sessionId },

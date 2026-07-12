@@ -6,13 +6,15 @@ import type {
   AppStateV1,
   PersistedTerminalSession,
 } from "../../shared/app-state-types";
-import type { TerminalKind } from "../../shared/terminal-types";
+import type { TerminalKind, ToolCommand } from "../../shared/terminal-types";
 import { tailOnUtf8Boundary } from "../utf8";
 
 const TERMINAL_KINDS: readonly TerminalKind[] = ["powershell", "claude", "codex"];
+const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
 const SESSION_KEYS = [
   "id",
   "projectId",
+  "tool",
   "kind",
   "cwd",
   "providerConversationId",
@@ -52,6 +54,13 @@ function iso(value: unknown, label: string): string {
   return result;
 }
 
+/** State files written before maintenance sessions existed have no `tool` key at all. */
+function toolCommand(value: unknown, label: string): ToolCommand | null {
+  if (value === undefined || value === null) return null;
+  if (!TOOL_COMMANDS.includes(value as ToolCommand)) throw new AppStateError(`${label} is invalid`);
+  return value as ToolCommand;
+}
+
 function parseSession(value: unknown, key: string): PersistedTerminalSession {
   if (!isRecord(value)) throw new AppStateError(`Session ${key} must be an object`);
   exactKeys(value, SESSION_KEYS, `Session ${key}`);
@@ -60,7 +69,8 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
   if (!TERMINAL_KINDS.includes(value.kind as TerminalKind)) throw new AppStateError(`Session ${key}.kind is invalid`);
   return {
     id,
-    projectId: string(value.projectId, `Session ${key}.projectId`),
+    projectId: nullableString(value.projectId, `Session ${key}.projectId`),
+    tool: toolCommand(value.tool, `Session ${key}.tool`),
     kind: value.kind as TerminalKind,
     cwd: string(value.cwd, `Session ${key}.cwd`),
     providerConversationId: nullableString(value.providerConversationId, `Session ${key}.providerConversationId`),

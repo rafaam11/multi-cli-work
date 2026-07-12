@@ -40,6 +40,7 @@ function launchSpec(): TerminalLaunchSpec {
   return {
     sessionId: "session-1",
     projectId: "project-1",
+    tool: null,
     kind: "powershell",
     cwd: "C:\\Work\\Example",
     executable: "pwsh.exe",

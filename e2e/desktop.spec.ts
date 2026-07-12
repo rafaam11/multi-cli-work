@@ -19,7 +19,6 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
       MULTI_CLI_WORK_USER_DATA: path.join(tempRoot, "user-data"),
       MULTI_CLI_WORK_REGISTRY_PATH: path.join(tempRoot, "registry", "projects.json"),
-      MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR: path.join(tempRoot, "claude-projects"),
       MULTI_CLI_WORK_CODEX_SESSIONS_DIR: path.join(tempRoot, "codex-sessions"),
     },
   });
@@ -39,7 +38,6 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await Promise.all([
       fs.mkdir(projectRoot, { recursive: true }),
       fs.mkdir(path.join(tempRoot, "registry"), { recursive: true }),
-      fs.mkdir(path.join(tempRoot, "claude-projects"), { recursive: true }),
       fs.mkdir(path.join(tempRoot, "codex-sessions"), { recursive: true }),
     ]);
     await fs.writeFile(
@@ -80,9 +78,10 @@ test.describe.serial("Multi CLI Work desktop", () => {
 
   test("runs a real PowerShell PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "Multi CLI Work" })).toBeVisible();
-    await page.getByRole("button", { name: "Select project Sample Project" }).click();
-    await page.getByRole("button", { name: "New session" }).click();
-    await page.getByRole("menuitem", { name: "New PowerShell session" }).click();
+    await page.getByRole("button", { name: "Select folder Sample Project" }).click();
+    // A folder with no sessions offers the launchers directly instead of the dropdown.
+    await expect(page.getByRole("button", { name: "New session" })).toBeHidden();
+    await page.getByRole("button", { name: "New PowerShell session" }).click();
 
     const terminal = page.getByRole("region", { name: "powershell terminal" });
     await expect(terminal).toBeVisible();
@@ -158,5 +157,25 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await expect(page.getByRole("button", { name: "Open PowerShell session" })).toBeVisible();
     await page.getByRole("button", { name: "Open PowerShell session" }).click();
     await expect(page.getByRole("button", { name: "Resume session" })).toBeVisible();
+  });
+
+  test("removes a folder from the list through the context menu without deleting it from disk", async () => {
+    const projectRoot = path.join(tempRoot, "sample-project");
+    await page.getByRole("button", { name: "Select folder Sample Project" }).click({ button: "right" });
+
+    const menu = page.getByRole("menu", { name: "Actions for Sample Project" });
+    await expect(menu.getByRole("menuitem", { name: "Open in File Explorer" })).toBeVisible();
+    await menu.getByRole("menuitem", { name: "Remove from list" }).click();
+
+    const confirm = page.getByRole("dialog", { name: "Remove folder from list" });
+    await expect(confirm).toContainText("will be stopped");
+    await confirm.getByRole("button", { name: "Remove" }).click();
+
+    await expect(page.getByRole("button", { name: "Select folder Sample Project" })).toBeHidden();
+    await expect(page.getByText("No folders yet")).toBeVisible();
+    expect((await fs.stat(projectRoot)).isDirectory()).toBe(true);
+
+    const savedRegistry = JSON.parse(await fs.readFile(path.join(tempRoot, "registry", "projects.json"), "utf8"));
+    expect(savedRegistry.projects).toEqual({});
   });
 });

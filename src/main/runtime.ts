@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, utilityProcess } from "electron";
+import os from "node:os";
 import path from "node:path";
 import type { ProviderAvailability } from "../shared/api-types";
 import type { TerminalWorkerEvent } from "../shared/terminal-types";
 import { registerMainIpc } from "./ipc";
+import { createProjectActions } from "./projects/project-actions";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
@@ -28,6 +30,7 @@ function availability(executables: Awaited<ReturnType<typeof detectProviderExecu
     powershell: executables.powershell !== null,
     claude: executables.claude !== null,
     codex: executables.codex !== null,
+    vscode: executables.vscode !== null,
   };
 }
 
@@ -42,17 +45,9 @@ export async function createDesktopRuntime(
 ): Promise<DesktopRuntime> {
   const userData = app.getPath("userData");
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
-  const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData);
-  const projectService = new ProjectService({
-    registryPath,
-    claudeProjectsDirectory,
-    codexSessionsDirectory,
-  });
-  await projectService.discoverAndReconcile().catch((error) => {
-    console.error("Project discovery failed", error);
-  });
+  const projectService = new ProjectService({ registryPath });
 
   const worker = new RestartingTerminalWorker(
     () =>
@@ -72,6 +67,7 @@ export async function createDesktopRuntime(
       return (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;
     },
     getExecutables,
+    toolSessionCwd: () => os.homedir(),
     env: {
       ...stringEnvironment(),
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
@@ -95,6 +91,7 @@ export async function createDesktopRuntime(
       install: installUpdate,
       openReleases: openReleasesPage,
     },
+    projectActions: createProjectActions({ getExecutables }),
     appVersion: () => app.getVersion(),
     readRegistry: () => readProjectRegistry({ registryPath }),
     async restoreRegistryBackup() {

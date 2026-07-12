@@ -29,6 +29,7 @@ class FakeWorker implements TerminalWorkerGateway {
   readonly create = vi.fn(async (spec: TerminalLaunchSpec): Promise<TerminalSession> => ({
     id: spec.sessionId,
     projectId: spec.projectId,
+    tool: spec.tool,
     kind: spec.kind,
     cwd: spec.cwd,
     providerConversationId: spec.providerConversationId ?? null,
@@ -97,7 +98,13 @@ async function coordinator(
     logDir: path.join(root, "logs"),
     claudeSettingsPath: path.join(root, "claude-settings.json"),
     getProject: async (id) => (id === project.id ? project : null),
-    getExecutables: async () => ({ powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" }),
+    getExecutables: async () => ({
+      powershell: "powershell.exe",
+      claude: "claude.exe",
+      codex: "codex.cmd",
+      vscode: "code.cmd",
+    }),
+    toolSessionCwd: () => "C:\\Users\\me",
     env: { SYSTEMROOT: "C:\\Windows" },
     idFactory: () => "session-1",
     now: () => "2026-07-11T01:00:00.000Z",
@@ -122,13 +129,104 @@ describe("TerminalCoordinator", () => {
         sessionId: "session-1",
         cwd: "C:\\Work",
         executable: "claude.exe",
-        args: ["--session-id", "session-1", "--settings", path.join(root, "claude-settings.json")],
+        args: [
+          "--session-id",
+          "session-1",
+          "--settings",
+          path.join(root, "claude-settings.json"),
+          "--dangerously-skip-permissions",
+        ],
         env: expect.objectContaining({ MULTI_CLI_WORK_SESSION_ID: "session-1" }),
       }),
     );
     expect(session).toMatchObject({ id: "session-1", providerConversationId: "session-1" });
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions["session-1"].providerConversationId).toBe("session-1");
+  });
+
+  it("runs a maintenance session in the home directory with no folder attached", async () => {
+    const root = await tempRoot();
+    const getProject = vi.fn(async () => project);
+    const worker = new FakeWorker();
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject,
+      getExecutables: async () => ({
+        powershell: "powershell.exe",
+        claude: "claude.exe",
+        codex: "codex.cmd",
+        vscode: null,
+      }),
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: {},
+      idFactory: () => "session-tool",
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+
+    const session = await instance.createTool({ tool: "claude-update", cols: 80, rows: 24 });
+
+    expect(getProject).not.toHaveBeenCalled();
+    expect(worker.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: null,
+        tool: "claude-update",
+        kind: "powershell",
+        cwd: "C:\\Users\\me",
+        executable: "powershell.exe",
+        args: ["-NoLogo", "-NoExit", "-Command", "claude update"],
+      }),
+    );
+    expect(session).toMatchObject({ projectId: null, tool: "claude-update" });
+
+    // Resuming re-runs the update instead of falling back to a bare shell.
+    worker.emit({ type: "exit", sessionId: "session-tool", exitCode: 0 });
+    await instance.flush();
+    await instance.resume({ sessionId: "session-tool", cols: 80, rows: 24 });
+
+    expect(getProject).not.toHaveBeenCalled();
+    expect(worker.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ args: ["-NoLogo", "-NoExit", "-Command", "claude update"], cwd: "C:\\Users\\me" }),
+    );
+  });
+
+  it("removes every session of a folder so the folder can be unregistered", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const ids = ["session-1", "session-2", "session-3"];
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async (id) => (id === project.id ? project : { ...project, id: "project-2", rootPath: "C:\\Other" }),
+      getExecutables: async () => ({
+        powershell: "powershell.exe",
+        claude: "claude.exe",
+        codex: "codex.cmd",
+        vscode: null,
+      }),
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: {},
+      idFactory: () => ids.shift() ?? "session-x",
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    await instance.create({ projectId: "project-2", kind: "powershell", cols: 80, rows: 24 });
+
+    await instance.removeProjectSessions("project-1");
+
+    expect(worker.stop).toHaveBeenCalledTimes(2);
+    expect(instance.list().map((session) => session.id)).toEqual(["session-3"]);
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(Object.keys(stored.state.sessions)).toEqual(["session-3"]);
   });
 
   it("persists worker output and unified status for renderer refresh", async () => {
@@ -234,7 +332,13 @@ describe("TerminalCoordinator", () => {
     expect(secondWorker.create).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "session-1",
-        args: ["--resume", "session-1", "--settings", path.join(root, "claude-settings.json")],
+        args: [
+          "--resume",
+          "session-1",
+          "--settings",
+          path.join(root, "claude-settings.json"),
+          "--dangerously-skip-permissions",
+        ],
       }),
     );
   });

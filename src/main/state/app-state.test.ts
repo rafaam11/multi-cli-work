@@ -36,6 +36,7 @@ describe("app state", () => {
           "session-1": {
             id: "session-1",
             projectId: "project-1",
+            tool: null,
             kind: "claude",
             cwd: "C:\\Work",
             providerConversationId: "claude-1",
@@ -50,6 +51,91 @@ describe("app state", () => {
     const snapshot = await readAppState({ statePath });
     expect(snapshot.writable).toBe(true);
     expect(snapshot.state.sessions["session-1"]).toMatchObject({ kind: "claude", providerConversationId: "claude-1" });
+  });
+
+  it("persists a maintenance session that belongs to no folder", async () => {
+    const root = await tempRoot();
+    const statePath = path.join(root, "state.json");
+    await updateAppState(
+      (state) => ({
+        ...state,
+        sessions: {
+          "session-tool": {
+            id: "session-tool",
+            projectId: null,
+            tool: "claude-update",
+            kind: "powershell",
+            cwd: "C:\\Users\\me",
+            providerConversationId: null,
+            createdAt: "2026-07-11T00:00:00.000Z",
+            updatedAt: "2026-07-11T00:00:00.000Z",
+          },
+        },
+      }),
+      { statePath },
+    );
+
+    const snapshot = await readAppState({ statePath });
+    expect(snapshot.state.sessions["session-tool"]).toMatchObject({ projectId: null, tool: "claude-update" });
+  });
+
+  it("reads state files written before maintenance sessions existed", async () => {
+    const root = await tempRoot();
+    const statePath = path.join(root, "state.json");
+    await fs.writeFile(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: "2026-07-11T00:00:00.000Z",
+        selectedProjectId: "project-1",
+        selectedSessionId: "session-1",
+        sessions: {
+          "session-1": {
+            id: "session-1",
+            projectId: "project-1",
+            kind: "powershell",
+            cwd: "C:\\Work",
+            providerConversationId: null,
+            createdAt: "2026-07-11T00:00:00.000Z",
+            updatedAt: "2026-07-11T00:00:00.000Z",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const snapshot = await readAppState({ statePath });
+    expect(snapshot.writable).toBe(true);
+    expect(snapshot.state.sessions["session-1"].tool).toBeNull();
+  });
+
+  it("rejects an unknown tool command", async () => {
+    const root = await tempRoot();
+    const statePath = path.join(root, "state.json");
+    await fs.writeFile(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: "2026-07-11T00:00:00.000Z",
+        selectedProjectId: null,
+        selectedSessionId: null,
+        sessions: {
+          "session-1": {
+            id: "session-1",
+            projectId: null,
+            tool: "rm-rf",
+            kind: "powershell",
+            cwd: "C:\\Work",
+            providerConversationId: null,
+            createdAt: "2026-07-11T00:00:00.000Z",
+            updatedAt: "2026-07-11T00:00:00.000Z",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    await expect(readAppState({ statePath })).rejects.toThrow(/unreadable/);
   });
 
   it("falls back to a valid backup without making corrupt state writable", async () => {

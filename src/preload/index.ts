@@ -6,11 +6,14 @@ const api: MultiCliWorkApi = {
   platform: process.platform,
   projects: {
     list: () => ipcRenderer.invoke("projects:list"),
-    refresh: () => ipcRenderer.invoke("projects:refresh"),
     addFolder: () => ipcRenderer.invoke("projects:add-folder"),
     update: (projectId, patch) => ipcRenderer.invoke("projects:update", projectId, patch),
+    remove: (projectId) => ipcRenderer.invoke("projects:remove", projectId),
     relink: (projectId) => ipcRenderer.invoke("projects:relink", projectId),
     restoreBackup: () => ipcRenderer.invoke("projects:restore-backup"),
+    reveal: (projectId) => ipcRenderer.invoke("projects:reveal", projectId),
+    openInEditor: (projectId) => ipcRenderer.invoke("projects:open-editor", projectId),
+    openOnGitHub: (projectId) => ipcRenderer.invoke("projects:open-github", projectId),
   },
   providers: {
     availability: () => ipcRenderer.invoke("providers:availability"),
@@ -19,6 +22,7 @@ const api: MultiCliWorkApi = {
     list: () => ipcRenderer.invoke("terminals:list"),
     state: () => ipcRenderer.invoke("terminals:state"),
     create: (input) => ipcRenderer.invoke("terminals:create", input),
+    createTool: (input) => ipcRenderer.invoke("terminals:create-tool", input),
     attach: (sessionId) => ipcRenderer.invoke("terminals:attach", sessionId),
     write: (sessionId, data) => ipcRenderer.invoke("terminals:write", sessionId, data),
     resize: (sessionId, cols, rows) => ipcRenderer.invoke("terminals:resize", sessionId, cols, rows),

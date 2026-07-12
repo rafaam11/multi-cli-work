@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AppStateSnapshot } from "@shared/app-state-types";
 import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
@@ -96,6 +96,7 @@ const dashboard: SharedProject = {
 const powershellSession: TerminalSessionView = {
   id: "session-pwsh",
   projectId: atlas.id,
+  tool: null,
   kind: "powershell",
   cwd: atlas.rootPath,
   providerConversationId: null,
@@ -104,6 +105,16 @@ const powershellSession: TerminalSessionView = {
   exitCode: null,
   createdAt: "2026-07-11T01:00:00.000Z",
   updatedAt: "2026-07-11T01:00:00.000Z",
+};
+
+const toolSession: TerminalSessionView = {
+  ...powershellSession,
+  id: "session-tool",
+  projectId: null,
+  tool: "claude-update",
+  cwd: "C:\\Users\\me",
+  createdAt: "2026-07-11T05:00:00.000Z",
+  updatedAt: "2026-07-11T05:00:00.000Z",
 };
 
 const claudeSession: TerminalSessionView = {
@@ -138,7 +149,6 @@ function createApi(options?: {
   source?: ProjectWorkspaceSnapshot["source"];
   writable?: boolean;
   missingRootProjectIds?: string[];
-  refreshError?: Error;
   selection?: Pick<AppStateSnapshot["state"], "selectedProjectId" | "selectedSessionId">;
 }) {
   const listeners = new Set<(event: TerminalWorkerEvent) => void>();
@@ -176,26 +186,31 @@ function createApi(options?: {
     platform: "win32",
     projects: {
       list: vi.fn().mockResolvedValue(snapshot),
-      refresh: options?.refreshError
-        ? vi.fn().mockRejectedValue(options.refreshError)
-        : vi.fn().mockResolvedValue(snapshot),
       addFolder: vi.fn().mockResolvedValue(null),
       update: vi.fn(),
+      remove: vi.fn().mockImplementation(async (projectId: string) => registry(projects.filter((project) => project.id !== projectId))),
       relink: vi.fn().mockResolvedValue(null),
       restoreBackup: vi.fn().mockResolvedValue(registry(projects)),
+      reveal: vi.fn().mockResolvedValue(undefined),
+      openInEditor: vi.fn().mockResolvedValue(undefined),
+      openOnGitHub: vi.fn().mockResolvedValue(undefined),
     },
     providers: {
-      availability: vi.fn().mockResolvedValue({ powershell: true, claude: true, codex: false }),
+      availability: vi.fn().mockResolvedValue({ powershell: true, claude: true, codex: false, vscode: true }),
     },
     terminals: {
       list: vi.fn().mockResolvedValue(sessions),
       state: vi.fn().mockResolvedValue(appState),
       create: vi.fn().mockResolvedValue(created),
-      attach: vi.fn().mockImplementation(async (sessionId: string) => ({
-        session: sessionId === claudeSession.id ? resumedSession ?? claudeSession : sessionId === created.id ? created : powershellSession,
-        replay: `${sessionId} replay\r\n`,
-        sequence: 0,
-      })),
+      createTool: vi.fn().mockResolvedValue(toolSession),
+      attach: vi.fn().mockImplementation(async (sessionId: string) => {
+        const known = [...sessions, created, toolSession].find((session) => session.id === sessionId);
+        return {
+          session: sessionId === claudeSession.id ? (resumedSession ?? claudeSession) : (known ?? powershellSession),
+          replay: `${sessionId} replay\r\n`,
+          sequence: 0,
+        };
+      }),
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
@@ -268,20 +283,19 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("project workspace", () => {
-  it("loads discovered projects and nested terminal sessions", async () => {
+describe("folder workspace", () => {
+  it("loads opened folders and nested terminal sessions", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
 
     render(<App />);
 
     expect(screen.getAllByText("Loading workspace")).toHaveLength(2);
-    expect(await screen.findByRole("button", { name: "Select project Atlas" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select folder Atlas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open PowerShell session" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Claude Code session" })).toBeInTheDocument();
     expect(screen.getAllByText("C:\\work\\atlas")).toHaveLength(2);
     expect(harness.api.projects.list).toHaveBeenCalledOnce();
-    expect(harness.api.projects.refresh).toHaveBeenCalledOnce();
     expect(harness.api.terminals.list).toHaveBeenCalledOnce();
     expect(harness.api.terminals.state).toHaveBeenCalledOnce();
     expect(harness.api.providers.availability).toHaveBeenCalledOnce();
@@ -319,32 +333,31 @@ describe("project workspace", () => {
 
     render(<App />);
 
-    const selectedProject = await screen.findByRole("button", { name: "Select project Dashboard" });
+    const selectedProject = await screen.findByRole("button", { name: "Select folder Dashboard" });
     expect(selectedProject.closest(".project-row")).toHaveClass("selected");
     expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "Open PowerShell session");
     expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard");
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(dashboardSession.id));
   });
 
-  it("renders a refresh button that reloads projects and sessions on click", async () => {
+  it("renders a refresh button that reloads folders and sessions on click", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
 
-    await screen.findByRole("button", { name: "Select project Atlas" });
-    expect(harness.api.projects.refresh).toHaveBeenCalledOnce();
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    expect(harness.api.projects.list).toHaveBeenCalledOnce();
 
-    const refreshButton = screen.getByRole("button", { name: "Refresh projects" });
+    const refreshButton = screen.getByRole("button", { name: "Refresh folders" });
     fireEvent.click(refreshButton);
     expect(refreshButton).toBeDisabled();
 
-    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
-    expect(harness.api.projects.list).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(harness.api.projects.list).toHaveBeenCalledTimes(2));
     expect(harness.api.terminals.list).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(refreshButton).toBeEnabled());
   });
 
-  it("keeps the selected project and session across a manual refresh when they still exist", async () => {
+  it("keeps the selected folder and session across a manual refresh when they still exist", async () => {
     const dashboardSession: TerminalSessionView = {
       ...powershellSession,
       id: "session-dashboard",
@@ -359,37 +372,35 @@ describe("project workspace", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    await screen.findByRole("button", { name: "Select project Atlas" });
+    await screen.findByRole("button", { name: "Select folder Atlas" });
     fireEvent.click(screen.getByRole("button", { name: "Collapse Atlas" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select project Dashboard" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select folder Dashboard" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open PowerShell session" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
-    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh folders" }));
+    await waitFor(() => expect(harness.api.projects.list).toHaveBeenCalledTimes(2));
 
-    expect(screen.getByRole("button", { name: "Select project Dashboard" }).closest(".project-row")).toHaveClass(
+    expect(screen.getByRole("button", { name: "Select folder Dashboard" }).closest(".project-row")).toHaveClass(
       "selected",
     );
     expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "Open PowerShell session");
     expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard");
   });
 
-  it("falls back to another project when the selected project disappears during a manual refresh", async () => {
+  it("falls back to another folder when the selected folder disappears during a manual refresh", async () => {
     const harness = createApi({ projects: [atlas, dashboard], sessions: [powershellSession] });
     window.multiCliWork = harness.api;
     render(<App />);
 
-    await screen.findByRole("button", { name: "Select project Atlas" });
-    expect(screen.getByRole("button", { name: "Select project Atlas" }).closest(".project-row")).toHaveClass(
-      "selected",
-    );
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    expect(screen.getByRole("button", { name: "Select folder Atlas" }).closest(".project-row")).toHaveClass("selected");
 
-    vi.mocked(harness.api.projects.refresh).mockResolvedValueOnce(registry([dashboard]));
-    fireEvent.click(screen.getByRole("button", { name: "Refresh projects" }));
+    vi.mocked(harness.api.projects.list).mockResolvedValueOnce(registry([dashboard]));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh folders" }));
 
-    await waitFor(() => expect(harness.api.projects.refresh).toHaveBeenCalledTimes(2));
-    expect(screen.queryByRole("button", { name: "Select project Atlas" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Select project Dashboard" }).closest(".project-row")).toHaveClass(
+    await waitFor(() => expect(harness.api.projects.list).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: "Select folder Atlas" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select folder Dashboard" }).closest(".project-row")).toHaveClass(
       "selected",
     );
   });
@@ -412,56 +423,133 @@ describe("project workspace", () => {
     );
   });
 
-  it("edits project metadata through the row editor and updates the tree", async () => {
+  it("renames a folder from the context menu and updates the tree", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     vi.mocked(harness.api.projects.update).mockResolvedValue({ ...atlas, displayName: "Atlas Prime" });
     render(<App />);
 
-    await screen.findByRole("button", { name: "Select project Atlas" });
-    fireEvent.click(screen.getByRole("button", { name: "Edit project Atlas" }));
+    const row = await screen.findByRole("button", { name: "Select folder Atlas" });
+    fireEvent.contextMenu(row.closest(".project-row")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
 
-    const editor = screen.getByRole("dialog", { name: "Edit project Atlas" });
+    const editor = screen.getByRole("dialog", { name: "Rename Atlas" });
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Atlas Prime" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { displayName: "Atlas Prime" }),
     );
-    await screen.findByRole("button", { name: "Select project Atlas Prime" });
+    await screen.findByRole("button", { name: "Select folder Atlas Prime" });
     expect(editor).not.toBeInTheDocument();
   });
 
-  it("clears the selection when the selected project is hidden through the editor", async () => {
+  it("opens a folder in the file explorer, VS Code, and GitHub from the context menu", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
-    vi.mocked(harness.api.projects.update).mockResolvedValue({ ...atlas, hidden: true });
     render(<App />);
 
-    await screen.findByRole("button", { name: "Select project Atlas" });
-    fireEvent.click(screen.getByRole("button", { name: "Edit project Atlas" }));
-    fireEvent.click(screen.getByLabelText("Hidden"));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const row = (await screen.findByRole("button", { name: "Select folder Atlas" })).closest(".project-row")!;
 
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Select project Atlas" })).not.toBeInTheDocument(),
-    );
-    expect(document.querySelector(".workspace-title")).toHaveTextContent("No project selected");
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in File Explorer" }));
+    await waitFor(() => expect(harness.api.projects.reveal).toHaveBeenCalledWith(atlas.id));
+
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in VS Code" }));
+    await waitFor(() => expect(harness.api.projects.openInEditor).toHaveBeenCalledWith(atlas.id));
+
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open on GitHub" }));
+    await waitFor(() => expect(harness.api.projects.openOnGitHub).toHaveBeenCalledWith(atlas.id));
   });
 
-  it("reveals hidden projects with a badge when the toggle is enabled", async () => {
-    const harness = createApi({ projects: [atlas, { ...dashboard, hidden: true }] });
+  it("disables the VS Code action when VS Code is not installed", async () => {
+    const harness = createApi();
+    vi.mocked(harness.api.providers.availability).mockResolvedValue({
+      powershell: true,
+      claude: true,
+      codex: false,
+      vscode: false,
+    });
     window.multiCliWork = harness.api;
     render(<App />);
 
-    await screen.findByRole("button", { name: "Select project Atlas" });
-    expect(screen.queryByRole("button", { name: "Select project Dashboard" })).not.toBeInTheDocument();
+    const row = (await screen.findByRole("button", { name: "Select folder Atlas" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
 
-    fireEvent.click(screen.getByLabelText("Show hidden projects"));
+    expect(screen.getByRole("menuitem", { name: "Open in VS Code" })).toBeDisabled();
+  });
 
-    const hiddenRow = await screen.findByRole("button", { name: "Select project Dashboard" });
-    expect(hiddenRow).toHaveTextContent("Hidden");
-    expect(hiddenRow.closest(".project-row")).toHaveClass("hidden-project");
+  it("surfaces a folder action failure in the error banner", async () => {
+    const harness = createApi();
+    vi.mocked(harness.api.projects.openOnGitHub).mockRejectedValue(new Error("This folder has no git remote named origin"));
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = (await screen.findByRole("button", { name: "Select folder Atlas" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open on GitHub" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This folder has no git remote named origin");
+  });
+
+  it("confirms before removing a folder that still has sessions, and leaves the disk alone", async () => {
+    const harness = createApi({ projects: [atlas, dashboard] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = (await screen.findByRole("button", { name: "Select folder Atlas" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove from list" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Remove folder from list" });
+    expect(dialog).toHaveTextContent("2 sessions in this folder will be stopped");
+    expect(harness.api.projects.remove).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(harness.api.projects.remove).toHaveBeenCalledWith(atlas.id));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Select folder Atlas" })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("button", { name: "Open PowerShell session" })).not.toBeInTheDocument();
+  });
+
+  it("removes a folder without a prompt when it has no sessions", async () => {
+    const harness = createApi({ projects: [atlas, dashboard], sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = (await screen.findByRole("button", { name: "Select folder Dashboard" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove from list" }));
+
+    expect(screen.queryByRole("dialog", { name: "Remove folder from list" })).not.toBeInTheDocument();
+    await waitFor(() => expect(harness.api.projects.remove).toHaveBeenCalledWith(dashboard.id));
+  });
+
+  it("offers one-click launchers for a folder with no sessions and the dropdown once it has one", async () => {
+    const harness = createApi({ sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    expect(screen.queryByRole("button", { name: "New session" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New Codex session" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "New PowerShell session" }));
+
+    await waitFor(() =>
+      expect(harness.api.terminals.create).toHaveBeenCalledWith({
+        projectId: atlas.id,
+        kind: "powershell",
+        cols: 80,
+        rows: 24,
+      }),
+    );
+    expect(harness.api.terminals.select).toHaveBeenCalledWith(atlas.id, harness.created.id);
+    await screen.findByRole("button", { name: "New session" });
   });
 
   it("persists selection and creates only available provider sessions", async () => {
@@ -469,7 +557,7 @@ describe("project workspace", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Select project Atlas" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Select folder Atlas" }));
     fireEvent.click(screen.getByRole("button", { name: "New session" }));
 
     expect(screen.getByRole("menuitem", { name: "New Codex session" })).toBeDisabled();
@@ -485,6 +573,57 @@ describe("project workspace", () => {
     );
     expect(harness.api.terminals.select).toHaveBeenCalledWith(atlas.id, harness.created.id);
     expect((await screen.findAllByText("Starting")).length).toBeGreaterThan(0);
+  });
+
+  it("updates a CLI in a maintenance session that belongs to no folder", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Update Claude Code" }));
+
+    await waitFor(() =>
+      expect(harness.api.terminals.createTool).toHaveBeenCalledWith({ tool: "claude-update", cols: 80, rows: 24 }),
+    );
+    expect(harness.api.terminals.select).toHaveBeenCalledWith(null, toolSession.id);
+    expect(await screen.findByRole("button", { name: "Open Claude Code update session" })).toBeInTheDocument();
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("Tools");
+  });
+
+  it("restores a maintenance session without silently selecting the first folder", async () => {
+    const harness = createApi({
+      sessions: [powershellSession, toolSession],
+      selection: { selectedProjectId: null, selectedSessionId: toolSession.id },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    expect(document.querySelector(".project-row.selected")).toBeNull();
+    expect(document.querySelector(".session-row.selected")).toHaveAttribute(
+      "aria-label",
+      "Open Claude Code update session",
+    );
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("Tools");
+  });
+
+  it("keeps the Tools menu usable when no folder is open, but not for a missing CLI", async () => {
+    const harness = createApi({ projects: [], sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByText("No folders yet");
+    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+
+    // Codex is absent in this harness, so its update must not be offered.
+    expect(screen.getByRole("menuitem", { name: "Update Codex" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Update Claude Code" }));
+
+    await waitFor(() =>
+      expect(harness.api.terminals.createTool).toHaveBeenCalledWith({ tool: "claude-update", cols: 80, rows: 24 }),
+    );
   });
 
   it("manually resumes, stops, and removes a finished session", async () => {
@@ -641,36 +780,35 @@ describe("project workspace", () => {
     expect(harness.api.terminals.attach).toHaveBeenCalledOnce();
   });
 
-  it("keeps backup registry data visible when provider discovery refresh fails", async () => {
+  it("keeps backup registry data visible and read-only", async () => {
     const harness = createApi({
       source: "backup",
       writable: false,
       warning: "Registry backup is in use.",
-      refreshError: new Error("Provider discovery unavailable"),
     });
     window.multiCliWork = harness.api;
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: "Select project Atlas" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select folder Atlas" })).toBeInTheDocument();
     expect(screen.getByText(/Registry backup is in use/)).toBeInTheDocument();
-    expect(screen.getByText(/Provider discovery unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open folder" })).toBeDisabled();
     expect(screen.queryByText("Workspace could not be loaded")).not.toBeInTheDocument();
   });
 
-  it("marks missing project roots, offers relink, and disables new sessions until relinked", async () => {
+  it("marks missing folder roots, offers relink, and disables new sessions until relinked", async () => {
     const harness = createApi({ missingRootProjectIds: [atlas.id] });
     vi.mocked(harness.api.projects.relink).mockResolvedValue({ ...atlas, rootPath: "D:\\restored\\atlas" });
     window.multiCliWork = harness.api;
     render(<App />);
 
-    expect(await screen.findByText("Project folder is missing")).toBeInTheDocument();
+    expect(await screen.findByText("Folder is missing")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New session" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Relink project folder" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Relink folder" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Relink project folder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Relink folder" }));
     await waitFor(() => expect(harness.api.projects.relink).toHaveBeenCalledWith(atlas.id));
-    expect(screen.queryByText("Project folder is missing")).not.toBeInTheDocument();
+    expect(screen.queryByText("Folder is missing")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New session" })).toBeEnabled();
   });
 
@@ -679,8 +817,8 @@ describe("project workspace", () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
-    await screen.findByRole("button", { name: "Select project Atlas" });
-    const separator = screen.getByRole("separator", { name: "Resize project sidebar" });
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    const separator = screen.getByRole("separator", { name: "Resize folder sidebar" });
     const shell = separator.parentElement!;
 
     fireEvent.mouseDown(separator, { clientX: 260 });
@@ -696,7 +834,7 @@ describe("project workspace", () => {
     window.multiCliWork = emptyHarness.api;
     const view = render(<App />);
 
-    expect(await screen.findByText("No projects yet")).toBeInTheDocument();
+    expect(await screen.findByText("No folders yet")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Registry backup is in use.");
 
     view.unmount();
@@ -709,6 +847,6 @@ describe("project workspace", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Registry unavailable");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("button", { name: "Select project Atlas" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select folder Atlas" })).toBeInTheDocument();
   });
 });

@@ -5,14 +5,16 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ProjectRegistryV1 } from "../../shared/project-types";
 import {
+  PROJECT_REGISTRY_PATH,
   ProjectRegistryError,
   emptyProjectRegistry,
   normalizeProjectPath,
   parseProjectRegistry,
   readProjectRegistry,
-  reconcileProject,
+  removeProjectFromRegistry,
   restoreProjectRegistryFromBackup,
   updateProjectRegistry,
+  upsertManualProject,
 } from "./project-registry";
 
 const tempRoots: string[] = [];
@@ -89,25 +91,50 @@ describe("project registry contract", () => {
     expect(normalizeProjectPath("/srv/Work/Example/", "linux")).toBe("/srv/Work/Example");
   });
 
-  it("reuses a stable id and merges provider discovery for the same path", () => {
-    const now = "2026-07-11T01:00:00.000Z";
-    const initial = emptyProjectRegistry("2026-07-11T00:00:00.000Z");
-    const withManual = reconcileProject(
-      initial,
-      { rootPath: "C:\\Work\\Example", source: "manual" },
-      { now, idFactory: () => PROJECT_ONE, platform: "win32" },
+  it("stores the registry outside the Harness Manager directory", () => {
+    expect(PROJECT_REGISTRY_PATH).toContain(`${path.sep}.multi-cli-work${path.sep}`);
+    expect(PROJECT_REGISTRY_PATH).not.toContain("harness-manager");
+  });
+
+  it("reuses the existing project when the same folder is opened again", () => {
+    const initial = upsertManualProject(
+      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
+      { rootPath: "C:\\Work\\Example", displayName: "Example" },
+      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
     );
-    const discovered = reconcileProject(
-      withManual,
-      { rootPath: "c:/work/example/", source: "codex", providerRef: "codex:C--work-example" },
+    const reopened = upsertManualProject(
+      initial,
+      { rootPath: "c:/work/example/", displayName: "example" },
       { now: "2026-07-11T02:00:00.000Z", idFactory: () => PROJECT_TWO, platform: "win32" },
     );
 
-    expect(Object.keys(discovered.projects)).toEqual([PROJECT_ONE]);
-    expect(discovered.projects[PROJECT_ONE]).toMatchObject({
-      sources: ["manual", "codex"],
-      providerRefs: { claude: [], codex: ["codex:C--work-example"] },
+    expect(Object.keys(reopened.projects)).toEqual([PROJECT_ONE]);
+    expect(reopened.projects[PROJECT_ONE]).toMatchObject({
+      rootPath: "C:\\Work\\Example",
+      displayName: "Example",
+      sources: ["manual"],
+      providerRefs: { claude: [], codex: [] },
+      createdAt: "2026-07-11T01:00:00.000Z",
+      updatedAt: "2026-07-11T02:00:00.000Z",
     });
+  });
+
+  it("removes a project without touching the others", () => {
+    const withTwo = upsertManualProject(
+      upsertManualProject(
+        emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
+        { rootPath: "C:\\One" },
+        { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
+      ),
+      { rootPath: "C:\\Two" },
+      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_TWO, platform: "win32" },
+    );
+
+    const removed = removeProjectFromRegistry(withTwo, PROJECT_ONE, "2026-07-11T03:00:00.000Z");
+
+    expect(Object.keys(removed.projects)).toEqual([PROJECT_TWO]);
+    expect(removed.updatedAt).toBe("2026-07-11T03:00:00.000Z");
+    expect(() => removeProjectFromRegistry(removed, PROJECT_ONE)).toThrow(ProjectRegistryError);
   });
 
   it("accepts blank track titles and item text while an editor is creating them", () => {
@@ -248,81 +275,20 @@ describe("project registry contract", () => {
     expect(() => parseProjectRegistry(registry)).toThrow(/duplicate/i);
   });
 
-  it("keeps a UUID when a known provider ref reports a moved root", () => {
-    const initial = reconcileProject(
+  it("keeps a renamed project's display name when the folder is opened again", () => {
+    const renamed = upsertManualProject(
       emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
-      { rootPath: "C:\\Old", source: "codex", providerRef: "codex:C--Work" },
+      { rootPath: "C:\\Work", displayName: "My name" },
       { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
     );
 
-    const moved = reconcileProject(
-      initial,
-      { rootPath: "D:\\New", source: "codex", providerRef: "codex:C--Work" },
-      { now: "2026-07-11T02:00:00.000Z", idFactory: () => PROJECT_TWO, platform: "win32" },
-    );
-
-    expect(Object.keys(moved.projects)).toEqual([PROJECT_ONE]);
-    expect(moved.projects[PROJECT_ONE].rootPath).toBe("D:\\New");
-  });
-
-  it("treats rootPath as primary and atomically reassigns a conflicting provider alias", () => {
-    const withPathOwner = reconcileProject(
-      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
-      { rootPath: "C:\\Target", source: "manual" },
-      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
-    );
-    const withAliasOwner = reconcileProject(
-      withPathOwner,
-      { rootPath: "C:\\Old", source: "codex", providerRef: "codex:C--Target" },
-      { now: "2026-07-11T01:30:00.000Z", idFactory: () => PROJECT_TWO, platform: "win32" },
-    );
-
-    const reconciled = reconcileProject(
-      withAliasOwner,
-      { rootPath: "C:\\Target", source: "codex", providerRef: "codex:C--Target" },
+    const reopened = upsertManualProject(
+      renamed,
+      { rootPath: "C:\\Work", displayName: "Work" },
       { now: "2026-07-11T02:00:00.000Z", platform: "win32" },
     );
 
-    expect(reconciled.projects[PROJECT_ONE].providerRefs.codex).toEqual(["codex:C--Target"]);
-    expect(reconciled.projects[PROJECT_TWO].providerRefs.codex).toEqual([]);
-    expect(() => parseProjectRegistry(reconciled)).not.toThrow();
-  });
-
-  it("preserves an existing shared display name when a manual add supplies the folder basename", () => {
-    const initial = reconcileProject(
-      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
-      { rootPath: "C:\\Work", source: "codex", providerRef: "codex:C--Work", displayName: "Harness name" },
-      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
-    );
-
-    const manuallyAdded = reconcileProject(
-      initial,
-      { rootPath: "C:\\Work", source: "manual", displayName: "Work" },
-      { now: "2026-07-11T02:00:00.000Z", platform: "win32" },
-    );
-
-    expect(manuallyAdded.projects[PROJECT_ONE].displayName).toBe("Harness name");
-  });
-
-  it("keeps a manual root authoritative when stale provider history reports another path", () => {
-    const discovered = reconcileProject(
-      emptyProjectRegistry("2026-07-11T00:00:00.000Z"),
-      { rootPath: "C:\\Chosen", source: "codex", providerRef: "codex:C--Chosen" },
-      { now: "2026-07-11T01:00:00.000Z", idFactory: () => PROJECT_ONE, platform: "win32" },
-    );
-    const manual = reconcileProject(
-      discovered,
-      { rootPath: "C:\\Chosen", source: "manual" },
-      { now: "2026-07-11T01:30:00.000Z", platform: "win32" },
-    );
-
-    const refreshed = reconcileProject(
-      manual,
-      { rootPath: "D:\\Stale", source: "codex", providerRef: "codex:C--Chosen" },
-      { now: "2026-07-11T02:00:00.000Z", platform: "win32" },
-    );
-
-    expect(refreshed.projects[PROJECT_ONE].rootPath).toBe("C:\\Chosen");
+    expect(reopened.projects[PROJECT_ONE].displayName).toBe("My name");
   });
 });
 
@@ -356,9 +322,9 @@ describe("project registry storage", () => {
     const addProject = (id: string, rootPath: string) =>
       updateProjectRegistry(
         (registry) =>
-          reconcileProject(
+          upsertManualProject(
             registry,
-            { rootPath, source: "manual" },
+            { rootPath },
             {
               now: `2026-07-11T00:00:0${id}.000Z`,
               idFactory: () => (id === "1" ? PROJECT_ONE : PROJECT_TWO),

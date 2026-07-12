@@ -1,12 +1,14 @@
 import path from "node:path";
 import type {
   CreateTerminalInput,
+  CreateToolTerminalInput,
   ProjectMetadataPatch,
   ProviderAvailability,
   ResumeTerminalInput,
   UpdaterStatus,
 } from "../shared/api-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
+import type { ToolCommand } from "../shared/terminal-types";
 import type { ProjectMetadataUpdate } from "./projects/project-service";
 
 export interface IpcRegistrar {
@@ -14,10 +16,10 @@ export interface IpcRegistrar {
 }
 
 interface ProjectServiceGateway {
-  discoverAndReconcile(): Promise<ProjectRegistryV1>;
   findMissingProjectRoots(registry: ProjectRegistryV1): Promise<string[]>;
   registerManualFolder(rootPath: string, displayName?: string | null): Promise<ProjectRegistryV1>;
   updateProjectMetadata(projectId: string, update: ProjectMetadataUpdate): Promise<ProjectRegistryV1>;
+  removeProject(projectId: string): Promise<ProjectRegistryV1>;
   relinkProject(projectId: string, rootPath: string): Promise<ProjectRegistryV1>;
 }
 
@@ -25,12 +27,14 @@ interface TerminalCoordinatorGateway {
   list(): unknown;
   state(): Promise<unknown>;
   create(input: CreateTerminalInput): Promise<unknown>;
+  createTool(input: CreateToolTerminalInput): Promise<unknown>;
   attach(sessionId: string): Promise<unknown>;
   write(sessionId: string, data: string): Promise<void>;
   resize(sessionId: string, cols: number, rows: number): Promise<void>;
   stop(sessionId: string): Promise<void>;
   resume(input: ResumeTerminalInput): Promise<unknown>;
   remove(sessionId: string): Promise<void>;
+  removeProjectSessions(projectId: string): Promise<void>;
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
 }
 
@@ -41,16 +45,25 @@ interface UpdaterGateway {
   openReleases(): void;
 }
 
+interface ProjectActionsGateway {
+  reveal(rootPath: string): Promise<void>;
+  openInEditor(rootPath: string): Promise<void>;
+  openOnGitHub(rootPath: string): Promise<void>;
+}
+
 interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
   coordinator: TerminalCoordinatorGateway;
   updater: UpdaterGateway;
+  projectActions: ProjectActionsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
   chooseDirectory(): Promise<string | null>;
   getAvailability(): Promise<ProviderAvailability>;
 }
+
+const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -81,6 +94,20 @@ function validateCreateInput(value: unknown): CreateTerminalInput {
   return {
     projectId: nonEmptyString(input.projectId, "Project id"),
     kind: input.kind,
+    cols: integer(input.cols, "Terminal columns"),
+    rows: integer(input.rows, "Terminal rows"),
+  };
+}
+
+/**
+ * Maintenance sessions run a command the renderer never spells out: it may only name one of the
+ * commands below, and the main process maps the name to the actual shell command.
+ */
+function validateCreateToolInput(value: unknown): CreateToolTerminalInput {
+  const input = exactObject(value, ["tool", "cols", "rows"], "Tool session input");
+  if (!TOOL_COMMANDS.includes(input.tool as ToolCommand)) throw new Error("Tool command is invalid");
+  return {
+    tool: input.tool as ToolCommand,
     cols: integer(input.cols, "Terminal columns"),
     rows: integer(input.rows, "Terminal rows"),
   };
@@ -119,14 +146,13 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     ...snapshot,
     missingRootProjectIds: await dependencies.projectService.findMissingProjectRoots(snapshot.registry),
   });
-  ipc.handle("projects:list", async () => annotateMissingRoots(await dependencies.readRegistry()));
-  ipc.handle("projects:refresh", async () =>
-    annotateMissingRoots({
-      registry: await dependencies.projectService.discoverAndReconcile(),
-      source: "primary" as const,
-      writable: true,
-    }),
-  );
+  const workspaceSnapshot = async () => annotateMissingRoots(await dependencies.readRegistry());
+  const projectRoot = async (projectId: string) => {
+    const { registry } = await dependencies.readRegistry();
+    return selectedProject(registry, projectId).rootPath;
+  };
+
+  ipc.handle("projects:list", () => workspaceSnapshot());
   ipc.handle("projects:add-folder", async () => {
     const rootPath = await dependencies.chooseDirectory();
     if (!rootPath) return null;
@@ -137,9 +163,17 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     const id = nonEmptyString(projectId, "Project id");
     return selectedProject(await dependencies.projectService.updateProjectMetadata(id, validateProjectPatch(patch)), id);
   });
+  ipc.handle("projects:remove", async (_event, projectId: unknown) => {
+    const id = nonEmptyString(projectId, "Project id");
+    // Sessions first: unregistering the folder before its sessions are torn down would strand
+    // any surviving PTY with no UI left to reach it.
+    await dependencies.coordinator.removeProjectSessions(id);
+    await dependencies.projectService.removeProject(id);
+    return workspaceSnapshot();
+  });
   ipc.handle("projects:restore-backup", async () => {
     await dependencies.restoreRegistryBackup();
-    return annotateMissingRoots(await dependencies.readRegistry());
+    return workspaceSnapshot();
   });
   ipc.handle("projects:relink", async (_event, projectId: unknown) => {
     const id = nonEmptyString(projectId, "Project id");
@@ -147,10 +181,22 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     if (!rootPath) return null;
     return selectedProject(await dependencies.projectService.relinkProject(id, rootPath), id);
   });
+  ipc.handle("projects:reveal", async (_event, projectId: unknown) =>
+    dependencies.projectActions.reveal(await projectRoot(nonEmptyString(projectId, "Project id"))),
+  );
+  ipc.handle("projects:open-editor", async (_event, projectId: unknown) =>
+    dependencies.projectActions.openInEditor(await projectRoot(nonEmptyString(projectId, "Project id"))),
+  );
+  ipc.handle("projects:open-github", async (_event, projectId: unknown) =>
+    dependencies.projectActions.openOnGitHub(await projectRoot(nonEmptyString(projectId, "Project id"))),
+  );
   ipc.handle("providers:availability", () => dependencies.getAvailability());
   ipc.handle("terminals:list", () => dependencies.coordinator.list());
   ipc.handle("terminals:state", () => dependencies.coordinator.state());
   ipc.handle("terminals:create", async (_event, input: unknown) => dependencies.coordinator.create(validateCreateInput(input)));
+  ipc.handle("terminals:create-tool", async (_event, input: unknown) =>
+    dependencies.coordinator.createTool(validateCreateToolInput(input)),
+  );
   ipc.handle("terminals:attach", (_event, sessionId: unknown) =>
     dependencies.coordinator.attach(nonEmptyString(sessionId, "Session id")),
   );
