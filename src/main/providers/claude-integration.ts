@@ -18,7 +18,7 @@ interface ClaudeHookHandler {
   type: "command";
   command: "powershell.exe";
   args: string[];
-  timeout: 5;
+  timeout: 10;
 }
 
 export interface ClaudeSettingsOverlay {
@@ -30,7 +30,7 @@ export function buildClaudeSettings(hookPath: string): ClaudeSettingsOverlay {
     type: "command",
     command: "powershell.exe",
     args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", hookPath],
-    timeout: 5,
+    timeout: 10,
   };
   return {
     hooks: Object.fromEntries(
@@ -56,7 +56,7 @@ $status = switch ($eventName) {
   "Notification" {
     $notificationType = [string]$inputValue.notification_type
     if ($notificationType -eq "permission_prompt") { "awaiting-approval" }
-    elseif ($notificationType -in @("idle_prompt", "agent_needs_input", "agent_completed")) { "awaiting-input" }
+    elseif ($notificationType -in @("idle_prompt", "agent_needs_input", "agent_completed", "elicitation_dialog")) { "awaiting-input" }
     else { "idle" }
     break
   }
