@@ -1,59 +1,139 @@
-# Multi CLI Work
+<h1 align="center">Multi CLI Work</h1>
 
-Local Windows desktop workspace for running Codex, Claude Code, and PowerShell sessions by project.
+<p align="center">
+  <img src="https://img.shields.io/badge/Electron-34-2b2a28?logo=electron&logoColor=9feaf9" alt="Electron 34">
+  <img src="https://img.shields.io/badge/React-18-1c2230?logo=react&logoColor=61dafb" alt="React 18">
+  <img src="https://img.shields.io/badge/TypeScript-5-1c2230?logo=typescript&logoColor=3178c6" alt="TypeScript 5">
+  <img src="https://img.shields.io/badge/platform-Windows-1c2230?logo=windows11&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/version-1.0.0-e8825f" alt="version 1.0.0">
+  <img src="https://img.shields.io/badge/local--only-no%20telemetry-3fb950" alt="local only">
+</p>
 
-## Install
+**Multi CLI Work**는 여러 개의 **Codex · Claude Code · PowerShell 세션을 프로젝트 단위로 묶어** 한 창에서 굴리는 **로컬 전용 Windows 데스크톱 앱**(Electron)이다.
 
-Download `Multi-CLI-Work-Setup-x.y.z.exe` from the [latest release](https://github.com/rafaam11/multi-cli-work/releases/latest) and run it. The installer is per-user, so it needs no administrator rights. It is not code-signed: SmartScreen shows "Windows protected your PC" on first run, and the installer starts from **More info → Run anyway**.
+- 왼쪽 트리에 **프로젝트**, 그 아래 **세션들**. 오른쪽엔 지금 보고 있는 터미널 하나.
+- 각 세션이 **무슨 상태인지**(작업 중 · 입력 대기 · **승인 대기** · 종료) 한눈에 보이고, 다른 세션이 나를 기다리기 시작하면 **Windows 알림**이 뜬다.
+- 창을 닫아도 **트레이에 상주**하며 세션은 계속 돈다. 앱을 재시작하면 프로젝트·탭·스크롤백이 복원된다.
+- 프로젝트 정체성과 메타데이터는 [Harness Manager](https://github.com/rafaam11/harness-manager)와 **공유**한다(`~/.harness-manager/projects.json`). 둘 중 아무거나 먼저 켜도 되고, 하나만 써도 된다.
 
-## Updates
+터미널·창·스크롤백은 이 앱 안에만 있고, 네트워크 포트를 열지 않는다(렌더러↔main은 Electron IPC). 업데이트 확인 외에 외부로 나가는 통신은 없다.
 
-A packaged app checks GitHub Releases on startup, downloads a new version in the background, and the sidebar badge switches to **Restart** when it is ready. Restarting from that badge stops the managed PTYs first, then installs silently and reopens the app. An update that is downloaded but not applied installs on the next explicit Quit. The badge (and the tray's **Check for Updates**) also checks on demand; if a check fails, the badge links to the releases page for a manual install. Development builds have no update feed and always report "Up to date".
+## 화면
 
-## Requirements
+```
+┌ Multi CLI Work ─────────────┬────────────────────────────────────────────┐
+│ Projects        ⟳  ＋       │  atlas · Claude Code 1     [awaiting-approval]│
+│                             │  C:\work\atlas          ⟲  ▶Resume  ■  🗑  ＋│
+│ ▾ 📂 atlas             ✎    ├────────────────────────────────────────────┤
+│      🤖 Claude Code 1  ●    │  > 파일을 수정할까요?                       │
+│      ⌨  PowerShell 1        │  ❯ 1. Yes  2. No                           │
+│ ▸ 📁 dashboard         ✎    │  _                                          │
+│ ▸ 📁 navi              ✎    │                                             │
+│                             │                                             │
+│ ☐ Show hidden projects      │                                             │
+│ ⟳ v1.0.0  Up to date  [Check]│                                            │
+│ ● 3 projects / 2 sessions   │                                             │
+└─────────────────────────────┴────────────────────────────────────────────┘
+```
 
-- Windows 10 version 1809 or newer
-- Node.js 20 or newer for development
-- Windows PowerShell 5.1 or PowerShell 7
-- Optional `claude` and `codex` executables on `PATH`
+## 빠른 시작
 
-## Development
+1. [Releases](https://github.com/rafaam11/multi-cli-work/releases)에서 **`Multi-CLI-Work-Setup-x.y.z.exe`** 를 내려받아 실행한다.
+2. 서명되지 않은 빌드라 Windows SmartScreen 경고가 뜬다 — **추가 정보 → 실행**으로 진행한다.
+3. 설치는 **사용자 단위**라 관리자 권한이 필요 없다. 바탕화면/시작 메뉴의 **Multi CLI Work** 로 실행한다.
 
-```powershell
+**Node.js 설치는 필요 없다**(Electron에 런타임이 내장됨). 다만 세션을 띄우려면 그 CLI가 있어야 한다 — PowerShell은 Windows 기본, `claude`·`codex`는 `PATH`에 있으면 자동 인식하고 없으면 해당 메뉴가 비활성된다.
+
+## 업데이트 (자동)
+
+이 저장소는 **public**이라 앱이 새 버전을 **자동으로** 받는다. 실행 시(또는 트레이 → **Check for Updates**) GitHub 릴리스를 조회해 새 버전이 있으면 **배경에서 차등 다운로드**(blockmap delta)하고, 완료되면 사이드바 배지가 **`Restart`** 로 바뀐다. 누르면 **돌고 있는 세션을 먼저 정리한 뒤** 인스톨러 창 없이 무음 설치하고 앱이 자동 재실행된다(그냥 Quit해도 다음 실행에 적용됨). 자동 확인이 실패하면 같은 자리에 **`Releases`** 링크가 떠 수동 설치로 대체할 수 있다.
+
+> **v1.0.0은 1회 수동 설치**가 필요하다 — 갈아끼울 기존 설치본이 없기 때문. 이후부터는 위 절차로 자동 갱신된다.
+
+## 주요 기능
+
+- **프로젝트 트리** — 프로젝트 하나에 세션 여러 개를 중첩해 붙인다. 프로젝트는 로컬 **Claude·Codex 히스토리에서 자동 발견**되고(`~/.claude/projects`, Codex 세션 로그), **＋** 로 폴더를 직접 추가할 수도 있다. **⟳** 로 언제든 다시 훑는다.
+- **세션 상태 7종** — `starting` · `working` · `awaiting-input` · **`awaiting-approval`** · `idle` · `exited` · `error`. Claude는 앱 전용 **훅 오버레이**(`--settings`)로, Codex는 **OSC 알림**과 프로세스·입력 신호로 판정한다. Codex의 애매한 활동은 절대 가짜 승인 대기로 올리지 않고 `idle`로 둔다.
+- **알림은 필요할 때만** — **화면에 없는** 세션이 입력·승인 대기에 들어갈 때만 Windows 알림을 띄운다. 같은 상태로 계속 머물면 다시 울리지 않는다(상태가 바뀌었다 돌아오면 재알림). 클릭하면 창이 뜬다.
+- **트레이 상주 · 세션 보존** — 창을 닫으면 트레이로 숨고 PTY는 살아 있다. **Quit**은 "돌고 있는 세션을 끄겠냐"고 확인한 뒤에만 종료한다. 재시작하면 프로젝트·탭·**바운드 스크롤백**이 복원되고, AI 세션은 눈에 보이는 **Resume**을 눌러야 재개된다(`claude --resume` / `codex resume`).
+- **프로젝트 메타데이터 (Harness Manager 공유)** — 표시 이름 · 상태(진행중/보류/완료/보관) · 메모 · 숨김을 ✎ 에서 편집하면 두 앱에 함께 반영된다. 숨긴 프로젝트는 **Show hidden projects** 로 되살린다. 폴더를 옮겼으면 **Relink**로 경로만 다시 잡는다.
+- **레지스트리 자가 복구** — 공유 파일이 깨지면 읽기 전용으로 내려앉고 경고 배너에 **Restore** 버튼이 뜬다. 검증된 `.bak`으로 되돌린다.
+- **자동 업데이트** — 위 참조.
+
+## 사용법
+
+**세션 만들기** — 프로젝트를 고르고 오른쪽 위 **＋ New session** 에서 PowerShell / Claude Code / Codex 중 하나를 고른다. 세션은 그 프로젝트 폴더를 작업 디렉토리로 열린다. 설치되지 않은 CLI는 메뉴에서 비활성으로 표시된다.
+
+**세션 다루기** — 헤더의 **■ Stop** 은 프로세스만 끄고 기록은 남긴다(나중에 **▶ Resume**). **🗑 Remove** 는 세션 자체를 목록에서 지운다. 세션을 클릭하면 그 터미널이 오른쪽에 올라오고, 스크롤백은 앱이 꺼져 있던 동안 것도 함께 복원된다.
+
+**프로젝트 폴더가 사라졌을 때** — 아이콘이 `📁`에서 `📁✕`로 바뀌고 새 세션·Resume이 막힌다. **⟲ Relink** 로 새 경로를 지정하면 풀린다. 이때 지정한 경로가 **우선**이라, 다음 자동 발견이 경로를 되돌리지 않는다.
+
+**두 앱을 같이 켜기** — Harness Manager와 동시에 켜도 된다. 공유 파일은 크로스 프로세스 락 + 원자적 교체로 지키고, 한쪽이 없어도(설치되지 않아도) 나머지 하나가 파일을 만들어 쓴다.
+
+## 아키텍처
+
+```
+ ┌──────────────── Electron main ─────────────────┐
+ │ 창·트레이·알림·수명주기 / 공유 프로젝트 레지스트리 │
+ │ 자동 업데이트(electron-updater)                  │
+ └───────┬──────────────────────────┬─────────────┘
+   typed │ preload bridge           │ IPC
+ ┌───────┴────────┐        ┌────────┴──────────────┐
+ │ Renderer       │        │ utilityProcess        │
+ │ (sandboxed)    │        │ node-pty ConPTY ×N    │
+ │ React + xterm  │        │ + bounded ring buffer │
+ └────────────────┘        └───────────────────────┘
+```
+
+- **main** — 창·트레이·알림·앱 수명주기와 프로젝트 레지스트리를 소유한다.
+- **utilityProcess** — 모든 `node-pty` 프로세스와 바운드 출력 링버퍼를 격리해 소유한다. PTY 워커가 죽으면 지수 백오프로 재시작하고, 연속 실패가 이어지면 멈춰서 에러를 표시한다(무한 재시도 없음).
+- **renderer** — 샌드박스 상태로 프로젝트 트리와 xterm.js 터미널만 그린다. 파일·프로세스에 직접 닿지 않는다.
+- **preload** — 타입이 붙은 유일한 통로. 모든 입력은 main 쪽에서 exact-key 검증을 거친다.
+
+설계 문서: [`docs/superpowers/specs/2026-07-11-multi-cli-work-design.md`](docs/superpowers/specs/2026-07-11-multi-cli-work-design.md) · 레지스트리 계약: [`registry-contract.md`](docs/superpowers/specs/registry-contract.md)
+
+## 안전장치
+
+- **공유 레지스트리** — `proper-lockfile` 크로스 프로세스 락 → 스키마 검증 → 임시 파일 + rename(원자적 교체). 백업은 **검증을 통과한 내용만** `.bak`에 남기므로 깨진 파일이 정상 백업을 덮지 않는다.
+- **경로·정체성** — 안정 UUID + 정규화 경로 매칭. 수동 추가·Relink한 경로는 자동 발견보다 우선한다(두 앱 사이 경로 핑퐁 방지).
+- **렌더러 격리** — `sandbox: true` · `contextIsolation: true` · `nodeIntegration: false`, CSP 적용, 외부 네비게이션·새 창 차단.
+- **Claude 훅** — 사용자의 `~/.claude/settings.json`을 건드리지 않는다. 앱 전용 오버레이(`userData/claude-settings.json`)를 `--settings`로 세션에만 얹는다.
+- **터미널 로그** — 링버퍼·로그 모두 상한이 있고, 잘라낼 때 UTF-8 문자 경계를 보존한다.
+- 단일 인스턴스 락으로 중복 실행을 막고, 트레이가 앱 수명을 소유한다(명시적 Quit만이 정상 종료 경로).
+
+## 로컬 데이터
+
+| 경로 | 내용 |
+|---|---|
+| `~/.harness-manager/projects.json` | 공유 프로젝트(Harness Manager와 공동 소유) |
+| `userData/state.json` | 창·탭·선택·재개 상태 |
+| `userData/session-logs/` | 바운드 스크롤백 |
+| `userData/hooks/` · `claude-settings.json` | 앱 전용 Claude 훅 오버레이 |
+| `userData/provider-status/` | 세션 상태 파일(종료 시 자동 정리) |
+
+## 개발
+
+단일 Electron 프로젝트(electron-vite). 모든 명령은 루트에서 실행한다.
+
+```bash
+git clone https://github.com/rafaam11/multi-cli-work.git
+cd multi-cli-work
 npm install
-npm run dev
+npm run dev        # electron-vite dev (main/preload/renderer HMR + Electron 창)
 ```
 
-```powershell
-npm test
-npm run typecheck
-npm run test:e2e
-npm run dist
-```
+| 스크립트 | 설명 |
+|---|---|
+| `npm run dev` | electron-vite 개발 모드 |
+| `npm test` | vitest 유닛 테스트 |
+| `npm run typecheck` | TypeScript 타입 검사(node + web 2패스) |
+| `npm run build` | typecheck + 프로덕션 번들(`out/`) |
+| `npm run test:e2e` | 빌드 후 Playwright로 **실제 ConPTY 세션**을 Electron에서 구동 |
+| `npm run dist` | Windows 설치본 빌드 → `release/`에 setup.exe 생성(로컬) |
+| `npm run rebuild:native` | `node-pty`를 현재 Electron ABI로 재빌드 |
 
-`npm run test:e2e` builds the app and exercises a real PowerShell ConPTY session through Electron. The NSIS installer and unpacked application are written to `release/`.
+**요구사항** — Windows 10 1809 이상, 개발에는 Node.js 20+. 선택적으로 `claude`·`codex`가 `PATH`에 있으면 해당 세션을 띄울 수 있다.
 
-## Release
+**릴리스** — `package.json` 버전을 올려 `chore: release vX.Y.Z` 로 커밋하고 **`v*` 태그를 푸시**하면 GitHub Actions(`.github/workflows/release.yml`)가 설치본 + `latest.yml` + `.blockmap` 을 같은 태그의 **draft 릴리스**에 올린다. 사람이 검토 후 **수동 publish** 한다. `latest.yml` 이 없으면 기존 사용자가 새 버전을 발견하지 못하고, `appId`(`com.rafaam11.multicliwork`)를 바꾸면 업데이터가 기존 설치본을 알아보지 못한다 — 둘 다 건드리지 않는다.
 
-Bump `version` in `package.json`, commit it as `chore: release vX.Y.Z`, then push the matching tag:
-
-```powershell
-git tag vX.Y.Z
-git push origin main
-git push origin vX.Y.Z
-```
-
-The `v*` tag triggers `.github/workflows/release.yml`, which builds on `windows-latest` and publishes the installer, `latest.yml`, and its blockmap to a **draft** GitHub release. Review the draft and publish it manually — `latest.yml` is what running installs read to discover the new version, so a release without it will not reach existing users. `appId` (`com.rafaam11.multicliwork`) must never change: the updater identifies the installed app by it.
-
-## Local Data
-
-- Shared projects: `~/.harness-manager/projects.json` — contract with Harness Manager documented in [`docs/superpowers/specs/registry-contract.md`](docs/superpowers/specs/registry-contract.md)
-- Window, tab, and resume state: Electron `userData/state.json`
-- Bounded terminal replay logs: Electron `userData/session-logs/`
-- App-owned Claude hook overlay: Electron `userData/hooks/` and `claude-settings.json`
-
-Closing the window hides the app to the system tray and keeps managed PTYs alive. Explicit Quit stops those PTYs. Saved AI sessions are resumed only through the visible Resume action.
-
-The sidebar can refresh discovered projects on demand, edit project metadata (display name, status, memo, hidden) shared with Harness Manager, reveal hidden projects, and restore the shared registry from its backup when the primary file is corrupted.
-
-The approved architecture and implementation plan are in [`docs/superpowers/specs/2026-07-11-multi-cli-work-design.md`](docs/superpowers/specs/2026-07-11-multi-cli-work-design.md) and [`docs/superpowers/plans/2026-07-11-multi-cli-work.md`](docs/superpowers/plans/2026-07-11-multi-cli-work.md).
+> CI 러너는 `windows-2022` + Python 3.11로 고정돼 있다. `windows-latest`는 Visual Studio 2026만 담긴 이미지로 옮겨갔고 node-gyp이 이를 인식하지 못하며, Python 3.12에는 node-gyp이 쓰는 `distutils`가 없어 **`node-pty` 네이티브 빌드가 둘 다에서 깨진다.** 태그를 다시 밀지 않고 러너를 검증하려면 `workflow_dispatch` 로 수동 실행한다(publish 없이 패키징만).
