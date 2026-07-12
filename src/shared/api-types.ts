@@ -1,13 +1,20 @@
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
-import type { ProjectRegistrySnapshot, ProjectStatus, SharedProject } from "./project-types";
+import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
   status?: ProjectStatus | null;
   memo?: string;
+  tracks?: ProjectTrack[];
   hidden?: boolean;
   order?: number | null;
+}
+
+export interface GitStatusResult {
+  isRepo: boolean;
+  branch: string | null;
+  changedFileCount: number;
 }
 
 export interface ProviderAvailability {
@@ -72,6 +79,7 @@ export interface MultiCliWorkApi {
     reveal(projectId: string): Promise<void>;
     openInEditor(projectId: string): Promise<void>;
     openOnGitHub(projectId: string): Promise<void>;
+    gitStatus(projectId: string): Promise<GitStatusResult>;
   };
   providers: {
     availability(): Promise<ProviderAvailability>;
@@ -97,6 +105,7 @@ export interface MultiCliWorkApi {
     check(): Promise<void>;
     install(): Promise<void>;
     openReleases(): Promise<void>;
+    openRepository(): Promise<void>;
     onEvent(listener: (status: UpdaterStatus) => void): () => void;
   };
 }

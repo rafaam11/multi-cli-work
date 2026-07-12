@@ -14,6 +14,7 @@ const api: MultiCliWorkApi = {
     reveal: (projectId) => ipcRenderer.invoke("projects:reveal", projectId),
     openInEditor: (projectId) => ipcRenderer.invoke("projects:open-editor", projectId),
     openOnGitHub: (projectId) => ipcRenderer.invoke("projects:open-github", projectId),
+    gitStatus: (projectId) => ipcRenderer.invoke("projects:git-status", projectId),
   },
   providers: {
     availability: () => ipcRenderer.invoke("providers:availability"),
@@ -43,6 +44,7 @@ const api: MultiCliWorkApi = {
     check: () => ipcRenderer.invoke("updater:check"),
     install: () => ipcRenderer.invoke("updater:install"),
     openReleases: () => ipcRenderer.invoke("app:open-releases"),
+    openRepository: () => ipcRenderer.invoke("app:open-repository"),
     onEvent(listener) {
       const handler = (_event: Electron.IpcRendererEvent, status: UpdaterStatus) => listener(status);
       ipcRenderer.on("updater:event", handler);

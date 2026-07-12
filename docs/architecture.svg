@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" width="960" height="460" font-family="Segoe UI, system-ui, sans-serif" role="img" aria-label="Multi CLI Work 아키텍처 — main / utilityProcess / renderer 3-프로세스 구조">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" width="960" height="460" font-family="Segoe UI, system-ui, sans-serif" role="img" aria-label="멀티 터미널 작업기 아키텍처 — main / utilityProcess / renderer 3-프로세스 구조">
   <rect width="960" height="460" rx="12" fill="#161918" stroke="#343b38"/>
 
   <!-- ── main process ── -->

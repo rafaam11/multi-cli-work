@@ -69,11 +69,13 @@ function setup() {
     check: vi.fn(async () => undefined),
     install: vi.fn(async () => undefined),
     openReleases: vi.fn(() => undefined),
+    openRepository: vi.fn(() => undefined),
   };
   const projectActions = {
     reveal: vi.fn(async () => undefined),
     openInEditor: vi.fn(async () => undefined),
     openOnGitHub: vi.fn(async () => undefined),
+    gitStatus: vi.fn(async () => ({ isRepo: true, branch: "main", changedFileCount: 0 })),
   };
   registerMainIpc(ipc, {
     projectService,
@@ -123,6 +125,15 @@ describe("main IPC boundary", () => {
     expect(projectService.updateProjectMetadata).not.toHaveBeenCalled();
   });
 
+  it("accepts a tracks patch alongside the existing metadata fields", async () => {
+    const { handlers, projectService } = setup();
+    const tracks = [{ id: "track-1", title: "Launch", items: [{ id: "item-1", text: "Write tests", done: false }] }];
+
+    await handlers.get("projects:update")!({}, "project-1", { memo: "notes", tracks });
+
+    expect(projectService.updateProjectMetadata).toHaveBeenCalledWith("project-1", { memo: "notes", tracks });
+  });
+
   it("annotates project snapshots with missing root ids without changing registry projects", async () => {
     const { handlers, projectService, project } = setup();
 
@@ -160,10 +171,13 @@ describe("main IPC boundary", () => {
     await handlers.get("projects:reveal")!({}, project.id);
     await handlers.get("projects:open-editor")!({}, project.id);
     await handlers.get("projects:open-github")!({}, project.id);
+    const gitStatus = await handlers.get("projects:git-status")!({}, project.id);
 
     expect(projectActions.reveal).toHaveBeenCalledWith(project.rootPath);
     expect(projectActions.openInEditor).toHaveBeenCalledWith(project.rootPath);
     expect(projectActions.openOnGitHub).toHaveBeenCalledWith(project.rootPath);
+    expect(projectActions.gitStatus).toHaveBeenCalledWith(project.rootPath);
+    expect(gitStatus).toEqual({ isRepo: true, branch: "main", changedFileCount: 0 });
     await expect(handlers.get("projects:reveal")!({}, "unknown-project")).rejects.toThrow(/not found/i);
   });
 
@@ -228,9 +242,11 @@ describe("main IPC boundary", () => {
     await handlers.get("updater:check")!({});
     await handlers.get("updater:install")!({});
     await handlers.get("app:open-releases")!({});
+    await handlers.get("app:open-repository")!({});
 
     expect(updater.check).toHaveBeenCalledOnce();
     expect(updater.install).toHaveBeenCalledOnce();
     expect(updater.openReleases).toHaveBeenCalledOnce();
+    expect(updater.openRepository).toHaveBeenCalledOnce();
   });
 });

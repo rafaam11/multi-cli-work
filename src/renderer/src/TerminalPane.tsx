@@ -170,9 +170,9 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
   }, [readOnly]);
 
   return (
-    <section className="terminal-surface" aria-label={`${session.kind} terminal`}>
+    <section className="terminal-surface" aria-label={`${session.kind} 터미널`}>
       <div className="terminal-host" ref={hostRef} />
-      {attaching ? <span className="terminal-progress">Attaching session</span> : null}
+      {attaching ? <span className="terminal-progress">세션 연결 중</span> : null}
     </section>
   );
 }

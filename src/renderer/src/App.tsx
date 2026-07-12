@@ -6,16 +6,22 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
 import { ProjectContextMenu } from "./ProjectContextMenu";
+import { ProjectDetailPage } from "./ProjectDetailPage";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { TerminalPane } from "./TerminalPane";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { projectName, sessionLabel } from "./session-labels";
+
+type ActiveView = "home" | "detail" | "terminal";
+const ACTIVITY_LOG_LIMIT = 20;
 
 const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
 const EMPTY_AVAILABILITY: ProviderAvailability = { powershell: false, claude: false, codex: false, vscode: false };
@@ -77,6 +83,10 @@ export function App() {
   const [availability, setAvailability] = useState(EMPTY_AVAILABILITY);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<ActiveView>("home");
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
+  const sessionsRef = useRef<TerminalSessionView[]>([]);
+  const activityIdRef = useRef(0);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -112,6 +122,10 @@ export function App() {
   const selectedProjectMissing = Boolean(
     selectedProject && snapshot?.missingRootProjectIds.includes(selectedProject.id),
   );
+  const isProjectMissing = useCallback(
+    (projectId: string) => Boolean(snapshot?.missingRootProjectIds.includes(projectId)),
+    [snapshot],
+  );
 
   const maximumSidebarWidth = useCallback(
     () =>
@@ -128,9 +142,10 @@ export function App() {
   );
 
   const loadWorkspace = useCallback(
-    async (preservedSelection?: { projectId: string | null; sessionId: string | null }) => {
+    async (preservedSelection?: { projectId: string | null; sessionId: string | null; view?: ActiveView }) => {
       setLoading(true);
       setLoadError(null);
+      const forceHome = preservedSelection?.view === "home";
       try {
         const [registrySnapshot, terminalSessions, providers, appState] = await Promise.all([
           window.multiCliWork.projects.list(),
@@ -154,6 +169,7 @@ export function App() {
           setExpandedProjects(new Set(visibleProjects.map((project) => project.id)));
           setSelectedProjectId(null);
           setSelectedSessionId(restoredSession.id);
+          setActiveView(forceHome ? "home" : "terminal");
           return;
         }
 
@@ -175,6 +191,7 @@ export function App() {
         setExpandedProjects(new Set(visibleProjects.map((project) => project.id)));
         setSelectedProjectId(initialProject?.id ?? null);
         setSelectedSessionId(initialSession?.id ?? null);
+        setActiveView(forceHome ? "home" : initialSession ? "terminal" : initialProject ? "detail" : "home");
       } catch (error) {
         setLoadError(errorMessage(error));
       } finally {
@@ -210,10 +227,34 @@ export function App() {
     [clampSidebarWidth],
   );
 
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
   useEffect(
     () =>
       window.multiCliWork.terminals.onEvent((event) => {
         if (event.type === "data") return;
+        if (event.type === "status") {
+          const previous = sessionsRef.current.find((session) => session.id === event.sessionId);
+          if (previous && previous.status !== event.status) {
+            const peers = sessionsRef.current.filter((session) => session.projectId === previous.projectId);
+            setActivityLog((log) =>
+              [
+                {
+                  id: `activity-${activityIdRef.current++}`,
+                  timestamp: new Date().toISOString(),
+                  projectId: previous.projectId,
+                  sessionId: previous.id,
+                  sessionLabel: sessionLabel(previous, peers),
+                  fromStatus: previous.status,
+                  toStatus: event.status,
+                },
+                ...log,
+              ].slice(0, ACTIVITY_LOG_LIMIT),
+            );
+          }
+        }
         setSessions((current) =>
           current.map((session) => (session.id === event.sessionId ? applyEvent(session, event) : session)),
         );
@@ -230,6 +271,7 @@ export function App() {
   const selectProject = (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedSessionId(null);
+    setActiveView("detail");
     setExpandedProjects((current) => new Set(current).add(projectId));
     setActionError(null);
     persistSelection(projectId, null);
@@ -238,9 +280,12 @@ export function App() {
   const selectSession = (session: TerminalSessionView) => {
     setSelectedProjectId(session.projectId);
     setSelectedSessionId(session.id);
+    setActiveView("terminal");
     setActionError(null);
     persistSelection(session.projectId, session.id);
   };
+
+  const openHome = () => setActiveView("home");
 
   const toggleProject = (projectId: string) => {
     setExpandedProjects((current) => {
@@ -270,25 +315,28 @@ export function App() {
       setExpandedProjects((current) => new Set(current).add(added.id));
       setSelectedProjectId(added.id);
       setSelectedSessionId(null);
+      setActiveView("detail");
       persistSelection(added.id, null);
     } catch (error) {
       setActionError(errorMessage(error));
     }
   };
 
-  const startSession = async (kind: TerminalKind) => {
-    if (!selectedProject || selectedProjectMissing || !availability[kind]) return;
+  const startSession = async (project: SharedProject, kind: TerminalKind) => {
+    if (isProjectMissing(project.id) || !availability[kind]) return;
     setPendingAction(true);
     setActionError(null);
     try {
       const created = await window.multiCliWork.terminals.create({
-        projectId: selectedProject.id,
+        projectId: project.id,
         kind,
         ...DEFAULT_TERMINAL_SIZE,
       });
       setSessions((current) => replaceSession(current, created));
+      setSelectedProjectId(project.id);
       setSelectedSessionId(created.id);
-      persistSelection(selectedProject.id, created.id);
+      setActiveView("terminal");
+      persistSelection(project.id, created.id);
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -304,6 +352,7 @@ export function App() {
       setSessions((current) => replaceSession(current, created));
       setSelectedProjectId(null);
       setSelectedSessionId(created.id);
+      setActiveView("terminal");
       persistSelection(null, created.id);
     } catch (error) {
       setActionError(errorMessage(error));
@@ -353,6 +402,7 @@ export function App() {
       await window.multiCliWork.terminals.remove(selectedSession.id);
       setSessions((current) => current.filter((session) => session.id !== selectedSession.id));
       setSelectedSessionId(null);
+      setActiveView(projectId ? "detail" : "home");
       persistSelection(projectId, null);
     } catch (error) {
       setActionError(errorMessage(error));
@@ -447,6 +497,7 @@ export function App() {
       if (selectedProjectId === project.id) {
         setSelectedProjectId(null);
         setSelectedSessionId(null);
+        setActiveView("home");
         persistSelection(null, null);
       }
       if (editingProjectId === project.id) setEditingProjectId(null);
@@ -457,6 +508,12 @@ export function App() {
     }
   };
 
+  // The header mirrors whatever the sidebar has selected, except on the home dashboard: there it
+  // would otherwise show a stale project/session left over from before "Home" was opened.
+  const headerProject = activeView === "home" ? null : selectedProject;
+  const headerSession = activeView === "home" ? null : selectedSession;
+  const headerSessionLabel = activeView === "home" ? null : selectedSessionLabel;
+
   return (
     <div className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
       <ProjectSidebar
@@ -464,14 +521,16 @@ export function App() {
         projects={projects}
         sessions={folderSessions}
         toolSessions={toolSessions}
-        selectedProjectId={selectedProjectId}
-        selectedSessionId={selectedSessionId}
+        selectedProjectId={activeView === "home" ? null : selectedProjectId}
+        selectedSessionId={activeView === "home" ? null : selectedSessionId}
+        isHome={activeView === "home"}
+        onOpenHome={openHome}
         expandedProjects={expandedProjects}
         editingProjectId={editingProjectId}
         renamingSessionId={renamingSessionId}
         loading={loading}
         loadError={loadError}
-        onReload={() => void loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId })}
+        onReload={() => void loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId, view: activeView })}
         onAddProject={() => void addProject()}
         onSelectProject={selectProject}
         onSelectSession={selectSession}
@@ -502,7 +561,7 @@ export function App() {
       <div
         className="sidebar-resizer"
         role="separator"
-        aria-label="Resize folder sidebar"
+        aria-label="폴더 사이드바 크기 조절"
         aria-orientation="vertical"
         aria-valuemin={MIN_SIDEBAR_WIDTH}
         aria-valuemax={maximumSidebarWidth()}
@@ -510,16 +569,16 @@ export function App() {
         onMouseDown={beginSidebarResize}
       />
 
-      <main className="terminal-workspace" aria-label="Terminal workspace">
+      <main className="terminal-workspace" aria-label="터미널 작업 영역">
         <WorkspaceHeader
-          selectedProject={selectedProject}
-          selectedSession={selectedSession}
-          selectedSessionLabel={selectedSessionLabel}
+          selectedProject={headerProject}
+          selectedSession={headerSession}
+          selectedSessionLabel={headerSessionLabel}
           projectMissing={selectedProjectMissing}
           availability={availability}
           pendingAction={pendingAction}
           readOnly={Boolean(snapshot && !snapshot.writable)}
-          onStartSession={(kind) => void startSession(kind)}
+          onStartSession={(kind) => selectedProject && void startSession(selectedProject, kind)}
           onStartTool={(tool) => void startTool(tool)}
           onResumeSession={() => void resumeSession()}
           onStopSession={() => void stopSession()}
@@ -529,17 +588,17 @@ export function App() {
 
         <div className="workspace-body">
           <div className="workspace-message-area">
-            {selectedProjectMissing ? (
+            {activeView !== "home" && selectedProjectMissing ? (
               <div className="missing-root-notice" role="status">
                 <FolderX size={14} />
-                <span>Folder is missing</span>
+                <span>폴더를 찾을 수 없습니다</span>
                 <button
                   type="button"
                   onClick={() => void relinkProject()}
                   disabled={Boolean(snapshot && !snapshot.writable)}
-                  aria-label="Relink missing folder"
+                  aria-label="누락된 폴더 다시 연결"
                 >
-                  Relink
+                  다시 연결
                 </button>
               </div>
             ) : null}
@@ -547,8 +606,8 @@ export function App() {
               <div className="action-error" role="alert">
                 <TriangleAlert size={14} />
                 <span>{actionError}</span>
-                <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss error">
-                  Dismiss
+                <button type="button" onClick={() => setActionError(null)} aria-label="오류 닫기">
+                  닫기
                 </button>
               </div>
             ) : null}
@@ -557,27 +616,45 @@ export function App() {
           {loading ? (
             <section className="terminal-empty">
               <RefreshCw className="spin" size={20} />
-              <h2>Loading workspace</h2>
+              <h2>작업 영역 불러오는 중</h2>
             </section>
           ) : loadError ? (
             <section className="terminal-empty">
               <TriangleAlert size={22} />
-              <h2>Workspace could not be loaded</h2>
+              <h2>작업 영역을 불러오지 못했습니다</h2>
             </section>
-          ) : selectedSession ? (
+          ) : activeView === "terminal" && selectedSession ? (
             <TerminalPane
               key={selectedSession.id}
               session={selectedSession}
               onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
               onError={(message) => setActionError(message)}
             />
+          ) : activeView === "detail" && selectedProject ? (
+            <ProjectDetailPage
+              key={selectedProject.id}
+              project={selectedProject}
+              sessions={folderSessions.filter((session) => session.projectId === selectedProject.id)}
+              availability={availability}
+              pendingAction={pendingAction}
+              onSelectSession={selectSession}
+              onStartSession={(kind) => void startSession(selectedProject, kind)}
+              onReveal={() => void runProjectAction(() => window.multiCliWork.projects.reveal(selectedProject.id))}
+              onOpenInEditor={() => void runProjectAction(() => window.multiCliWork.projects.openInEditor(selectedProject.id))}
+              onOpenOnGitHub={() => void runProjectAction(() => window.multiCliWork.projects.openOnGitHub(selectedProject.id))}
+              onProjectSaved={handleProjectSaved}
+            />
           ) : (
-            <section className="terminal-empty" aria-label="Terminal workspace empty">
-              <div className="empty-glyph" aria-hidden="true">
-                <span>&gt;_</span>
-              </div>
-              <h2>{selectedProject ? `Start a session in ${projectName(selectedProject)}` : "Open a folder to start a session"}</h2>
-            </section>
+            <HomeDashboard
+              projects={projects}
+              sessions={sessions}
+              availability={availability}
+              activityLog={activityLog}
+              pendingAction={pendingAction}
+              onSelectSession={selectSession}
+              onStartSession={(project, kind) => void startSession(project, kind)}
+              onStartTool={(tool) => void startTool(tool)}
+            />
           )}
         </div>
       </main>
@@ -618,15 +695,15 @@ export function App() {
 
       {removal ? (
         <div className="modal-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="Remove folder from list">
-            <h2>Remove {projectName(removal.project)} from the list?</h2>
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="목록에서 폴더 제거">
+            <h2>{projectName(removal.project)}을(를) 목록에서 제거할까요?</h2>
             <p>
-              {removal.sessionCount} {removal.sessionCount === 1 ? "session" : "sessions"} in this folder will be stopped and
-              their scrollback deleted. The folder itself stays on disk.
+              이 폴더의 세션 {removal.sessionCount}개가 중지되고 스크롤백이 삭제됩니다. 폴더 자체는 디스크에 그대로
+              남습니다.
             </p>
             <footer className="confirm-dialog-actions">
               <button type="button" onClick={() => setRemoval(null)}>
-                Cancel
+                취소
               </button>
               <button
                 type="button"
@@ -634,7 +711,7 @@ export function App() {
                 onClick={() => void confirmRemoval(removal.project)}
                 disabled={pendingAction}
               >
-                Remove
+                제거
               </button>
             </footer>
           </div>

@@ -6,6 +6,7 @@ import type { UpdaterStatus } from "../shared/api-types";
 const { autoUpdater } = electronUpdater;
 
 const RELEASES_URL = "https://github.com/rafaam11/multi-cli-work/releases/latest";
+const REPOSITORY_URL = "https://github.com/rafaam11/multi-cli-work";
 
 let currentStatus: UpdaterStatus = { state: "idle" };
 
@@ -59,4 +60,8 @@ export function quitAndInstall(): void {
 
 export function openReleasesPage(): void {
   void shell.openExternal(RELEASES_URL);
+}
+
+export function openRepositoryPage(): void {
+  void shell.openExternal(REPOSITORY_URL);
 }

@@ -1,23 +1,7 @@
 import type { UpdaterStatus } from "@shared/api-types";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-
-function statusLabel(status: UpdaterStatus): string {
-  switch (status.state) {
-    case "checking":
-      return "Checking for updates";
-    case "available":
-      return `Update ${status.version} available`;
-    case "downloading":
-      return `Downloading ${status.percent}%`;
-    case "downloaded":
-      return `Update ${status.version} ready`;
-    case "error":
-      return "Update check failed";
-    default:
-      return "Up to date";
-  }
-}
+import { updaterStatusLabel } from "./session-labels";
 
 export function UpdateBadge() {
   const [version, setVersion] = useState("");
@@ -38,21 +22,21 @@ export function UpdateBadge() {
     <div className="update-badge">
       <RefreshCw size={12} className={busy ? "spinning" : undefined} aria-hidden="true" />
       <span className="app-version">{version ? `v${version}` : ""}</span>
-      <span className={`update-status ${status.state}`}>{statusLabel(status)}</span>
+      <span className={`update-status ${status.state}`}>{updaterStatusLabel(status)}</span>
       {status.state === "error" ? (
         <button type="button" onClick={() => void window.multiCliWork.updates.openReleases()}>
-          Releases
+          릴리스
         </button>
       ) : (
         <button
           type="button"
           disabled={busy}
-          title={downloaded ? "Restart the app to install the update" : "Check for updates"}
+          title={downloaded ? "업데이트를 설치하려면 앱을 재시작하세요" : "업데이트 확인"}
           onClick={() =>
             void (downloaded ? window.multiCliWork.updates.install() : window.multiCliWork.updates.check())
           }
         >
-          {downloaded ? "Restart" : "Check"}
+          {downloaded ? "재시작" : "확인"}
         </button>
       )}
     </div>

@@ -11,6 +11,7 @@ function createUpdatesApi(initial: UpdaterStatus = { state: "idle" }) {
     check: vi.fn().mockResolvedValue(undefined),
     install: vi.fn().mockResolvedValue(undefined),
     openReleases: vi.fn().mockResolvedValue(undefined),
+    openRepository: vi.fn().mockResolvedValue(undefined),
     onEvent: vi.fn((listener: (status: UpdaterStatus) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -36,7 +37,7 @@ describe("update badge", () => {
     render(<UpdateBadge />);
 
     expect(await screen.findByText("v1.0.0")).toBeInTheDocument();
-    expect(screen.getByText("Up to date")).toBeInTheDocument();
+    expect(screen.getByText("최신 버전")).toBeInTheDocument();
     expect(harness.updates.status).toHaveBeenCalledOnce();
   });
 
@@ -45,23 +46,23 @@ describe("update badge", () => {
 
     render(<UpdateBadge />);
 
-    expect(await screen.findByText("Update 1.1.0 ready")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Restart" })).toBeInTheDocument();
+    expect(await screen.findByText("1.1.0 업데이트 설치 준비 완료")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "재시작" })).toBeInTheDocument();
   });
 
   it("checks on demand and follows the download through to the restart prompt", async () => {
     const harness = createUpdatesApi();
 
     render(<UpdateBadge />);
-    fireEvent.click(await screen.findByRole("button", { name: "Check" }));
+    fireEvent.click(await screen.findByRole("button", { name: "확인" }));
     expect(harness.updates.check).toHaveBeenCalledOnce();
 
     harness.emit({ state: "downloading", percent: 42 });
-    expect(screen.getByText("Downloading 42%")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Check" })).toBeDisabled();
+    expect(screen.getByText("다운로드 중 42%")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "확인" })).toBeDisabled();
 
     harness.emit({ state: "downloaded", version: "1.1.0" });
-    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+    fireEvent.click(screen.getByRole("button", { name: "재시작" }));
     expect(harness.updates.install).toHaveBeenCalledOnce();
   });
 
@@ -72,8 +73,8 @@ describe("update badge", () => {
     await waitFor(() => expect(harness.updates.onEvent).toHaveBeenCalled());
     harness.emit({ state: "error", message: "net::ERR_INTERNET_DISCONNECTED" });
 
-    expect(screen.getByText("Update check failed")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Releases" }));
+    expect(screen.getByText("업데이트 확인 실패")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "릴리스" }));
     expect(harness.updates.openReleases).toHaveBeenCalledOnce();
     expect(harness.updates.check).not.toHaveBeenCalled();
   });

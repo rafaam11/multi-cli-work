@@ -77,13 +77,13 @@ test.describe.serial("Multi CLI Work desktop", () => {
   });
 
   test("runs a real PowerShell PTY and remains framed at both supported window sizes", async () => {
-    await expect(page.getByRole("heading", { name: "Multi CLI Work" })).toBeVisible();
-    await page.getByRole("button", { name: "Select folder Sample Project" }).click();
-    await page.getByRole("button", { name: "New PowerShell session" }).click();
+    await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("button", { name: "새 PowerShell 세션" }).click();
     // The launchers stay exposed after the folder has a session.
-    await expect(page.getByRole("button", { name: "New Claude Code session" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "새 Claude Code 세션" })).toBeVisible();
 
-    const terminal = page.getByRole("region", { name: "powershell terminal" });
+    const terminal = page.getByRole("region", { name: "powershell 터미널" });
     await expect(terminal).toBeVisible();
     await terminal.click();
     await page.keyboard.type("Write-Output MCW_PTY_READY");
@@ -129,7 +129,7 @@ test.describe.serial("Multi CLI Work desktop", () => {
 
     await expect(page.locator(".xterm-rows")).toContainText("MCW_ANSI_GREEN");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_BURST_250");
-    await expect(page.locator(".active-status")).toHaveText("Exited");
+    await expect(page.locator(".active-status")).toHaveText("종료됨");
     await expect
       .poll(() =>
         page.evaluate(
@@ -145,6 +145,16 @@ test.describe.serial("Multi CLI Work desktop", () => {
     });
   });
 
+  test("shows the home dashboard from the logo and the project detail page from the folder", async () => {
+    await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
+    await expect(page.getByRole("region", { name: "홈 대시보드" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "세션 모니터" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "PowerShell 세션 보기" })).toBeVisible();
+  });
+
   test("hides to the tray and restores saved tabs after a relaunch", async () => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);
@@ -154,25 +164,25 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await app.close();
     ({ app, page } = await launchApp());
 
-    await expect(page.getByRole("button", { name: "Open PowerShell session" })).toBeVisible();
-    await page.getByRole("button", { name: "Open PowerShell session" }).click();
-    await expect(page.getByRole("button", { name: "Resume session" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "PowerShell 세션 열기" })).toBeVisible();
+    await page.getByRole("button", { name: "PowerShell 세션 열기" }).click();
+    await expect(page.getByRole("button", { name: "세션 재개" })).toBeVisible();
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
     const projectRoot = path.join(tempRoot, "sample-project");
-    await page.getByRole("button", { name: "Select folder Sample Project" }).click({ button: "right" });
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
 
-    const menu = page.getByRole("menu", { name: "Actions for Sample Project" });
-    await expect(menu.getByRole("menuitem", { name: "Open in File Explorer" })).toBeVisible();
-    await menu.getByRole("menuitem", { name: "Remove from list" }).click();
+    const menu = page.getByRole("menu", { name: "Sample Project 작업" });
+    await expect(menu.getByRole("menuitem", { name: "파일 탐색기에서 열기" })).toBeVisible();
+    await menu.getByRole("menuitem", { name: "목록에서 제거" }).click();
 
-    const confirm = page.getByRole("dialog", { name: "Remove folder from list" });
-    await expect(confirm).toContainText("will be stopped");
-    await confirm.getByRole("button", { name: "Remove" }).click();
+    const confirm = page.getByRole("dialog", { name: "목록에서 폴더 제거" });
+    await expect(confirm).toContainText("중지되고");
+    await confirm.getByRole("button", { name: "제거" }).click();
 
-    await expect(page.getByRole("button", { name: "Select folder Sample Project" })).toBeHidden();
-    await expect(page.getByText("No folders yet")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sample Project 폴더 선택" })).toBeHidden();
+    await expect(page.getByText("아직 폴더가 없습니다")).toBeVisible();
     expect((await fs.stat(projectRoot)).isDirectory()).toBe(true);
 
     const savedRegistry = JSON.parse(await fs.readFile(path.join(tempRoot, "registry", "projects.json"), "utf8"));

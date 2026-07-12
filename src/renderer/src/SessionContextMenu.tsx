@@ -47,17 +47,17 @@ export function SessionContextMenu({
     <div
       className="context-menu"
       role="menu"
-      aria-label={`Actions for ${sessionLabel}`}
+      aria-label={`${sessionLabel} 작업`}
       ref={menu}
       style={{ "--context-menu-x": `${x}px`, "--context-menu-y": `${y}px` } as CSSProperties}
     >
       <button type="button" role="menuitem" onClick={run(onRename)}>
         <Pencil size={15} />
-        <span>Rename</span>
+        <span>이름 변경</span>
       </button>
       <button type="button" role="menuitem" disabled={!canResetName} onClick={run(onResetName)}>
         <RotateCcw size={15} />
-        <span>Use the provider's title</span>
+        <span>제공자 제목 사용</span>
       </button>
     </div>
   );

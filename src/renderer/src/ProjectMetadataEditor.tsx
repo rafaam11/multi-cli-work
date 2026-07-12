@@ -49,12 +49,12 @@ export function ProjectMetadataEditor({ project, onSaved, onClose }: ProjectMeta
     <form
       className="project-editor"
       role="dialog"
-      aria-label={`Rename ${project.displayName ?? project.rootPath}`}
+      aria-label={`${project.displayName ?? project.rootPath} 이름 변경`}
       onSubmit={(event) => void submit(event)}
       onKeyDown={handleKeyDown}
     >
       <div className="project-editor-field">
-        <label htmlFor={nameId}>Display name</label>
+        <label htmlFor={nameId}>표시 이름</label>
         <input
           id={nameId}
           type="text"
@@ -71,10 +71,10 @@ export function ProjectMetadataEditor({ project, onSaved, onClose }: ProjectMeta
       ) : null}
       <footer className="project-editor-actions">
         <button type="button" onClick={onClose} disabled={saving}>
-          Cancel
+          취소
         </button>
         <button type="submit" disabled={saving}>
-          Save
+          저장
         </button>
       </footer>
     </form>

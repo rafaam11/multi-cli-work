@@ -41,6 +41,8 @@ interface ProjectSidebarProps {
   onProjectSaved(project: SharedProject): void;
   onCloseEditor(): void;
   onRestoreBackup(): void;
+  isHome: boolean;
+  onOpenHome(): void;
 }
 
 /**
@@ -64,7 +66,7 @@ function SessionNameInput({
   return (
     <form
       className="session-rename"
-      aria-label="Rename session"
+      aria-label="세션 이름 변경"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit(value.trim() === "" ? null : value.trim());
@@ -72,7 +74,7 @@ function SessionNameInput({
     >
       <input
         type="text"
-        aria-label="Session name"
+        aria-label="세션 이름"
         value={value}
         autoFocus
         onChange={(event) => setValue(event.target.value)}
@@ -112,6 +114,8 @@ export function ProjectSidebar({
   onProjectSaved,
   onCloseEditor,
   onRestoreBackup,
+  isHome,
+  onOpenHome,
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
 
@@ -136,7 +140,7 @@ export function ProjectSidebar({
           type="button"
           onClick={() => onSelectSession(session)}
           onContextMenu={(event) => onSessionContextMenu(session, event)}
-          aria-label={`Open ${label} session`}
+          aria-label={`${label} 세션 열기`}
         >
           <span className={`status-dot status-${session.status}`} aria-hidden="true" />
           <ProviderIcon size={14} />
@@ -151,26 +155,31 @@ export function ProjectSidebar({
 
   return (
     <aside className="project-sidebar">
-      <header className="brand-block">
+      <button
+        type="button"
+        className={`brand-block ${isHome ? "selected" : ""}`}
+        onClick={onOpenHome}
+        aria-label="홈 대시보드 열기"
+      >
         <span className="brand-mark" aria-hidden="true">
           <SquareTerminal size={17} strokeWidth={1.8} />
         </span>
         <div className="brand-copy">
-          <h1>Multi CLI Work</h1>
-          <span className="brand-context">Local workspace</span>
+          <h1>멀티 터미널 작업기</h1>
+          <span className="brand-context">로컬 워크스페이스</span>
         </div>
-      </header>
+      </button>
 
-      <nav className="project-navigation" aria-label="Folders">
+      <nav className="project-navigation" aria-label="폴더">
         <div className="section-heading">
-          <span>Folders</span>
+          <span>폴더</span>
           <button
             className="icon-button"
             type="button"
             onClick={onReload}
             disabled={loading}
-            aria-label="Refresh folders"
-            title="Refresh folders"
+            aria-label="폴더 새로고침"
+            title="폴더 새로고침"
           >
             <RefreshCw size={16} />
           </button>
@@ -179,8 +188,8 @@ export function ProjectSidebar({
             type="button"
             onClick={onAddProject}
             disabled={readOnly}
-            aria-label="Open folder"
-            title="Open folder"
+            aria-label="폴더 열기"
+            title="폴더 열기"
           >
             <FolderPlus size={16} />
           </button>
@@ -189,20 +198,20 @@ export function ProjectSidebar({
         {loading ? (
           <div className="sidebar-state">
             <RefreshCw className="spin" size={15} />
-            <span>Loading workspace</span>
+            <span>작업 영역 불러오는 중</span>
           </div>
         ) : loadError ? (
           <div className="sidebar-failure" role="alert">
             <TriangleAlert size={16} />
             <span>{loadError}</span>
             <button type="button" onClick={onReload}>
-              Retry
+              재시도
             </button>
           </div>
         ) : projects.length === 0 ? (
           <div className="sidebar-empty">
             <FolderPlus size={18} aria-hidden="true" />
-            <span>No folders yet</span>
+            <span>아직 폴더가 없습니다</span>
           </div>
         ) : (
           <ul className="project-tree" role="tree">
@@ -223,8 +232,8 @@ export function ProjectSidebar({
                       className="tree-toggle"
                       type="button"
                       onClick={() => onToggleProject(project.id)}
-                      aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`}
-                      title={`${expanded ? "Collapse" : "Expand"} ${name}`}
+                      aria-label={`${name} ${expanded ? "접기" : "펼치기"}`}
+                      title={`${name} ${expanded ? "접기" : "펼치기"}`}
                     >
                       {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
@@ -232,10 +241,10 @@ export function ProjectSidebar({
                       className="project-select"
                       type="button"
                       onClick={() => onSelectProject(project.id)}
-                      aria-label={`Select folder ${name}`}
+                      aria-label={`${name} 폴더 선택`}
                     >
                       {rootMissing ? (
-                        <FolderX size={15} aria-label="Folder missing" />
+                        <FolderX size={15} aria-label="폴더 없음" />
                       ) : expanded ? (
                         <FolderOpen size={15} />
                       ) : (
@@ -247,7 +256,7 @@ export function ProjectSidebar({
                           {project.rootPath}
                         </span>
                       </span>
-                      {rootMissing ? <span className="project-status missing-status">Missing</span> : null}
+                      {rootMissing ? <span className="project-status missing-status">없음</span> : null}
                     </button>
                   </div>
                   {editingProjectId === project.id ? (
@@ -267,9 +276,9 @@ export function ProjectSidebar({
         {toolSessions.length > 0 ? (
           <div className="tools-group">
             <div className="section-heading">
-              <span>Tools</span>
+              <span>도구</span>
             </div>
-            <ul className="session-tree" role="group" aria-label="Maintenance sessions">
+            <ul className="session-tree" role="group" aria-label="유지보수 세션">
               {[...toolSessions].sort(byCreation).map((session) => renderSession(session, toolSessions))}
             </ul>
           </div>
@@ -281,8 +290,8 @@ export function ProjectSidebar({
           <TriangleAlert size={13} />
           <span>{snapshot.warning}</span>
           {!snapshot.writable && snapshot.source === "backup" ? (
-            <button type="button" onClick={onRestoreBackup} aria-label="Restore registry from backup">
-              Restore
+            <button type="button" onClick={onRestoreBackup} aria-label="백업에서 레지스트리 복구">
+              복구
             </button>
           ) : null}
         </div>
@@ -290,9 +299,9 @@ export function ProjectSidebar({
       <UpdateBadge />
       <footer className="sidebar-footer">
         <span className="connection-dot" aria-hidden="true" />
-        <span>{projects.length} folders</span>
+        <span>폴더 {projects.length}개</span>
         <span className="footer-separator">/</span>
-        <span>{sessions.length + toolSessions.length} sessions</span>
+        <span>세션 {sessions.length + toolSessions.length}개</span>
       </footer>
     </aside>
   );

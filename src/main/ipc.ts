@@ -2,6 +2,7 @@ import path from "node:path";
 import type {
   CreateTerminalInput,
   CreateToolTerminalInput,
+  GitStatusResult,
   ProjectMetadataPatch,
   ProviderAvailability,
   ResumeTerminalInput,
@@ -44,12 +45,14 @@ interface UpdaterGateway {
   check(): Promise<void>;
   install(): Promise<void>;
   openReleases(): void;
+  openRepository(): void;
 }
 
 interface ProjectActionsGateway {
   reveal(rootPath: string): Promise<void>;
   openInEditor(rootPath: string): Promise<void>;
   openOnGitHub(rootPath: string): Promise<void>;
+  gitStatus(rootPath: string): Promise<GitStatusResult>;
 }
 
 interface MainIpcDependencies {
@@ -124,7 +127,11 @@ function validateResumeInput(value: unknown): ResumeTerminalInput {
 }
 
 function validateProjectPatch(value: unknown): ProjectMetadataPatch {
-  const patch = exactObject(value, ["displayName", "status", "memo", "hidden", "order"], "Project metadata patch");
+  const patch = exactObject(
+    value,
+    ["displayName", "status", "memo", "tracks", "hidden", "order"],
+    "Project metadata patch",
+  );
   return patch as ProjectMetadataPatch;
 }
 
@@ -191,6 +198,9 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("projects:open-github", async (_event, projectId: unknown) =>
     dependencies.projectActions.openOnGitHub(await projectRoot(nonEmptyString(projectId, "Project id"))),
   );
+  ipc.handle("projects:git-status", async (_event, projectId: unknown) =>
+    dependencies.projectActions.gitStatus(await projectRoot(nonEmptyString(projectId, "Project id"))),
+  );
   ipc.handle("providers:availability", () => dependencies.getAvailability());
   ipc.handle("terminals:list", () => dependencies.coordinator.list());
   ipc.handle("terminals:state", () => dependencies.coordinator.state());
@@ -234,4 +244,5 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("updater:check", () => dependencies.updater.check());
   ipc.handle("updater:install", () => dependencies.updater.install());
   ipc.handle("app:open-releases", () => dependencies.updater.openReleases());
+  ipc.handle("app:open-repository", () => dependencies.updater.openRepository());
 }

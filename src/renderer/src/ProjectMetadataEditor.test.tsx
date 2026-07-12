@@ -38,8 +38,8 @@ describe("ProjectMetadataEditor", () => {
     const update = vi.fn().mockResolvedValue(updated);
     const { onSaved, onClose } = mountEditor(update);
 
-    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Atlas Prime" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.change(screen.getByLabelText("표시 이름"), { target: { value: "Atlas Prime" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated));
     expect(update).toHaveBeenCalledWith(project.id, { displayName: "Atlas Prime" });
@@ -51,9 +51,9 @@ describe("ProjectMetadataEditor", () => {
     const update = vi.fn().mockResolvedValue(updated);
     mountEditor(update);
 
-    expect(screen.getByLabelText("Display name")).toHaveAttribute("placeholder", "atlas");
-    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "   " } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByLabelText("표시 이름")).toHaveAttribute("placeholder", "atlas");
+    fireEvent.change(screen.getByLabelText("표시 이름"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledWith(project.id, { displayName: null }));
   });
@@ -62,10 +62,10 @@ describe("ProjectMetadataEditor", () => {
     const update = vi.fn();
     const { onSaved, onClose } = mountEditor(update);
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(update).not.toHaveBeenCalled();
     expect(onSaved).not.toHaveBeenCalled();
@@ -75,8 +75,8 @@ describe("ProjectMetadataEditor", () => {
     const update = vi.fn().mockRejectedValue(new Error("registry is read-only"));
     const { onSaved, onClose } = mountEditor(update);
 
-    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Atlas Prime" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.change(screen.getByLabelText("표시 이름"), { target: { value: "Atlas Prime" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await screen.findByRole("alert");
     expect(screen.getByRole("alert")).toHaveTextContent("registry is read-only");

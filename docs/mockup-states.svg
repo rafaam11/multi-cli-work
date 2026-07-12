@@ -57,10 +57,10 @@
   <!-- ── tray menu ── -->
   <text x="366" y="164" font-size="11" font-weight="700" fill="#717b76" letter-spacing="0.5">트레이</text>
   <rect x="366" y="178" width="200" height="90" rx="6" fill="#202524" stroke="#46504c"/>
-  <text x="382" y="200" font-size="10.5" fill="#e7ebe8">Show Multi CLI Work</text>
-  <text x="382" y="223" font-size="10.5" fill="#e7ebe8">Check for Updates</text>
+  <text x="382" y="200" font-size="10.5" fill="#e7ebe8">멀티 터미널 작업기 표시</text>
+  <text x="382" y="223" font-size="10.5" fill="#e7ebe8">업데이트 확인</text>
   <line x1="374" y1="234" x2="558" y2="234" stroke="#343b38"/>
-  <text x="382" y="254" font-size="10.5" fill="#e7ebe8">Quit</text>
+  <text x="382" y="254" font-size="10.5" fill="#e7ebe8">종료</text>
   <text x="366" y="286" font-size="9.5" fill="#717b76">창을 닫아도 세션은 계속 돈다 · Quit만이 정상 종료</text>
 
   <!-- ── update badge states ── -->

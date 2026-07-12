@@ -13,7 +13,7 @@ import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { readSessionTitle } from "./providers/session-title";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
-import { checkForUpdates, openReleasesPage, updaterStatus } from "./updater";
+import { checkForUpdates, openReleasesPage, openRepositoryPage, updaterStatus } from "./updater";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
 import {
   RestartingTerminalWorker,
@@ -98,6 +98,7 @@ export async function createDesktopRuntime(
       check: checkForUpdates,
       install: installUpdate,
       openReleases: openReleasesPage,
+      openRepository: openRepositoryPage,
     },
     projectActions: createProjectActions({ getExecutables }),
     appVersion: () => app.getVersion(),
@@ -151,10 +152,10 @@ export async function createDesktopRuntime(
       const session = coordinator.list().find((candidate) => candidate.id === event.sessionId);
       const title = session
         ? `${session.kind === "claude" ? "Claude" : "Codex"} · ${path.basename(session.cwd)}`
-        : "Multi CLI Work";
+        : "멀티 터미널 작업기";
       const notification = new Notification({
         title,
-        body: event.status === "awaiting-approval" ? "Approval required" : "Waiting for input",
+        body: event.status === "awaiting-approval" ? "승인이 필요합니다" : "입력을 기다리는 중입니다",
         silent: false,
       });
       notification.on("click", showMainWindow);

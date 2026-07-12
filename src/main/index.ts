@@ -28,7 +28,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     backgroundColor: "#161918",
-    title: "Multi CLI Work",
+    title: "멀티 터미널 작업기",
     icon: nativeImage.createFromDataURL(trayIconDataUrl(32)),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
@@ -81,8 +81,8 @@ async function confirmStoppingSessions(title: string, message: string, confirmLa
     type: "warning",
     title,
     message,
-    detail: "Open Codex, Claude, and PowerShell processes managed by this app will be terminated.",
-    buttons: ["Cancel", confirmLabel],
+    detail: "이 앱이 관리하는 Codex, Claude, PowerShell 프로세스가 종료됩니다.",
+    buttons: ["취소", confirmLabel],
     defaultId: 0,
     cancelId: 0,
     noLink: true,
@@ -99,9 +99,9 @@ async function requestQuit(): Promise<void> {
   quitRequestInProgress = true;
   try {
     const confirmed = await confirmStoppingSessions(
-      "Quit Multi CLI Work",
-      "Quit and stop all running sessions?",
-      "Quit",
+      "멀티 터미널 작업기 종료",
+      "종료하고 실행 중인 모든 세션을 중지할까요?",
+      "종료",
     );
     if (!confirmed) return;
     await runtime.dispose();
@@ -120,9 +120,9 @@ async function installUpdateAndQuit(): Promise<void> {
   quitRequestInProgress = true;
   try {
     const confirmed = await confirmStoppingSessions(
-      "Install update",
-      "Restart now to install the update?",
-      "Restart",
+      "업데이트 설치",
+      "지금 재시작하여 업데이트를 설치할까요?",
+      "재시작",
     );
     if (!confirmed) return;
     await runtime.dispose();
@@ -140,13 +140,13 @@ function createTray(): Tray {
     console.error("Tray icon failed to decode; the tray icon will be invisible.");
   }
   const nextTray = new Tray(icon);
-  nextTray.setToolTip("Multi CLI Work");
+  nextTray.setToolTip("멀티 터미널 작업기");
   nextTray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Show Multi CLI Work", click: showMainWindow },
-      { label: "Check for Updates", click: () => void checkForUpdates() },
+      { label: "멀티 터미널 작업기 표시", click: showMainWindow },
+      { label: "업데이트 확인", click: () => void checkForUpdates() },
       { type: "separator" },
-      { label: "Quit", click: () => void requestQuit() },
+      { label: "종료", click: () => void requestQuit() },
     ]),
   );
   nextTray.on("double-click", showMainWindow);
@@ -177,8 +177,8 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       await dialog.showMessageBox({
         type: "error",
-        title: "Multi CLI Work",
-        message: "The app could not start.",
+        title: "멀티 터미널 작업기",
+        message: "앱을 시작할 수 없습니다.",
         detail: error instanceof Error ? error.message : String(error),
       });
       app.quit();

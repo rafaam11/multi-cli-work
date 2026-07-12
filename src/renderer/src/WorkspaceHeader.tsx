@@ -61,13 +61,13 @@ export function WorkspaceHeader({
   const finished = selectedSession?.status === "exited" || selectedSession?.status === "error";
   const canLaunch = Boolean(selectedProject) && !projectMissing && !pendingAction;
   const title = selectedSession?.tool
-    ? "Tools"
+    ? "도구"
     : selectedProject
       ? projectName(selectedProject)
-      : "No folder selected";
+      : "선택된 폴더 없음";
   const subtitle = selectedSession?.tool
     ? selectedSession.cwd
-    : (selectedProject?.rootPath ?? "Open a folder to start a session");
+    : (selectedProject?.rootPath ?? "폴더를 열어 세션을 시작하세요");
 
   return (
     <header className="workspace-header">
@@ -102,8 +102,8 @@ export function WorkspaceHeader({
             type="button"
             onClick={onRelinkProject}
             disabled={readOnly}
-            aria-label="Relink folder"
-            title="Relink folder"
+            aria-label="폴더 다시 연결"
+            title="폴더 다시 연결"
           >
             <FolderOpen size={15} />
           </button>
@@ -114,11 +114,11 @@ export function WorkspaceHeader({
             type="button"
             onClick={onResumeSession}
             disabled={pendingAction || (projectMissing && !selectedSession.tool)}
-            aria-label="Resume session"
-            title={projectMissing && !selectedSession.tool ? "Relink the folder before resuming" : "Resume session"}
+            aria-label="세션 재개"
+            title={projectMissing && !selectedSession.tool ? "재개하려면 먼저 폴더를 다시 연결하세요" : "세션 재개"}
           >
             <RotateCcw size={14} />
-            <span>Resume</span>
+            <span>재개</span>
           </button>
         ) : null}
         {selectedSession && !finished ? (
@@ -127,8 +127,8 @@ export function WorkspaceHeader({
             type="button"
             onClick={onStopSession}
             disabled={pendingAction}
-            aria-label="Stop session"
-            title="Stop session"
+            aria-label="세션 중지"
+            title="세션 중지"
           >
             <CircleStop size={15} />
           </button>
@@ -139,8 +139,8 @@ export function WorkspaceHeader({
             type="button"
             onClick={onRemoveSession}
             disabled={pendingAction}
-            aria-label="Remove session"
-            title="Remove session"
+            aria-label="세션 제거"
+            title="세션 제거"
           >
             <Trash2 size={15} />
           </button>
@@ -162,9 +162,9 @@ export function WorkspaceHeader({
                   aria-label={details.menuLabel}
                   title={
                     !availability[kind]
-                      ? `${details.label} is not installed`
+                      ? `${details.label} 미설치`
                       : projectMissing
-                        ? "Relink the folder before starting a session"
+                        ? "세션을 시작하려면 먼저 폴더를 다시 연결하세요"
                         : details.menuLabel
                   }
                 >
@@ -181,8 +181,8 @@ export function WorkspaceHeader({
           <button
             className="icon-button"
             type="button"
-            aria-label="Tools"
-            title="Tools"
+            aria-label="도구"
+            title="도구"
             aria-expanded={toolsMenuOpen}
             aria-haspopup="menu"
             onClick={() => setToolsMenuOpen((open) => !open)}
@@ -205,11 +205,11 @@ export function WorkspaceHeader({
                       onStartTool(tool);
                     }}
                     aria-label={details.menuLabel}
-                    title={installed ? details.menuLabel : `${providerDetails[TOOL_PROVIDER[tool]].label} is not installed`}
+                    title={installed ? details.menuLabel : `${providerDetails[TOOL_PROVIDER[tool]].label} 미설치`}
                   >
                     <Wrench size={15} />
                     <span>{details.menuLabel}</span>
-                    {!installed ? <span className="provider-unavailable">Unavailable</span> : null}
+                    {!installed ? <span className="provider-unavailable">사용 불가</span> : null}
                   </button>
                 );
               })}

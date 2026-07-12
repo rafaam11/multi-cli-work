@@ -52,36 +52,36 @@ export function ProjectContextMenu({
     <div
       className="context-menu"
       role="menu"
-      aria-label={`Actions for ${projectName}`}
+      aria-label={`${projectName} 작업`}
       ref={menu}
       style={{ "--context-menu-x": `${x}px`, "--context-menu-y": `${y}px` } as CSSProperties}
     >
       <button type="button" role="menuitem" onClick={run(onReveal)}>
         <FolderOpen size={15} />
-        <span>Open in File Explorer</span>
+        <span>파일 탐색기에서 열기</span>
       </button>
       <button
         type="button"
         role="menuitem"
         disabled={!vscodeAvailable}
-        title={vscodeAvailable ? undefined : "VS Code was not found on PATH"}
+        title={vscodeAvailable ? undefined : "PATH에서 VS Code를 찾을 수 없습니다"}
         onClick={run(onOpenInEditor)}
       >
         <Code2 size={15} />
-        <span>Open in VS Code</span>
+        <span>VS Code에서 열기</span>
       </button>
       <button type="button" role="menuitem" onClick={run(onOpenOnGitHub)}>
         <ExternalLink size={15} />
-        <span>Open on GitHub</span>
+        <span>GitHub에서 열기</span>
       </button>
       <div className="context-menu-separator" role="separator" />
       <button type="button" role="menuitem" onClick={run(onRename)}>
         <Pencil size={15} />
-        <span>Rename</span>
+        <span>이름 변경</span>
       </button>
       <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
         <Trash2 size={15} />
-        <span>Remove from list</span>
+        <span>목록에서 제거</span>
       </button>
     </div>
   );
