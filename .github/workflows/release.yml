@@ -28,6 +28,11 @@ jobs:
           node-version: 20
           cache: npm
 
+      # node-gyp이 번들한 gyp는 Python 3.12에서 제거된 distutils를 import한다(러너 기본은 3.12+).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       # postinstall의 electron-builder install-app-deps가 node-pty를 Electron ABI로 리빌드한다.
       - name: Install dependencies
         run: npm ci
