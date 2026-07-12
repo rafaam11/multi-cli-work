@@ -1,9 +1,10 @@
 import type { GitStatusResult, ProjectMetadataPatch, ProviderAvailability, TerminalSessionView } from "@shared/api-types";
 import type { ProjectTrack, SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import { Code2, ExternalLink, FolderOpen, RefreshCw, Trash2 } from "lucide-react";
+import { FolderOpen, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { projectName, providerDetails, relativeTime, sessionLabel, statusLabels } from "./session-labels";
+import { GitHubIcon, VSCodeIcon } from "./brand-icons";
+import { projectName, providerAccentClass, providerDetails, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 
 const TERMINAL_KINDS: TerminalKind[] = ["powershell", "claude", "codex"];
 
@@ -177,7 +178,7 @@ export function ProjectDetailPage({
                       onClick={() => onStartSession(kind)}
                       aria-label={`${details.label} 세션 시작`}
                     >
-                      <Icon size={15} />
+                      <Icon size={15} className={providerAccentClass[kind]} />
                       <span>{details.label}</span>
                     </button>
                   );
@@ -221,11 +222,11 @@ export function ProjectDetailPage({
               title={availability.vscode ? undefined : "PATH에서 VS Code를 찾을 수 없습니다"}
               onClick={onOpenInEditor}
             >
-              <Code2 size={14} />
+              <VSCodeIcon size={14} className="brand-icon-vscode" />
               <span>VS Code에서 열기</span>
             </button>
             <button type="button" onClick={onOpenOnGitHub}>
-              <ExternalLink size={14} />
+              <GitHubIcon size={14} />
               <span>GitHub에서 열기</span>
             </button>
           </div>
