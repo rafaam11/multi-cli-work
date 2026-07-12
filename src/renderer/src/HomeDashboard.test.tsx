@@ -171,6 +171,26 @@ describe("HomeDashboard", () => {
     expect(onSelectSession).toHaveBeenCalledWith(session);
   });
 
+  it("uses a provider title that arrived after the activity entry was recorded", () => {
+    installUpdatesApi();
+    const session = makeSession({ id: "codex-1", kind: "codex", title: "알림 정책 구현" });
+    const activityLog: ActivityEntry[] = [
+      {
+        id: "entry-1",
+        timestamp: "2026-07-11T00:00:00.000Z",
+        projectId: atlas.id,
+        sessionId: session.id,
+        sessionLabel: "Codex",
+        fromStatus: "working",
+        toStatus: "awaiting-input",
+      },
+    ];
+
+    render(<HomeDashboard {...baseProps()} sessions={[session]} activityLog={activityLog} />);
+
+    expect(within(screen.getByRole("region", { name: "최근 활동" })).getByText("알림 정책 구현")).toBeInTheDocument();
+  });
+
   it("shows empty states when there is nothing to display yet", () => {
     installUpdatesApi();
     render(<HomeDashboard {...baseProps()} projects={[]} sessions={[]} />);

@@ -217,27 +217,32 @@ export function HomeDashboard({
             <p className="home-empty">아직 이 세션에 활동이 없습니다</p>
           ) : (
             <ul className="activity-feed">
-              {activityLog.map((entry) => (
-                <li key={entry.id}>
-                  <button
-                    type="button"
-                    className={`activity-row status-${entry.toStatus}`}
-                    onClick={() => {
-                      const session = sessions.find((candidate) => candidate.id === entry.sessionId);
-                      if (session) onSelectSession(session);
-                    }}
-                  >
-                    <Clock size={12} aria-hidden="true" />
-                    <span className="activity-copy">
-                      <span className="activity-name">{entry.sessionLabel}</span>
-                      <span className="activity-transition">
-                        {statusLabels[entry.fromStatus]} &rarr; {statusLabels[entry.toStatus]}
+              {activityLog.map((entry) => {
+                const session = sessions.find((candidate) => candidate.id === entry.sessionId);
+                const label = session
+                  ? sessionLabel(session, sessions.filter((candidate) => candidate.projectId === session.projectId))
+                  : entry.sessionLabel;
+                return (
+                  <li key={entry.id}>
+                    <button
+                      type="button"
+                      className={`activity-row status-${entry.toStatus}`}
+                      onClick={() => {
+                        if (session) onSelectSession(session);
+                      }}
+                    >
+                      <Clock size={12} aria-hidden="true" />
+                      <span className="activity-copy">
+                        <span className="activity-name">{label}</span>
+                        <span className="activity-transition">
+                          {statusLabels[entry.fromStatus]} &rarr; {statusLabels[entry.toStatus]}
+                        </span>
                       </span>
-                    </span>
-                    <span className="activity-time">{relativeTime(entry.timestamp)}</span>
-                  </button>
-                </li>
-              ))}
+                      <span className="activity-time">{relativeTime(entry.timestamp)}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
