@@ -1,4 +1,5 @@
-import { Code2, ExternalLink, FolderOpen, Pencil, Trash2 } from "lucide-react";
+import { FolderOpen, Pencil, Trash2 } from "lucide-react";
+import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 import { useEffect, useRef, type CSSProperties } from "react";
 
 export interface ProjectContextMenuProps {
@@ -67,11 +68,11 @@ export function ProjectContextMenu({
         title={vscodeAvailable ? undefined : "PATH에서 VS Code를 찾을 수 없습니다"}
         onClick={run(onOpenInEditor)}
       >
-        <Code2 size={15} />
+        <VSCodeIcon size={15} className="brand-icon-vscode" />
         <span>VS Code에서 열기</span>
       </button>
       <button type="button" role="menuitem" onClick={run(onOpenOnGitHub)}>
-        <ExternalLink size={15} />
+        <GitHubIcon size={15} />
         <span>GitHub에서 열기</span>
       </button>
       <div className="context-menu-separator" role="separator" />
