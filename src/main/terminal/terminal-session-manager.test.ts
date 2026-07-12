@@ -139,6 +139,19 @@ describe("TerminalSessionManager", () => {
     expect(events).toHaveBeenLastCalledWith({ type: "status", sessionId: "session-1", status: "working" });
   });
 
+  it("treats a completed Codex response carried in an OSC 9 payload as input wait", () => {
+    const pty = new FakePty();
+    const events = vi.fn();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, events);
+    manager.create({ ...launchSpec(), kind: "codex" });
+
+    manager.write("session-1", "continue\r");
+    pty.emitData("\u001b]9;작업을 완료했습니다");
+    pty.emitData("\u0007");
+
+    expect(events).toHaveBeenLastCalledWith({ type: "status", sessionId: "session-1", status: "awaiting-input" });
+  });
+
   it("allows an exited tab to be relaunched with the same app session id", () => {
     const first = new FakePty();
     const second = new FakePty();
