@@ -10,6 +10,7 @@ const terminalHarness = vi.hoisted(() => ({
   instances: [] as Array<{
     cols: number;
     rows: number;
+    options: { cursorBlink?: boolean; cursorStyle?: string };
     write: ReturnType<typeof vi.fn>;
     paste: ReturnType<typeof vi.fn>;
     emitInput(data: string): void;
@@ -27,10 +28,12 @@ vi.mock("@xterm/xterm", () => ({
     write = vi.fn();
     paste = vi.fn();
     selection = "";
+    readonly options: { cursorBlink?: boolean; cursorStyle?: string };
     private readonly inputListeners = new Set<(data: string) => void>();
     private keyHandler: ((event: KeyboardEvent) => boolean) | null = null;
 
-    constructor() {
+    constructor(options: { cursorBlink?: boolean; cursorStyle?: string }) {
+      this.options = options;
       terminalHarness.instances.push(this);
     }
 
@@ -762,6 +765,7 @@ describe("folder workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "PowerShell 세션 열기" }));
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(powershellSession.id));
     const terminal = terminalHarness.instances.at(-1)!;
+    expect(terminal.options).toMatchObject({ cursorBlink: false, cursorStyle: "bar" });
     expect(terminal.write).toHaveBeenCalledWith(`${powershellSession.id} replay\r\n`);
 
     terminal.emitInput("Get-Location\r");

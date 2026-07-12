@@ -41,7 +41,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
     const pendingOutput: Array<{ data: string; sequence: number }> = [];
     const terminal = new Terminal({
       allowTransparency: false,
-      cursorBlink: true,
+      cursorBlink: false,
       cursorStyle: "bar",
       fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
       fontSize: 13,
