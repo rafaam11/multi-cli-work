@@ -19,6 +19,21 @@
   --red: #d46a6a;
   --green: #73b987;
   --violet: #aa8ccc;
+  --brand-powershell: #5391fe;
+  --brand-vscode: #007acc;
+  --brand-claude: #d97757;
+}
+
+.brand-icon-powershell {
+  color: var(--brand-powershell);
+}
+
+.brand-icon-vscode {
+  color: var(--brand-vscode);
+}
+
+.brand-icon-claude {
+  color: var(--brand-claude);
 }
 
 * {
