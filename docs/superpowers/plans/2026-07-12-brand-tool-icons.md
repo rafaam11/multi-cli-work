@@ -807,22 +807,135 @@ Expected: PASS — `e2e/desktop.spec.ts` queries every button it touches by acce
 
 - [ ] **Step 2: Launch the built app and screenshot every touched location**
 
-Reuse the `_electron` Playwright pattern already used earlier in this session to verify the Git-status refresh button (a temp script copied into the repo root so `node_modules` resolves, using a temp registry with one sample project — see that session's verification for the exact scaffold). Extend it to capture:
+Create a throwaway verification script at the repo root (so `node_modules` resolves via normal Node module lookup), run it, then delete it in Step 4. It reuses the same `_electron` launch shape as `e2e/desktop.spec.ts`, with a temp project + temp registry so it doesn't touch real user data.
 
-- The workspace header launcher row (`.launcher-row`) — PowerShell/Claude Code/Codex buttons distinguishable, PowerShell and Claude Code tinted, Codex monochrome.
-- `ProjectDetailPage`'s empty-state session launcher (`.detail-launcher-row`) — same three, same treatment.
-- `ProjectDetailPage`'s "VS Code에서 열기"/"GitHub에서 열기" buttons (`.detail-actions-row`) — VS Code tinted blue, GitHub monochrome.
-- Right-click a project row to open `ProjectContextMenu` — same VS Code/GitHub check.
-- The home dashboard (`HomeDashboard`) — CLI status list, quick-launch icon row, and the "릴리스 노트"/"GitHub 저장소" buttons all show the new marks.
-- Expand a project in the sidebar with at least one session of each kind — session-row icons show the new shapes but keep their status color (start a session, confirm the icon color follows `--session-accent`, not the brand color).
+Create `.verify-brand-icons.mjs`:
+
+```js
+import { _electron as electron } from "@playwright/test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
+const NOW = "2026-07-11T12:00:00.000Z";
+const SHOT_DIR = path.resolve("brand-icon-shots");
+
+async function main() {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "multi-cli-work-brand-icons-"));
+  const projectRoot = path.join(tempRoot, "sample-project");
+  await Promise.all([
+    fs.mkdir(projectRoot, { recursive: true }),
+    fs.mkdir(path.join(tempRoot, "registry"), { recursive: true }),
+    fs.mkdir(path.join(tempRoot, "codex-sessions"), { recursive: true }),
+  ]);
+  await fs.writeFile(
+    path.join(tempRoot, "registry", "projects.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        updatedAt: NOW,
+        projects: {
+          [PROJECT_ID]: {
+            id: PROJECT_ID,
+            rootPath: projectRoot,
+            displayName: "Sample Project",
+            sources: ["manual"],
+            providerRefs: { claude: [], codex: [] },
+            status: "진행중",
+            memo: "",
+            tracks: [],
+            hidden: false,
+            order: 0,
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  await fs.mkdir(SHOT_DIR, { recursive: true });
+
+  const app = await electron.launch({
+    args: [path.resolve("out/main/index.js")],
+    env: {
+      ...process.env,
+      ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+      MULTI_CLI_WORK_USER_DATA: path.join(tempRoot, "user-data"),
+      MULTI_CLI_WORK_REGISTRY_PATH: path.join(tempRoot, "registry", "projects.json"),
+      MULTI_CLI_WORK_CODEX_SESSIONS_DIR: path.join(tempRoot, "codex-sessions"),
+    },
+  });
+  const page = await app.firstWindow();
+  await page.waitForSelector('button[aria-label="Sample Project 폴더 선택"]', { timeout: 15000 });
+
+  // 1. Workspace header launcher row: PowerShell/Claude Code/Codex, PowerShell+Claude tinted, Codex monochrome.
+  await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+  await page.waitForSelector(".launcher-row", { timeout: 15000 });
+  await page.locator(".launcher-row").screenshot({ path: path.join(SHOT_DIR, "01-workspace-launcher-row.png") });
+
+  // 2. Home dashboard: CLI status list, quick-launch icons, 릴리스 노트/GitHub 저장소 buttons.
+  await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
+  await page.waitForSelector('section[aria-label="홈 대시보드"]', { timeout: 15000 });
+  await page.locator('section[aria-label="CLI 및 업데이트 상태"]').screenshot({ path: path.join(SHOT_DIR, "02-home-cli-status.png") });
+  await page.locator('section[aria-label="빠른 실행"]').screenshot({ path: path.join(SHOT_DIR, "03-home-quick-launch.png") });
+  await page.locator(".app-shortcut-row").screenshot({ path: path.join(SHOT_DIR, "04-home-github-buttons.png") });
+
+  // 3. Project detail page: empty-state launcher row + VS Code/GitHub buttons.
+  await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+  await page.waitForSelector('section[aria-label="프로젝트 상세"]', { timeout: 15000 });
+  await page.locator(".detail-launcher-row").screenshot({ path: path.join(SHOT_DIR, "05-detail-launcher-row.png") });
+  await page.locator(".detail-actions-row").screenshot({ path: path.join(SHOT_DIR, "06-detail-vscode-github.png") });
+
+  // 4. Project context menu: VS Code/GitHub items.
+  await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
+  await page.waitForSelector('div[role="menu"][aria-label="Sample Project 작업"]', { timeout: 15000 });
+  await page.locator('div[role="menu"][aria-label="Sample Project 작업"]').screenshot({ path: path.join(SHOT_DIR, "07-context-menu.png") });
+  await page.keyboard.press("Escape");
+
+  // 5. Sidebar session row: start a real PowerShell session, confirm the icon keeps status color.
+  await page.getByRole("button", { name: "새 PowerShell 세션" }).click();
+  await page.waitForSelector(".session-row", { timeout: 15000 });
+  await page.locator(".project-navigation").screenshot({ path: path.join(SHOT_DIR, "08-sidebar-session-row.png") });
+
+  await app.close();
+  await fs.rm(tempRoot, { recursive: true, force: true });
+  console.log(`done — screenshots in ${SHOT_DIR}`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+Run: `node .verify-brand-icons.mjs`
+Expected: prints `done — screenshots in <path>`, producing 8 PNGs in `brand-icon-shots/`.
+
+Then **look at each screenshot** (read the PNG files) and confirm:
+- `01-workspace-launcher-row.png` / `05-detail-launcher-row.png`: PowerShell icon is blue-tinted, Claude Code icon is coral-tinted, Codex icon is the app's default text color (monochrome) — all three visibly different shapes from each other and from the old robot/bracket icons.
+- `06-detail-vscode-github.png` / `07-context-menu.png`: VS Code icon is blue-tinted, GitHub icon (the octocat mark) is monochrome.
+- `02-home-cli-status.png` / `03-home-quick-launch.png`: same three provider icons, tinted the same way, at their smaller sizes (14px/13px) — confirm they're still legible, not muddy.
+- `04-home-github-buttons.png`: both "릴리스 노트" and "GitHub 저장소" show the GitHub mark.
+- `08-sidebar-session-row.png`: the PowerShell session row's icon is recognizably the PowerShell mark, but colored by session status (`--session-accent`, e.g. teal for `working`/`starting`), **not** brand blue — this is the one place brand color must NOT appear.
 
 - [ ] **Step 3: Confirm no leftover references in the five touched files**
 
 Run: `grep -n "Bot\|Code2\|ExternalLink" src/renderer/src/session-labels.ts src/renderer/src/WorkspaceHeader.tsx src/renderer/src/ProjectDetailPage.tsx src/renderer/src/ProjectContextMenu.tsx src/renderer/src/HomeDashboard.tsx`
 Expected: no output — `Bot`, `Code2`, and `ExternalLink` (the three lucide icons this plan replaces) are fully removed from every file this plan touches.
 
-- [ ] **Step 4: Clean up any temp verification script**
+- [ ] **Step 4: Clean up the temp verification script**
 
-If a scratch script was copied into the repo root for the Playwright check in Step 2, delete it and confirm `git status --short` is clean of anything other than this plan's intended file changes.
+```bash
+rm -f .verify-brand-icons.mjs
+rm -rf brand-icon-shots
+git status --short
+```
+
+Expected: `git status --short` shows nothing beyond this plan's intended file changes (no leftover `.verify-brand-icons.mjs` or `brand-icon-shots/`).
 
 No commit for this task — it is verification-only.
