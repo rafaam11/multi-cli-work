@@ -529,15 +529,41 @@ describe("folder workspace", () => {
     await waitFor(() => expect(harness.api.projects.remove).toHaveBeenCalledWith(dashboard.id));
   });
 
-  it("offers one-click launchers for a folder with no sessions and the dropdown once it has one", async () => {
-    const harness = createApi({ sessions: [] });
-    window.multiCliWork = harness.api;
+  it("keeps the launchers exposed whether or not the folder already has sessions", async () => {
+    const empty = createApi({ sessions: [] });
+    window.multiCliWork = empty.api;
+    const view = render(<App />);
+
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    expect(screen.getByRole("button", { name: "New PowerShell session" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "New Codex session" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "New session" })).not.toBeInTheDocument();
+
+    view.unmount();
+    const busy = createApi();
+    window.multiCliWork = busy.api;
     render(<App />);
 
     await screen.findByRole("button", { name: "Select folder Atlas" });
     expect(screen.queryByRole("button", { name: "New session" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New Codex session" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "New Claude Code session" }));
 
+    await waitFor(() =>
+      expect(busy.api.terminals.create).toHaveBeenCalledWith({
+        projectId: atlas.id,
+        kind: "claude",
+        cols: 80,
+        rows: 24,
+      }),
+    );
+  });
+
+  it("persists selection and creates only available provider sessions", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Select folder Atlas" }));
     fireEvent.click(screen.getByRole("button", { name: "New PowerShell session" }));
 
     await waitFor(() =>
@@ -549,30 +575,32 @@ describe("folder workspace", () => {
       }),
     );
     expect(harness.api.terminals.select).toHaveBeenCalledWith(atlas.id, harness.created.id);
-    await screen.findByRole("button", { name: "New session" });
+    expect((await screen.findAllByText("Starting")).length).toBeGreaterThan(0);
   });
 
-  it("persists selection and creates only available provider sessions", async () => {
-    const harness = createApi();
+  it("keeps sessions in creation order when one is opened or changes status", async () => {
+    const second: TerminalSessionView = {
+      ...powershellSession,
+      id: "session-pwsh-second",
+      createdAt: "2026-07-11T03:00:00.000Z",
+      updatedAt: "2026-07-11T03:00:00.000Z",
+    };
+    const harness = createApi({ sessions: [powershellSession, second] });
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Select folder Atlas" }));
-    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    await screen.findByRole("button", { name: "Select folder Atlas" });
+    const order = () =>
+      [...document.querySelectorAll(".session-row")].map((row) => row.getAttribute("aria-label"));
+    expect(order()).toEqual(["Open PowerShell 1 session", "Open PowerShell 2 session"]);
 
-    expect(screen.getByRole("menuitem", { name: "New Codex session" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("menuitem", { name: "New PowerShell session" }));
+    // Opening the newer session bumps its updatedAt; the tree must not reshuffle.
+    fireEvent.click(screen.getByRole("button", { name: "Open PowerShell 2 session" }));
+    await act(async () => {
+      harness.emit({ type: "status", sessionId: second.id, status: "working" });
+    });
 
-    await waitFor(() =>
-      expect(harness.api.terminals.create).toHaveBeenCalledWith({
-        projectId: atlas.id,
-        kind: "powershell",
-        cols: 80,
-        rows: 24,
-      }),
-    );
-    expect(harness.api.terminals.select).toHaveBeenCalledWith(atlas.id, harness.created.id);
-    expect((await screen.findAllByText("Starting")).length).toBeGreaterThan(0);
+    expect(order()).toEqual(["Open PowerShell 1 session", "Open PowerShell 2 session"]);
   });
 
   it("updates a CLI in a maintenance session that belongs to no folder", async () => {
@@ -803,13 +831,13 @@ describe("folder workspace", () => {
     render(<App />);
 
     expect(await screen.findByText("Folder is missing")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New session" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "New PowerShell session" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Relink folder" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Relink folder" }));
     await waitFor(() => expect(harness.api.projects.relink).toHaveBeenCalledWith(atlas.id));
     expect(screen.queryByText("Folder is missing")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New session" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "New PowerShell session" })).toBeEnabled();
   });
 
   it("clamps a draggable sidebar between stable minimum and viewport-aware maximum widths", async () => {

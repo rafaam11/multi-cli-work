@@ -121,21 +121,24 @@ describe("VS Code launch", () => {
     expect(vsCodeExecutableCandidate("/usr/local/bin/code")).toBeNull();
   });
 
-  it("spawns the resolved executable directly so no shell quoting is needed", () => {
+  it("spawns the resolved executable directly, unhidden, so no shell quoting is needed", () => {
     expect(
       buildEditorSpawn(base.executables.vscode, base.cwd, "C:\\Programs\\VS Code\\Code.exe"),
     ).toEqual({
       command: "C:\\Programs\\VS Code\\Code.exe",
       args: [base.cwd],
       shell: false,
+      // windowsHide would put SW_HIDE in STARTUPINFO and VS Code would start with no window.
+      windowsHide: false,
     });
   });
 
-  it("falls back to a quoted shell invocation when only a cmd shim exists", () => {
+  it("falls back to a quoted shell invocation when only a cmd shim exists, hiding only the console", () => {
     expect(buildEditorSpawn(base.executables.vscode, base.cwd, null)).toEqual({
       command: `"${base.executables.vscode}"`,
       args: [`"${base.cwd}"`],
       shell: true,
+      windowsHide: true,
     });
   });
 
@@ -144,6 +147,7 @@ describe("VS Code launch", () => {
       command: "/usr/local/bin/code",
       args: ["/home/me/project"],
       shell: false,
+      windowsHide: false,
     });
   });
 });

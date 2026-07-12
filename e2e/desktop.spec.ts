@@ -79,9 +79,9 @@ test.describe.serial("Multi CLI Work desktop", () => {
   test("runs a real PowerShell PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "Multi CLI Work" })).toBeVisible();
     await page.getByRole("button", { name: "Select folder Sample Project" }).click();
-    // A folder with no sessions offers the launchers directly instead of the dropdown.
-    await expect(page.getByRole("button", { name: "New session" })).toBeHidden();
     await page.getByRole("button", { name: "New PowerShell session" }).click();
+    // The launchers stay exposed after the folder has a session.
+    await expect(page.getByRole("button", { name: "New Claude Code session" })).toBeVisible();
 
     const terminal = page.getByRole("region", { name: "powershell terminal" });
     await expect(terminal).toBeVisible();

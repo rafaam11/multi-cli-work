@@ -39,6 +39,14 @@ interface ProjectSidebarProps {
   onRestoreBackup(): void;
 }
 
+/**
+ * Sessions keep the order they were created in. Sorting by updatedAt would shuffle the tree every
+ * time a session emitted a status change, so merely opening one would jump it to the top.
+ */
+function byCreation(left: TerminalSessionView, right: TerminalSessionView): number {
+  return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+}
+
 export function ProjectSidebar({
   snapshot,
   projects,
@@ -145,7 +153,7 @@ export function ProjectSidebar({
               const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
               const projectSessions = sessions
                 .filter((session) => session.projectId === project.id)
-                .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+                .sort(byCreation);
               return (
                 <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
                   <div
@@ -203,7 +211,7 @@ export function ProjectSidebar({
               <span>Tools</span>
             </div>
             <ul className="session-tree" role="group" aria-label="Maintenance sessions">
-              {toolSessions.map((session) => renderSession(session, toolSessions))}
+              {[...toolSessions].sort(byCreation).map((session) => renderSession(session, toolSessions))}
             </ul>
           </div>
         ) : null}

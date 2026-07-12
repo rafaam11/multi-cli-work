@@ -109,14 +109,22 @@ export interface EditorSpawnCommand {
   command: string;
   args: string[];
   shell: boolean;
+  /**
+   * `windowsHide` puts SW_HIDE in the child's STARTUPINFO, and a GUI app honours that for its own
+   * first window — setting it on the editor executable launches VS Code with no window at all.
+   * Only the cmd.exe wrapper, whose console we do want suppressed, may be hidden.
+   */
+  windowsHide: boolean;
 }
 
 export function buildEditorSpawn(cliPath: string, rootPath: string, resolvedExecutable: string | null): EditorSpawnCommand {
-  if (resolvedExecutable) return { command: resolvedExecutable, args: [rootPath], shell: false };
+  if (resolvedExecutable) return { command: resolvedExecutable, args: [rootPath], shell: false, windowsHide: false };
   // Node does not escape arguments when `shell` is set, so quote them here. Windows paths cannot
   // contain a double quote, and `&`/`^` are inert inside a quoted cmd.exe token.
-  if (/\.(cmd|bat)$/i.test(cliPath)) return { command: `"${cliPath}"`, args: [`"${rootPath}"`], shell: true };
-  return { command: cliPath, args: [rootPath], shell: false };
+  if (/\.(cmd|bat)$/i.test(cliPath)) {
+    return { command: `"${cliPath}"`, args: [`"${rootPath}"`], shell: true, windowsHide: true };
+  }
+  return { command: cliPath, args: [rootPath], shell: false, windowsHide: false };
 }
 
 export function pickWindowsExecutable(candidates: string[]): string | null {

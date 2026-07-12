@@ -101,9 +101,6 @@ export function App() {
   const selectedProjectMissing = Boolean(
     selectedProject && snapshot?.missingRootProjectIds.includes(selectedProject.id),
   );
-  const projectSessionCount = selectedProject
-    ? folderSessions.filter((session) => session.projectId === selectedProject.id).length
-    : 0;
 
   const maximumSidebarWidth = useCallback(
     () =>
@@ -481,7 +478,6 @@ export function App() {
           selectedProject={selectedProject}
           selectedSession={selectedSession}
           selectedSessionLabel={selectedSessionLabel}
-          projectSessionCount={projectSessionCount}
           projectMissing={selectedProjectMissing}
           availability={availability}
           pendingAction={pendingAction}

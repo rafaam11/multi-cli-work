@@ -1,7 +1,7 @@
 import type { ProviderAvailability, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, ToolCommand } from "@shared/terminal-types";
-import { ChevronDown, CircleStop, FolderOpen, MonitorDot, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
+import { CircleStop, FolderOpen, MonitorDot, RotateCcw, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { projectName, providerDetails, statusLabels, toolDetails } from "./session-labels";
 
@@ -16,7 +16,6 @@ interface WorkspaceHeaderProps {
   selectedProject: SharedProject | null;
   selectedSession: TerminalSessionView | null;
   selectedSessionLabel: string | null;
-  projectSessionCount: number;
   projectMissing: boolean;
   availability: ProviderAvailability;
   pendingAction: boolean;
@@ -45,7 +44,6 @@ export function WorkspaceHeader({
   selectedProject,
   selectedSession,
   selectedSessionLabel,
-  projectSessionCount,
   projectMissing,
   availability,
   pendingAction,
@@ -57,9 +55,7 @@ export function WorkspaceHeader({
   onRemoveSession,
   onRelinkProject,
 }: WorkspaceHeaderProps) {
-  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
-  const sessionAnchor = useDismissable(() => setSessionMenuOpen(false));
   const toolsAnchor = useDismissable(() => setToolsMenuOpen(false));
 
   const finished = selectedSession?.status === "exited" || selectedSession?.status === "error";
@@ -150,8 +146,8 @@ export function WorkspaceHeader({
           </button>
         ) : null}
 
-        {/* An empty folder gets one-click launchers; once it has sessions the dropdown keeps the header calm. */}
-        {selectedProject && projectSessionCount === 0 ? (
+        {/* The launchers stay out in the open whether or not the folder already has sessions. */}
+        {selectedProject ? (
           <div className="launcher-row">
             {TERMINAL_KINDS.map((kind) => {
               const details = providerDetails[kind];
@@ -164,7 +160,13 @@ export function WorkspaceHeader({
                   disabled={!canLaunch || !availability[kind]}
                   onClick={() => onStartSession(kind)}
                   aria-label={details.menuLabel}
-                  title={availability[kind] ? details.menuLabel : `${details.label} is not installed`}
+                  title={
+                    !availability[kind]
+                      ? `${details.label} is not installed`
+                      : projectMissing
+                        ? "Relink the folder before starting a session"
+                        : details.menuLabel
+                  }
                 >
                   <ProviderIcon size={15} />
                   <span>{details.label}</span>
@@ -172,49 +174,7 @@ export function WorkspaceHeader({
               );
             })}
           </div>
-        ) : (
-          <div className="session-menu-anchor" ref={sessionAnchor}>
-            <button
-              className="new-session-button"
-              type="button"
-              disabled={!canLaunch}
-              title={projectMissing ? "Relink the folder before starting a session" : "New session"}
-              aria-expanded={sessionMenuOpen}
-              aria-haspopup="menu"
-              onClick={() => setSessionMenuOpen((open) => !open)}
-            >
-              <Plus size={15} />
-              New session
-              <ChevronDown size={13} />
-            </button>
-            {sessionMenuOpen ? (
-              <div className="provider-menu" role="menu">
-                {TERMINAL_KINDS.map((kind) => {
-                  const details = providerDetails[kind];
-                  const ProviderIcon = details.icon;
-                  return (
-                    <button
-                      key={kind}
-                      type="button"
-                      role="menuitem"
-                      disabled={!availability[kind]}
-                      onClick={() => {
-                        setSessionMenuOpen(false);
-                        onStartSession(kind);
-                      }}
-                      aria-label={details.menuLabel}
-                      title={availability[kind] ? details.menuLabel : `${details.label} is not installed`}
-                    >
-                      <ProviderIcon size={15} />
-                      <span>{details.label}</span>
-                      {!availability[kind] ? <span className="provider-unavailable">Unavailable</span> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-        )}
+        ) : null}
 
         {/* Updating a CLI is not folder work, so this menu stays usable with no folder open. */}
         <div className="session-menu-anchor" ref={toolsAnchor}>

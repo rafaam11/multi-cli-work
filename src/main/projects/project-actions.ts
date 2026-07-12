@@ -38,13 +38,21 @@ export function createProjectActions(options: ProjectActionsOptions): ProjectAct
       const candidate = vsCodeExecutableCandidate(vscode);
       const resolved = candidate && (await fileExists(candidate)) ? candidate : null;
       const editor = buildEditorSpawn(vscode, rootPath, resolved);
-      const child = spawn(editor.command, editor.args, {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-        shell: editor.shell,
+      // spawn reports failure through an `error` event, not a throw. Without this the editor
+      // failing to start is completely silent.
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(editor.command, editor.args, {
+          detached: true,
+          stdio: "ignore",
+          shell: editor.shell,
+          windowsHide: editor.windowsHide,
+        });
+        child.once("error", (error) => reject(new Error(`Could not start VS Code: ${error.message}`)));
+        child.once("spawn", () => {
+          child.unref();
+          resolve();
+        });
       });
-      child.unref();
     },
 
     async openOnGitHub(rootPath) {
