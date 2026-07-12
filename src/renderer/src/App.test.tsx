@@ -182,6 +182,7 @@ function createApi(options?: {
       addFolder: vi.fn().mockResolvedValue(null),
       update: vi.fn(),
       relink: vi.fn().mockResolvedValue(null),
+      restoreBackup: vi.fn().mockResolvedValue(registry(projects)),
     },
     providers: {
       availability: vi.fn().mockResolvedValue({ powershell: true, claude: true, codex: false }),
@@ -382,6 +383,24 @@ describe("project workspace", () => {
     expect(screen.queryByRole("button", { name: "Select project Atlas" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Select project Dashboard" }).closest(".project-row")).toHaveClass(
       "selected",
+    );
+  });
+
+  it("offers a restore action when the registry fell back to its backup", async () => {
+    const harness = createApi({
+      writable: false,
+      source: "backup",
+      warning: "Primary project registry is invalid: bad json",
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const restoreButton = await screen.findByRole("button", { name: "Restore registry from backup" });
+    fireEvent.click(restoreButton);
+
+    await waitFor(() => expect(harness.api.projects.restoreBackup).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Restore registry from backup" })).not.toBeInTheDocument(),
     );
   });
 

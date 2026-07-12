@@ -53,6 +53,7 @@ export interface MultiCliWorkApi {
     addFolder(): Promise<SharedProject | null>;
     update(projectId: string, patch: ProjectMetadataPatch): Promise<SharedProject>;
     relink(projectId: string): Promise<SharedProject | null>;
+    restoreBackup(): Promise<ProjectWorkspaceSnapshot>;
   };
   providers: {
     availability(): Promise<ProviderAvailability>;

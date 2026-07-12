@@ -54,14 +54,16 @@ function setup() {
       },
     })),
   };
+  const restoreRegistryBackup = vi.fn(async () => undefined);
   registerMainIpc(ipc, {
     projectService,
     coordinator,
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
+    restoreRegistryBackup,
     chooseDirectory: vi.fn(async () => "C:\\Work"),
     getAvailability: vi.fn(async () => ({ powershell: true, claude: true, codex: true })),
   });
-  return { handlers, projectService, coordinator, project };
+  return { handlers, projectService, coordinator, project, restoreRegistryBackup };
 }
 
 describe("main IPC boundary", () => {
@@ -110,6 +112,15 @@ describe("main IPC boundary", () => {
     expect((listed as { registry: { projects: Record<string, unknown> } }).registry.projects[project.id]).not.toHaveProperty(
       "rootMissing",
     );
+  });
+
+  it("restores the registry backup and returns a fresh annotated snapshot", async () => {
+    const { handlers, restoreRegistryBackup, project } = setup();
+
+    const result = await handlers.get("projects:restore-backup")!({});
+
+    expect(restoreRegistryBackup).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ missingRootProjectIds: [project.id], writable: true });
   });
 
   it("exposes the persisted selection through a read-only terminal state channel", async () => {

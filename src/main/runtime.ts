@@ -4,7 +4,7 @@ import type { ProviderAvailability } from "../shared/api-types";
 import type { TerminalWorkerEvent } from "../shared/terminal-types";
 import { registerMainIpc } from "./ipc";
 import { ProjectService } from "./projects/project-service";
-import { readProjectRegistry } from "./projects/project-registry";
+import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
@@ -86,6 +86,9 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
     projectService,
     coordinator,
     readRegistry: () => readProjectRegistry({ registryPath }),
+    async restoreRegistryBackup() {
+      await restoreProjectRegistryFromBackup({ registryPath });
+    },
     async chooseDirectory() {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       const result = window

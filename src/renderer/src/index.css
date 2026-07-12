@@ -565,6 +565,22 @@ body.sidebar-resizing {
   white-space: nowrap;
 }
 
+.registry-warning button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid rgb(216 162 74 / 45%);
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.registry-warning button:hover {
+  background: rgb(216 162 74 / 14%);
+}
+
 .sidebar-footer {
   display: flex;
   align-items: center;

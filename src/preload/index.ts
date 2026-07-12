@@ -10,6 +10,7 @@ const api: MultiCliWorkApi = {
     addFolder: () => ipcRenderer.invoke("projects:add-folder"),
     update: (projectId, patch) => ipcRenderer.invoke("projects:update", projectId, patch),
     relink: (projectId) => ipcRenderer.invoke("projects:relink", projectId),
+    restoreBackup: () => ipcRenderer.invoke("projects:restore-backup"),
   },
   providers: {
     availability: () => ipcRenderer.invoke("providers:availability"),

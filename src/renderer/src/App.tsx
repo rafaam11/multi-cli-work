@@ -358,6 +358,16 @@ export function App() {
     }
   };
 
+  const restoreFromBackup = async () => {
+    setActionError(null);
+    try {
+      const restored = await window.multiCliWork.projects.restoreBackup();
+      setSnapshot(restored);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
   const handleProjectSaved = (updated: SharedProject) => {
     setSnapshot((current) => {
       if (!current) return current;
@@ -525,7 +535,17 @@ export function App() {
           )}
         </nav>
 
-        {snapshot?.warning ? <div className="registry-warning" role="status"><TriangleAlert size={13} /><span>{snapshot.warning}</span></div> : null}
+        {snapshot?.warning ? (
+          <div className="registry-warning" role="status">
+            <TriangleAlert size={13} />
+            <span>{snapshot.warning}</span>
+            {!snapshot.writable && snapshot.source === "backup" ? (
+              <button type="button" onClick={() => void restoreFromBackup()} aria-label="Restore registry from backup">
+                Restore
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <label className="hidden-toggle">
           <input
             type="checkbox"

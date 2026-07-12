@@ -11,6 +11,7 @@ import {
   parseProjectRegistry,
   readProjectRegistry,
   reconcileProject,
+  restoreProjectRegistryFromBackup,
   updateProjectRegistry,
 } from "./project-registry";
 
@@ -439,5 +440,85 @@ describe("project registry timestamp normalization", () => {
     const fixture = nonCanonicalRegistryFixture();
     fixture.updatedAt = "not-a-timestamp";
     expect(() => parseProjectRegistry(fixture)).toThrow(/ISO timestamp/i);
+  });
+});
+
+describe("project registry backup restore", () => {
+  function validRegistryJson(memo: string): string {
+    return `${JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: "2026-07-11T00:00:00.000Z",
+      projects: {
+        [PROJECT_ONE]: {
+          id: PROJECT_ONE,
+          rootPath: "C:\work\atlas",
+          displayName: "Atlas",
+          sources: ["manual"],
+          providerRefs: { claude: [], codex: [] },
+          status: null,
+          memo,
+          tracks: [],
+          hidden: false,
+          order: null,
+          createdAt: "2026-07-11T00:00:00.000Z",
+          updatedAt: "2026-07-11T00:00:00.000Z",
+        },
+      },
+    })}\n`;
+  }
+
+  it("restores a corrupt primary from a valid backup and becomes writable again", async () => {
+    const registryPath = await tempRegistryPath();
+    await fs.writeFile(registryPath, "{ not json", "utf8");
+    await fs.writeFile(`${registryPath}.bak`, validRegistryJson("from backup"), "utf8");
+
+    const restored = await restoreProjectRegistryFromBackup({ registryPath });
+
+    expect(restored.projects[PROJECT_ONE].memo).toBe("from backup");
+    const snapshot = await readProjectRegistry({ registryPath });
+    expect(snapshot.source).toBe("primary");
+    expect(snapshot.writable).toBe(true);
+    expect(snapshot.registry.projects[PROJECT_ONE].memo).toBe("from backup");
+  });
+
+  it("never overwrites the valid backup with the corrupt primary during a restore", async () => {
+    const registryPath = await tempRegistryPath();
+    const backupJson = validRegistryJson("last good");
+    await fs.writeFile(registryPath, "{ not json", "utf8");
+    await fs.writeFile(`${registryPath}.bak`, backupJson, "utf8");
+
+    await restoreProjectRegistryFromBackup({ registryPath });
+
+    const backupOnDisk = JSON.parse(await fs.readFile(`${registryPath}.bak`, "utf8"));
+    expect(backupOnDisk.projects[PROJECT_ONE].memo).toBe("last good");
+  });
+
+  it("fails clearly when the backup is missing or invalid", async () => {
+    const registryPath = await tempRegistryPath();
+    await fs.writeFile(registryPath, "{ not json", "utf8");
+
+    await expect(restoreProjectRegistryFromBackup({ registryPath })).rejects.toThrow(ProjectRegistryError);
+
+    await fs.writeFile(`${registryPath}.bak`, "also { not json", "utf8");
+    await expect(restoreProjectRegistryFromBackup({ registryPath })).rejects.toThrow(ProjectRegistryError);
+  });
+
+  it("keeps backing up a valid primary before normal rewrites", async () => {
+    const registryPath = await tempRegistryPath();
+    await fs.writeFile(registryPath, validRegistryJson("first"), "utf8");
+
+    await updateProjectRegistry(
+      (registry) => ({
+        ...registry,
+        projects: {
+          ...registry.projects,
+          [PROJECT_ONE]: { ...registry.projects[PROJECT_ONE], memo: "second" },
+        },
+      }),
+      { registryPath },
+    );
+
+    const backupOnDisk = JSON.parse(await fs.readFile(`${registryPath}.bak`, "utf8"));
+    expect(backupOnDisk.projects[PROJECT_ONE].memo).toBe("first");
   });
 });
