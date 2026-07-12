@@ -385,6 +385,58 @@ describe("project workspace", () => {
     );
   });
 
+  it("edits project metadata through the row editor and updates the tree", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.projects.update).mockResolvedValue({ ...atlas, displayName: "Atlas Prime" });
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit project Atlas" }));
+
+    const editor = screen.getByRole("dialog", { name: "Edit project Atlas" });
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Atlas Prime" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { displayName: "Atlas Prime" }),
+    );
+    await screen.findByRole("button", { name: "Select project Atlas Prime" });
+    expect(editor).not.toBeInTheDocument();
+  });
+
+  it("clears the selection when the selected project is hidden through the editor", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.projects.update).mockResolvedValue({ ...atlas, hidden: true });
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit project Atlas" }));
+    fireEvent.click(screen.getByLabelText("Hidden"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Select project Atlas" })).not.toBeInTheDocument(),
+    );
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("No project selected");
+  });
+
+  it("reveals hidden projects with a badge when the toggle is enabled", async () => {
+    const harness = createApi({ projects: [atlas, { ...dashboard, hidden: true }] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Select project Atlas" });
+    expect(screen.queryByRole("button", { name: "Select project Dashboard" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Show hidden projects"));
+
+    const hiddenRow = await screen.findByRole("button", { name: "Select project Dashboard" });
+    expect(hiddenRow).toHaveTextContent("Hidden");
+    expect(hiddenRow.closest(".project-row")).toHaveClass("hidden-project");
+  });
+
   it("persists selection and creates only available provider sessions", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;

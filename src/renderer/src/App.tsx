@@ -12,6 +12,7 @@ import {
   FolderPlus,
   FolderX,
   MonitorDot,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -21,6 +22,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { TerminalPane } from "./TerminalPane";
 
 const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
@@ -104,17 +106,19 @@ export function App() {
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [showHiddenProjects, setShowHiddenProjects] = useState(false);
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
     return Object.values(snapshot.registry.projects)
-      .filter((project) => !project.hidden)
+      .filter((project) => showHiddenProjects || !project.hidden)
       .sort((left, right) => {
         const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER;
         const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER;
         return leftOrder - rightOrder || projectName(left).localeCompare(projectName(right));
       });
-  }, [snapshot]);
+  }, [snapshot, showHiddenProjects]);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
@@ -354,6 +358,24 @@ export function App() {
     }
   };
 
+  const handleProjectSaved = (updated: SharedProject) => {
+    setSnapshot((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        registry: {
+          ...current.registry,
+          projects: { ...current.registry.projects, [updated.id]: updated },
+        },
+      };
+    });
+    if (updated.hidden && !showHiddenProjects && selectedProjectId === updated.id) {
+      setSelectedProjectId(null);
+      setSelectedSessionId(null);
+      persistSelection(null, null);
+    }
+  };
+
   const relinkProject = async () => {
     if (!selectedProject) return;
     setActionError(null);
@@ -436,7 +458,7 @@ export function App() {
                   .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
                 return (
                   <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
-                    <div className={`project-row ${selectedProjectId === project.id ? "selected" : ""} ${rootMissing ? "missing" : ""}`}>
+                    <div className={`project-row ${selectedProjectId === project.id ? "selected" : ""} ${rootMissing ? "missing" : ""} ${project.hidden ? "hidden-project" : ""}`}>
                       <button
                         className="tree-toggle"
                         type="button"
@@ -452,9 +474,26 @@ export function App() {
                           <span className="project-name">{name}</span>
                           <span className="project-path" title={project.rootPath}>{project.rootPath}</span>
                         </span>
-                        {rootMissing ? <span className="project-status missing-status">Missing</span> : project.status ? <span className="project-status">{project.status}</span> : null}
+                        {rootMissing ? <span className="project-status missing-status">Missing</span> : project.hidden ? <span className="project-status hidden-status">Hidden</span> : project.status ? <span className="project-status">{project.status}</span> : null}
+                      </button>
+                      <button
+                        className="icon-button project-edit"
+                        type="button"
+                        onClick={() => setEditingProjectId((current) => (current === project.id ? null : project.id))}
+                        disabled={Boolean(snapshot && !snapshot.writable)}
+                        aria-label={`Edit project ${name}`}
+                        title="Edit project"
+                      >
+                        <Pencil size={13} />
                       </button>
                     </div>
+                    {editingProjectId === project.id ? (
+                      <ProjectMetadataEditor
+                        project={project}
+                        onSaved={handleProjectSaved}
+                        onClose={() => setEditingProjectId(null)}
+                      />
+                    ) : null}
                     {expanded ? (
                       <ul className="session-tree" role="group">
                         {projectSessions.map((session) => {
@@ -487,6 +526,14 @@ export function App() {
         </nav>
 
         {snapshot?.warning ? <div className="registry-warning" role="status"><TriangleAlert size={13} /><span>{snapshot.warning}</span></div> : null}
+        <label className="hidden-toggle">
+          <input
+            type="checkbox"
+            checked={showHiddenProjects}
+            onChange={(event) => setShowHiddenProjects(event.target.checked)}
+          />
+          <span>Show hidden projects</span>
+        </label>
         <footer className="sidebar-footer">
           <span className="connection-dot" aria-hidden="true" />
           <span>{projects.length} projects</span>
