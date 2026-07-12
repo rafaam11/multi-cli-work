@@ -3,7 +3,7 @@ import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { CircleStop, FolderOpen, MonitorDot, RotateCcw, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { projectName, providerDetails, statusLabels, toolDetails } from "./session-labels";
+import { projectName, providerAccentClass, providerDetails, statusLabels, toolDetails } from "./session-labels";
 
 const TERMINAL_KINDS: TerminalKind[] = ["powershell", "claude", "codex"];
 const TOOL_COMMANDS: ToolCommand[] = ["claude-update", "codex-update"];
@@ -168,7 +168,7 @@ export function WorkspaceHeader({
                         : details.menuLabel
                   }
                 >
-                  <ProviderIcon size={15} />
+                  <ProviderIcon size={15} className={providerAccentClass[kind]} />
                   <span>{details.label}</span>
                 </button>
               );
