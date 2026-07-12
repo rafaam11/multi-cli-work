@@ -1,10 +1,12 @@
 import type { ProviderAvailability, TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
-import { Clock, ExternalLink, Info, Wrench } from "lucide-react";
+import { Clock, Info, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
+import { GitHubIcon } from "./brand-icons";
 import {
   projectName,
+  providerAccentClass,
   providerDetails,
   relativeTime,
   sessionLabel,
@@ -144,7 +146,7 @@ export function HomeDashboard({
               const Icon = details.icon;
               return (
                 <li key={kind} className={availability[kind] ? "installed" : "missing"}>
-                  <Icon size={14} />
+                  <Icon size={14} className={providerAccentClass[kind]} />
                   <span>{details.label}</span>
                   <span className="cli-status-value">{availability[kind] ? "설치됨" : "찾을 수 없음"}</span>
                 </li>
@@ -200,7 +202,7 @@ export function HomeDashboard({
                           aria-label={`${projectName(project)}에서 ${details.label} 시작`}
                           onClick={() => onStartSession(project, kind)}
                         >
-                          <Icon size={13} />
+                          <Icon size={13} className={providerAccentClass[kind]} />
                         </button>
                       );
                     })}
@@ -255,11 +257,11 @@ export function HomeDashboard({
           </p>
           <div className="app-shortcut-row">
             <button type="button" onClick={() => void window.multiCliWork.updates.openReleases()}>
-              <ExternalLink size={13} />
+              <GitHubIcon size={13} />
               <span>릴리스 노트</span>
             </button>
             <button type="button" onClick={() => void window.multiCliWork.updates.openRepository()}>
-              <ExternalLink size={13} />
+              <GitHubIcon size={13} />
               <span>GitHub 저장소</span>
             </button>
           </div>
