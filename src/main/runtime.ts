@@ -12,6 +12,7 @@ import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { readSessionTitle } from "./providers/session-title";
+import { createTerminalAttentionTracker, type WindowAttention } from "./attention-policy";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
 import { checkForUpdates, openReleasesPage, openRepositoryPage, updaterStatus } from "./updater";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
@@ -43,6 +44,7 @@ export interface DesktopRuntime {
 export async function createDesktopRuntime(
   showMainWindow: () => void,
   installUpdate: () => Promise<void>,
+  applyAttention: (attention: WindowAttention) => void = () => undefined,
 ): Promise<DesktopRuntime> {
   const userData = app.getPath("userData");
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
@@ -116,20 +118,26 @@ export async function createDesktopRuntime(
     async getAvailability() {
       return availability(await getExecutables());
     },
+    onSessionSelected(sessionId) {
+      applyAttention(attentionTracker.markSeen(sessionId));
+    },
   });
 
   const notificationDeduper = createTerminalNotificationDeduper();
+  const attentionTracker = createTerminalAttentionTracker();
   coordinator.onEvent((event: TerminalEvent) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("terminal:event", event);
     if (event.type === "exit") notificationDeduper.reset(event.sessionId);
     if (event.type !== "status") return;
+    if (event.status !== "awaiting-input" && event.status !== "awaiting-approval") {
+      applyAttention(attentionTracker.applyStatus(event.sessionId, event.status));
+    }
     if (event.status === "working" || event.status === "exited" || event.status === "error") {
       notificationDeduper.reset(event.sessionId);
       return;
     }
     if (event.status !== "awaiting-input" && event.status !== "awaiting-approval") return;
     void (async () => {
-      if (!Notification.isSupported()) return;
       const windows = BrowserWindow.getAllWindows();
       let selectedSessionId: string | null = null;
       try {
@@ -137,17 +145,19 @@ export async function createDesktopRuntime(
       } catch (error) {
         console.error("Failed to read the selected terminal session", error);
       }
-      if (
-        !shouldShowTerminalStatusNotification({
-          eventSessionId: event.sessionId,
-          selectedSessionId,
-          windowVisible: windows.some((window) => window.isVisible()),
-          windowFocused: windows.some((window) => window.isVisible() && window.isFocused()),
-        })
-      ) {
+      const shouldShowNotification = shouldShowTerminalStatusNotification({
+        eventSessionId: event.sessionId,
+        selectedSessionId,
+        windowVisible: windows.some((window) => window.isVisible()),
+        windowFocused: windows.some((window) => window.isVisible() && window.isFocused()),
+      });
+      if (!shouldShowNotification) {
         notificationDeduper.reset(event.sessionId);
+        applyAttention(attentionTracker.markSeen(event.sessionId));
         return;
       }
+      applyAttention(attentionTracker.applyStatus(event.sessionId, event.status));
+      if (!Notification.isSupported()) return;
       if (!notificationDeduper.shouldNotify(event.sessionId, event.status)) return;
       const session = coordinator.list().find((candidate) => candidate.id === event.sessionId);
       const title = session

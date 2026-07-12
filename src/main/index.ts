@@ -3,6 +3,8 @@ import path from "node:path";
 import { createDesktopRuntime, type DesktopRuntime } from "./runtime";
 import { trayIconDataUrl } from "./tray-icon";
 import { checkForUpdates, initUpdater, quitAndInstall } from "./updater";
+import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
+import type { WindowAttention } from "./attention-policy";
 import {
   rendererTargetNavigationUrl,
   resolveRendererTarget,
@@ -15,6 +17,7 @@ let runtime: DesktopRuntime | null = null;
 let isQuitting = false;
 let shouldFocusWhenReady = false;
 let quitRequestInProgress = false;
+let windowAttention: WindowAttention = "none";
 
 if (process.env.MULTI_CLI_WORK_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.MULTI_CLI_WORK_USER_DATA));
@@ -28,7 +31,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     backgroundColor: "#161918",
-    title: "멀티 터미널 작업기",
+    title: APP_WINDOW_TITLE,
     icon: nativeImage.createFromDataURL(trayIconDataUrl(32)),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
@@ -60,7 +63,13 @@ function createWindow(): BrowserWindow {
   } else {
     void window.loadFile(rendererTarget.value);
   }
+  applyWindowAttention(window, windowAttention);
   return window;
+}
+
+function updateWindowAttention(attention: WindowAttention): void {
+  windowAttention = attention;
+  if (mainWindow) applyWindowAttention(mainWindow, attention);
 }
 
 function showMainWindow(): void {
@@ -169,7 +178,7 @@ if (!hasSingleInstanceLock) {
 
   void app.whenReady().then(async () => {
     try {
-      runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit);
+      runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit, updateWindowAttention);
       mainWindow = createWindow();
       tray = createTray();
       initUpdater();

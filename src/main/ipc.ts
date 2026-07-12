@@ -65,6 +65,7 @@ interface MainIpcDependencies {
   restoreRegistryBackup(): Promise<void>;
   chooseDirectory(): Promise<string | null>;
   getAvailability(): Promise<ProviderAvailability>;
+  onSessionSelected?(sessionId: string | null): void;
 }
 
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
@@ -234,10 +235,12 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     if (typeof name === "string" && name.length > 120) throw new Error("Session name is too long");
     return dependencies.coordinator.rename(nonEmptyString(sessionId, "Session id"), name);
   });
-  ipc.handle("terminals:select", (_event, projectId: unknown, sessionId: unknown) => {
+  ipc.handle("terminals:select", async (_event, projectId: unknown, sessionId: unknown) => {
     if (projectId !== null && typeof projectId !== "string") throw new Error("Selected project id is invalid");
     if (sessionId !== null && typeof sessionId !== "string") throw new Error("Selected session id is invalid");
-    return dependencies.coordinator.select(projectId, sessionId);
+    const snapshot = await dependencies.coordinator.select(projectId, sessionId);
+    dependencies.onSessionSelected?.(sessionId);
+    return snapshot;
   });
   ipc.handle("app:version", () => dependencies.appVersion());
   ipc.handle("updater:status", () => dependencies.updater.status());

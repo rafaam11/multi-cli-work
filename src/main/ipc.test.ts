@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
 
-function setup() {
+function setup(options: { onSessionSelected?: (sessionId: string | null) => void } = {}) {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const ipc: IpcRegistrar = {
     handle: (channel, listener) => {
@@ -87,11 +87,31 @@ function setup() {
     restoreRegistryBackup,
     chooseDirectory: vi.fn(async () => "C:\\Work"),
     getAvailability: vi.fn(async () => ({ powershell: true, claude: true, codex: true, vscode: true })),
+    onSessionSelected: options.onSessionSelected,
   });
-  return { handlers, projectService, coordinator, project, restoreRegistryBackup, updater, projectActions, calls };
+  return {
+    handlers,
+    projectService,
+    coordinator,
+    project,
+    restoreRegistryBackup,
+    updater,
+    projectActions,
+    calls,
+    onSessionSelected: options.onSessionSelected,
+  };
 }
 
 describe("main IPC boundary", () => {
+  it("marks a selected terminal seen after persisting selection", async () => {
+    const onSessionSelected = vi.fn();
+    const { handlers } = setup({ onSessionSelected });
+
+    await handlers.get("terminals:select")!({}, "project-1", "session-1");
+
+    expect(onSessionSelected).toHaveBeenCalledWith("session-1");
+  });
+
   it("uses the main-process folder chooser for manual project registration", async () => {
     const { handlers, projectService, project } = setup();
 
