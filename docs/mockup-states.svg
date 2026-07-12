@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" font-family="Segoe UI, system-ui, sans-serif" role="img" aria-label="세션 상태 7종 · 알림 규칙 · 트레이 메뉴 · 업데이트 배지 상태">
+  <rect width="960" height="300" rx="12" fill="#161918" stroke="#343b38"/>
+
+  <!-- ── session states ── -->
+  <text x="28" y="34" font-size="11" font-weight="700" fill="#717b76" letter-spacing="0.5">세션 상태</text>
+
+  <g font-size="10.5" font-weight="600">
+    <rect x="28" y="48" width="76" height="22" rx="11" fill="#202524" stroke="#46504c"/>
+    <circle cx="42" cy="59" r="3.5" fill="#717b76"/>
+    <text x="52" y="63" fill="#9aa49f">starting</text>
+
+    <rect x="112" y="48" width="80" height="22" rx="11" fill="#16302b" stroke="#4fb7a4"/>
+    <circle cx="126" cy="59" r="3.5" fill="#4fb7a4"/>
+    <text x="136" y="63" fill="#4fb7a4">working</text>
+
+    <rect x="200" y="48" width="118" height="22" rx="11" fill="#2b2416" stroke="#d8a24a"/>
+    <circle cx="214" cy="59" r="3.5" fill="#d8a24a"/>
+    <text x="224" y="63" fill="#d8a24a">awaiting-input</text>
+
+    <rect x="326" y="48" width="140" height="22" rx="11" fill="#2b2416" stroke="#d8a24a"/>
+    <circle cx="340" cy="59" r="3.5" fill="#d8a24a"/>
+    <text x="350" y="63" fill="#d8a24a">awaiting-approval</text>
+
+    <rect x="474" y="48" width="56" height="22" rx="11" fill="#202524" stroke="#46504c"/>
+    <circle cx="488" cy="59" r="3.5" fill="#9aa49f"/>
+    <text x="498" y="63" fill="#9aa49f">idle</text>
+
+    <rect x="538" y="48" width="68" height="22" rx="11" fill="#202524" stroke="#46504c"/>
+    <circle cx="552" cy="59" r="3.5" fill="#717b76"/>
+    <text x="562" y="63" fill="#717b76">exited</text>
+
+    <rect x="614" y="48" width="60" height="22" rx="11" fill="#2e1e1e" stroke="#d46a6a"/>
+    <circle cx="628" cy="59" r="3.5" fill="#d46a6a"/>
+    <text x="638" y="63" fill="#d46a6a">error</text>
+  </g>
+
+  <text x="28" y="94" font-size="10.5" fill="#9aa49f">Claude는 앱 전용 훅 오버레이로, Codex는 OSC 알림·프로세스 신호로 판정한다.</text>
+  <text x="28" y="112" font-size="10.5" fill="#9aa49f">Codex의 애매한 활동은 <tspan fill="#d8a24a">가짜 승인 대기로 올리지 않고</tspan> idle로 둔다.</text>
+
+  <line x1="28" y1="134" x2="932" y2="134" stroke="#343b38"/>
+
+  <!-- ── notification rule ── -->
+  <text x="28" y="164" font-size="11" font-weight="700" fill="#717b76" letter-spacing="0.5">알림</text>
+  <rect x="28" y="178" width="300" height="90" rx="8" fill="#202524" stroke="#46504c"/>
+  <rect x="28" y="178" width="4" height="90" rx="2" fill="#d8a24a"/>
+  <g transform="translate(46,196) scale(0.62)">
+    <rect x="1.32" y="1.32" width="21.36" height="21.36" rx="5.4" fill="#252b29"/>
+    <g fill="none" stroke="#4fb7a4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6.6,6.8 12.2,12.1 6.6,17.4"/>
+      <line x1="13.4" y1="17.4" x2="18.4" y2="17.4"/>
+    </g>
+  </g>
+  <text x="78" y="204" font-size="11" font-weight="600" fill="#e7ebe8">Claude · atlas</text>
+  <text x="78" y="223" font-size="10.5" fill="#9aa49f">Approval required</text>
+  <text x="46" y="252" font-size="9.5" fill="#717b76">가려진 세션이 대기에 들어갈 때만 · 같은 상태론 재알림 없음</text>
+
+  <!-- ── tray menu ── -->
+  <text x="366" y="164" font-size="11" font-weight="700" fill="#717b76" letter-spacing="0.5">트레이</text>
+  <rect x="366" y="178" width="200" height="90" rx="6" fill="#202524" stroke="#46504c"/>
+  <text x="382" y="200" font-size="10.5" fill="#e7ebe8">Show Multi CLI Work</text>
+  <text x="382" y="223" font-size="10.5" fill="#e7ebe8">Check for Updates</text>
+  <line x1="374" y1="234" x2="558" y2="234" stroke="#343b38"/>
+  <text x="382" y="254" font-size="10.5" fill="#e7ebe8">Quit</text>
+  <text x="366" y="286" font-size="9.5" fill="#717b76">창을 닫아도 세션은 계속 돈다 · Quit만이 정상 종료</text>
+
+  <!-- ── update badge states ── -->
+  <text x="604" y="164" font-size="11" font-weight="700" fill="#717b76" letter-spacing="0.5">업데이트 배지</text>
+  <g font-size="10">
+    <rect x="604" y="178" width="328" height="26" rx="6" fill="#1c201f" stroke="#343b38"/>
+    <text x="618" y="195" font-family="Consolas, monospace" fill="#9aa49f">v1.0.0</text>
+    <text x="668" y="195" fill="#717b76">Up to date</text>
+    <rect x="878" y="182" width="46" height="18" rx="4" fill="none" stroke="#46504c"/>
+    <text x="901" y="195" fill="#e7ebe8" text-anchor="middle">Check</text>
+
+    <rect x="604" y="210" width="328" height="26" rx="6" fill="#1c201f" stroke="#343b38"/>
+    <text x="618" y="227" font-family="Consolas, monospace" fill="#9aa49f">v1.0.0</text>
+    <text x="668" y="227" fill="#4fb7a4">Downloading 62%</text>
+    <rect x="878" y="214" width="46" height="18" rx="4" fill="none" stroke="#343b38"/>
+    <text x="901" y="227" fill="#717b76" text-anchor="middle">Check</text>
+
+    <rect x="604" y="242" width="328" height="26" rx="6" fill="#1c201f" stroke="#4fb7a4"/>
+    <text x="618" y="259" font-family="Consolas, monospace" fill="#9aa49f">v1.0.0</text>
+    <text x="668" y="259" fill="#4fb7a4">Update 1.1.0 ready</text>
+    <rect x="872" y="246" width="52" height="18" rx="4" fill="#16302b" stroke="#4fb7a4"/>
+    <text x="898" y="259" fill="#4fb7a4" text-anchor="middle">Restart</text>
+  </g>
+  <text x="604" y="286" font-size="9.5" fill="#717b76">Restart는 돌고 있는 세션을 먼저 정리한 뒤 무음 설치·재실행</text>
+</svg>

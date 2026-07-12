@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 200" width="920" height="200" role="img" aria-label="Multi CLI Work">
+  <defs>
+    <linearGradient id="mcw-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c201f"/>
+      <stop offset="1" stop-color="#141716"/>
+    </linearGradient>
+    <linearGradient id="mcw-logobg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#252b29"/>
+      <stop offset="1" stop-color="#1a1e1d"/>
+    </linearGradient>
+  </defs>
+  <rect width="920" height="200" rx="18" fill="url(#mcw-bg)"/>
+  <rect x="0.5" y="0.5" width="919" height="199" rx="17.5" fill="none" stroke="#343b38"/>
+
+  <!-- logo: prompt caret + underscore (same motif as build/icon.png) -->
+  <g transform="translate(56,58) scale(3.5)">
+    <rect x="1.32" y="1.32" width="21.36" height="21.36" rx="5.4" fill="url(#mcw-logobg)"/>
+    <g fill="none" stroke="#4fb7a4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6.6,6.8 12.2,12.1 6.6,17.4"/>
+      <line x1="13.4" y1="17.4" x2="18.4" y2="17.4"/>
+    </g>
+  </g>
+
+  <!-- title + tagline -->
+  <text x="186" y="90" font-family="Segoe UI, system-ui, sans-serif" font-size="40" font-weight="700" fill="#e7ebe8">Multi CLI Work</text>
+  <text x="188" y="123" font-family="Segoe UI, system-ui, sans-serif" font-size="17" fill="#9aa49f">Codex · Claude Code · PowerShell 세션을 프로젝트 단위로 — 로컬 전용 데스크톱 앱</text>
+
+  <!-- chips -->
+  <g font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">
+    <rect x="188" y="144" width="86" height="25" rx="12.5" fill="#202524" stroke="#343b38"/>
+    <text x="231" y="161" fill="#4fb7a4" text-anchor="middle">Electron</text>
+    <rect x="282" y="144" width="98" height="25" rx="12.5" fill="#202524" stroke="#343b38"/>
+    <text x="331" y="161" fill="#4fb7a4" text-anchor="middle">트레이 상주</text>
+    <rect x="388" y="144" width="96" height="25" rx="12.5" fill="#202524" stroke="#343b38"/>
+    <text x="436" y="161" fill="#4fb7a4" text-anchor="middle">로컬 전용</text>
+  </g>
+</svg>

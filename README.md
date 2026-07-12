@@ -1,11 +1,13 @@
-<h1 align="center">Multi CLI Work</h1>
+<p align="center">
+  <img src="docs/banner.svg" alt="Multi CLI Work" width="100%">
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Electron-34-2b2a28?logo=electron&logoColor=9feaf9" alt="Electron 34">
   <img src="https://img.shields.io/badge/React-18-1c2230?logo=react&logoColor=61dafb" alt="React 18">
   <img src="https://img.shields.io/badge/TypeScript-5-1c2230?logo=typescript&logoColor=3178c6" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/platform-Windows-1c2230?logo=windows11&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/version-1.0.0-e8825f" alt="version 1.0.0">
+  <img src="https://img.shields.io/badge/version-1.0.0-4fb7a4" alt="version 1.0.0">
   <img src="https://img.shields.io/badge/local--only-no%20telemetry-3fb950" alt="local only">
 </p>
 
@@ -18,23 +20,15 @@
 
 터미널·창·스크롤백은 이 앱 안에만 있고, 네트워크 포트를 열지 않는다(렌더러↔main은 Electron IPC). 업데이트 확인 외에 외부로 나가는 통신은 없다.
 
-## 화면
+## 미리보기
 
-```
-┌ Multi CLI Work ─────────────┬────────────────────────────────────────────┐
-│ Projects        ⟳  ＋       │  atlas · Claude Code 1     [awaiting-approval]│
-│                             │  C:\work\atlas          ⟲  ▶Resume  ■  🗑  ＋│
-│ ▾ 📂 atlas             ✎    ├────────────────────────────────────────────┤
-│      🤖 Claude Code 1  ●    │  > 파일을 수정할까요?                       │
-│      ⌨  PowerShell 1        │  ❯ 1. Yes  2. No                           │
-│ ▸ 📁 dashboard         ✎    │  _                                          │
-│ ▸ 📁 navi              ✎    │                                             │
-│                             │                                             │
-│ ☐ Show hidden projects      │                                             │
-│ ⟳ v1.0.0  Up to date  [Check]│                                            │
-│ ● 3 projects / 2 sessions   │                                             │
-└─────────────────────────────┴────────────────────────────────────────────┘
-```
+<p align="center"><img src="docs/mockup-workspace.svg" alt="메인 화면 — 프로젝트 트리 · 터미널 뷰포트 · 승인 대기 알림" width="100%"></p>
+
+<p align="center"><em>왼쪽에 프로젝트와 그 아래 세션들, 오른쪽에 지금 보고 있는 터미널 하나. 가려진 세션이 승인을 기다리기 시작하면 알림이 뜬다.</em></p>
+
+<p align="center"><img src="docs/mockup-states.svg" alt="세션 상태 7종 · 알림 규칙 · 트레이 메뉴 · 업데이트 배지" width="100%"></p>
+
+<p align="center"><em>세션 상태 · 알림 규칙 · 트레이 메뉴 · 업데이트 배지의 상태 전이.</em></p>
 
 ## 빠른 시작
 
@@ -72,18 +66,7 @@
 
 ## 아키텍처
 
-```
- ┌──────────────── Electron main ─────────────────┐
- │ 창·트레이·알림·수명주기 / 공유 프로젝트 레지스트리 │
- │ 자동 업데이트(electron-updater)                  │
- └───────┬──────────────────────────┬─────────────┘
-   typed │ preload bridge           │ IPC
- ┌───────┴────────┐        ┌────────┴──────────────┐
- │ Renderer       │        │ utilityProcess        │
- │ (sandboxed)    │        │ node-pty ConPTY ×N    │
- │ React + xterm  │        │ + bounded ring buffer │
- └────────────────┘        └───────────────────────┘
-```
+<p align="center"><img src="docs/architecture.svg" alt="아키텍처 다이어그램 — main / utilityProcess / sandboxed renderer" width="100%"></p>
 
 - **main** — 창·트레이·알림·앱 수명주기와 프로젝트 레지스트리를 소유한다.
 - **utilityProcess** — 모든 `node-pty` 프로세스와 바운드 출력 링버퍼를 격리해 소유한다. PTY 워커가 죽으면 지수 백오프로 재시작하고, 연속 실패가 이어지면 멈춰서 에러를 표시한다(무한 재시도 없음).
