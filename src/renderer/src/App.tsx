@@ -24,6 +24,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { TerminalPane } from "./TerminalPane";
+import { UpdateBadge } from "./UpdateBadge";
 
 const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
 const EMPTY_AVAILABILITY: ProviderAvailability = { powershell: false, claude: false, codex: false };
@@ -554,6 +555,7 @@ export function App() {
           />
           <span>Show hidden projects</span>
         </label>
+        <UpdateBadge />
         <footer className="sidebar-footer">
           <span className="connection-dot" aria-hidden="true" />
           <span>{projects.length} projects</span>

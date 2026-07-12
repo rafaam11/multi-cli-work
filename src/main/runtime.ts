@@ -10,6 +10,7 @@ import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
+import { checkForUpdates, openReleasesPage, updaterStatus } from "./updater";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
 import {
   RestartingTerminalWorker,
@@ -35,7 +36,10 @@ export interface DesktopRuntime {
   dispose(): Promise<void>;
 }
 
-export async function createDesktopRuntime(showMainWindow: () => void): Promise<DesktopRuntime> {
+export async function createDesktopRuntime(
+  showMainWindow: () => void,
+  installUpdate: () => Promise<void>,
+): Promise<DesktopRuntime> {
   const userData = app.getPath("userData");
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
@@ -85,6 +89,13 @@ export async function createDesktopRuntime(showMainWindow: () => void): Promise<
   registerMainIpc(ipcMain, {
     projectService,
     coordinator,
+    updater: {
+      status: updaterStatus,
+      check: checkForUpdates,
+      install: installUpdate,
+      openReleases: openReleasesPage,
+    },
+    appVersion: () => app.getVersion(),
     readRegistry: () => readProjectRegistry({ registryPath }),
     async restoreRegistryBackup() {
       await restoreProjectRegistryFromBackup({ registryPath });

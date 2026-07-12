@@ -1,0 +1,36 @@
+name: release
+
+# v* 태그를 푸시하면 Windows 설치본(NSIS)을 빌드해 GitHub 릴리스(draft)에 올린다.
+# electron-builder의 GitHub publish 기본값이 draft이므로, 자산이 채워진 draft를 사람이 검토하고
+# GitHub에서 수동 publish한다. 이 앱은 ConPTY·PowerShell 의존이라 Windows 단일 잡이다.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # postinstall의 electron-builder install-app-deps가 node-pty를 Electron ABI로 리빌드한다.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (typecheck + electron-vite)
+        run: npm run build
+
+      - name: Package & publish (draft)
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

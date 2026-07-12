@@ -45,6 +45,14 @@ export interface ProjectWorkspaceSnapshot extends ProjectRegistrySnapshot {
   missingRootProjectIds: string[];
 }
 
+export type UpdaterStatus =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "available"; version: string }
+  | { state: "downloading"; percent: number }
+  | { state: "downloaded"; version: string }
+  | { state: "error"; message: string };
+
 export interface MultiCliWorkApi {
   platform: NodeJS.Platform;
   projects: {
@@ -70,5 +78,13 @@ export interface MultiCliWorkApi {
     remove(sessionId: string): Promise<void>;
     select(projectId: string | null, sessionId: string | null): Promise<AppStateSnapshot>;
     onEvent(listener: (event: TerminalWorkerEvent) => void): () => void;
+  };
+  updates: {
+    appVersion(): Promise<string>;
+    status(): Promise<UpdaterStatus>;
+    check(): Promise<void>;
+    install(): Promise<void>;
+    openReleases(): Promise<void>;
+    onEvent(listener: (status: UpdaterStatus) => void): () => void;
   };
 }
