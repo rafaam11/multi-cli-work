@@ -1,23 +1,34 @@
+import type { AgentId, AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
-import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
-import { ClaudeCodeIcon, CodexIcon, PowerShellIcon } from "./brand-icons";
+import type { TerminalStatus, ToolCommand } from "@shared/terminal-types";
 
 export type IconComponent = (props: { size?: number; className?: string }) => JSX.Element;
 
-export const providerDetails: Record<TerminalKind, { label: string; menuLabel: string; icon: IconComponent }> = {
-  powershell: { label: "PowerShell", menuLabel: "새 PowerShell 세션", icon: PowerShellIcon },
-  claude: { label: "Claude Code", menuLabel: "새 Claude Code 세션", icon: ClaudeCodeIcon },
-  codex: { label: "Codex", menuLabel: "새 Codex 세션", icon: CodexIcon },
-};
-
 /**
- * Brand-accent CSS class for a provider's icon. Only applied at static call sites — session rows
- * in ProjectSidebar.tsx color their icon by session status instead, so they never use this.
+ * A session outlives the agent that started it: removing an agent from `agents.json` must not take
+ * its sessions' scrollback with it. So every lookup here tolerates an agent that is no longer known.
  */
-export const providerAccentClass: Partial<Record<TerminalKind, string>> = {
-  powershell: "brand-icon-powershell",
-  claude: "brand-icon-claude",
+export function findAgent(agents: readonly AgentView[], agentId: AgentId): AgentView | undefined {
+  return agents.find((agent) => agent.id === agentId);
+}
+
+export function agentLabel(agents: readonly AgentView[], agentId: AgentId): string {
+  return findAgent(agents, agentId)?.label ?? agentId;
+}
+
+export function isUnknownAgent(agents: readonly AgentView[], agentId: AgentId): boolean {
+  return findAgent(agents, agentId) === undefined;
+}
+
+export function newSessionLabel(agent: AgentView): string {
+  return `새 ${agent.label} 세션`;
+}
+
+/** Maintenance commands update a built-in CLI, so each one is tied to that agent's executable. */
+export const TOOL_AGENT_ID: Record<ToolCommand, AgentId> = {
+  "claude-update": "claude",
+  "codex-update": "codex",
 };
 
 export const toolDetails: Record<ToolCommand, { label: string; menuLabel: string }> = {
@@ -75,13 +86,17 @@ function ownName(session: TerminalSessionView): string | null {
 }
 
 /**
- * Sessions with nothing to show fall back to the provider name, and those are numbered so they stay
+ * Sessions with nothing to show fall back to the agent's name, and those are numbered so they stay
  * tellable apart. Numbering only counts the other fallbacks, so it stays contiguous as titles arrive.
  */
-export function sessionLabel(session: TerminalSessionView, peers: TerminalSessionView[]): string {
+export function sessionLabel(
+  session: TerminalSessionView,
+  peers: TerminalSessionView[],
+  agents: readonly AgentView[],
+): string {
   const own = ownName(session);
   if (own) return own;
-  const base = providerDetails[session.kind].label;
+  const base = agentLabel(agents, session.kind);
   const unnamed = peers
     .filter((candidate) => candidate.kind === session.kind && ownName(candidate) === null)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));

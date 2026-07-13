@@ -1,23 +1,15 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { TerminalKind, ToolCommand } from "../../shared/terminal-types";
+import type { AgentDefinition, AgentId } from "../../shared/agent-types";
+import type { ToolCommand } from "../../shared/terminal-types";
 
 const execFileAsync = promisify(execFile);
 
 export interface ProviderExecutables {
-  powershell: string | null;
-  claude: string | null;
-  codex: string | null;
+  /** Agent id → the executable found on PATH, or null when none of its commands resolved. */
+  agents: Record<AgentId, string | null>;
   vscode: string | null;
-}
-
-interface ProviderLaunchOptions {
-  cwd: string;
-  appSessionId: string;
-  claudeSettingsPath: string;
-  executables: ProviderExecutables;
-  resumeConversationId?: string | null;
 }
 
 export interface ProviderLaunchCommand {
@@ -26,62 +18,21 @@ export interface ProviderLaunchCommand {
   providerConversationId: string | null;
 }
 
-function requireExecutable(value: string | null, label: string): string {
+export function agentExecutable(executables: ProviderExecutables, agent: AgentDefinition): string {
+  const resolved = executables.agents[agent.id];
+  if (!resolved) throw new Error(`${agent.label} executable is not available`);
+  return resolved;
+}
+
+function requireExecutable(value: string | null | undefined, label: string): string {
   if (!value) throw new Error(`${label} executable is not available`);
   return value;
 }
-
-const CODEX_NOTIFICATION_ARGS = [
-  "-c",
-  'tui.notifications=["agent-turn-complete","approval-requested"]',
-  "-c",
-  'tui.notification_method="osc9"',
-  "-c",
-  'tui.notification_condition="always"',
-];
 
 const TOOL_SHELL_COMMANDS: Record<ToolCommand, string> = {
   "claude-update": "claude update",
   "codex-update": "codex update",
 };
-
-export function buildProviderLaunch(kind: TerminalKind, options: ProviderLaunchOptions): ProviderLaunchCommand {
-  if (kind === "powershell") {
-    return {
-      executable: requireExecutable(options.executables.powershell, "PowerShell"),
-      args: ["-NoLogo"],
-      providerConversationId: null,
-    };
-  }
-  if (kind === "claude") {
-    const conversationId = options.resumeConversationId ?? options.appSessionId;
-    const conversationArgs = options.resumeConversationId
-      ? ["--resume", options.resumeConversationId]
-      : ["--session-id", options.appSessionId];
-    return {
-      executable: requireExecutable(options.executables.claude, "Claude"),
-      args: [
-        ...conversationArgs,
-        "--settings",
-        options.claudeSettingsPath,
-        "--dangerously-skip-permissions",
-      ],
-      providerConversationId: conversationId,
-    };
-  }
-  const conversationArgs = options.resumeConversationId ? ["resume", options.resumeConversationId] : [];
-  return {
-    executable: requireExecutable(options.executables.codex, "Codex"),
-    args: [
-      ...conversationArgs,
-      "-C",
-      options.cwd,
-      "--dangerously-bypass-approvals-and-sandbox",
-      ...CODEX_NOTIFICATION_ARGS,
-    ],
-    providerConversationId: options.resumeConversationId ?? null,
-  };
-}
 
 /**
  * Tool sessions run a CLI maintenance command inside PowerShell. `-NoExit` keeps the shell
@@ -89,7 +40,7 @@ export function buildProviderLaunch(kind: TerminalKind, options: ProviderLaunchO
  */
 export function buildToolLaunch(tool: ToolCommand, executables: ProviderExecutables): ProviderLaunchCommand {
   return {
-    executable: requireExecutable(executables.powershell, "PowerShell"),
+    executable: requireExecutable(executables.agents.powershell, "PowerShell"),
     args: ["-NoLogo", "-NoExit", "-Command", TOOL_SHELL_COMMANDS[tool]],
     providerConversationId: null,
   };
@@ -137,7 +88,7 @@ export function pickWindowsExecutable(candidates: string[]): string | null {
   );
 }
 
-async function findOnPath(command: string): Promise<string | null> {
+export async function findOnPath(command: string): Promise<string | null> {
   try {
     const locator = process.platform === "win32" ? "where.exe" : "which";
     const { stdout } = await execFileAsync(locator, [command], { windowsHide: true, timeout: 3_000 });
@@ -148,13 +99,19 @@ async function findOnPath(command: string): Promise<string | null> {
   }
 }
 
-export async function detectProviderExecutables(): Promise<ProviderExecutables> {
-  const [pwsh, windowsPowerShell, claude, codex, vscode] = await Promise.all([
-    findOnPath("pwsh"),
-    findOnPath("powershell"),
-    findOnPath("claude"),
-    findOnPath("codex"),
+/** An agent names its executables in preference order, so PowerShell can ask for `pwsh` first. */
+async function resolveAgent(agent: AgentDefinition): Promise<string | null> {
+  for (const command of agent.commands) {
+    const resolved = await findOnPath(command);
+    if (resolved) return resolved;
+  }
+  return null;
+}
+
+export async function detectProviderExecutables(agents: readonly AgentDefinition[]): Promise<ProviderExecutables> {
+  const [resolved, vscode] = await Promise.all([
+    Promise.all(agents.map(async (agent) => [agent.id, await resolveAgent(agent)] as const)),
     findOnPath("code"),
   ]);
-  return { powershell: pwsh ?? windowsPowerShell, claude, codex, vscode };
+  return { agents: Object.fromEntries(resolved), vscode };
 }

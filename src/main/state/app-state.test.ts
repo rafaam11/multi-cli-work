@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   appendSessionLog,
   emptyAppState,
+  parseAppState,
   readAppState,
   readSessionLog,
   updateAppState,
@@ -21,6 +22,47 @@ async function tempRoot(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+});
+
+describe("session agent ids", () => {
+  function stateWithKind(kind: unknown): unknown {
+    return {
+      schemaVersion: 1,
+      updatedAt: "2026-07-11T00:00:00.000Z",
+      selectedProjectId: null,
+      selectedSessionId: null,
+      sessions: {
+        "session-1": {
+          id: "session-1",
+          projectId: "project-1",
+          tool: null,
+          title: null,
+          name: null,
+          kind,
+          cwd: "C:\\Work",
+          providerConversationId: null,
+          createdAt: "2026-07-11T00:00:00.000Z",
+          updatedAt: "2026-07-11T00:00:00.000Z",
+        },
+      },
+    };
+  }
+
+  /**
+   * The agent registry is a file the user edits. If removing an agent from it could invalidate the
+   * state file, one edit to `agents.json` would cost them every session they have — so the state
+   * file only checks the shape of an id, never whether an agent by that name still exists.
+   */
+  it("keeps sessions whose agent is no longer installed", () => {
+    const parsed = parseAppState(stateWithKind("gemini"));
+
+    expect(parsed.sessions["session-1"].kind).toBe("gemini");
+  });
+
+  it("still rejects an id that could never name an agent", () => {
+    expect(() => parseAppState(stateWithKind("Claude Code"))).toThrow(/kind is invalid/i);
+    expect(() => parseAppState(stateWithKind(42))).toThrow(/kind is invalid/i);
+  });
 });
 
 describe("app state", () => {

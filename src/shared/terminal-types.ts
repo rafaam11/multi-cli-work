@@ -1,4 +1,11 @@
-export type TerminalKind = "powershell" | "claude" | "codex";
+import type { AgentId, StatusAdapter } from "./agent-types";
+
+/**
+ * Which agent a session runs. Sessions record the agent's id rather than a closed union, so a CLI
+ * the user adds in `agents.json` is a first-class session and an agent they later remove leaves its
+ * sessions readable instead of taking the whole state file down with it.
+ */
+export type TerminalKind = AgentId;
 /** Maintenance commands that run in a session which belongs to no folder. */
 export type ToolCommand = "claude-update" | "codex-update";
 export type TerminalStatus =
@@ -29,6 +36,8 @@ export interface TerminalLaunchSpec {
   projectId: string | null;
   tool: ToolCommand | null;
   kind: TerminalKind;
+  /** How the PTY worker should read this session's status off its own output. */
+  statusAdapter: StatusAdapter;
   cwd: string;
   executable: string;
   args: string[];

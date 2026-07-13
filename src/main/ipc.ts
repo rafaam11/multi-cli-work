@@ -1,5 +1,6 @@
 import path from "node:path";
 import type {
+  AgentsSnapshot,
   CreateTerminalInput,
   CreateToolTerminalInput,
   GitStatusResult,
@@ -65,10 +66,13 @@ interface MainIpcDependencies {
   restoreRegistryBackup(): Promise<void>;
   chooseDirectory(): Promise<string | null>;
   getAvailability(): Promise<ProviderAvailability>;
+  listAgents(): Promise<AgentsSnapshot>;
+  editAgents(): Promise<void>;
   onSessionSelected?(sessionId: string | null): void;
 }
 
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
+const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -91,9 +95,14 @@ function integer(value: unknown, label: string): number {
   return value as number;
 }
 
+/**
+ * The renderer names an agent; it never spells out an executable. Only the shape of the id is
+ * checked here — whether an agent by that name exists is the registry's answer to give, and it comes
+ * back as "Unknown agent" from the coordinator.
+ */
 function validateCreateInput(value: unknown): CreateTerminalInput {
   const input = exactObject(value, ["projectId", "kind", "cols", "rows"], "Terminal create input");
-  if (input.kind !== "powershell" && input.kind !== "claude" && input.kind !== "codex") {
+  if (typeof input.kind !== "string" || !AGENT_ID_PATTERN.test(input.kind)) {
     throw new Error("Terminal kind is invalid");
   }
   return {
@@ -203,6 +212,8 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     dependencies.projectActions.gitStatus(await projectRoot(nonEmptyString(projectId, "Project id"))),
   );
   ipc.handle("providers:availability", () => dependencies.getAvailability());
+  ipc.handle("agents:list", () => dependencies.listAgents());
+  ipc.handle("agents:edit", () => dependencies.editAgents());
   ipc.handle("terminals:list", () => dependencies.coordinator.list());
   ipc.handle("terminals:state", () => dependencies.coordinator.state());
   ipc.handle("terminals:create", async (_event, input: unknown) => dependencies.coordinator.create(validateCreateInput(input)));

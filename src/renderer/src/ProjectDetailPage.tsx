@@ -1,12 +1,11 @@
-import type { GitStatusResult, ProjectMetadataPatch, ProviderAvailability, TerminalSessionView } from "@shared/api-types";
+import type { AgentView } from "@shared/agent-types";
+import type { GitStatusResult, ProjectMetadataPatch, TerminalSessionView } from "@shared/api-types";
 import type { ProjectTrack, SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
 import { FolderOpen, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { GitHubIcon, VSCodeIcon } from "./brand-icons";
-import { projectName, providerAccentClass, providerDetails, relativeTime, sessionLabel, statusLabels } from "./session-labels";
-
-const TERMINAL_KINDS: TerminalKind[] = ["powershell", "claude", "codex"];
+import { AgentIcon, GitHubIcon, VSCodeIcon, agentAccentClass } from "./brand-icons";
+import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -91,7 +90,8 @@ function NewItemForm({ trackTitle, onAdd }: { trackTitle: string; onAdd(text: st
 interface ProjectDetailPageProps {
   project: SharedProject;
   sessions: TerminalSessionView[];
-  availability: ProviderAvailability;
+  agents: AgentView[];
+  vscodeAvailable: boolean;
   pendingAction: boolean;
   onSelectSession(session: TerminalSessionView): void;
   onStartSession(kind: TerminalKind): void;
@@ -104,7 +104,8 @@ interface ProjectDetailPageProps {
 export function ProjectDetailPage({
   project,
   sessions,
-  availability,
+  agents,
+  vscodeAvailable,
   pendingAction,
   onSelectSession,
   onStartSession,
@@ -167,28 +168,28 @@ export function ProjectDetailPage({
             <div className="detail-empty-sessions">
               <h3>{name}에서 세션 시작</h3>
               <div className="detail-launcher-row">
-                {TERMINAL_KINDS.map((kind) => {
-                  const details = providerDetails[kind];
-                  const Icon = details.icon;
-                  return (
-                    <button
-                      key={kind}
-                      type="button"
-                      disabled={!availability[kind] || pendingAction}
-                      onClick={() => onStartSession(kind)}
-                      aria-label={`${details.label} 세션 시작`}
-                    >
-                      <Icon size={15} className={availability[kind] ? providerAccentClass[kind] : undefined} />
-                      <span>{details.label}</span>
-                    </button>
-                  );
-                })}
+                {agents.map((agent) => (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    disabled={!agent.available || pendingAction}
+                    onClick={() => onStartSession(agent.id)}
+                    aria-label={`${agent.label} 세션 시작`}
+                  >
+                    <AgentIcon
+                      agent={agent}
+                      size={15}
+                      className={agent.available ? agentAccentClass(agent) : undefined}
+                    />
+                    <span>{agent.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
             <ul className="session-card-list">
               {sessions.map((session) => {
-                const label = sessionLabel(session, sessions);
+                const label = sessionLabel(session, sessions, agents);
                 return (
                   <li key={session.id}>
                     <button
@@ -218,8 +219,8 @@ export function ProjectDetailPage({
             </button>
             <button
               type="button"
-              disabled={!availability.vscode}
-              title={availability.vscode ? undefined : "PATH에서 VS Code를 찾을 수 없습니다"}
+              disabled={!vscodeAvailable}
+              title={vscodeAvailable ? undefined : "PATH에서 VS Code를 찾을 수 없습니다"}
               onClick={onOpenInEditor}
             >
               <VSCodeIcon size={14} className="brand-icon-vscode" />

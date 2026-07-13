@@ -1,15 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, utilityProcess } from "electron";
 import os from "node:os";
 import path from "node:path";
-import type { ProviderAvailability } from "../shared/api-types";
+import type { AgentDefinition } from "../shared/agent-types";
+import type { AgentsSnapshot, ProviderAvailability } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
+import { agentsById, readAgentRegistry } from "./agents/agent-registry";
+import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
 import { registerMainIpc } from "./ipc";
 import { createProjectActions } from "./projects/project-actions";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { CodexSessionTracker } from "./providers/codex-session-tracker";
-import { detectProviderExecutables } from "./providers/provider-launch";
+import { detectProviderExecutables, type ProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { readSessionTitle } from "./providers/session-title";
 import { createTerminalAttentionTracker, type WindowAttention } from "./attention-policy";
@@ -27,13 +30,8 @@ function stringEnvironment(): Record<string, string> {
   );
 }
 
-function availability(executables: Awaited<ReturnType<typeof detectProviderExecutables>>): ProviderAvailability {
-  return {
-    powershell: executables.powershell !== null,
-    claude: executables.claude !== null,
-    codex: executables.codex !== null,
-    vscode: executables.vscode !== null,
-  };
+function availability(executables: ProviderExecutables): ProviderAvailability {
+  return { vscode: executables.vscode !== null };
 }
 
 export interface DesktopRuntime {
@@ -53,6 +51,32 @@ export async function createDesktopRuntime(
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData);
   const projectService = new ProjectService({ registryPath });
+  const agentRegistryPath = process.env.MULTI_CLI_WORK_AGENTS_PATH;
+  const agentOptions = agentRegistryPath ? { registryPath: agentRegistryPath } : {};
+
+  // `agents.json` is the user's to edit while the app runs, so the registry is re-read whenever the
+  // renderer asks for the list rather than pinned at startup.
+  let agentSnapshot = await readAgentRegistry(agentOptions);
+  let agentMap = agentsById(agentSnapshot.agents);
+  let executablePromise: Promise<ProviderExecutables> | null = null;
+  const getExecutables = () => (executablePromise ??= detectProviderExecutables(agentSnapshot.agents));
+
+  /** What a PATH lookup depends on. The renderer asks for the list on every window focus, and each
+   *  lookup spawns `where.exe` per agent — so only an actual change to the agents is worth a rescan. */
+  const executableKey = (agents: readonly AgentDefinition[]): string =>
+    agents.map((agent) => `${agent.id}:${agent.commands.join(",")}`).join("|");
+
+  async function listAgents(): Promise<AgentsSnapshot> {
+    const previousKey = executableKey(agentSnapshot.agents);
+    agentSnapshot = await readAgentRegistry(agentOptions);
+    agentMap = agentsById(agentSnapshot.agents);
+    if (executableKey(agentSnapshot.agents) !== previousKey) executablePromise = null;
+    const executables = await getExecutables();
+    return {
+      agents: agentSnapshot.agents.map((agent) => ({ ...agent, available: executables.agents[agent.id] !== null })),
+      ...(agentSnapshot.warning !== undefined ? { warning: agentSnapshot.warning } : {}),
+    };
+  }
 
   const worker = new RestartingTerminalWorker(
     () =>
@@ -60,8 +84,6 @@ export async function createDesktopRuntime(
         serviceName: "Multi CLI Work PTY",
       }) as RestartableTerminalWorkerTransport,
   );
-  let executablePromise: ReturnType<typeof detectProviderExecutables> | null = null;
-  const getExecutables = () => (executablePromise ??= detectProviderExecutables());
   const coordinator = new TerminalCoordinator({
     worker,
     statePath: path.join(userData, "state.json"),
@@ -72,12 +94,20 @@ export async function createDesktopRuntime(
       return (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;
     },
     getExecutables,
+    getAgent: (agentId) => agentMap.get(agentId) ?? null,
     toolSessionCwd: () => os.homedir(),
-    readTitle: (session) =>
-      readSessionTitle(session, {
-        ...(claudeProjectsDirectory ? { claudeProjectsDirectory } : {}),
-        ...(codexSessionsDirectory ? { codexSessionsDirectory } : {}),
-      }),
+    readTitle: (session, agent) =>
+      readSessionTitle(
+        {
+          titleSource: agent.titleSource,
+          cwd: session.cwd,
+          providerConversationId: session.providerConversationId,
+        },
+        {
+          ...(claudeProjectsDirectory ? { claudeProjectsDirectory } : {}),
+          ...(codexSessionsDirectory ? { codexSessionsDirectory } : {}),
+        },
+      ),
     env: {
       ...stringEnvironment(),
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
@@ -118,6 +148,8 @@ export async function createDesktopRuntime(
     async getAvailability() {
       return availability(await getExecutables());
     },
+    listAgents,
+    editAgents: () => openAgentRegistryForEditing(agentRegistryPath),
     onSessionSelected(sessionId) {
       applyAttention(attentionTracker.markSeen(sessionId));
     },
@@ -161,7 +193,7 @@ export async function createDesktopRuntime(
       if (!notificationDeduper.shouldNotify(event.sessionId, event.status)) return;
       const session = coordinator.list().find((candidate) => candidate.id === event.sessionId);
       const title = session
-        ? `${session.kind === "claude" ? "Claude" : "Codex"} · ${path.basename(session.cwd)}`
+        ? `${agentMap.get(session.kind)?.label ?? session.kind} · ${path.basename(session.cwd)}`
         : "멀티 터미널 작업기";
       const notification = new Notification({
         title,

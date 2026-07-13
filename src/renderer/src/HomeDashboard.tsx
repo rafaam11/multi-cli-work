@@ -1,13 +1,15 @@
-import type { ProviderAvailability, TerminalSessionView, UpdaterStatus } from "@shared/api-types";
+import type { AgentView } from "@shared/agent-types";
+import type { TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
 import { Clock, Info, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
-import { GitHubIcon } from "./brand-icons";
+import { AgentIcon, GitHubIcon, agentAccentClass } from "./brand-icons";
 import {
+  TOOL_AGENT_ID,
+  findAgent,
+  newSessionLabel,
   projectName,
-  providerAccentClass,
-  providerDetails,
   relativeTime,
   sessionLabel,
   statusLabels,
@@ -35,12 +37,7 @@ const STATUS_PRIORITY: Record<TerminalStatus, number> = {
   error: 5,
 };
 
-const TERMINAL_KINDS: TerminalKind[] = ["powershell", "claude", "codex"];
 const TOOL_COMMANDS: ToolCommand[] = ["claude-update", "codex-update"];
-const TOOL_PROVIDER: Record<ToolCommand, TerminalKind> = {
-  "claude-update": "claude",
-  "codex-update": "codex",
-};
 const QUICK_LAUNCH_LIMIT = 5;
 
 function sortedSessionMonitor(sessions: TerminalSessionView[]): TerminalSessionView[] {
@@ -69,7 +66,7 @@ function quickLaunchProjects(projects: SharedProject[], sessions: TerminalSessio
 interface HomeDashboardProps {
   projects: SharedProject[];
   sessions: TerminalSessionView[];
-  availability: ProviderAvailability;
+  agents: AgentView[];
   activityLog: ActivityEntry[];
   pendingAction: boolean;
   onSelectSession(session: TerminalSessionView): void;
@@ -80,7 +77,7 @@ interface HomeDashboardProps {
 export function HomeDashboard({
   projects,
   sessions,
-  availability,
+  agents,
   activityLog,
   pendingAction,
   onSelectSession,
@@ -114,7 +111,7 @@ export function HomeDashboard({
             <ul className="monitor-list">
               {monitored.map((session) => {
                 const peers = sessions.filter((candidate) => candidate.projectId === session.projectId);
-                const label = sessionLabel(session, peers);
+                const label = sessionLabel(session, peers, agents);
                 const project = projects.find((candidate) => candidate.id === session.projectId) ?? null;
                 return (
                   <li key={session.id}>
@@ -141,21 +138,17 @@ export function HomeDashboard({
         <section className="home-card" aria-label="CLI 및 업데이트 상태">
           <h2>CLI &amp; 업데이트</h2>
           <ul className="cli-status-list">
-            {TERMINAL_KINDS.map((kind) => {
-              const details = providerDetails[kind];
-              const Icon = details.icon;
-              return (
-                <li key={kind} className={availability[kind] ? "installed" : "missing"}>
-                  <Icon size={14} className={availability[kind] ? providerAccentClass[kind] : undefined} />
-                  <span>{details.label}</span>
-                  <span className="cli-status-value">{availability[kind] ? "설치됨" : "찾을 수 없음"}</span>
-                </li>
-              );
-            })}
+            {agents.map((agent) => (
+              <li key={agent.id} className={agent.available ? "installed" : "missing"}>
+                <AgentIcon agent={agent} size={14} className={agent.available ? agentAccentClass(agent) : undefined} />
+                <span>{agent.label}</span>
+                <span className="cli-status-value">{agent.available ? "설치됨" : "찾을 수 없음"}</span>
+              </li>
+            ))}
           </ul>
           <div className="tool-update-row">
             {TOOL_COMMANDS.map((tool) => {
-              const installed = availability[TOOL_PROVIDER[tool]];
+              const installed = Boolean(findAgent(agents, TOOL_AGENT_ID[tool])?.available);
               return (
                 <button key={tool} type="button" disabled={!installed || pendingAction} onClick={() => onStartTool(tool)}>
                   <Wrench size={13} />
@@ -190,22 +183,22 @@ export function HomeDashboard({
                     {projectName(project)}
                   </span>
                   <span className="quick-launch-actions">
-                    {TERMINAL_KINDS.map((kind) => {
-                      const details = providerDetails[kind];
-                      const Icon = details.icon;
-                      return (
-                        <button
-                          key={kind}
-                          type="button"
-                          disabled={!availability[kind] || pendingAction}
-                          title={details.menuLabel}
-                          aria-label={`${projectName(project)}에서 ${details.label} 시작`}
-                          onClick={() => onStartSession(project, kind)}
-                        >
-                          <Icon size={13} className={availability[kind] ? providerAccentClass[kind] : undefined} />
-                        </button>
-                      );
-                    })}
+                    {agents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        disabled={!agent.available || pendingAction}
+                        title={newSessionLabel(agent)}
+                        aria-label={`${projectName(project)}에서 ${agent.label} 시작`}
+                        onClick={() => onStartSession(project, agent.id)}
+                      >
+                        <AgentIcon
+                          agent={agent}
+                          size={13}
+                          className={agent.available ? agentAccentClass(agent) : undefined}
+                        />
+                      </button>
+                    ))}
                   </span>
                 </li>
               ))}
@@ -222,7 +215,11 @@ export function HomeDashboard({
               {activityLog.map((entry) => {
                 const session = sessions.find((candidate) => candidate.id === entry.sessionId);
                 const label = session
-                  ? sessionLabel(session, sessions.filter((candidate) => candidate.projectId === session.projectId))
+                  ? sessionLabel(
+                      session,
+                      sessions.filter((candidate) => candidate.projectId === session.projectId),
+                      agents,
+                    )
                   : entry.sessionLabel;
                 return (
                   <li key={entry.id}>

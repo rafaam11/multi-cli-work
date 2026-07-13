@@ -12,6 +12,8 @@ import type {
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
 import { readAppState, readSessionLog } from "../state/app-state";
+import type { BuiltinAgentId } from "../../shared/agent-types";
+import { BUILTIN_AGENTS } from "../agents/builtin-agents";
 import { TerminalCoordinator, type TerminalWorkerGateway } from "./terminal-coordinator";
 
 const roots: string[] = [];
@@ -101,11 +103,10 @@ async function coordinator(
     claudeSettingsPath: path.join(root, "claude-settings.json"),
     getProject: async (id) => (id === project.id ? project : null),
     getExecutables: async () => ({
-      powershell: "powershell.exe",
-      claude: "claude.exe",
-      codex: "codex.cmd",
+      agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
       vscode: "code.cmd",
     }),
+    getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
     toolSessionCwd: () => "C:\\Users\\me",
     env: { SYSTEMROOT: "C:\\Windows" },
     idFactory: () => "session-1",
@@ -157,11 +158,10 @@ describe("TerminalCoordinator", () => {
       claudeSettingsPath: path.join(root, "claude-settings.json"),
       getProject,
       getExecutables: async () => ({
-        powershell: "powershell.exe",
-        claude: "claude.exe",
-        codex: "codex.cmd",
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
         vscode: null,
       }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
       toolSessionCwd: () => "C:\\Users\\me",
       env: {},
       idFactory: () => "session-tool",
@@ -207,7 +207,11 @@ describe("TerminalCoordinator", () => {
       logDir: path.join(root, "logs"),
       claudeSettingsPath: path.join(root, "claude-settings.json"),
       getProject: async () => project,
-      getExecutables: async () => ({ powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd", vscode: null }),
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: null,
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
       toolSessionCwd: () => "C:\\Users\\me",
       readTitle: async () => providerTitle,
       env: {},
@@ -244,7 +248,11 @@ describe("TerminalCoordinator", () => {
       logDir: path.join(root, "logs"),
       claudeSettingsPath: path.join(root, "claude-settings.json"),
       getProject: async () => project,
-      getExecutables: async () => ({ powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd", vscode: null }),
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: null,
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
       toolSessionCwd: () => "C:\\Users\\me",
       readTitle: async () => "프로바이더 제목",
       env: {},
@@ -278,11 +286,10 @@ describe("TerminalCoordinator", () => {
       claudeSettingsPath: path.join(root, "claude-settings.json"),
       getProject: async (id) => (id === project.id ? project : { ...project, id: "project-2", rootPath: "C:\\Other" }),
       getExecutables: async () => ({
-        powershell: "powershell.exe",
-        claude: "claude.exe",
-        codex: "codex.cmd",
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
         vscode: null,
       }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
       toolSessionCwd: () => "C:\\Users\\me",
       env: {},
       idFactory: () => ids.shift() ?? "session-x",
@@ -624,5 +631,48 @@ describe("TerminalCoordinator", () => {
 
     await expect(fs.stat(keptFile)).resolves.toBeTruthy();
     await expect(fs.stat(orphanFile)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+/**
+ * `agents.json` is the user's to edit, so an agent can disappear out from under a session that is
+ * already on disk. Removing an agent must cost them that agent — not the sessions they ran with it.
+ */
+describe("an agent that is no longer installed", () => {
+  it("refuses to start a session and says how to get the agent back", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+
+    await expect(instance.create({ projectId: "project-1", kind: "gemini", cols: 80, rows: 24 })).rejects.toThrow(
+      /unknown agent: gemini.*agents\.json/i,
+    );
+    expect(worker.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps its sessions listed and their scrollback readable", async () => {
+    const root = await tempRoot();
+    const before = await coordinator(root);
+    await before.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    await before.instance.flush();
+
+    // The user reopens the app after deleting the agent from agents.json.
+    const after = new TerminalCoordinator({
+      worker: new FakeWorker(),
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async (id) => (id === project.id ? project : null),
+      getExecutables: async () => ({ agents: {}, vscode: null }),
+      getAgent: () => null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: {},
+      idFactory: () => "session-2",
+      now: () => "2026-07-11T02:00:00.000Z",
+    });
+    await after.initialize();
+
+    expect(after.list().map((session) => session.kind)).toEqual(["claude"]);
+    await expect(after.attach("session-1")).resolves.toMatchObject({ session: { id: "session-1" } });
+    await expect(after.resume({ sessionId: "session-1", cols: 80, rows: 24 })).rejects.toThrow(/unknown agent/i);
   });
 });

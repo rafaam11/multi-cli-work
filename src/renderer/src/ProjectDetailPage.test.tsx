@@ -1,4 +1,5 @@
-import type { GitStatusResult, MultiCliWorkApi, ProviderAvailability, TerminalSessionView } from "@shared/api-types";
+import type { AgentView } from "@shared/agent-types";
+import type { GitStatusResult, MultiCliWorkApi, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +7,30 @@ import { ProjectDetailPage } from "./ProjectDetailPage";
 
 afterEach(cleanup);
 
-const availability: ProviderAvailability = { powershell: true, claude: true, codex: false, vscode: true };
+/** The three built-ins, with Codex missing from PATH — the same shape the old availability map had. */
+function agentFixture(id: string, label: string, available: boolean): AgentView {
+  return {
+    id,
+    label,
+    commands: [id],
+    args: [],
+    newSessionArgs: [],
+    resumeArgs: [],
+    conversationId: "none",
+    statusAdapter: "signals",
+    titleSource: "none",
+    icon: id,
+    accentColor: null,
+    builtin: true,
+    available,
+  };
+}
+
+const agents: AgentView[] = [
+  agentFixture("powershell", "PowerShell", true),
+  agentFixture("claude", "Claude Code", true),
+  agentFixture("codex", "Codex", false),
+];
 
 const atlas: SharedProject = {
   id: "project-atlas",
@@ -56,7 +80,8 @@ function baseProps() {
   return {
     project: atlas,
     sessions: [] as TerminalSessionView[],
-    availability,
+    agents,
+    vscodeAvailable: true,
     pendingAction: false,
     onSelectSession: vi.fn(),
     onStartSession: vi.fn(),

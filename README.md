@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/local--only-no%20telemetry-3fb950" alt="local only">
 </p>
 
-**멀티 터미널 작업기**는 여러 개의 **Codex · Claude Code · PowerShell 세션을 작업 폴더 단위로 묶어** 한 창에서 굴리는 **로컬 전용 Windows 데스크톱 앱**(Electron)이다.
+**멀티 터미널 작업기**는 여러 개의 **CLI 에이전트 세션을 작업 폴더 단위로 묶어** 한 창에서 굴리는 **로컬 전용 Windows 데스크톱 앱**(Electron)이다. **Codex · Claude Code · PowerShell** 이 기본으로 들어 있고, 그 밖의 CLI는 `agents.json`에 적어 넣으면 같은 자격으로 붙는다.
 
 - 왼쪽 트리에 **열어둔 폴더**, 그 아래 **세션들**. 오른쪽엔 지금 보고 있는 터미널 하나.
 - 좌측 상단 로고를 누르면 전체 세션을 한눈에 보는 **홈 대시보드**로, 폴더를 누르면 그 폴더의 세션·git 상태·메모를 모아보는 **상세 페이지**로 이동한다. 세션을 직접 누르면 바로 터미널이 뜬다.
@@ -37,7 +37,7 @@
 2. 서명되지 않은 빌드라 Windows SmartScreen 경고가 뜬다 — **추가 정보 → 실행**으로 진행한다.
 3. 설치는 **사용자 단위**라 관리자 권한이 필요 없다. 바탕화면/시작 메뉴의 **Multi CLI Work**(앱 내부 표시명은 "멀티 터미널 작업기")로 실행한다.
 
-**Node.js 설치는 필요 없다**(Electron에 런타임이 내장됨). 다만 세션을 띄우려면 그 CLI가 있어야 한다 — PowerShell은 Windows 기본, `claude`·`codex`는 `PATH`에 있으면 자동 인식하고 없으면 해당 메뉴가 비활성된다.
+**Node.js 설치는 필요 없다**(Electron에 런타임이 내장됨). 다만 세션을 띄우려면 그 CLI가 있어야 한다 — PowerShell은 Windows 기본, `claude`·`codex`는 `PATH`에 있으면 자동 인식하고 없으면 해당 메뉴가 비활성된다. 다른 CLI를 붙이려면 아래 **에이전트 추가**를 본다.
 
 ## 업데이트 (자동)
 
@@ -52,7 +52,8 @@
 - **폴더 트리** — 폴더 하나에 세션 여러 개를 중첩해 붙인다. **＋** 로 작업할 폴더를 열면 목록에 남고, 앱을 껐다 켜도 그대로다. 자동 발견은 하지 않는다 — **내가 연 폴더만** 보인다.
 - **폴더 우클릭 메뉴** — **파일 탐색기에서 열기** · **VS Code로 열기**(`code`) · **GitHub에서 열기**(`origin` 리모트를 브라우저로) · **이름 변경** · **목록에서 제거**. 제거는 UI 목록에서만 빼는 것이고 **디스크의 폴더는 건드리지 않는다**(세션이 남아 있으면 먼저 확인한다).
 - **세션 이름 = 하는 일** — Claude는 자기가 붙인 세션 제목(`ai-title`)을, Codex는 첫 프롬프트를 트랜스크립트에서 읽어 세션 이름으로 쓴다. 작업이 바뀌면 이름도 따라 바뀐다. 세션을 **우클릭 → 이름 변경** 하면 직접 붙인 이름이 우선하고, **제공자 제목 사용** 으로 되돌린다.
-- **세션 상태 7종** — `starting` · `working` · `awaiting-input` · `awaiting-approval` · `idle` · `exited` · `error`. 각 세션 행이 **상태 색으로 물든다**(작업 중=teal, 입력 대기=violet, 대기=green, 종료=회색, 오류=red). Claude는 앱 전용 **훅 오버레이**(`--settings`)로, Codex는 **OSC 알림**과 프로세스·입력 신호로 판정한다. 다만 아래 권한 플래그를 항상 붙이므로 `awaiting-approval`은 실질적으로 뜨지 않는다.
+- **에이전트는 데이터다** — PowerShell · Claude Code · Codex는 코드에 박힌 특별한 존재가 아니라 **빌트인 정의**일 뿐이다. `~/.multi-cli-work/agents.json`에 같은 형식으로 적으면 Gemini CLI든 무엇이든 런처에 나란히 선다. 헤더의 🔧 **도구 → 에이전트 추가**를 누르면 예시가 담긴 파일이 편집기로 열리고, 저장하고 앱으로 돌아오면 목록이 갱신된다. 자세한 건 아래 [에이전트 추가](#에이전트-추가).
+- **세션 상태 7종** — `starting` · `working` · `awaiting-input` · `awaiting-approval` · `idle` · `exited` · `error`. 각 세션 행이 **상태 색으로 물든다**(작업 중=teal, 입력 대기=violet, 대기=green, 종료=회색, 오류=red). 무엇으로 판정하는지는 에이전트가 고르는 **상태 어댑터**가 정한다 — Claude는 앱 전용 **훅 오버레이**(`--settings`), Codex는 **OSC 9 알림**, PowerShell은 프로세스 신호뿐이다. 다만 아래 권한 플래그를 항상 붙이므로 `awaiting-approval`은 실질적으로 뜨지 않는다.
 - **권한 프롬프트 없이 실행** — Claude는 `--dangerously-skip-permissions`, Codex는 `--dangerously-bypass-approvals-and-sandbox` 로 항상 실행한다. 승인 대기로 멈추지 않는 대신 **에이전트가 확인 없이 파일을 고치고 명령을 돌린다** — 신뢰하는 저장소에서만 쓸 것.
 - **알림은 놓치지 않게** — **화면에 없는** 세션이 입력 대기나 승인 대기에 들어가면 Windows 알림과 작업표시줄 깜빡임이 함께 켜지고, 창 제목 앞에 표시가 남는다. 같은 상태로 계속 머물면 다시 울리지 않으며, 해당 세션을 열거나 작업이 재개되면 표시가 해제된다.
 - **트레이 상주 · 세션 보존** — 창을 닫으면 트레이로 숨고 PTY는 살아 있다. **종료**는 "돌고 있는 세션을 끄겠냐"고 확인한 뒤에만 종료한다. 재시작하면 폴더·탭·**바운드 스크롤백**이 복원되고, AI 세션은 눈에 보이는 **재개**를 눌러야 재개된다(`claude --resume` / `codex resume`).
@@ -72,6 +73,40 @@
 
 **폴더가 사라졌을 때** — 아이콘이 `📁`에서 `📁✕`로 바뀌고 새 세션·재개가 막힌다. **⟲ 다시 연결** 로 새 경로를 지정하면 풀린다.
 
+## 에이전트 추가
+
+헤더의 🔧 **도구 → 에이전트 추가**를 누르면 `~/.multi-cli-work/agents.json`이 편집기로 열린다(없으면 예시가 담긴 파일을 먼저 만든다). 저장하고 앱 창으로 돌아오면 목록이 다시 읽힌다.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-13T00:00:00.000Z",
+  "agents": {
+    "gemini": {
+      "id": "gemini",                  // 맵 키와 같아야 한다. 소문자·숫자·하이픈
+      "label": "Gemini CLI",
+      "commands": ["gemini"],          // PATH에서 순서대로 찾는다. 없으면 런처에서 비활성
+      "args": ["--cwd", "{cwd}"],      // 항상 붙는 인자
+      "newSessionArgs": [],            // 새 세션일 때 앞에 붙는다
+      "resumeArgs": [],                // 재개일 때 앞에 붙는다
+      "conversationId": "none",        // "none" | "app-generated"
+      "statusAdapter": "signals",      // "signals" | "osc9"
+      "accentColor": "#4285f4"         // 아이콘 모노그램 색 (선택)
+    }
+  }
+}
+```
+
+**치환 토큰** — `{cwd}` · `{sessionId}` · `{conversationId}`(재개 인자에서만). 리터럴 중괄호는 `{{` `}}`. 모르는 토큰은 조용히 통과시키지 않고 **거부**한다 — 오타가 명령줄에 그대로 실려 나가지 않도록.
+
+**상태 어댑터** — `signals`는 프로세스 생사만 본다. **작업 중과 입력 대기를 구별하지 못하므로** 그 세션은 `대기`에 머문다("모르겠다"가 정직한 답이라서, 빠져나올 길 없는 `작업 중`에 가두지 않는다). CLI가 OSC 9 알림을 쏜다면 `osc9`를 고른다 — 빌트인 Codex와 같은 정확도를 얻는다(알림을 켜는 플래그는 그 에이전트의 `args`에 직접 넣는다).
+
+**재개** — `conversationId: "app-generated"`로 두고 `newSessionArgs`에 `{sessionId}`, `resumeArgs`에 `{conversationId}`를 넣으면 앱이 발급한 id로 대화를 이어붙인다. `"none"`이면 재개는 그냥 새로 띄우는 것이다.
+
+**빌트인 전용** — 브랜드 아이콘, 트랜스크립트에서 읽는 세션 제목, Claude 훅 오버레이(`claude-hook`), Codex의 대화 id 역추적(`provider-assigned`)은 빌트인만 가진다. 사용자 정의 에이전트가 이들을 요구하면 로드 시점에 거부하고 이유를 말한다.
+
+**파일이 깨졌을 때** — 앱은 죽지 않는다. 빌트인만 싣고 경고 배너에 이유가 뜬다. 세션은 자기가 쓰던 에이전트가 목록에서 사라져도 **목록에 남고 스크롤백도 읽힌다** — 다시 시작하는 것만 막힌다.
+
 ## 아키텍처
 
 <p align="center"><img src="docs/architecture.svg" alt="아키텍처 다이어그램 — main / utilityProcess / sandboxed renderer" width="100%"></p>
@@ -85,9 +120,10 @@
 
 ## 안전장치
 
-- **공유 레지스트리** — `proper-lockfile` 크로스 프로세스 락 → 스키마 검증 → 임시 파일 + rename(원자적 교체). 백업은 **검증을 통과한 내용만** `.bak`에 남기므로 깨진 파일이 정상 백업을 덮지 않는다.
-- **경로·정체성** — 안정 UUID + 정규화 경로 매칭. 수동 추가·Relink한 경로는 자동 발견보다 우선한다(두 앱 사이 경로 핑퐁 방지).
+- **레지스트리 쓰기** — `~/.multi-cli-work/` 아래 파일은 모두 같은 규약을 따른다: `proper-lockfile` 크로스 프로세스 락 → 스키마 검증 → 임시 파일 + rename(원자적 교체). 백업은 **검증을 통과한 내용만** `.bak`에 남기므로 깨진 파일이 정상 백업을 덮지 않는다.
+- **경로·정체성** — 안정 UUID + 정규화 경로 매칭.
 - **렌더러 격리** — `sandbox: true` · `contextIsolation: true` · `nodeIntegration: false`, CSP 적용, 외부 네비게이션·새 창 차단.
+- **렌더러는 명령을 못 짠다** — 세션을 만들 때 렌더러가 보내는 건 **에이전트 id뿐**이다. 실행파일과 인자는 main이 레지스트리에서 꺼낸다. `agents.json`은 사용자 홈에 있고 임의의 실행파일을 띄우는 게 목적이므로 샌드박스가 아니다 — 검증은 **오작동을 막기 위한 것**(오타·쓸 수 없는 토큰·빌트인 id 충돌)이지 악의를 막기 위한 게 아니다.
 - **Claude 훅** — 사용자의 `~/.claude/settings.json`을 건드리지 않는다. 앱 전용 오버레이(`userData/claude-settings.json`)를 `--settings`로 세션에만 얹는다.
 - **터미널 로그** — 링버퍼·로그 모두 상한이 있고, 잘라낼 때 UTF-8 문자 경계를 보존한다.
 - 단일 인스턴스 락으로 중복 실행을 막고, 트레이가 앱 수명을 소유한다(명시적 Quit만이 정상 종료 경로).
@@ -97,6 +133,7 @@
 | 경로 | 내용 |
 |---|---|
 | `~/.multi-cli-work/projects.json` | 열어둔 폴더 목록 |
+| `~/.multi-cli-work/agents.json` | 사용자가 추가한 CLI 에이전트(빌트인 3종은 코드에 있다) |
 | `userData/state.json` | 창·탭·선택·재개 상태 |
 | `userData/session-logs/` | 바운드 스크롤백 |
 | `userData/hooks/` · `claude-settings.json` | 앱 전용 Claude 훅 오버레이 |

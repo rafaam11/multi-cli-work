@@ -1,3 +1,4 @@
+import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, ProviderAvailability, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
@@ -18,13 +19,13 @@ import { ProjectSidebar } from "./ProjectSidebar";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { TerminalPane } from "./TerminalPane";
 import { WorkspaceHeader } from "./WorkspaceHeader";
-import { projectName, sessionLabel } from "./session-labels";
+import { findAgent, projectName, sessionLabel } from "./session-labels";
 
 type ActiveView = "home" | "detail" | "terminal";
 const ACTIVITY_LOG_LIMIT = 20;
 
 const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
-const EMPTY_AVAILABILITY: ProviderAvailability = { powershell: false, claude: false, codex: false, vscode: false };
+const EMPTY_AVAILABILITY: ProviderAvailability = { vscode: false };
 const DEFAULT_SIDEBAR_WIDTH = 264;
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 420;
@@ -81,6 +82,9 @@ export function App() {
   const [snapshot, setSnapshot] = useState<ProjectWorkspaceSnapshot | null>(null);
   const [sessions, setSessions] = useState<TerminalSessionView[]>([]);
   const [availability, setAvailability] = useState(EMPTY_AVAILABILITY);
+  const [agents, setAgents] = useState<AgentView[]>([]);
+  const [agentWarning, setAgentWarning] = useState<string | null>(null);
+  const agentsRef = useRef<AgentView[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>("home");
@@ -117,6 +121,7 @@ export function App() {
     ? sessionLabel(
         selectedSession,
         sessions.filter((session) => session.projectId === selectedSession.projectId),
+        agents,
       )
     : null;
   const selectedProjectMissing = Boolean(
@@ -141,18 +146,29 @@ export function App() {
     [maximumSidebarWidth],
   );
 
+  const refreshAgents = useCallback(async () => {
+    const snapshot = await window.multiCliWork.agents.list();
+    setAgents(snapshot.agents);
+    agentsRef.current = snapshot.agents;
+    setAgentWarning(snapshot.warning ?? null);
+  }, []);
+
   const loadWorkspace = useCallback(
     async (preservedSelection?: { projectId: string | null; sessionId: string | null; view?: ActiveView }) => {
       setLoading(true);
       setLoadError(null);
       const forceHome = preservedSelection?.view === "home";
       try {
-        const [registrySnapshot, terminalSessions, providers, appState] = await Promise.all([
+        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState] = await Promise.all([
           window.multiCliWork.projects.list(),
           window.multiCliWork.terminals.list(),
           window.multiCliWork.providers.availability(),
+          window.multiCliWork.agents.list(),
           window.multiCliWork.terminals.state(),
         ]);
+        setAgents(agentsSnapshot.agents);
+        agentsRef.current = agentsSnapshot.agents;
+        setAgentWarning(agentsSnapshot.warning ?? null);
         const visibleProjects = Object.values(registrySnapshot.registry.projects).sort(
           (left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER),
         );
@@ -211,6 +227,16 @@ export function App() {
     return () => window.removeEventListener("resize", handleWindowResize);
   }, [clampSidebarWidth]);
 
+  // Editing `agents.json` happens in someone else's editor, so there is no save to listen for.
+  // Coming back to the window is the one moment we know to look again.
+  useEffect(() => {
+    const handleFocus = () => {
+      void refreshAgents().catch(() => undefined);
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [refreshAgents]);
+
   const beginSidebarResize = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -246,7 +272,7 @@ export function App() {
                   timestamp: new Date().toISOString(),
                   projectId: previous.projectId,
                   sessionId: previous.id,
-                  sessionLabel: sessionLabel(previous, peers),
+                  sessionLabel: sessionLabel(previous, peers, agentsRef.current),
                   fromStatus: previous.status,
                   toStatus: event.status,
                 },
@@ -323,7 +349,7 @@ export function App() {
   };
 
   const startSession = async (project: SharedProject, kind: TerminalKind) => {
-    if (isProjectMissing(project.id) || !availability[kind]) return;
+    if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
     setPendingAction(true);
     setActionError(null);
     try {
@@ -358,6 +384,15 @@ export function App() {
       setActionError(errorMessage(error));
     } finally {
       setPendingAction(false);
+    }
+  };
+
+  const editAgents = async () => {
+    setActionError(null);
+    try {
+      await window.multiCliWork.agents.edit();
+    } catch (error) {
+      setActionError(errorMessage(error));
     }
   };
 
@@ -520,6 +555,7 @@ export function App() {
         snapshot={snapshot}
         projects={projects}
         sessions={folderSessions}
+        agents={agents}
         toolSessions={toolSessions}
         selectedProjectId={activeView === "home" ? null : selectedProjectId}
         selectedSessionId={activeView === "home" ? null : selectedSessionId}
@@ -546,6 +582,7 @@ export function App() {
             label: sessionLabel(
               session,
               sessions.filter((candidate) => candidate.projectId === session.projectId),
+              agents,
             ),
             x: event.clientX,
             y: event.clientY,
@@ -575,11 +612,12 @@ export function App() {
           selectedSession={headerSession}
           selectedSessionLabel={headerSessionLabel}
           projectMissing={selectedProjectMissing}
-          availability={availability}
+          agents={agents}
           pendingAction={pendingAction}
           readOnly={Boolean(snapshot && !snapshot.writable)}
           onStartSession={(kind) => selectedProject && void startSession(selectedProject, kind)}
           onStartTool={(tool) => void startTool(tool)}
+          onEditAgents={() => void editAgents()}
           onResumeSession={() => void resumeSession()}
           onStopSession={() => void stopSession()}
           onRemoveSession={() => void removeSession()}
@@ -611,6 +649,17 @@ export function App() {
                 </button>
               </div>
             ) : null}
+
+            {/* A broken agents.json costs the user their own agents, not the app — so say so. */}
+            {agentWarning ? (
+              <div className="action-error" role="alert">
+                <TriangleAlert size={14} />
+                <span>{agentWarning}</span>
+                <button type="button" onClick={() => void editAgents()} aria-label="agents.json 열기">
+                  agents.json 열기
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {loading ? (
@@ -635,7 +684,8 @@ export function App() {
               key={selectedProject.id}
               project={selectedProject}
               sessions={folderSessions.filter((session) => session.projectId === selectedProject.id)}
-              availability={availability}
+              agents={agents}
+              vscodeAvailable={availability.vscode}
               pendingAction={pendingAction}
               onSelectSession={selectSession}
               onStartSession={(kind) => void startSession(selectedProject, kind)}
@@ -648,7 +698,7 @@ export function App() {
             <HomeDashboard
               projects={projects}
               sessions={sessions}
-              availability={availability}
+              agents={agents}
               activityLog={activityLog}
               pendingAction={pendingAction}
               onSelectSession={selectSession}

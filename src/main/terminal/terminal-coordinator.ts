@@ -1,3 +1,4 @@
+import type { AgentDefinition, AgentId } from "../../shared/agent-types";
 import type { AppStateV1, PersistedTerminalSession } from "../../shared/app-state-types";
 import type {
   CreateTerminalInput,
@@ -16,7 +17,8 @@ import type {
   TerminalWorkerEvent,
   ToolCommand,
 } from "../../shared/terminal-types";
-import { buildProviderLaunch, buildToolLaunch, type ProviderExecutables } from "../providers/provider-launch";
+import { buildAgentLaunch } from "../agents/agent-launch";
+import { agentExecutable, buildToolLaunch, type ProviderExecutables } from "../providers/provider-launch";
 import { cleanupProviderStatusFiles, deleteProviderStatusFile } from "../providers/provider-status";
 import {
   appendSessionLog,
@@ -48,6 +50,8 @@ interface TerminalCoordinatorOptions {
   claudeSettingsPath: string;
   getProject(projectId: string): Promise<SharedProject | null>;
   getExecutables(): Promise<ProviderExecutables>;
+  /** Null when a session names an agent the user has since removed from `agents.json`. */
+  getAgent(agentId: AgentId): AgentDefinition | null;
   toolSessionCwd(): string;
   env: Record<string, string>;
   idFactory(): string;
@@ -57,7 +61,7 @@ interface TerminalCoordinatorOptions {
     waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null>;
   };
   /** Reads what the provider currently calls this session. Absent in tests that do not need titles. */
-  readTitle?(session: TerminalSessionView): Promise<string | null>;
+  readTitle?(session: TerminalSessionView, agent: AgentDefinition): Promise<string | null>;
   titlePollMs?: number;
   appendLog?: typeof appendSessionLog;
   logFlushMs?: number;
@@ -161,7 +165,10 @@ export class TerminalCoordinator {
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
-    if (saved.kind !== "powershell" && !saved.providerConversationId) {
+    // An agent that owns no conversation (a plain shell) resumes by relaunching. One that does needs
+    // the id, and a fresh Codex session has none until its transcript has been correlated.
+    const agent = this.requireAgent(saved.kind);
+    if (agent.conversationId !== "none" && !saved.providerConversationId) {
       throw new Error(`${saved.kind} session does not have a resumable conversation id`);
     }
     // Folder sessions re-read the project so a relinked folder resumes at its new root.
@@ -282,11 +289,12 @@ export class TerminalCoordinator {
     return () => this.subscribers.delete(listener);
   }
 
+  /** Status written by an agent's own hook. Only a hook-driven agent has one to write. */
   applyProviderStatus(sessionId: string, status: TerminalStatus): void {
     const view = this.views.get(sessionId);
     if (
       !view ||
-      view.kind !== "claude" ||
+      this.options.getAgent(view.kind)?.statusAdapter !== "claude-hook" ||
       view.pid === null ||
       status === "exited" ||
       status === "error" ||
@@ -331,18 +339,20 @@ export class TerminalCoordinator {
     title?: string | null;
     name?: string | null;
   }): Promise<TerminalSessionView> {
+    const agent = this.requireAgent(input.kind);
+    // Codex mints its own conversation id, so the transcripts that already exist have to be noted
+    // before it starts — whatever appears afterwards is this session's.
     const knownCodexIds =
-      input.kind === "codex" && !input.resumeConversationId && this.options.codexSessions
+      agent.conversationId === "provider-assigned" && !input.resumeConversationId && this.options.codexSessions
         ? await this.options.codexSessions.snapshot(input.cwd).catch(() => new Set<string>())
         : null;
     const executables = await this.options.getExecutables();
     const command = input.tool
       ? buildToolLaunch(input.tool, executables)
-      : buildProviderLaunch(input.kind, {
+      : buildAgentLaunch(agent, agentExecutable(executables, agent), {
           cwd: input.cwd,
-          appSessionId: input.sessionId,
+          sessionId: input.sessionId,
           claudeSettingsPath: this.options.claudeSettingsPath,
-          executables,
           resumeConversationId: input.resumeConversationId,
         });
     const session = await this.options.worker.create({
@@ -350,6 +360,7 @@ export class TerminalCoordinator {
       projectId: input.projectId,
       tool: input.tool,
       kind: input.kind,
+      statusAdapter: agent.statusAdapter,
       cwd: input.cwd,
       executable: command.executable,
       args: command.args,
@@ -378,6 +389,16 @@ export class TerminalCoordinator {
   }
 
   /**
+   * An agent the user removed from `agents.json` leaves its sessions behind. They stay listed and
+   * their scrollback stays readable — only starting one again is refused, and it says why.
+   */
+  private requireAgent(agentId: AgentId): AgentDefinition {
+    const agent = this.options.getAgent(agentId);
+    if (!agent) throw new Error(`Unknown agent: ${agentId}. Add it back to agents.json to run it again.`);
+    return agent;
+  }
+
+  /**
    * Provider titles live in transcript files the CLI is still appending to, and for a fresh session
    * the file does not exist yet. Polling the running sessions sidesteps both the missing-file race
    * and fs.watch's habit of dropping creation events on Windows.
@@ -397,14 +418,14 @@ export class TerminalCoordinator {
     this.titleTimer = null;
   }
 
-  private titleCandidates(): TerminalSessionView[] {
-    return this.list().filter(
-      (session) =>
-        session.kind !== "powershell" &&
-        session.pid !== null &&
-        session.status !== "exited" &&
-        session.status !== "error",
-    );
+  /** Only an agent that writes a transcript we can parse has a title to poll for. */
+  private titleCandidates(): Array<{ session: TerminalSessionView; agent: AgentDefinition }> {
+    return this.list().flatMap((session) => {
+      const agent = this.options.getAgent(session.kind);
+      if (!agent || agent.titleSource === "none") return [];
+      if (session.pid === null || session.status === "exited" || session.status === "error") return [];
+      return [{ session, agent }];
+    });
   }
 
   async refreshTitles(): Promise<void> {
@@ -415,10 +436,10 @@ export class TerminalCoordinator {
       this.stopTitlePolling();
       return;
     }
-    for (const candidate of candidates) {
+    for (const { session: candidate, agent } of candidates) {
       let title: string | null;
       try {
-        title = await readTitle(candidate);
+        title = await readTitle(candidate, agent);
       } catch (error) {
         this.reportAsyncError("Session title read failed", error);
         continue;
@@ -452,7 +473,8 @@ export class TerminalCoordinator {
       .then(async (conversationId) => {
         if (!conversationId) return;
         const view = this.views.get(sessionId);
-        if (!view || view.kind !== "codex" || view.providerConversationId) return;
+        if (!view || this.options.getAgent(view.kind)?.conversationId !== "provider-assigned") return;
+        if (view.providerConversationId) return;
         view.providerConversationId = conversationId;
         view.updatedAt = this.options.now();
         await this.persistView(view);

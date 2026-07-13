@@ -971,11 +971,22 @@ body.sidebar-resizing {
   font-size: 8px;
 }
 
+/*
+ * Agents are data now, so this row is as long as the user's agents.json makes it. It scrolls rather
+ * than clipping, so the last agent added stays reachable at the narrowest supported window.
+ */
 .launcher-row {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-left: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.launcher-row::-webkit-scrollbar {
+  display: none;
 }
 
 .launcher-button {
@@ -983,6 +994,8 @@ body.sidebar-resizing {
   align-items: center;
   min-height: 30px;
   gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: 5px;

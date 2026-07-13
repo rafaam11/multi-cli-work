@@ -6,10 +6,15 @@ import type {
   AppStateV1,
   PersistedTerminalSession,
 } from "../../shared/app-state-types";
-import type { TerminalKind, ToolCommand } from "../../shared/terminal-types";
+import type { ToolCommand } from "../../shared/terminal-types";
 import { tailOnUtf8Boundary } from "../utf8";
 
-const TERMINAL_KINDS: readonly TerminalKind[] = ["powershell", "claude", "codex"];
+/**
+ * A session's agent is checked for shape, not for membership in the agent registry. The registry is
+ * a separate, editable file: if removing an agent from it could invalidate the state file, one edit
+ * to `agents.json` would cost the user every session they have.
+ */
+const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
 const SESSION_KEYS = [
   "id",
@@ -75,14 +80,16 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
   exactKeys(value, SESSION_KEYS, `Session ${key}`);
   const id = string(value.id, `Session ${key}.id`);
   if (id !== key) throw new AppStateError(`Session key ${key} does not match id ${id}`);
-  if (!TERMINAL_KINDS.includes(value.kind as TerminalKind)) throw new AppStateError(`Session ${key}.kind is invalid`);
+  if (typeof value.kind !== "string" || !AGENT_ID_PATTERN.test(value.kind)) {
+    throw new AppStateError(`Session ${key}.kind is invalid`);
+  }
   return {
     id,
     projectId: nullableString(value.projectId, `Session ${key}.projectId`),
     tool: toolCommand(value.tool, `Session ${key}.tool`),
     title: optionalText(value.title, `Session ${key}.title`),
     name: optionalText(value.name, `Session ${key}.name`),
-    kind: value.kind as TerminalKind,
+    kind: value.kind,
     cwd: string(value.cwd, `Session ${key}.cwd`),
     providerConversationId: nullableString(value.providerConversationId, `Session ${key}.providerConversationId`),
     createdAt: iso(value.createdAt, `Session ${key}.createdAt`),

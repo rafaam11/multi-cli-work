@@ -1,27 +1,33 @@
-import type { ProviderAvailability, TerminalSessionView } from "@shared/api-types";
+import type { AgentView } from "@shared/agent-types";
+import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, ToolCommand } from "@shared/terminal-types";
-import { CircleStop, FolderOpen, MonitorDot, RotateCcw, Trash2, Wrench } from "lucide-react";
+import { CircleStop, FolderOpen, MonitorDot, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { projectName, providerAccentClass, providerDetails, statusLabels, toolDetails } from "./session-labels";
+import { AgentIcon, agentAccentClass } from "./brand-icons";
+import {
+  TOOL_AGENT_ID,
+  agentLabel,
+  findAgent,
+  newSessionLabel,
+  projectName,
+  statusLabels,
+  toolDetails,
+} from "./session-labels";
 
-const TERMINAL_KINDS: TerminalKind[] = ["powershell", "claude", "codex"];
 const TOOL_COMMANDS: ToolCommand[] = ["claude-update", "codex-update"];
-const TOOL_PROVIDER: Record<ToolCommand, TerminalKind> = {
-  "claude-update": "claude",
-  "codex-update": "codex",
-};
 
 interface WorkspaceHeaderProps {
   selectedProject: SharedProject | null;
   selectedSession: TerminalSessionView | null;
   selectedSessionLabel: string | null;
   projectMissing: boolean;
-  availability: ProviderAvailability;
+  agents: AgentView[];
   pendingAction: boolean;
   readOnly: boolean;
   onStartSession(kind: TerminalKind): void;
   onStartTool(tool: ToolCommand): void;
+  onEditAgents(): void;
   onResumeSession(): void;
   onStopSession(): void;
   onRemoveSession(): void;
@@ -45,11 +51,12 @@ export function WorkspaceHeader({
   selectedSession,
   selectedSessionLabel,
   projectMissing,
-  availability,
+  agents,
   pendingAction,
   readOnly,
   onStartSession,
   onStartTool,
+  onEditAgents,
   onResumeSession,
   onStopSession,
   onRemoveSession,
@@ -149,30 +156,26 @@ export function WorkspaceHeader({
         {/* The launchers stay out in the open whether or not the folder already has sessions. */}
         {selectedProject ? (
           <div className="launcher-row">
-            {TERMINAL_KINDS.map((kind) => {
-              const details = providerDetails[kind];
-              const ProviderIcon = details.icon;
-              return (
-                <button
-                  key={kind}
-                  className="launcher-button"
-                  type="button"
-                  disabled={!canLaunch || !availability[kind]}
-                  onClick={() => onStartSession(kind)}
-                  aria-label={details.menuLabel}
-                  title={
-                    !availability[kind]
-                      ? `${details.label} 미설치`
-                      : projectMissing
-                        ? "세션을 시작하려면 먼저 폴더를 다시 연결하세요"
-                        : details.menuLabel
-                  }
-                >
-                  <ProviderIcon size={15} className={availability[kind] ? providerAccentClass[kind] : undefined} />
-                  <span>{details.label}</span>
-                </button>
-              );
-            })}
+            {agents.map((agent) => (
+              <button
+                key={agent.id}
+                className="launcher-button"
+                type="button"
+                disabled={!canLaunch || !agent.available}
+                onClick={() => onStartSession(agent.id)}
+                aria-label={newSessionLabel(agent)}
+                title={
+                  !agent.available
+                    ? `${agent.label} 미설치`
+                    : projectMissing
+                      ? "세션을 시작하려면 먼저 폴더를 다시 연결하세요"
+                      : newSessionLabel(agent)
+                }
+              >
+                <AgentIcon agent={agent} size={15} className={agent.available ? agentAccentClass(agent) : undefined} />
+                <span>{agent.label}</span>
+              </button>
+            ))}
           </div>
         ) : null}
 
@@ -193,7 +196,8 @@ export function WorkspaceHeader({
             <div className="provider-menu" role="menu">
               {TOOL_COMMANDS.map((tool) => {
                 const details = toolDetails[tool];
-                const installed = availability[TOOL_PROVIDER[tool]];
+                const agentId = TOOL_AGENT_ID[tool];
+                const installed = Boolean(findAgent(agents, agentId)?.available);
                 return (
                   <button
                     key={tool}
@@ -205,7 +209,7 @@ export function WorkspaceHeader({
                       onStartTool(tool);
                     }}
                     aria-label={details.menuLabel}
-                    title={installed ? details.menuLabel : `${providerDetails[TOOL_PROVIDER[tool]].label} 미설치`}
+                    title={installed ? details.menuLabel : `${agentLabel(agents, agentId)} 미설치`}
                   >
                     <Wrench size={15} />
                     <span>{details.menuLabel}</span>
@@ -213,6 +217,21 @@ export function WorkspaceHeader({
                   </button>
                 );
               })}
+              {/* Adding an agent means editing a file, so it belongs with the other config actions
+                  rather than competing with the agents themselves for room in the launcher row. */}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setToolsMenuOpen(false);
+                  onEditAgents();
+                }}
+                aria-label="에이전트 추가"
+                title="agents.json을 편집기로 엽니다"
+              >
+                <Plus size={15} />
+                <span>에이전트 추가</span>
+              </button>
             </div>
           ) : null}
         </div>

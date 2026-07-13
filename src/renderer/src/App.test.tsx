@@ -1,3 +1,4 @@
+import type { AgentView } from "@shared/agent-types";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AppStateSnapshot } from "@shared/app-state-types";
 import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
@@ -134,6 +135,19 @@ const claudeSession: TerminalSessionView = {
   updatedAt: "2026-07-11T02:30:00.000Z",
 };
 
+/** A session left behind by an agent the user has since removed from `agents.json`. */
+const removedAgentSession: TerminalSessionView = {
+  ...powershellSession,
+  id: "session-gemini",
+  kind: "gemini",
+  title: null,
+  name: null,
+  status: "exited",
+  pid: null,
+  createdAt: "2026-07-11T03:00:00.000Z",
+  updatedAt: "2026-07-11T03:00:00.000Z",
+};
+
 function registry(projects: SharedProject[] = [atlas]): ProjectWorkspaceSnapshot {
   return {
     source: "primary",
@@ -146,6 +160,31 @@ function registry(projects: SharedProject[] = [atlas]): ProjectWorkspaceSnapshot
     },
   };
 }
+
+/** The three built-ins, with Codex missing from PATH. */
+function agentFixture(id: string, label: string, available: boolean): AgentView {
+  return {
+    id,
+    label,
+    commands: [id],
+    args: [],
+    newSessionArgs: [],
+    resumeArgs: [],
+    conversationId: "none",
+    statusAdapter: "signals",
+    titleSource: "none",
+    icon: id,
+    accentColor: null,
+    builtin: true,
+    available,
+  };
+}
+
+const agentFixtures: AgentView[] = [
+  agentFixture("powershell", "PowerShell", true),
+  agentFixture("claude", "Claude Code", true),
+  agentFixture("codex", "Codex", false),
+];
 
 function createApi(options?: {
   projects?: SharedProject[];
@@ -202,7 +241,11 @@ function createApi(options?: {
       gitStatus: vi.fn().mockResolvedValue({ isRepo: true, branch: "main", changedFileCount: 0 }),
     },
     providers: {
-      availability: vi.fn().mockResolvedValue({ powershell: true, claude: true, codex: false, vscode: true }),
+      availability: vi.fn().mockResolvedValue({ vscode: true }),
+    },
+    agents: {
+      list: vi.fn().mockResolvedValue({ agents: agentFixtures }),
+      edit: vi.fn().mockResolvedValue(undefined),
     },
     terminals: {
       list: vi.fn().mockResolvedValue(sessions),
@@ -477,12 +520,7 @@ describe("folder workspace", () => {
 
   it("disables the VS Code action when VS Code is not installed", async () => {
     const harness = createApi();
-    vi.mocked(harness.api.providers.availability).mockResolvedValue({
-      powershell: true,
-      claude: true,
-      codex: false,
-      vscode: false,
-    });
+    vi.mocked(harness.api.providers.availability).mockResolvedValue({ vscode: false });
     window.multiCliWork = harness.api;
     render(<App />);
 
@@ -983,5 +1021,20 @@ describe("folder workspace", () => {
 
     expect(await screen.findByRole("region", { name: "프로젝트 상세" })).toBeInTheDocument();
     expect(screen.getByText("Atlas에서 세션 시작")).toBeInTheDocument();
+  });
+
+  /**
+   * The session rows used to index a fixed provider table by kind, so a session whose agent was no
+   * longer listed took the whole sidebar down. It now falls back to the agent's id.
+   */
+  it("still lists a session whose agent was removed from agents.json", async () => {
+    const harness = createApi({
+      sessions: [removedAgentSession],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "gemini 세션 열기" })).toBeInTheDocument();
   });
 });

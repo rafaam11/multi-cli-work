@@ -99,7 +99,7 @@ describe("readSessionTitle", () => {
 
     await expect(
       readSessionTitle(
-        { kind: "claude", cwd, providerConversationId: "conversation-1" },
+        { titleSource: "claude-transcript", cwd, providerConversationId: "conversation-1" },
         { claudeProjectsDirectory: root },
       ),
     ).resolves.toBe("레지스트리 분리");
@@ -117,7 +117,7 @@ describe("readSessionTitle", () => {
 
     await expect(
       readSessionTitle(
-        { kind: "claude", cwd: "C:\\Work\\Example", providerConversationId: "conversation-1" },
+        { titleSource: "claude-transcript", cwd: "C:\\Work\\Example", providerConversationId: "conversation-1" },
         { claudeProjectsDirectory: root },
       ),
     ).resolves.toBe("찾았다");
@@ -135,7 +135,7 @@ describe("readSessionTitle", () => {
 
     await expect(
       readSessionTitle(
-        { kind: "codex", cwd: "C:\\Work", providerConversationId: "conversation-2" },
+        { titleSource: "codex-transcript", cwd: "C:\\Work", providerConversationId: "conversation-2" },
         { codexSessionsDirectory: root },
       ),
     ).resolves.toBe("첫 프롬프트");
@@ -145,14 +145,14 @@ describe("readSessionTitle", () => {
     const root = await tempRoot();
 
     await expect(
-      readSessionTitle({ kind: "powershell", cwd: "C:\\Work", providerConversationId: null }, {}),
+      readSessionTitle({ titleSource: "none", cwd: "C:\\Work", providerConversationId: null }, {}),
     ).resolves.toBeNull();
     await expect(
-      readSessionTitle({ kind: "codex", cwd: "C:\\Work", providerConversationId: null }, { codexSessionsDirectory: root }),
+      readSessionTitle({ titleSource: "codex-transcript", cwd: "C:\\Work", providerConversationId: null }, { codexSessionsDirectory: root }),
     ).resolves.toBeNull();
     await expect(
       readSessionTitle(
-        { kind: "claude", cwd: "C:\\Work", providerConversationId: "missing" },
+        { titleSource: "claude-transcript", cwd: "C:\\Work", providerConversationId: "missing" },
         { claudeProjectsDirectory: root },
       ),
     ).resolves.toBeNull();

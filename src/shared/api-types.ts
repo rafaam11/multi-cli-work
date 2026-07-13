@@ -1,3 +1,4 @@
+import type { AgentView } from "./agent-types";
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
@@ -17,11 +18,19 @@ export interface GitStatusResult {
   changedFileCount: number;
 }
 
+/** VS Code is not an agent — it is the editor the folder menu opens — so it is tracked on its own. */
 export interface ProviderAvailability {
-  powershell: boolean;
-  claude: boolean;
-  codex: boolean;
   vscode: boolean;
+}
+
+/**
+ * Every agent the app knows, in launcher order, each already told whether its executable is on PATH.
+ * This replaces the renderer's old hard-coded provider table.
+ */
+export interface AgentsSnapshot {
+  agents: AgentView[];
+  /** Why the user's `agents.json` was ignored, when it was. */
+  warning?: string;
 }
 
 export interface TerminalSessionView extends PersistedTerminalSession {
@@ -83,6 +92,11 @@ export interface MultiCliWorkApi {
   };
   providers: {
     availability(): Promise<ProviderAvailability>;
+  };
+  agents: {
+    list(): Promise<AgentsSnapshot>;
+    /** Opens `agents.json` in the user's editor, writing a worked example first if it has none. */
+    edit(): Promise<void>;
   };
   terminals: {
     list(): Promise<TerminalSessionView[]>;

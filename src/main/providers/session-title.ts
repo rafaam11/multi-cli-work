@@ -1,12 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { TerminalKind } from "../../shared/terminal-types";
+import type { TitleSource } from "../../shared/agent-types";
 
 const MAX_TITLE_LENGTH = 60;
 
 export interface SessionTitleSource {
-  kind: TerminalKind;
+  /** Which transcript format to read, if any. An agent with no parser of its own reports `none`. */
+  titleSource: TitleSource;
   cwd: string;
   providerConversationId: string | null;
 }
@@ -110,9 +111,9 @@ export async function readSessionTitle(
   session: SessionTitleSource,
   options: SessionTitleOptions = {},
 ): Promise<string | null> {
-  if (session.kind === "powershell" || !session.providerConversationId) return null;
+  if (session.titleSource === "none" || !session.providerConversationId) return null;
 
-  if (session.kind === "claude") {
+  if (session.titleSource === "claude-transcript") {
     const directory = options.claudeProjectsDirectory ?? path.join(os.homedir(), ".claude", "projects");
     const transcript = await findClaudeTranscript(directory, session.cwd, session.providerConversationId);
     if (!transcript) return null;

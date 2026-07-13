@@ -1,3 +1,4 @@
+import type { StatusAdapter } from "../../shared/agent-types";
 import type {
   TerminalAttachment,
   TerminalLaunchSpec,
@@ -55,6 +56,7 @@ export class OutputRingBuffer {
 
 interface SessionRecord {
   session: TerminalSession;
+  statusAdapter: StatusAdapter;
   pty: ManagedPty;
   output: OutputRingBuffer;
   controlBuffer: string;
@@ -95,6 +97,7 @@ export class TerminalSessionManager {
     };
     const record: SessionRecord = {
       session,
+      statusAdapter: spec.statusAdapter,
       pty,
       output: new OutputRingBuffer(this.maxReplayBytes),
       controlBuffer: "",
@@ -107,7 +110,7 @@ export class TerminalSessionManager {
       record.session.updatedAt = new Date().toISOString();
       this.publish({ type: "data", sessionId: session.id, data, sequence: record.outputSequence });
       if (record.session.status === "starting") this.setStatus(record, "idle");
-      if (record.session.kind === "codex") this.applyCodexNotifications(record, data);
+      if (record.statusAdapter === "osc9") this.applyOsc9Notifications(record, data);
     });
     pty.onExit(({ exitCode, signal }) => {
       record.session.exitCode = exitCode;
@@ -127,7 +130,10 @@ export class TerminalSessionManager {
   write(sessionId: string, data: string): void {
     const record = this.requireSession(sessionId);
     record.pty.write(data);
-    if (record.session.kind !== "powershell" && /[\r\n]/.test(data)) this.setStatus(record, "working");
+    // Submitting a prompt means the agent is now working — but only say so for an agent that has a
+    // way back out. A `signals` agent reports nothing of its own, so marking it working would strand
+    // it there; it stays idle, which is the honest answer when we cannot tell.
+    if (record.statusAdapter !== "signals" && /[\r\n]/.test(data)) this.setStatus(record, "working");
   }
 
   resize(sessionId: string, cols: number, rows: number): void {
@@ -155,7 +161,11 @@ export class TerminalSessionManager {
     this.publish({ type: "status", sessionId: record.session.id, status });
   }
 
-  private applyCodexNotifications(record: SessionRecord, data: string): void {
+  /**
+   * OSC 9 is a desktop-notification escape sequence. Codex is configured to emit one when a turn
+   * ends or an approval is wanted; any agent whose CLI emits them can opt in the same way.
+   */
+  private applyOsc9Notifications(record: SessionRecord, data: string): void {
     record.controlBuffer = `${record.controlBuffer}${data}`.slice(-2_048);
     const notificationPattern = /\u001b\]9;([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g;
     let match: RegExpExecArray | null;

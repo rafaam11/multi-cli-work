@@ -20,6 +20,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
       MULTI_CLI_WORK_USER_DATA: path.join(tempRoot, "user-data"),
       MULTI_CLI_WORK_REGISTRY_PATH: path.join(tempRoot, "registry", "projects.json"),
       MULTI_CLI_WORK_CODEX_SESSIONS_DIR: path.join(tempRoot, "codex-sessions"),
+      MULTI_CLI_WORK_AGENTS_PATH: path.join(tempRoot, "registry", "agents.json"),
     },
   });
   return { app: nextApp, page: await nextApp.firstWindow() };
@@ -60,6 +61,31 @@ test.describe.serial("Multi CLI Work desktop", () => {
               order: 0,
               createdAt: NOW,
               updatedAt: NOW,
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    // A CLI the app has never heard of, described only by data. It runs PowerShell under a name of
+    // its own so the session is real without the test depending on a third-party CLI being installed.
+    await fs.writeFile(
+      path.join(tempRoot, "registry", "agents.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          updatedAt: NOW,
+          agents: {
+            "echo-agent": {
+              id: "echo-agent",
+              label: "Echo Agent",
+              commands: ["powershell"],
+              args: ["-NoLogo", "-NoExit", "-Command", "Write-Output MCW_CUSTOM_AGENT_READY"],
+              conversationId: "none",
+              statusAdapter: "signals",
+              accentColor: "#4285f4",
             },
           },
         },
@@ -153,6 +179,38 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeVisible();
     await expect(page.getByRole("button", { name: "PowerShell 세션 보기" })).toBeVisible();
+  });
+
+  /**
+   * The whole point of the agent registry: a CLI the app ships no code for is launchable purely from
+   * `agents.json`, and it stands next to the built-ins rather than behind them.
+   */
+  test("runs an agent the user added in agents.json", async () => {
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await expect(page.getByRole("button", { name: "새 PowerShell 세션" })).toBeVisible();
+
+    await page.getByRole("button", { name: "새 Echo Agent 세션" }).click();
+
+    const terminal = page.getByRole("region", { name: "echo-agent 터미널" });
+    await expect(terminal).toBeVisible();
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_CUSTOM_AGENT_READY");
+    await expect(page.getByRole("button", { name: "Echo Agent 세션 열기" })).toBeVisible();
+    await attachScreenshot("custom-agent");
+
+    // The row grows with every agent the user adds, so at the narrowest supported window it has to
+    // scroll rather than clip — otherwise the agent they just added is the one they cannot reach.
+    const launcherRow = page.locator(".launcher-row");
+    const overflow = await launcherRow.evaluate((element) => ({
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+      scrollable: getComputedStyle(element).overflowX,
+    }));
+    expect(overflow.scrollable).toBe("auto");
+    if (overflow.scrollWidth > overflow.clientWidth) {
+      await launcherRow.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
+      const lastButton = launcherRow.getByRole("button", { name: "새 Echo Agent 세션" });
+      await expect(lastButton).toBeInViewport();
+    }
   });
 
   test("hides to the tray and restores saved tabs after a relaunch", async () => {

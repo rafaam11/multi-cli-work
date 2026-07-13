@@ -42,6 +42,7 @@ function launchSpec(): TerminalLaunchSpec {
     projectId: "project-1",
     tool: null,
     kind: "powershell",
+    statusAdapter: "signals",
     cwd: "C:\\Work\\Example",
     executable: "pwsh.exe",
     args: ["-NoLogo"],
@@ -121,7 +122,7 @@ describe("TerminalSessionManager", () => {
     const pty = new FakePty();
     const events = vi.fn();
     const manager = new TerminalSessionManager({ spawn: () => pty }, events);
-    manager.create({ ...launchSpec(), kind: "codex" });
+    manager.create({ ...launchSpec(), kind: "codex", statusAdapter: "osc9" });
     pty.emitData("\u001b]9;approval-requested\u0007");
     pty.emitData("\u001b]9;agent-turn-complete\u0007");
     manager.write("session-1", "continue\r");
@@ -143,7 +144,7 @@ describe("TerminalSessionManager", () => {
     const pty = new FakePty();
     const events = vi.fn();
     const manager = new TerminalSessionManager({ spawn: () => pty }, events);
-    manager.create({ ...launchSpec(), kind: "codex" });
+    manager.create({ ...launchSpec(), kind: "codex", statusAdapter: "osc9" });
 
     manager.write("session-1", "continue\r");
     pty.emitData("\u001b]9;작업을 완료했습니다");

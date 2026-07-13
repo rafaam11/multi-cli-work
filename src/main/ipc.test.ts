@@ -86,7 +86,9 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,
     chooseDirectory: vi.fn(async () => "C:\\Work"),
-    getAvailability: vi.fn(async () => ({ powershell: true, claude: true, codex: true, vscode: true })),
+    getAvailability: vi.fn(async () => ({ vscode: true })),
+    listAgents: vi.fn(async () => ({ agents: [] })),
+    editAgents: vi.fn(async () => undefined),
     onSessionSelected: options.onSessionSelected,
   });
   return {

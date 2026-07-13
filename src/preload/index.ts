@@ -16,6 +16,10 @@ const api: MultiCliWorkApi = {
     openOnGitHub: (projectId) => ipcRenderer.invoke("projects:open-github", projectId),
     gitStatus: (projectId) => ipcRenderer.invoke("projects:git-status", projectId),
   },
+  agents: {
+    list: () => ipcRenderer.invoke("agents:list"),
+    edit: () => ipcRenderer.invoke("agents:edit"),
+  },
   providers: {
     availability: () => ipcRenderer.invoke("providers:availability"),
   },

@@ -1,3 +1,4 @@
+import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import {
@@ -15,12 +16,14 @@ import {
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
-import { projectName, providerDetails, sessionLabel, statusLabels } from "./session-labels";
+import { AgentIcon } from "./brand-icons";
+import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
 
 interface ProjectSidebarProps {
   snapshot: ProjectWorkspaceSnapshot | null;
   projects: SharedProject[];
   sessions: TerminalSessionView[];
+  agents: AgentView[];
   toolSessions: TerminalSessionView[];
   selectedProjectId: string | null;
   selectedSessionId: string | null;
@@ -94,6 +97,7 @@ export function ProjectSidebar({
   snapshot,
   projects,
   sessions,
+  agents,
   toolSessions,
   selectedProjectId,
   selectedSessionId,
@@ -120,8 +124,8 @@ export function ProjectSidebar({
   const readOnly = Boolean(snapshot && !snapshot.writable);
 
   const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
-    const ProviderIcon = session.tool ? Wrench : providerDetails[session.kind].icon;
-    const label = sessionLabel(session, peers);
+    const agent = findAgent(agents, session.kind);
+    const label = sessionLabel(session, peers, agents);
     if (renamingSessionId === session.id) {
       return (
         <li key={session.id}>
@@ -143,7 +147,7 @@ export function ProjectSidebar({
           aria-label={`${label} 세션 열기`}
         >
           <span className={`status-dot status-${session.status}`} aria-hidden="true" />
-          <ProviderIcon size={14} />
+          {session.tool ? <Wrench size={14} /> : <AgentIcon agent={agent} size={14} />}
           <span className="session-name" title={label}>
             {label}
           </span>

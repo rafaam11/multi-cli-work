@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import lockfile from "proper-lockfile";
 import type {
   ProjectRegistrySnapshot,
   ProjectRegistryV1,
@@ -11,6 +9,12 @@ import type {
   ProjectTrack,
   SharedProject,
 } from "../../shared/project-types";
+import {
+  type JsonStoreSpec,
+  readJsonStore,
+  restoreJsonStoreBackup,
+  updateJsonStore,
+} from "../storage/json-store";
 
 const SOURCES: readonly ProjectSource[] = ["manual", "claude", "codex"];
 const STATUSES: readonly ProjectStatus[] = ["진행중", "보류", "완료", "보관"];
@@ -273,107 +277,33 @@ interface RegistryStorageOptions {
   lockRetryMs?: number;
 }
 
-async function readJson(filePath: string): Promise<unknown> {
-  return JSON.parse(await fs.readFile(filePath, "utf8"));
-}
+const STORE: JsonStoreSpec<ProjectRegistryV1> = {
+  label: "project registry",
+  parse: parseProjectRegistry,
+  empty: () => emptyProjectRegistry(),
+  error: (message, options) => new ProjectRegistryError(message, options),
+  isContentError: (error) => error instanceof ProjectRegistryError,
+};
 
 export async function readProjectRegistry(options: RegistryStorageOptions = {}): Promise<ProjectRegistrySnapshot> {
-  const registryPath = options.registryPath ?? PROJECT_REGISTRY_PATH;
-  let primaryError: unknown;
-  try {
-    return { registry: parseProjectRegistry(await readJson(registryPath)), source: "primary", writable: true };
-  } catch (error) {
-    primaryError = error;
-  }
-  try {
-    const missing = (primaryError as NodeJS.ErrnoException).code === "ENOENT";
-    return {
-      registry: parseProjectRegistry(await readJson(`${registryPath}.bak`)),
-      source: "backup",
-      writable: false,
-      warning: missing
-        ? "Primary project registry is missing; using the backup read-only."
-        : `Primary project registry is invalid: ${(primaryError as Error).message}`,
-    };
-  } catch (backupError) {
-    if (
-      (primaryError as NodeJS.ErrnoException).code === "ENOENT" &&
-      (backupError as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return { registry: emptyProjectRegistry(), source: "empty", writable: true };
-    }
-    throw new ProjectRegistryError("Project registry and backup are unreadable", { cause: backupError });
-  }
-}
-
-async function writeRegistry(registryPath: string, registry: ProjectRegistryV1): Promise<void> {
-  const parsed = parseProjectRegistry(registry);
-  await fs.mkdir(path.dirname(registryPath), { recursive: true });
-  const tempPath = `${registryPath}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    try {
-      parseProjectRegistry(JSON.parse(await fs.readFile(registryPath, "utf8")));
-      await fs.copyFile(registryPath, `${registryPath}.bak`);
-    } catch (error) {
-      const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
-      const corrupt = error instanceof ProjectRegistryError || error instanceof SyntaxError;
-      // A corrupt primary must never overwrite the last known-good backup.
-      if (!missing && !corrupt) throw error;
-    }
-    await fs.writeFile(tempPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
-    await fs.rename(tempPath, registryPath);
-  } finally {
-    await fs.rm(tempPath, { force: true }).catch(() => undefined);
-  }
-}
-
-async function acquireRegistryLock(registryPath: string, lockRetryMs: number): Promise<() => Promise<void>> {
-  await fs.mkdir(path.dirname(registryPath), { recursive: true });
-  return lockfile.lock(registryPath, {
-    realpath: false,
-    lockfilePath: `${registryPath}.lock`,
-    retries: {
-      retries: Math.max(1, Math.ceil(lockRetryMs / 100)),
-      factor: 1,
-      minTimeout: 100,
-      maxTimeout: 100,
-    },
-  });
+  const snapshot = await readJsonStore(STORE, options.registryPath ?? PROJECT_REGISTRY_PATH);
+  const { value, ...rest } = snapshot;
+  return { registry: value, ...rest };
 }
 
 export async function updateProjectRegistry(
   update: (registry: ProjectRegistryV1) => ProjectRegistryV1 | Promise<ProjectRegistryV1>,
   options: RegistryStorageOptions = {},
 ): Promise<ProjectRegistryV1> {
-  const registryPath = options.registryPath ?? PROJECT_REGISTRY_PATH;
-  const release = await acquireRegistryLock(registryPath, options.lockRetryMs ?? 5_000);
-  try {
-    const snapshot = await readProjectRegistry({ registryPath });
-    if (!snapshot.writable) throw new ProjectRegistryError(snapshot.warning ?? "Project registry is read-only");
-    const next = parseProjectRegistry(await update(snapshot.registry));
-    await writeRegistry(registryPath, next);
-    return next;
-  } finally {
-    await release();
-  }
+  return updateJsonStore(STORE, options.registryPath ?? PROJECT_REGISTRY_PATH, update, {
+    ...(options.lockRetryMs !== undefined ? { lockRetryMs: options.lockRetryMs } : {}),
+  });
 }
 
 export async function restoreProjectRegistryFromBackup(
   options: RegistryStorageOptions = {},
 ): Promise<ProjectRegistryV1> {
-  const registryPath = options.registryPath ?? PROJECT_REGISTRY_PATH;
-  const release = await acquireRegistryLock(registryPath, options.lockRetryMs ?? 5_000);
-  try {
-    let backup: ProjectRegistryV1;
-    try {
-      backup = parseProjectRegistry(await readJson(`${registryPath}.bak`));
-    } catch (error) {
-      if (error instanceof ProjectRegistryError) throw error;
-      throw new ProjectRegistryError("Project registry backup is unreadable", { cause: error });
-    }
-    await writeRegistry(registryPath, backup);
-    return backup;
-  } finally {
-    await release();
-  }
+  return restoreJsonStoreBackup(STORE, options.registryPath ?? PROJECT_REGISTRY_PATH, {
+    ...(options.lockRetryMs !== undefined ? { lockRetryMs: options.lockRetryMs } : {}),
+  });
 }

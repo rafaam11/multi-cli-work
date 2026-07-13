@@ -33,6 +33,7 @@ const spec: TerminalLaunchSpec = {
   projectId: "project-1",
   tool: null,
   kind: "powershell",
+  statusAdapter: "signals",
   cwd: "C:\\Work",
   executable: "pwsh.exe",
   args: ["-NoLogo"],
