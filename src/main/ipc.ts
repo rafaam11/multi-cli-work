@@ -7,6 +7,7 @@ import type {
   ProjectMetadataPatch,
   ProviderAvailability,
   ResumeTerminalInput,
+  SessionAttention,
   UpdaterStatus,
 } from "../shared/api-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
@@ -68,6 +69,7 @@ interface MainIpcDependencies {
   getAvailability(): Promise<ProviderAvailability>;
   listAgents(): Promise<AgentsSnapshot>;
   editAgents(): Promise<void>;
+  attentionState(): Record<string, SessionAttention>;
   onSessionSelected?(sessionId: string | null): void;
 }
 
@@ -214,6 +216,7 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("providers:availability", () => dependencies.getAvailability());
   ipc.handle("agents:list", () => dependencies.listAgents());
   ipc.handle("agents:edit", () => dependencies.editAgents());
+  ipc.handle("attention:state", () => dependencies.attentionState());
   ipc.handle("terminals:list", () => dependencies.coordinator.list());
   ipc.handle("terminals:state", () => dependencies.coordinator.state());
   ipc.handle("terminals:create", async (_event, input: unknown) => dependencies.coordinator.create(validateCreateInput(input)));

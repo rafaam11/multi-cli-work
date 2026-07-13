@@ -89,6 +89,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     getAvailability: vi.fn(async () => ({ vscode: true })),
     listAgents: vi.fn(async () => ({ agents: [] })),
     editAgents: vi.fn(async () => undefined),
+    attentionState: vi.fn(() => ({ "session-1": "input" as const })),
     onSessionSelected: options.onSessionSelected,
   });
   return {
@@ -112,6 +113,12 @@ describe("main IPC boundary", () => {
     await handlers.get("terminals:select")!({}, "project-1", "session-1");
 
     expect(onSessionSelected).toHaveBeenCalledWith("session-1");
+  });
+
+  it("answers the renderer's unread state request from the attention tracker", async () => {
+    const { handlers } = setup();
+
+    expect(await handlers.get("attention:state")!({})).toEqual({ "session-1": "input" });
   });
 
   it("uses the main-process folder chooser for manual project registration", async () => {

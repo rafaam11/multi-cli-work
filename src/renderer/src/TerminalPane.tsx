@@ -2,6 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
 import { useEffect, useRef, useState } from "react";
+import { droppedPathsAsPromptText } from "./drop-paths";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
@@ -125,6 +126,27 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       if (isReadOnly(sessionRef.current)) return;
       void window.multiCliWork.terminals.write(session.id, data).catch(reportError);
     });
+
+    // A dropped file arrives as its quoted path on the prompt. paste() (rather than a direct
+    // write) keeps it inside bracketed paste, so a CLI sees one pasted chunk, not typed keys.
+    const handleDragOver = (event: DragEvent) => {
+      if (isReadOnly(sessionRef.current)) return;
+      if (!event.dataTransfer || ![...event.dataTransfer.types].includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    };
+    const handleDrop = (event: DragEvent) => {
+      if (isReadOnly(sessionRef.current) || !event.dataTransfer) return;
+      const text = droppedPathsAsPromptText(
+        [...event.dataTransfer.files].map((file) => window.multiCliWork.files.pathFor(file)),
+      );
+      if (text === null) return;
+      event.preventDefault();
+      terminal.paste(text);
+      terminal.focus();
+    };
+    host.addEventListener("dragover", handleDragOver);
+    host.addEventListener("drop", handleDrop);
     const unsubscribe = window.multiCliWork.terminals.onEvent((event) => {
       if (event.sessionId !== session.id || event.type !== "data") return;
       if (replayAttached) terminal.write(event.data);
@@ -157,6 +179,8 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       disposed = true;
       window.clearTimeout(resizeTimer);
       resizeObserver.disconnect();
+      host.removeEventListener("dragover", handleDragOver);
+      host.removeEventListener("drop", handleDrop);
       unsubscribe();
       inputDisposable.dispose();
       fitAddon.dispose();

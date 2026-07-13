@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer } from "electron";
-import type { MultiCliWorkApi, UpdaterStatus } from "../shared/api-types";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { MultiCliWorkApi, SessionAttention, UpdaterStatus } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
 
 const api: MultiCliWorkApi = {
@@ -19,6 +19,20 @@ const api: MultiCliWorkApi = {
   agents: {
     list: () => ipcRenderer.invoke("agents:list"),
     edit: () => ipcRenderer.invoke("agents:edit"),
+  },
+  files: {
+    // Electron 32 removed File.path; this preload call is the only way a dragged File resolves
+    // to the absolute path the renderer pastes into an agent prompt.
+    pathFor: (file) => webUtils.getPathForFile(file),
+  },
+  attention: {
+    state: () => ipcRenderer.invoke("attention:state"),
+    onEvent(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, unread: Record<string, SessionAttention>) =>
+        listener(unread);
+      ipcRenderer.on("attention:event", handler);
+      return () => ipcRenderer.removeListener("attention:event", handler);
+    },
   },
   providers: {
     availability: () => ipcRenderer.invoke("providers:availability"),

@@ -4,7 +4,8 @@ import { createDesktopRuntime, type DesktopRuntime } from "./runtime";
 import { trayIconDataUrl } from "./tray-icon";
 import { checkForUpdates, initUpdater, quitAndInstall } from "./updater";
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
-import type { WindowAttention } from "./attention-policy";
+import { taskbarBadgeSpec, trayTooltip } from "./window-badge";
+import type { AttentionSnapshot } from "./attention-policy";
 import {
   rendererTargetNavigationUrl,
   resolveRendererTarget,
@@ -17,7 +18,7 @@ let runtime: DesktopRuntime | null = null;
 let isQuitting = false;
 let shouldFocusWhenReady = false;
 let quitRequestInProgress = false;
-let windowAttention: WindowAttention = "none";
+let windowAttention: AttentionSnapshot = { window: "none", unread: {} };
 
 if (process.env.MULTI_CLI_WORK_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.MULTI_CLI_WORK_USER_DATA));
@@ -63,13 +64,32 @@ function createWindow(): BrowserWindow {
   } else {
     void window.loadFile(rendererTarget.value);
   }
-  applyWindowAttention(window, windowAttention);
+  applyAttentionSnapshot(window, windowAttention);
   return window;
 }
 
-function updateWindowAttention(attention: WindowAttention): void {
-  windowAttention = attention;
-  if (mainWindow) applyWindowAttention(mainWindow, attention);
+function applyAttentionSnapshot(window: BrowserWindow, snapshot: AttentionSnapshot): void {
+  if (window.isDestroyed()) return;
+  applyWindowAttention(window, snapshot.window);
+  const badge = taskbarBadgeSpec(snapshot);
+  if (badge) {
+    const image = nativeImage.createFromBitmap(badge.bitmap, { width: badge.size, height: badge.size });
+    image.addRepresentation({
+      scaleFactor: 2,
+      width: badge.size * 2,
+      height: badge.size * 2,
+      buffer: badge.bitmap2x,
+    });
+    window.setOverlayIcon(image, badge.description);
+  } else {
+    window.setOverlayIcon(null, "");
+  }
+}
+
+function updateWindowAttention(snapshot: AttentionSnapshot): void {
+  windowAttention = snapshot;
+  if (mainWindow) applyAttentionSnapshot(mainWindow, snapshot);
+  tray?.setToolTip(trayTooltip(snapshot));
 }
 
 function showMainWindow(): void {
@@ -149,7 +169,7 @@ function createTray(): Tray {
     console.error("Tray icon failed to decode; the tray icon will be invisible.");
   }
   const nextTray = new Tray(icon);
-  nextTray.setToolTip("멀티 터미널 작업기");
+  nextTray.setToolTip(trayTooltip(windowAttention));
   nextTray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "멀티 터미널 작업기 표시", click: showMainWindow },

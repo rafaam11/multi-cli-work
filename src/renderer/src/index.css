@@ -610,6 +610,21 @@ body.sidebar-resizing {
   background: var(--quiet);
 }
 
+.unread-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+}
+
+.unread-dot.unread-input {
+  background: var(--violet);
+}
+
+.unread-dot.unread-approval {
+  background: var(--amber);
+}
+
 .status-starting .status-dot,
 .status-dot.status-starting {
   background: var(--blue);
@@ -1073,6 +1088,96 @@ body.sidebar-resizing {
   justify-content: center;
   inset: 0;
   background: rgb(0 0 0 / 52%);
+}
+
+.quick-open-backdrop {
+  align-items: flex-start;
+  padding-top: 11vh;
+}
+
+.quick-open {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, calc(100vw - 48px));
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 20px 48px rgb(0 0 0 / 44%);
+  overflow: hidden;
+}
+
+.quick-open-input {
+  padding: 11px 14px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.quick-open-input:focus {
+  outline: none;
+}
+
+.quick-open-empty {
+  margin: 0;
+  padding: 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.quick-open-list {
+  max-height: 320px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.quick-open-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-open-item.active {
+  background: var(--surface-hover);
+}
+
+.quick-open-kind {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.quick-open-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-open-detail {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .confirm-dialog {

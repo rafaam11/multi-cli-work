@@ -196,6 +196,7 @@ function createApi(options?: {
   selection?: Pick<AppStateSnapshot["state"], "selectedProjectId" | "selectedSessionId">;
 }) {
   const listeners = new Set<(event: TerminalEvent) => void>();
+  const attentionListeners = new Set<(unread: Record<string, "input" | "approval">) => void>();
   const projects = options?.projects ?? [atlas];
   const sessions = options?.sessions ?? [powershellSession, claudeSession];
   const snapshot = {
@@ -246,6 +247,16 @@ function createApi(options?: {
     agents: {
       list: vi.fn().mockResolvedValue({ agents: agentFixtures }),
       edit: vi.fn().mockResolvedValue(undefined),
+    },
+    files: {
+      pathFor: vi.fn((file: File) => `C:\\dropped\\${file.name}`),
+    },
+    attention: {
+      state: vi.fn().mockResolvedValue({}),
+      onEvent: vi.fn((listener) => {
+        attentionListeners.add(listener);
+        return () => attentionListeners.delete(listener);
+      }),
     },
     terminals: {
       list: vi.fn().mockResolvedValue(sessions),
@@ -304,6 +315,9 @@ function createApi(options?: {
     created,
     emit(event: TerminalEvent) {
       for (const listener of listeners) listener(event);
+    },
+    emitAttention(unread: Record<string, "input" | "approval">) {
+      for (const listener of attentionListeners) listener(unread);
     },
   };
 }
@@ -1036,5 +1050,110 @@ describe("folder workspace", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "gemini 세션 열기" })).toBeInTheDocument();
+  });
+});
+
+describe("quick open palette", () => {
+  it("opens on Ctrl+P, jumps to the matched session, and closes on Escape", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    const input = await screen.findByRole("textbox", { name: "빠른 열기 검색" });
+    fireEvent.change(input, { target: { value: "claude" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(screen.queryByRole("dialog", { name: "빠른 열기" })).not.toBeInTheDocument();
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(claudeSession.id));
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "빠른 열기 검색" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "빠른 열기" })).not.toBeInTheDocument();
+  });
+
+  it("lists folders and commands alongside sessions", async () => {
+    const harness = createApi({ projects: [atlas, dashboard] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "빠른 열기" });
+    const input = within(dialog).getByRole("textbox", { name: "빠른 열기 검색" });
+
+    fireEvent.change(input, { target: { value: "dash" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByRole("region", { name: "프로젝트 상세" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    const reopened = await screen.findByRole("dialog", { name: "빠른 열기" });
+    fireEvent.change(within(reopened).getByRole("textbox", { name: "빠른 열기 검색" }), {
+      target: { value: "홈 대시보드" },
+    });
+    fireEvent.keyDown(within(reopened).getByRole("textbox", { name: "빠른 열기 검색" }), { key: "Enter" });
+    expect(screen.getByRole("region", { name: "홈 대시보드" })).toBeInTheDocument();
+  });
+});
+
+describe("unread badges", () => {
+  it("marks the session and its folder while an off-screen session waits, and clears afterwards", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    act(() => harness.emitAttention({ [claudeSession.id]: "approval" }));
+
+    expect(screen.getByRole("button", { name: "Claude Code 세션 열기 (읽지 않음)" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "응답 대기 세션 있음" })).toBeInTheDocument();
+
+    act(() => harness.emitAttention({}));
+
+    expect(screen.getByRole("button", { name: "Claude Code 세션 열기" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "응답 대기 세션 있음" })).not.toBeInTheDocument();
+  });
+});
+
+describe("file drop", () => {
+  it("pastes dropped file paths into the terminal as quoted prompt text", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
+
+    const host = document.querySelector(".terminal-host")!;
+    fireEvent.drop(host, {
+      dataTransfer: {
+        types: ["Files"],
+        files: [new File(["x"], "shot.png"), new File(["y"], "notes.md")],
+      },
+    });
+
+    const terminal = terminalHarness.instances.at(-1)!;
+    expect(terminal.paste).toHaveBeenCalledWith('"C:\\dropped\\shot.png" "C:\\dropped\\notes.md" ');
+  });
+
+  it("ignores drops on an exited session", async () => {
+    const harness = createApi({
+      sessions: [claudeSession],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: claudeSession.id },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "claude 터미널" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
+
+    const host = document.querySelector(".terminal-host")!;
+    fireEvent.drop(host, {
+      dataTransfer: { types: ["Files"], files: [new File(["x"], "shot.png")] },
+    });
+
+    const terminal = terminalHarness.instances.at(-1)!;
+    expect(terminal.paste).not.toHaveBeenCalled();
   });
 });

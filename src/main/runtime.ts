@@ -15,7 +15,7 @@ import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables, type ProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { readSessionTitle } from "./providers/session-title";
-import { createTerminalAttentionTracker, type WindowAttention } from "./attention-policy";
+import { createTerminalAttentionTracker, type AttentionSnapshot } from "./attention-policy";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
 import { checkForUpdates, openReleasesPage, openRepositoryPage, updaterStatus } from "./updater";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
@@ -42,7 +42,7 @@ export interface DesktopRuntime {
 export async function createDesktopRuntime(
   showMainWindow: () => void,
   installUpdate: () => Promise<void>,
-  applyAttention: (attention: WindowAttention) => void = () => undefined,
+  applyAttention: (attention: AttentionSnapshot) => void = () => undefined,
 ): Promise<DesktopRuntime> {
   const userData = app.getPath("userData");
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
@@ -122,6 +122,16 @@ export async function createDesktopRuntime(
     coordinator.applyProviderStatus(event.sessionId, event.status);
   });
 
+  const attentionTracker = createTerminalAttentionTracker();
+  // One snapshot feeds every surface: window frame + taskbar (via applyAttention) and the
+  // renderer's sidebar badges (via the broadcast).
+  const publishAttention = (snapshot: AttentionSnapshot) => {
+    applyAttention(snapshot);
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send("attention:event", snapshot.unread);
+    }
+  };
+
   registerMainIpc(ipcMain, {
     projectService,
     coordinator,
@@ -150,19 +160,19 @@ export async function createDesktopRuntime(
     },
     listAgents,
     editAgents: () => openAgentRegistryForEditing(agentRegistryPath),
+    attentionState: () => attentionTracker.snapshot().unread,
     onSessionSelected(sessionId) {
-      applyAttention(attentionTracker.markSeen(sessionId));
+      publishAttention(attentionTracker.markSeen(sessionId));
     },
   });
 
   const notificationDeduper = createTerminalNotificationDeduper();
-  const attentionTracker = createTerminalAttentionTracker();
   coordinator.onEvent((event: TerminalEvent) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("terminal:event", event);
     if (event.type === "exit") notificationDeduper.reset(event.sessionId);
     if (event.type !== "status") return;
     if (event.status !== "awaiting-input" && event.status !== "awaiting-approval") {
-      applyAttention(attentionTracker.applyStatus(event.sessionId, event.status));
+      publishAttention(attentionTracker.applyStatus(event.sessionId, event.status));
     }
     if (event.status === "working" || event.status === "exited" || event.status === "error") {
       notificationDeduper.reset(event.sessionId);
@@ -185,10 +195,10 @@ export async function createDesktopRuntime(
       });
       if (!shouldShowNotification) {
         notificationDeduper.reset(event.sessionId);
-        applyAttention(attentionTracker.markSeen(event.sessionId));
+        publishAttention(attentionTracker.markSeen(event.sessionId));
         return;
       }
-      applyAttention(attentionTracker.applyStatus(event.sessionId, event.status));
+      publishAttention(attentionTracker.applyStatus(event.sessionId, event.status));
       if (!Notification.isSupported()) return;
       if (!notificationDeduper.shouldNotify(event.sessionId, event.status)) return;
       const session = coordinator.list().find((candidate) => candidate.id === event.sessionId);

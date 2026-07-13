@@ -23,6 +23,9 @@ export interface ProviderAvailability {
   vscode: boolean;
 }
 
+/** What an off-screen session turned out to be waiting for. The key of every unread badge. */
+export type SessionAttention = "input" | "approval";
+
 /**
  * Every agent the app knows, in launcher order, each already told whether its executable is on PATH.
  * This replaces the renderer's old hard-coded provider table.
@@ -97,6 +100,18 @@ export interface MultiCliWorkApi {
     list(): Promise<AgentsSnapshot>;
     /** Opens `agents.json` in the user's editor, writing a worked example first if it has none. */
     edit(): Promise<void>;
+  };
+  files: {
+    /**
+     * Absolute path of a file dragged in from the OS, or "" for a File with no backing path.
+     * Synchronous — it never leaves the preload process.
+     */
+    pathFor(file: File): string;
+  };
+  attention: {
+    /** The sessions currently waiting for the user off screen, and what each waits for. */
+    state(): Promise<Record<string, SessionAttention>>;
+    onEvent(listener: (unread: Record<string, SessionAttention>) => void): () => void;
   };
   terminals: {
     list(): Promise<TerminalSessionView[]>;

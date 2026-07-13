@@ -1,5 +1,10 @@
 import type { AgentView } from "@shared/agent-types";
-import type { ProjectWorkspaceSnapshot, ProviderAvailability, TerminalSessionView } from "@shared/api-types";
+import type {
+  ProjectWorkspaceSnapshot,
+  ProviderAvailability,
+  SessionAttention,
+  TerminalSessionView,
+} from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, TriangleAlert } from "lucide-react";
@@ -16,10 +21,12 @@ import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 import { ProjectDetailPage } from "./ProjectDetailPage";
 import { ProjectSidebar } from "./ProjectSidebar";
+import { QuickOpenPalette } from "./QuickOpenPalette";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { TerminalPane } from "./TerminalPane";
 import { WorkspaceHeader } from "./WorkspaceHeader";
-import { findAgent, projectName, sessionLabel } from "./session-labels";
+import type { QuickOpenItem } from "./quick-open";
+import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 
 type ActiveView = "home" | "detail" | "terminal";
 const ACTIVITY_LOG_LIMIT = 20;
@@ -102,6 +109,8 @@ export function App() {
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [removal, setRemoval] = useState<RemovalState | null>(null);
+  const [quickOpenVisible, setQuickOpenVisible] = useState(false);
+  const [unread, setUnread] = useState<Record<string, SessionAttention>>({});
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -236,6 +245,35 @@ export function App() {
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [refreshAgents]);
+
+  useEffect(() => {
+    let disposed = false;
+    void window.multiCliWork.attention
+      .state()
+      .then((state) => {
+        if (!disposed) setUnread(state);
+      })
+      .catch(() => undefined);
+    const unsubscribe = window.multiCliWork.attention.onEvent(setUnread);
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
+
+  // Capture phase, because the terminal usually owns the keyboard: xterm swallows keydowns once
+  // focused, so only a listener that runs ahead of it can make Ctrl+P the app's shortcut.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== "p") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setQuickOpenVisible((visible) => !visible);
+    };
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, []);
 
   const beginSidebarResize = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -543,6 +581,69 @@ export function App() {
     }
   };
 
+  // Ordered for the empty query: sessions (most recently active first), folders, then commands.
+  const quickOpenItems = useMemo<QuickOpenItem[]>(() => {
+    if (!quickOpenVisible) return [];
+    const nameById = new Map(projects.map((project) => [project.id, projectName(project)]));
+    const sessionItems = [...sessions]
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map((session): QuickOpenItem => ({
+        key: `session:${session.id}`,
+        kind: "session",
+        label: sessionLabel(
+          session,
+          sessions.filter((peer) => peer.projectId === session.projectId),
+          agents,
+        ),
+        detail: session.projectId ? (nameById.get(session.projectId) ?? null) : "도구",
+      }));
+    const projectItems = projects.map(
+      (project): QuickOpenItem => ({
+        key: `project:${project.id}`,
+        kind: "project",
+        label: projectName(project),
+        detail: project.rootPath,
+      }),
+    );
+    const commandItems: QuickOpenItem[] = [
+      { key: "command:home", kind: "command", label: "홈 대시보드 열기", detail: null },
+      ...(selectedProject && !selectedProjectMissing
+        ? agents
+            .filter((agent) => agent.available)
+            .map(
+              (agent): QuickOpenItem => ({
+                key: `command:new-session:${agent.id}`,
+                kind: "command",
+                label: newSessionLabel(agent),
+                detail: projectName(selectedProject),
+              }),
+            )
+        : []),
+      { key: "command:edit-agents", kind: "command", label: "에이전트 추가 (agents.json)", detail: null },
+      { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
+    ];
+    return [...sessionItems, ...projectItems, ...commandItems];
+  }, [quickOpenVisible, sessions, projects, agents, selectedProject, selectedProjectMissing]);
+
+  const handleQuickOpenSelect = (item: QuickOpenItem) => {
+    setQuickOpenVisible(false);
+    const [prefix, ...rest] = item.key.split(":");
+    if (prefix === "session") {
+      const session = sessions.find((candidate) => candidate.id === rest.join(":"));
+      if (session) selectSession(session);
+    } else if (prefix === "project") {
+      selectProject(rest.join(":"));
+    } else if (item.key === "command:home") {
+      openHome();
+    } else if (item.key === "command:edit-agents") {
+      void editAgents();
+    } else if (item.key === "command:check-updates") {
+      void window.multiCliWork.updates.check().catch((error) => setActionError(errorMessage(error)));
+    } else if (rest[0] === "new-session" && selectedProject) {
+      void startSession(selectedProject, rest.slice(1).join(":"));
+    }
+  };
+
   // The header mirrors whatever the sidebar has selected, except on the home dashboard: there it
   // would otherwise show a stale project/session left over from before "Home" was opened.
   const headerProject = activeView === "home" ? null : selectedProject;
@@ -556,6 +657,7 @@ export function App() {
         projects={projects}
         sessions={folderSessions}
         agents={agents}
+        unread={unread}
         toolSessions={toolSessions}
         selectedProjectId={activeView === "home" ? null : selectedProjectId}
         selectedSessionId={activeView === "home" ? null : selectedSessionId}
@@ -740,6 +842,14 @@ export function App() {
           onRename={() => setRenamingSessionId(sessionMenu.session.id)}
           onResetName={() => void renameSession(sessionMenu.session.id, null)}
           onClose={() => setSessionMenu(null)}
+        />
+      ) : null}
+
+      {quickOpenVisible ? (
+        <QuickOpenPalette
+          items={quickOpenItems}
+          onSelect={handleQuickOpenSelect}
+          onClose={() => setQuickOpenVisible(false)}
         />
       ) : null}
 

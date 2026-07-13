@@ -213,6 +213,25 @@ test.describe.serial("Multi CLI Work desktop", () => {
     }
   });
 
+  test("jumps between sessions with the quick open palette", async () => {
+    // Focus sits inside the Echo Agent terminal from the previous test — the palette shortcut
+    // must win over the terminal, which is the whole point of the capture-phase listener.
+    await page.keyboard.press("Control+p");
+    const palette = page.getByRole("dialog", { name: "빠른 열기" });
+    await expect(palette).toBeVisible();
+
+    await page.keyboard.type("power");
+    await page.keyboard.press("Enter");
+    await expect(palette).toBeHidden();
+    await expect(page.getByRole("region", { name: "powershell 터미널" })).toBeVisible();
+
+    await page.keyboard.press("Control+p");
+    await expect(palette).toBeVisible();
+    await attachScreenshot("quick-open");
+    await page.keyboard.press("Escape");
+    await expect(palette).toBeHidden();
+  });
+
   test("hides to the tray and restores saved tabs after a relaunch", async () => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);

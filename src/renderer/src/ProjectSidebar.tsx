@@ -1,5 +1,5 @@
 import type { AgentView } from "@shared/agent-types";
-import type { ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
+import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import {
   ChevronDown,
@@ -24,6 +24,8 @@ interface ProjectSidebarProps {
   projects: SharedProject[];
   sessions: TerminalSessionView[];
   agents: AgentView[];
+  /** Sessions that started waiting while off screen — the sidebar's dot badges. */
+  unread: Record<string, SessionAttention>;
   toolSessions: TerminalSessionView[];
   selectedProjectId: string | null;
   selectedSessionId: string | null;
@@ -98,6 +100,7 @@ export function ProjectSidebar({
   projects,
   sessions,
   agents,
+  unread,
   toolSessions,
   selectedProjectId,
   selectedSessionId,
@@ -126,6 +129,7 @@ export function ProjectSidebar({
   const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
     const agent = findAgent(agents, session.kind);
     const label = sessionLabel(session, peers, agents);
+    const sessionUnread = unread[session.id];
     if (renamingSessionId === session.id) {
       return (
         <li key={session.id}>
@@ -144,13 +148,16 @@ export function ProjectSidebar({
           type="button"
           onClick={() => onSelectSession(session)}
           onContextMenu={(event) => onSessionContextMenu(session, event)}
-          aria-label={`${label} 세션 열기`}
+          aria-label={`${label} 세션 열기${sessionUnread ? " (읽지 않음)" : ""}`}
         >
           <span className={`status-dot status-${session.status}`} aria-hidden="true" />
           {session.tool ? <Wrench size={14} /> : <AgentIcon agent={agent} size={14} />}
           <span className="session-name" title={label}>
             {label}
           </span>
+          {sessionUnread ? (
+            <span className={`unread-dot unread-${sessionUnread}`} title="응답 대기" aria-hidden="true" />
+          ) : null}
           <span className="session-status">{statusLabels[session.status]}</span>
         </button>
       </li>
@@ -226,6 +233,13 @@ export function ProjectSidebar({
               const projectSessions = sessions
                 .filter((session) => session.projectId === project.id)
                 .sort(byCreation);
+              // The folder row shows the strongest wait among its sessions, so a collapsed
+              // folder cannot hide an agent asking for approval.
+              const projectAttention = projectSessions.reduce<SessionAttention | null>((strongest, session) => {
+                const attention = unread[session.id];
+                if (attention === "approval" || strongest === "approval") return "approval";
+                return attention ?? strongest;
+              }, null);
               return (
                 <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
                   <div
@@ -260,6 +274,14 @@ export function ProjectSidebar({
                           {project.rootPath}
                         </span>
                       </span>
+                      {projectAttention ? (
+                        <span
+                          className={`unread-dot unread-${projectAttention}`}
+                          role="status"
+                          aria-label="응답 대기 세션 있음"
+                          title="응답 대기 세션 있음"
+                        />
+                      ) : null}
                       {rootMissing ? <span className="project-status missing-status">없음</span> : null}
                     </button>
                   </div>
