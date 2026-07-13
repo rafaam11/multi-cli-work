@@ -763,6 +763,21 @@ describe("worktree sessions", () => {
     expect(after.worker.create).not.toHaveBeenCalled();
   });
 
+  it("persists the split pane, refuses unknown sessions, and clears it on removal", async () => {
+    const root = await tempRoot();
+    const { instance } = worktreeCoordinator(root);
+    await instance.initialize();
+    const session = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+
+    await instance.split(session.id);
+    expect((await readAppState({ statePath: path.join(root, "state.json") })).state.splitSessionId).toBe(session.id);
+    await expect(instance.split("missing")).rejects.toThrow(/unknown terminal session/i);
+
+    await instance.remove(session.id);
+    const raw = JSON.parse(await fs.readFile(path.join(root, "state.json"), "utf8"));
+    expect(Object.keys(raw)).not.toContain("splitSessionId");
+  });
+
   it("removes only the worktree's sessions, leaving root sessions alone", async () => {
     const root = await tempRoot();
     const { instance } = worktreeCoordinator(root);

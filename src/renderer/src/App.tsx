@@ -27,8 +27,8 @@ import { ProjectDetailPage } from "./ProjectDetailPage";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { QuickOpenPalette } from "./QuickOpenPalette";
 import { SessionContextMenu } from "./SessionContextMenu";
-import { TerminalPane } from "./TerminalPane";
-import { WorkspaceHeader } from "./WorkspaceHeader";
+import { WorkspaceHeader, type SplitCandidate } from "./WorkspaceHeader";
+import { WorkspaceSplit } from "./WorkspaceSplit";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
 import { fanOutTargets } from "./fan-out";
@@ -148,6 +148,7 @@ export function App() {
   const [worktreeForce, setWorktreeForce] = useState<WorktreeForceState | null>(null);
   const [fanOutVisible, setFanOutVisible] = useState(false);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
+  const [splitSessionId, setSplitSessionId] = useState<string | null>(null);
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -164,6 +165,7 @@ export function App() {
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const selectedWorktree = worktrees.find((worktree) => worktree.id === selectedWorktreeId) ?? null;
+  const splitSession = sessions.find((session) => session.id === splitSessionId) ?? null;
   const selectedSessionLabel = selectedSession
     ? sessionLabel(
         selectedSession,
@@ -228,6 +230,10 @@ export function App() {
 
         // A maintenance session belongs to no folder, so restoring it must not fall back to the
         // first folder in the list the way a plain "nothing selected" state does.
+        // The split only restores if its session still exists; a stale id silently collapses.
+        const restoredSplitId =
+          terminalSessions.find((session) => session.id === appState.state.splitSessionId)?.id ?? null;
+
         if (restoredSession?.projectId === null) {
           setSnapshot(registrySnapshot);
           setSessions(terminalSessions);
@@ -236,6 +242,7 @@ export function App() {
           setSelectedProjectId(null);
           setSelectedSessionId(restoredSession.id);
           setSelectedWorktreeId(null);
+          setSplitSessionId(restoredSplitId);
           setActiveView(forceHome ? "home" : "terminal");
           return;
         }
@@ -259,6 +266,7 @@ export function App() {
         setSelectedProjectId(initialProject?.id ?? null);
         setSelectedSessionId(initialSession?.id ?? null);
         setSelectedWorktreeId(initialSession?.worktreeId ?? null);
+        setSplitSessionId(restoredSplitId);
         setActiveView(forceHome ? "home" : initialSession ? "terminal" : initialProject ? "detail" : "home");
       } catch (error) {
         setLoadError(errorMessage(error));
@@ -385,12 +393,21 @@ export function App() {
     persistSelection(projectId, null);
   };
 
+  const applySplit = (sessionId: string | null) => {
+    setSplitSessionId(sessionId);
+    void window.multiCliWork.terminals.split(sessionId).catch((error) => {
+      setActionError(errorMessage(error));
+    });
+  };
+
   const selectSession = (session: TerminalSessionView) => {
     setSelectedProjectId(session.projectId);
     setSelectedSessionId(session.id);
     setSelectedWorktreeId(session.worktreeId ?? null);
     setActiveView("terminal");
     setActionError(null);
+    // Promoting the split session to the primary pane would leave both panes showing it.
+    if (session.id === splitSessionId) applySplit(null);
     persistSelection(session.projectId, session.id);
   };
 
@@ -795,6 +812,25 @@ export function App() {
   const headerSession = activeView === "home" ? null : selectedSession;
   const headerSessionLabel = activeView === "home" ? null : selectedSessionLabel;
 
+  // Everything but the primary can fill the second pane — including exited sessions, whose
+  // read-only scrollback is exactly what a side-by-side comparison wants.
+  const splitCandidates = useMemo<SplitCandidate[]>(() => {
+    if (!selectedSession) return [];
+    const nameById = new Map(projects.map((project) => [project.id, projectName(project)]));
+    return [...sessions]
+      .filter((session) => session.id !== selectedSession.id)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map((session) => ({
+        sessionId: session.id,
+        label: sessionLabel(
+          session,
+          sessions.filter((peer) => peer.projectId === session.projectId),
+          agents,
+        ),
+        detail: session.projectId ? (nameById.get(session.projectId) ?? null) : "도구",
+      }));
+  }, [selectedSession, sessions, projects, agents]);
+
   return (
     <div className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
       <ProjectSidebar
@@ -869,6 +905,9 @@ export function App() {
           agents={agents}
           pendingAction={pendingAction}
           readOnly={Boolean(snapshot && !snapshot.writable)}
+          splitActive={Boolean(splitSession)}
+          splitCandidates={splitCandidates}
+          onSplit={applySplit}
           onStartSession={(kind) =>
             selectedProject && void startSession(selectedProject, kind, selectedWorktree?.id)
           }
@@ -929,11 +968,21 @@ export function App() {
               <h2>작업 영역을 불러오지 못했습니다</h2>
             </section>
           ) : activeView === "terminal" && selectedSession ? (
-            <TerminalPane
-              key={selectedSession.id}
+            <WorkspaceSplit
               session={selectedSession}
+              splitSession={splitSession}
+              splitSessionLabel={
+                splitSession
+                  ? sessionLabel(
+                      splitSession,
+                      sessions.filter((peer) => peer.projectId === splitSession.projectId),
+                      agents,
+                    )
+                  : null
+              }
               onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
               onError={(message) => setActionError(message)}
+              onCloseSplit={() => applySplit(null)}
             />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage

@@ -264,7 +264,12 @@ export class TerminalCoordinator {
       (state) => {
         const sessions = { ...state.sessions };
         delete sessions[sessionId];
-        return { ...state, sessions, selectedSessionId: state.selectedSessionId === sessionId ? null : state.selectedSessionId };
+        return {
+          ...state,
+          sessions,
+          selectedSessionId: state.selectedSessionId === sessionId ? null : state.selectedSessionId,
+          ...(state.splitSessionId === sessionId ? { splitSessionId: undefined } : {}),
+        };
       },
       { statePath: this.options.statePath },
     );
@@ -306,6 +311,18 @@ export class TerminalCoordinator {
   async select(projectId: string | null, sessionId: string | null) {
     const state = await updateAppState(
       (current) => ({ ...current, selectedProjectId: projectId, selectedSessionId: sessionId }),
+      { statePath: this.options.statePath },
+    );
+    return { state, source: "primary" as const, writable: true };
+  }
+
+  /** Which session fills the secondary split pane; null collapses back to a single terminal. */
+  async split(sessionId: string | null) {
+    if (sessionId !== null && !this.views.has(sessionId)) {
+      throw new Error(`Unknown terminal session: ${sessionId}`);
+    }
+    const state = await updateAppState(
+      (current) => ({ ...current, splitSessionId: sessionId ?? undefined }),
       { statePath: this.options.statePath },
     );
     return { state, source: "primary" as const, writable: true };

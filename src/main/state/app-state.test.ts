@@ -63,6 +63,22 @@ describe("session agent ids", () => {
     expect(() => parseAppState(stateWithKind("Claude Code"))).toThrow(/kind is invalid/i);
     expect(() => parseAppState(stateWithKind(42))).toThrow(/kind is invalid/i);
   });
+
+  it("round-trips optional worktree and split keys, and omits both while unused", () => {
+    const plain = parseAppState(stateWithKind("powershell"));
+    expect(Object.keys(plain)).not.toContain("splitSessionId");
+    expect(Object.keys(plain.sessions["session-1"])).not.toContain("worktreeId");
+
+    const enriched = stateWithKind("powershell") as {
+      splitSessionId?: string;
+      sessions: Record<string, Record<string, unknown>>;
+    };
+    enriched.splitSessionId = "session-1";
+    enriched.sessions["session-1"].worktreeId = "worktree-1";
+    const parsed = parseAppState(enriched);
+    expect(parsed.splitSessionId).toBe("session-1");
+    expect(parsed.sessions["session-1"].worktreeId).toBe("worktree-1");
+  });
 });
 
 describe("app state", () => {

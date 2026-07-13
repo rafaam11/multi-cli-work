@@ -26,6 +26,11 @@ export interface AppStateV1 {
   updatedAt: string;
   selectedProjectId: string | null;
   selectedSessionId: string | null;
+  /**
+   * The session shown in the secondary split pane. Omitted (not null) while nothing is split, so a
+   * state file that never used the split keeps its exact shape and still loads in older builds.
+   */
+  splitSessionId?: string;
   sessions: Record<string, PersistedTerminalSession>;
 }
 

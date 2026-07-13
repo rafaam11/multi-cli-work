@@ -306,6 +306,7 @@ function createApi(options?: {
           sessions: {},
         },
       }),
+      split: vi.fn().mockResolvedValue(appState),
       onEvent: vi.fn((listener) => {
         listeners.add(listener);
         return () => listeners.delete(listener);
@@ -1226,6 +1227,45 @@ describe("prompt fan-out", () => {
     await waitFor(() =>
       expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "상태를 보고해줘\r"),
     );
+  });
+});
+
+describe("workspace split", () => {
+  it("shows two terminals, marks the split persistent, and collapses on close", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    // Boots into the PowerShell terminal; split it with the exited Claude session.
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    fireEvent.click(screen.getByRole("button", { name: "화면 분할" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Claude Code" }));
+
+    expect(await screen.findByRole("region", { name: "claude 터미널" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
+    expect(harness.api.terminals.split).toHaveBeenCalledWith(claudeSession.id);
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(claudeSession.id));
+
+    fireEvent.click(screen.getByRole("button", { name: "분할 닫기" }));
+    expect(screen.queryByRole("region", { name: "claude 터미널" })).not.toBeInTheDocument();
+    expect(harness.api.terminals.split).toHaveBeenLastCalledWith(null);
+  });
+
+  it("collapses the split when its session is promoted to the primary pane", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    fireEvent.click(screen.getByRole("button", { name: "화면 분할" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Claude Code" }));
+    await screen.findByRole("region", { name: "claude 터미널" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Claude Code 세션 열기" }));
+
+    expect(harness.api.terminals.split).toHaveBeenLastCalledWith(null);
+    expect(screen.getByRole("region", { name: "claude 터미널" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "powershell 터미널" })).not.toBeInTheDocument();
   });
 });
 

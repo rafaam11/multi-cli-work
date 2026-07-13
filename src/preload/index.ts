@@ -60,6 +60,7 @@ const api: MultiCliWorkApi = {
     remove: (sessionId) => ipcRenderer.invoke("terminals:remove", sessionId),
     rename: (sessionId, name) => ipcRenderer.invoke("terminals:rename", sessionId, name),
     select: (projectId, sessionId) => ipcRenderer.invoke("terminals:select", projectId, sessionId),
+    split: (sessionId) => ipcRenderer.invoke("terminals:split", sessionId),
     onEvent(listener) {
       const handler = (_event: Electron.IpcRendererEvent, terminalEvent: TerminalEvent) => listener(terminalEvent);
       ipcRenderer.on("terminal:event", handler);

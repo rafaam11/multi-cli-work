@@ -106,14 +106,25 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
 
 export function parseAppState(value: unknown): AppStateV1 {
   if (!isRecord(value)) throw new AppStateError("App state must be an object");
-  exactKeys(value, ["schemaVersion", "updatedAt", "selectedProjectId", "selectedSessionId", "sessions"], "App state");
+  exactKeys(
+    value,
+    ["schemaVersion", "updatedAt", "selectedProjectId", "selectedSessionId", "splitSessionId", "sessions"],
+    "App state",
+  );
   if (value.schemaVersion !== 1) throw new AppStateError(`Unsupported app state schema: ${String(value.schemaVersion)}`);
   if (!isRecord(value.sessions)) throw new AppStateError("App state sessions must be an object");
+  // Like a session's worktreeId: the key only exists while a split is active, so state files that
+  // never used the split keep their exact shape.
+  const splitSessionId =
+    value.splitSessionId === undefined || value.splitSessionId === null
+      ? undefined
+      : string(value.splitSessionId, "App state splitSessionId");
   return {
     schemaVersion: 1,
     updatedAt: iso(value.updatedAt, "App state updatedAt"),
     selectedProjectId: nullableString(value.selectedProjectId, "App state selectedProjectId"),
     selectedSessionId: nullableString(value.selectedSessionId, "App state selectedSessionId"),
+    ...(splitSessionId !== undefined ? { splitSessionId } : {}),
     sessions: Object.fromEntries(Object.entries(value.sessions).map(([key, session]) => [key, parseSession(session, key)])),
   };
 }

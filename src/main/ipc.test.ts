@@ -51,6 +51,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     }),
     rename: vi.fn(async (sessionId: string, name: string | null) => ({ id: sessionId, name })),
     select: vi.fn(),
+    split: vi.fn(async (sessionId: string | null) => ({ splitSessionId: sessionId })),
     state: vi.fn(async () => ({
       source: "primary" as const,
       writable: true,
@@ -135,6 +136,19 @@ describe("main IPC boundary", () => {
     const { handlers } = setup();
 
     expect(await handlers.get("attention:state")!({})).toEqual({ "session-1": "input" });
+  });
+
+  it("persists the split pane and marks the split session seen", async () => {
+    const onSessionSelected = vi.fn();
+    const { handlers, coordinator } = setup({ onSessionSelected });
+
+    await handlers.get("terminals:split")!({}, "session-2");
+
+    expect(coordinator.split).toHaveBeenCalledWith("session-2");
+    expect(onSessionSelected).toHaveBeenCalledWith("session-2");
+
+    await handlers.get("terminals:split")!({}, null);
+    expect(coordinator.split).toHaveBeenCalledWith(null);
   });
 
   it("uses the main-process folder chooser for manual project registration", async () => {

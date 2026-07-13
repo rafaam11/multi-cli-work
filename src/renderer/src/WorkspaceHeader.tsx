@@ -2,7 +2,7 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, ToolCommand } from "@shared/terminal-types";
-import { CircleStop, FolderOpen, MonitorDot, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
+import { CircleStop, Columns2, FolderOpen, MonitorDot, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import {
@@ -17,6 +17,13 @@ import {
 
 const TOOL_COMMANDS: ToolCommand[] = ["claude-update", "codex-update"];
 
+export interface SplitCandidate {
+  sessionId: string;
+  label: string;
+  /** Context shown dimmed: the folder (or "도구") the candidate belongs to. */
+  detail: string | null;
+}
+
 interface WorkspaceHeaderProps {
   selectedProject: SharedProject | null;
   selectedSession: TerminalSessionView | null;
@@ -25,6 +32,9 @@ interface WorkspaceHeaderProps {
   agents: AgentView[];
   pendingAction: boolean;
   readOnly: boolean;
+  splitActive: boolean;
+  splitCandidates: SplitCandidate[];
+  onSplit(sessionId: string | null): void;
   onStartSession(kind: TerminalKind): void;
   onStartTool(tool: ToolCommand): void;
   onEditAgents(): void;
@@ -54,6 +64,9 @@ export function WorkspaceHeader({
   agents,
   pendingAction,
   readOnly,
+  splitActive,
+  splitCandidates,
+  onSplit,
   onStartSession,
   onStartTool,
   onEditAgents,
@@ -64,6 +77,8 @@ export function WorkspaceHeader({
 }: WorkspaceHeaderProps) {
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const toolsAnchor = useDismissable(() => setToolsMenuOpen(false));
+  const [splitMenuOpen, setSplitMenuOpen] = useState(false);
+  const splitAnchor = useDismissable(() => setSplitMenuOpen(false));
 
   const finished = selectedSession?.status === "exited" || selectedSession?.status === "error";
   const canLaunch = Boolean(selectedProject) && !projectMissing && !pendingAction;
@@ -151,6 +166,55 @@ export function WorkspaceHeader({
           >
             <Trash2 size={15} />
           </button>
+        ) : null}
+
+        {/* An active split toggles off with one press; starting one asks which session fills the
+            second pane. Two panes only. */}
+        {selectedSession ? (
+          <div className="session-menu-anchor" ref={splitAnchor}>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={splitActive ? "분할 해제" : "화면 분할"}
+              title={
+                splitActive
+                  ? "분할 해제"
+                  : splitCandidates.length === 0
+                    ? "분할할 다른 세션이 없습니다"
+                    : "화면 분할"
+              }
+              disabled={!splitActive && splitCandidates.length === 0}
+              aria-expanded={splitMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => {
+                if (splitActive) onSplit(null);
+                else setSplitMenuOpen((open) => !open);
+              }}
+            >
+              <Columns2 size={15} />
+            </button>
+            {splitMenuOpen ? (
+              <div className="provider-menu" role="menu" aria-label="분할할 세션 선택">
+                {splitCandidates.map((candidate) => (
+                  <button
+                    key={candidate.sessionId}
+                    type="button"
+                    role="menuitem"
+                    aria-label={candidate.label}
+                    title={candidate.label}
+                    onClick={() => {
+                      setSplitMenuOpen(false);
+                      onSplit(candidate.sessionId);
+                    }}
+                  >
+                    <Columns2 size={15} />
+                    <span>{candidate.label}</span>
+                    {candidate.detail ? <span className="provider-unavailable">{candidate.detail}</span> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {/* The launchers stay out in the open whether or not the folder already has sessions. */}

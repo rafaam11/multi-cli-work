@@ -666,6 +666,61 @@ body.sidebar-resizing {
   padding-left: 14px;
 }
 
+.workspace-split {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.split-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.split-primary {
+  flex: 0 0 calc((100% - 4px) * var(--split-ratio, 0.5));
+}
+
+.split-secondary {
+  flex: 1 1 auto;
+}
+
+.split-pane .terminal-surface {
+  min-height: 0;
+  flex: 1;
+}
+
+.split-divider {
+  z-index: 4;
+  flex: 0 0 4px;
+  background: var(--line);
+  cursor: col-resize;
+}
+
+.split-divider:hover {
+  background: var(--line-strong);
+}
+
+.split-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 2px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.split-pane-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-starting .status-dot,
 .status-dot.status-starting {
   background: var(--blue);

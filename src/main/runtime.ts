@@ -209,14 +209,18 @@ export async function createDesktopRuntime(
     void (async () => {
       const windows = BrowserWindow.getAllWindows();
       let selectedSessionId: string | null = null;
+      let splitSessionId: string | null = null;
       try {
-        selectedSessionId = (await coordinator.state()).state.selectedSessionId;
+        const { state } = await coordinator.state();
+        selectedSessionId = state.selectedSessionId;
+        splitSessionId = state.splitSessionId ?? null;
       } catch (error) {
         console.error("Failed to read the selected terminal session", error);
       }
       const shouldShowNotification = shouldShowTerminalStatusNotification({
         eventSessionId: event.sessionId,
         selectedSessionId,
+        splitSessionId,
         windowVisible: windows.some((window) => window.isVisible()),
         windowFocused: windows.some((window) => window.isVisible() && window.isFocused()),
       });

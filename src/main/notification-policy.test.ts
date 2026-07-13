@@ -7,6 +7,7 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "background-session",
         selectedSessionId: "visible-session",
+        splitSessionId: null,
         windowVisible: true,
         windowFocused: true,
       }),
@@ -18,6 +19,7 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "visible-session",
         selectedSessionId: "visible-session",
+        splitSessionId: null,
         windowVisible: true,
         windowFocused: true,
       }),
@@ -27,6 +29,7 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "visible-session",
         selectedSessionId: "visible-session",
+        splitSessionId: null,
         windowVisible: false,
         windowFocused: false,
       }),
@@ -36,6 +39,30 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "visible-session",
         selectedSessionId: "visible-session",
+        splitSessionId: null,
+        windowVisible: true,
+        windowFocused: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("treats the split pane as on screen, exactly like the selected session", () => {
+    expect(
+      shouldShowTerminalStatusNotification({
+        eventSessionId: "split-session",
+        selectedSessionId: "visible-session",
+        splitSessionId: "split-session",
+        windowVisible: true,
+        windowFocused: true,
+      }),
+    ).toBe(false);
+
+    // An unfocused window still notifies, split or not.
+    expect(
+      shouldShowTerminalStatusNotification({
+        eventSessionId: "split-session",
+        selectedSessionId: "visible-session",
+        splitSessionId: "split-session",
         windowVisible: true,
         windowFocused: false,
       }),

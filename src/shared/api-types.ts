@@ -150,6 +150,8 @@ export interface MultiCliWorkApi {
     remove(sessionId: string): Promise<void>;
     rename(sessionId: string, name: string | null): Promise<TerminalSessionView>;
     select(projectId: string | null, sessionId: string | null): Promise<AppStateSnapshot>;
+    /** Fills (or clears, with null) the secondary split pane. */
+    split(sessionId: string | null): Promise<AppStateSnapshot>;
     onEvent(listener: (event: TerminalEvent) => void): () => void;
   };
   updates: {

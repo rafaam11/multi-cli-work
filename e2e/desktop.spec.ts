@@ -286,10 +286,11 @@ test.describe.serial("Multi CLI Work desktop", () => {
     // Leave an uncommitted file in the worktree, then read it back from the diff view.
     await page.getByRole("button", { name: "PowerShell 2 세션 열기" }).click();
     await page.locator(".terminal-surface").click();
-    await page.keyboard.type("Set-Content -Path wip.txt -Value MCW_DIRTY; Write-Output MCW_WROTE");
+    // The marker is concatenated so it appears in the command's OUTPUT only — the echoed input
+    // line must not satisfy the wait, or the diff races the file write.
+    await page.keyboard.type('Set-Content -Path wip.txt -Value MCW_DIRTY; Write-Output ("MCW_WROTE_" + "DONE")');
     await page.keyboard.press("Enter");
-    // The diff is only opened once the file write has round-tripped through the shell.
-    await expect(page.locator(".xterm-rows")).toContainText("MCW_WROTE");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
     await page.getByRole("button", { name: "feature/e2e worktree 선택" }).click({ button: "right" });
     await page.getByRole("menu", { name: "feature/e2e worktree 작업" }).getByRole("menuitem", { name: "변경 보기" }).click();
     const diff = page.getByRole("dialog", { name: "변경 보기" });
@@ -328,6 +329,41 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await expect(page.getByRole("button", { name: "PowerShell 세션 열기" })).toBeVisible();
     await page.getByRole("button", { name: "PowerShell 세션 열기" }).click();
     await expect(page.getByRole("button", { name: "세션 재개" })).toBeVisible();
+  });
+
+  test("splits the workspace into two independent live terminals", async () => {
+    // Both sessions exited with the relaunch; resume each so both panes are interactive.
+    await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
+    await page.getByRole("button", { name: "세션 재개" }).click();
+    await expect(page.locator(".active-status")).not.toHaveText("종료됨");
+    await page.getByRole("button", { name: "PowerShell 세션 열기" }).click();
+    await page.getByRole("button", { name: "세션 재개" }).click();
+    await expect(page.locator(".active-status")).not.toHaveText("종료됨");
+
+    await page.getByRole("button", { name: "화면 분할" }).click();
+    await page.getByRole("menuitem", { name: "Echo Agent" }).click();
+
+    const left = page.locator(".split-primary");
+    const right = page.locator(".split-secondary");
+    await expect(left.getByRole("region", { name: "powershell 터미널" })).toBeVisible();
+    await expect(right.getByRole("region", { name: "echo-agent 터미널" })).toBeVisible();
+
+    // Input typed into one pane must never leak into the other.
+    await left.locator(".terminal-surface").click();
+    await page.keyboard.type("Write-Output MCW_SPLIT_LEFT");
+    await page.keyboard.press("Enter");
+    await expect(left.locator(".xterm-rows")).toContainText("MCW_SPLIT_LEFT");
+    await expect(right.locator(".xterm-rows")).not.toContainText("MCW_SPLIT_LEFT");
+
+    await right.locator(".terminal-surface").click();
+    await page.keyboard.type("Write-Output MCW_SPLIT_RIGHT");
+    await page.keyboard.press("Enter");
+    await expect(right.locator(".xterm-rows")).toContainText("MCW_SPLIT_RIGHT");
+    await expect(left.locator(".xterm-rows")).not.toContainText("MCW_SPLIT_RIGHT");
+    await attachScreenshot("workspace-split");
+
+    await page.getByRole("button", { name: "분할 닫기" }).click();
+    await expect(page.locator(".split-secondary")).toBeHidden();
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {

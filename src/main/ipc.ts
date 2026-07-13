@@ -42,6 +42,7 @@ interface TerminalCoordinatorGateway {
   removeProjectSessions(projectId: string): Promise<void>;
   rename(sessionId: string, name: string | null): Promise<unknown>;
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
+  split(sessionId: string | null): Promise<unknown>;
 }
 
 interface UpdaterGateway {
@@ -298,6 +299,13 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     if (projectId !== null && typeof projectId !== "string") throw new Error("Selected project id is invalid");
     if (sessionId !== null && typeof sessionId !== "string") throw new Error("Selected session id is invalid");
     const snapshot = await dependencies.coordinator.select(projectId, sessionId);
+    dependencies.onSessionSelected?.(sessionId);
+    return snapshot;
+  });
+  ipc.handle("terminals:split", async (_event, sessionId: unknown) => {
+    if (sessionId !== null && typeof sessionId !== "string") throw new Error("Split session id is invalid");
+    const snapshot = await dependencies.coordinator.split(sessionId);
+    // The split pane is on screen from this moment, so its unread badge clears like a selection.
     dependencies.onSessionSelected?.(sessionId);
     return snapshot;
   });
