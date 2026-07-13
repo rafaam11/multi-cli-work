@@ -625,6 +625,47 @@ body.sidebar-resizing {
   background: var(--amber);
 }
 
+.worktree-tree {
+  margin: 0;
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+
+.worktree-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.worktree-row:hover {
+  background: var(--surface-hover);
+}
+
+.worktree-row.selected {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.worktree-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-sessions {
+  padding-left: 14px;
+}
+
 .status-starting .status-dot,
 .status-dot.status-starting {
   background: var(--blue);
@@ -1178,6 +1219,149 @@ body.sidebar-resizing {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.worktree-branch-input,
+.fan-out-prompt {
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.fan-out-dialog {
+  width: min(460px, calc(100vw - 48px));
+}
+
+.fan-out-prompt {
+  min-height: 84px;
+  resize: vertical;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.fan-out-targets {
+  max-height: 180px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.fan-out-targets li {
+  padding: 2px 0;
+}
+
+.fan-out-targets label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fan-out-target-detail {
+  margin-left: auto;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.diff-view {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, calc(100vw - 48px));
+  max-height: 84vh;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 20px 48px rgb(0 0 0 / 44%);
+  overflow: hidden;
+}
+
+.diff-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.diff-view-header h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.diff-view-body {
+  padding: 10px 16px 16px;
+  overflow-y: auto;
+}
+
+.diff-truncated {
+  color: var(--amber);
+  font-size: 11px;
+}
+
+.diff-file {
+  margin: 6px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.diff-file summary {
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.diff-lines {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.diff-line {
+  display: block;
+  white-space: pre;
+}
+
+.diff-add {
+  color: var(--green);
+}
+
+.diff-del {
+  color: var(--red);
+}
+
+.diff-hunk {
+  color: var(--blue);
+}
+
+.diff-meta {
+  color: var(--quiet);
+}
+
+.diff-untracked {
+  margin-top: 10px;
+}
+
+.diff-untracked h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.diff-untracked ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .confirm-dialog {

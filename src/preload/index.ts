@@ -15,6 +15,16 @@ const api: MultiCliWorkApi = {
     openInEditor: (projectId) => ipcRenderer.invoke("projects:open-editor", projectId),
     openOnGitHub: (projectId) => ipcRenderer.invoke("projects:open-github", projectId),
     gitStatus: (projectId) => ipcRenderer.invoke("projects:git-status", projectId),
+    gitDiff: (projectId) => ipcRenderer.invoke("projects:git-diff", projectId),
+  },
+  worktrees: {
+    list: () => ipcRenderer.invoke("worktrees:list"),
+    create: (projectId, branch) => ipcRenderer.invoke("worktrees:create", projectId, branch),
+    remove: (worktreeId, force) => ipcRenderer.invoke("worktrees:remove", worktreeId, force),
+    reveal: (worktreeId) => ipcRenderer.invoke("worktrees:reveal", worktreeId),
+    openInEditor: (worktreeId) => ipcRenderer.invoke("worktrees:open-editor", worktreeId),
+    gitStatus: (worktreeId) => ipcRenderer.invoke("worktrees:git-status", worktreeId),
+    gitDiff: (worktreeId) => ipcRenderer.invoke("worktrees:git-diff", worktreeId),
   },
   agents: {
     list: () => ipcRenderer.invoke("agents:list"),

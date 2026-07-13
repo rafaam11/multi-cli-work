@@ -76,12 +76,28 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     openInEditor: vi.fn(async () => undefined),
     openOnGitHub: vi.fn(async () => undefined),
     gitStatus: vi.fn(async () => ({ isRepo: true, branch: "main", changedFileCount: 0 })),
+    gitDiff: vi.fn(async () => ({ isRepo: true, diff: "", untracked: [], truncated: false })),
+  };
+  const worktree = {
+    id: "worktree-1",
+    projectId: project.id,
+    path: "C:\\Work-wt\\feature",
+    branch: "feature",
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+  const worktrees = {
+    list: vi.fn(async () => [worktree]),
+    get: vi.fn(async (id: string) => (id === worktree.id ? worktree : null)),
+    create: vi.fn(async () => worktree),
+    remove: vi.fn(async () => ({ removed: true as const })),
   };
   registerMainIpc(ipc, {
     projectService,
     coordinator,
     updater,
     projectActions,
+    worktrees,
     appVersion: vi.fn(() => "1.0.0"),
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,

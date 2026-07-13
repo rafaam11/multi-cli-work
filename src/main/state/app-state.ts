@@ -24,6 +24,7 @@ const SESSION_KEYS = [
   "name",
   "kind",
   "cwd",
+  "worktreeId",
   "providerConversationId",
   "createdAt",
   "updatedAt",
@@ -83,6 +84,11 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
   if (typeof value.kind !== "string" || !AGENT_ID_PATTERN.test(value.kind)) {
     throw new AppStateError(`Session ${key}.kind is invalid`);
   }
+  // worktreeId is omitted, not null, when a session runs at the project root: only state files
+  // that actually use worktrees carry the key, so everyone else's state still loads in older builds.
+  const worktreeId = value.worktreeId === undefined || value.worktreeId === null
+    ? undefined
+    : string(value.worktreeId, `Session ${key}.worktreeId`);
   return {
     id,
     projectId: nullableString(value.projectId, `Session ${key}.projectId`),
@@ -91,6 +97,7 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
     name: optionalText(value.name, `Session ${key}.name`),
     kind: value.kind,
     cwd: string(value.cwd, `Session ${key}.cwd`),
+    ...(worktreeId !== undefined ? { worktreeId } : {}),
     providerConversationId: nullableString(value.providerConversationId, `Session ${key}.providerConversationId`),
     createdAt: iso(value.createdAt, `Session ${key}.createdAt`),
     updatedAt: iso(value.updatedAt, `Session ${key}.updatedAt`),

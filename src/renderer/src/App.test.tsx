@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type { AppStateSnapshot } from "@shared/app-state-types";
 import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -189,6 +190,7 @@ const agentFixtures: AgentView[] = [
 function createApi(options?: {
   projects?: SharedProject[];
   sessions?: TerminalSessionView[];
+  worktrees?: SharedWorktree[];
   warning?: string;
   source?: ProjectWorkspaceSnapshot["source"];
   writable?: boolean;
@@ -240,6 +242,16 @@ function createApi(options?: {
       openInEditor: vi.fn().mockResolvedValue(undefined),
       openOnGitHub: vi.fn().mockResolvedValue(undefined),
       gitStatus: vi.fn().mockResolvedValue({ isRepo: true, branch: "main", changedFileCount: 0 }),
+      gitDiff: vi.fn().mockResolvedValue({ isRepo: true, diff: "", untracked: [], truncated: false }),
+    },
+    worktrees: {
+      list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
+      create: vi.fn(),
+      remove: vi.fn().mockResolvedValue({ removed: true }),
+      reveal: vi.fn().mockResolvedValue(undefined),
+      openInEditor: vi.fn().mockResolvedValue(undefined),
+      gitStatus: vi.fn().mockResolvedValue({ isRepo: true, branch: "feature", changedFileCount: 0 }),
+      gitDiff: vi.fn().mockResolvedValue({ isRepo: true, diff: "", untracked: [], truncated: false }),
     },
     providers: {
       availability: vi.fn().mockResolvedValue({ vscode: true }),
@@ -1113,6 +1125,129 @@ describe("unread badges", () => {
 
     expect(screen.getByRole("button", { name: "Claude Code 세션 열기" })).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "응답 대기 세션 있음" })).not.toBeInTheDocument();
+  });
+});
+
+const atlasWorktree: SharedWorktree = {
+  id: "worktree-1",
+  projectId: atlas.id,
+  path: "C:\\work\\atlas-wt\\feature-x",
+  branch: "feature-x",
+  createdAt: "2026-07-13T00:00:00.000Z",
+  updatedAt: "2026-07-13T00:00:00.000Z",
+};
+
+describe("worktrees", () => {
+  const worktreeSession: TerminalSessionView = {
+    ...powershellSession,
+    id: "session-wt",
+    name: "WT 세션",
+    worktreeId: atlasWorktree.id,
+    cwd: atlasWorktree.path,
+  };
+
+  it("nests worktree sessions under a third tree level and scopes the detail page to it", async () => {
+    const harness = createApi({
+      sessions: [powershellSession, worktreeSession],
+      worktrees: [atlasWorktree],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const worktreeButton = await screen.findByRole("button", { name: "feature-x worktree 선택" });
+    fireEvent.click(worktreeButton);
+
+    const detail = await screen.findByRole("region", { name: "프로젝트 상세" });
+    expect(within(detail).getByRole("button", { name: "WT 세션 세션 보기" })).toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: /PowerShell.*세션 보기/ })).not.toBeInTheDocument();
+
+    // A session started while the worktree is selected runs in the worktree, not the root.
+    fireEvent.click(screen.getByRole("button", { name: "새 PowerShell 세션" }));
+    await waitFor(() =>
+      expect(harness.api.terminals.create).toHaveBeenCalledWith(
+        expect.objectContaining({ worktreeId: atlasWorktree.id }),
+      ),
+    );
+  });
+
+  it("blocks removal behind a dirty check and requires the explicit force confirmation", async () => {
+    const harness = createApi({
+      sessions: [worktreeSession],
+      worktrees: [atlasWorktree],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.worktrees.remove).mockResolvedValueOnce({
+      removed: false,
+      reason: "dirty",
+      message: "feature-x에 커밋되지 않은 변경 2개가 있습니다.",
+    });
+    render(<App />);
+
+    fireEvent.contextMenu(await screen.findByRole("button", { name: "feature-x worktree 선택" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Worktree 제거" }));
+
+    // First: the session-teardown confirmation.
+    const confirm = await screen.findByRole("dialog", { name: "Worktree 제거" });
+    expect(confirm).toHaveTextContent("세션 1개");
+    fireEvent.click(within(confirm).getByRole("button", { name: "제거" }));
+
+    // git refused: the force dialog quotes the reason, and only its explicit button forces.
+    const force = await screen.findByRole("dialog", { name: "Worktree 강제 제거" });
+    expect(force).toHaveTextContent("커밋되지 않은 변경 2개");
+    expect(harness.api.worktrees.remove).toHaveBeenCalledWith(atlasWorktree.id, false);
+
+    fireEvent.click(within(force).getByRole("button", { name: "변경을 버리고 강제 제거" }));
+    await waitFor(() => expect(harness.api.worktrees.remove).toHaveBeenCalledWith(atlasWorktree.id, true));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "feature-x worktree 선택" })).not.toBeInTheDocument(),
+    );
+  });
+});
+
+describe("prompt fan-out", () => {
+  it("sends the prompt to every checked alive session and skips exited ones", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "프롬프트 팬아웃" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "프롬프트 팬아웃" });
+    // claudeSession is exited, so only the PowerShell session is offered.
+    expect(within(dialog).getAllByRole("checkbox")).toHaveLength(1);
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "팬아웃 프롬프트" }), {
+      target: { value: "상태를 보고해줘" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "1개 세션에 전송" }));
+
+    await waitFor(() =>
+      expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "상태를 보고해줘\r"),
+    );
+  });
+});
+
+describe("diff view", () => {
+  it("opens the read-only diff for the selected project", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.projects.gitDiff).mockResolvedValue({
+      isRepo: true,
+      diff: "diff --git a/app.ts b/app.ts\n+added line",
+      untracked: ["notes.md"],
+      truncated: false,
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "변경 보기" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "변경 보기" });
+    expect(within(dialog).getByText("app.ts")).toBeInTheDocument();
+    expect(within(dialog).getByText("+added line")).toBeInTheDocument();
+    expect(within(dialog).getByText("notes.md")).toBeInTheDocument();
   });
 });
 

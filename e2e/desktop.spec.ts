@@ -1,7 +1,11 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const NOW = "2026-07-11T12:00:00.000Z";
@@ -21,6 +25,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
       MULTI_CLI_WORK_REGISTRY_PATH: path.join(tempRoot, "registry", "projects.json"),
       MULTI_CLI_WORK_CODEX_SESSIONS_DIR: path.join(tempRoot, "codex-sessions"),
       MULTI_CLI_WORK_AGENTS_PATH: path.join(tempRoot, "registry", "agents.json"),
+      MULTI_CLI_WORK_WORKTREES_PATH: path.join(tempRoot, "registry", "worktrees.json"),
     },
   });
   return { app: nextApp, page: await nextApp.firstWindow() };
@@ -41,6 +46,15 @@ test.describe.serial("Multi CLI Work desktop", () => {
       fs.mkdir(path.join(tempRoot, "registry"), { recursive: true }),
       fs.mkdir(path.join(tempRoot, "codex-sessions"), { recursive: true }),
     ]);
+    // A real repo with one commit, so the worktree flow runs against actual git.
+    await execFileAsync("git", ["init", "-b", "main"], { cwd: projectRoot });
+    await fs.writeFile(path.join(projectRoot, "readme.md"), "sample\n", "utf8");
+    await execFileAsync("git", ["add", "."], { cwd: projectRoot });
+    await execFileAsync(
+      "git",
+      ["-c", "user.email=e2e@example.com", "-c", "user.name=E2E", "commit", "-m", "init"],
+      { cwd: projectRoot },
+    );
     await fs.writeFile(
       path.join(tempRoot, "registry", "projects.json"),
       `${JSON.stringify(
@@ -230,6 +244,76 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await attachScreenshot("quick-open");
     await page.keyboard.press("Escape");
     await expect(palette).toBeHidden();
+  });
+
+  /**
+   * The Orca-style parallel loop end to end: an isolated worktree, a session running inside it,
+   * one prompt fanned out to every live session, the diff of what happened, and a removal that
+   * refuses to discard uncommitted work until forced explicitly.
+   */
+  test("runs a worktree session, fans out a prompt, and guards worktree removal", async () => {
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
+    await page.getByRole("menu", { name: "Sample Project 작업" }).getByRole("menuitem", { name: "Worktree 만들기" }).click();
+    const createDialog = page.getByRole("dialog", { name: "Worktree 만들기" });
+    await createDialog.getByRole("textbox", { name: "브랜치 이름" }).fill("feature/e2e");
+    await createDialog.getByRole("button", { name: "만들기" }).click();
+
+    // The new worktree opens scoped; a session started here runs in the worktree directory.
+    await expect(page.getByRole("button", { name: "feature/e2e worktree 선택" })).toBeVisible();
+    await page.getByRole("button", { name: "새 PowerShell 세션" }).click();
+    const terminal = page.getByRole("region", { name: "powershell 터미널" });
+    await expect(terminal).toBeVisible();
+    await terminal.click();
+    await page.keyboard.type('Write-Output ("MCW_PWD_" + $PWD.Path)');
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText("sample-project-wt");
+    await attachScreenshot("worktree-session");
+
+    // Fan one prompt out to every live session of the project (worktree + Echo Agent).
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("button", { name: "프롬프트 팬아웃" }).click();
+    const fanOut = page.getByRole("dialog", { name: "프롬프트 팬아웃" });
+    await expect(fanOut.getByRole("checkbox")).toHaveCount(2);
+    await fanOut.getByRole("textbox", { name: "팬아웃 프롬프트" }).fill("Write-Output MCW_FANOUT_OK");
+    await attachScreenshot("fan-out");
+    await fanOut.getByRole("button", { name: "2개 세션에 전송" }).click();
+    await expect(fanOut).toBeHidden();
+    await page.getByRole("button", { name: "PowerShell 2 세션 열기" }).click();
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
+    await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
+
+    // Leave an uncommitted file in the worktree, then read it back from the diff view.
+    await page.getByRole("button", { name: "PowerShell 2 세션 열기" }).click();
+    await page.locator(".terminal-surface").click();
+    await page.keyboard.type("Set-Content -Path wip.txt -Value MCW_DIRTY; Write-Output MCW_WROTE");
+    await page.keyboard.press("Enter");
+    // The diff is only opened once the file write has round-tripped through the shell.
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_WROTE");
+    await page.getByRole("button", { name: "feature/e2e worktree 선택" }).click({ button: "right" });
+    await page.getByRole("menu", { name: "feature/e2e worktree 작업" }).getByRole("menuitem", { name: "변경 보기" }).click();
+    const diff = page.getByRole("dialog", { name: "변경 보기" });
+    await expect(diff).toContainText("wip.txt");
+    await attachScreenshot("worktree-diff");
+    await diff.getByRole("button", { name: "변경 보기 닫기" }).click();
+
+    // Removal refuses over the uncommitted file until the explicit force confirmation.
+    await page.getByRole("button", { name: "feature/e2e worktree 선택" }).click({ button: "right" });
+    await page.getByRole("menu", { name: "feature/e2e worktree 작업" }).getByRole("menuitem", { name: "Worktree 제거" }).click();
+    const confirm = page.getByRole("dialog", { name: "Worktree 제거" });
+    await expect(confirm).toContainText("세션 1개");
+    await confirm.getByRole("button", { name: "제거" }).click();
+    const force = page.getByRole("dialog", { name: "Worktree 강제 제거" });
+    await expect(force).toContainText("커밋되지 않은 변경");
+    await attachScreenshot("worktree-force-remove");
+    await force.getByRole("button", { name: "변경을 버리고 강제 제거" }).click();
+    await expect(page.getByRole("button", { name: "feature/e2e worktree 선택" })).toBeHidden();
+    expect(
+      await fs.stat(path.join(tempRoot, "sample-project-wt", "feature-e2e")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
   });
 
   test("hides to the tray and restores saved tabs after a relaunch", async () => {

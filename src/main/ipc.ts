@@ -3,6 +3,7 @@ import type {
   AgentsSnapshot,
   CreateTerminalInput,
   CreateToolTerminalInput,
+  GitDiffResult,
   GitStatusResult,
   ProjectMetadataPatch,
   ProviderAvailability,
@@ -11,6 +12,7 @@ import type {
   UpdaterStatus,
 } from "../shared/api-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
+import type { SharedWorktree, WorktreeRemovalResult } from "../shared/worktree-types";
 import type { ToolCommand } from "../shared/terminal-types";
 import type { ProjectMetadataUpdate } from "./projects/project-service";
 
@@ -55,6 +57,14 @@ interface ProjectActionsGateway {
   openInEditor(rootPath: string): Promise<void>;
   openOnGitHub(rootPath: string): Promise<void>;
   gitStatus(rootPath: string): Promise<GitStatusResult>;
+  gitDiff(rootPath: string): Promise<GitDiffResult>;
+}
+
+interface WorktreeGateway {
+  list(): Promise<SharedWorktree[]>;
+  get(worktreeId: string): Promise<SharedWorktree | null>;
+  create(projectId: string, branch: string): Promise<SharedWorktree>;
+  remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult>;
 }
 
 interface MainIpcDependencies {
@@ -62,6 +72,7 @@ interface MainIpcDependencies {
   coordinator: TerminalCoordinatorGateway;
   updater: UpdaterGateway;
   projectActions: ProjectActionsGateway;
+  worktrees: WorktreeGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
@@ -103,13 +114,17 @@ function integer(value: unknown, label: string): number {
  * back as "Unknown agent" from the coordinator.
  */
 function validateCreateInput(value: unknown): CreateTerminalInput {
-  const input = exactObject(value, ["projectId", "kind", "cols", "rows"], "Terminal create input");
+  const input = exactObject(value, ["projectId", "kind", "worktreeId", "cols", "rows"], "Terminal create input");
   if (typeof input.kind !== "string" || !AGENT_ID_PATTERN.test(input.kind)) {
     throw new Error("Terminal kind is invalid");
+  }
+  if (input.worktreeId !== undefined && (typeof input.worktreeId !== "string" || input.worktreeId.length === 0)) {
+    throw new Error("Worktree id is invalid");
   }
   return {
     projectId: nonEmptyString(input.projectId, "Project id"),
     kind: input.kind,
+    ...(input.worktreeId !== undefined ? { worktreeId: input.worktreeId } : {}),
     cols: integer(input.cols, "Terminal columns"),
     rows: integer(input.rows, "Terminal rows"),
   };
@@ -212,6 +227,36 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   );
   ipc.handle("projects:git-status", async (_event, projectId: unknown) =>
     dependencies.projectActions.gitStatus(await projectRoot(nonEmptyString(projectId, "Project id"))),
+  );
+  ipc.handle("projects:git-diff", async (_event, projectId: unknown) =>
+    dependencies.projectActions.gitDiff(await projectRoot(nonEmptyString(projectId, "Project id"))),
+  );
+
+  const worktreePath = async (worktreeId: unknown) => {
+    const id = nonEmptyString(worktreeId, "Worktree id");
+    const worktree = await dependencies.worktrees.get(id);
+    if (!worktree) throw new Error(`Unknown worktree: ${id}`);
+    return worktree.path;
+  };
+  ipc.handle("worktrees:list", () => dependencies.worktrees.list());
+  ipc.handle("worktrees:create", (_event, projectId: unknown, branch: unknown) =>
+    dependencies.worktrees.create(nonEmptyString(projectId, "Project id"), nonEmptyString(branch, "Branch name")),
+  );
+  ipc.handle("worktrees:remove", (_event, worktreeId: unknown, force: unknown) => {
+    if (typeof force !== "boolean") throw new Error("Worktree remove force flag must be a boolean");
+    return dependencies.worktrees.remove(nonEmptyString(worktreeId, "Worktree id"), force);
+  });
+  ipc.handle("worktrees:reveal", async (_event, worktreeId: unknown) =>
+    dependencies.projectActions.reveal(await worktreePath(worktreeId)),
+  );
+  ipc.handle("worktrees:open-editor", async (_event, worktreeId: unknown) =>
+    dependencies.projectActions.openInEditor(await worktreePath(worktreeId)),
+  );
+  ipc.handle("worktrees:git-status", async (_event, worktreeId: unknown) =>
+    dependencies.projectActions.gitStatus(await worktreePath(worktreeId)),
+  );
+  ipc.handle("worktrees:git-diff", async (_event, worktreeId: unknown) =>
+    dependencies.projectActions.gitDiff(await worktreePath(worktreeId)),
   );
   ipc.handle("providers:availability", () => dependencies.getAvailability());
   ipc.handle("agents:list", () => dependencies.listAgents());

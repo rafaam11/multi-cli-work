@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { shell } from "electron";
-import type { GitStatusResult } from "../../shared/api-types";
+import type { GitDiffResult, GitStatusResult } from "../../shared/api-types";
 import { readGitHubUrl } from "../providers/git-remote";
 import { buildEditorSpawn, vsCodeExecutableCandidate, type ProviderExecutables } from "../providers/provider-launch";
+import { readGitDiff } from "./git-diff";
 import { readGitStatus } from "./git-status";
 
 export interface ProjectActionsOptions {
@@ -15,6 +16,7 @@ export interface ProjectActions {
   openInEditor(rootPath: string): Promise<void>;
   openOnGitHub(rootPath: string): Promise<void>;
   gitStatus(rootPath: string): Promise<GitStatusResult>;
+  gitDiff(rootPath: string): Promise<GitDiffResult>;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -66,6 +68,10 @@ export function createProjectActions(options: ProjectActionsOptions): ProjectAct
 
     gitStatus(rootPath) {
       return readGitStatus(rootPath);
+    },
+
+    gitDiff(rootPath) {
+      return readGitDiff(rootPath);
     },
   };
 }

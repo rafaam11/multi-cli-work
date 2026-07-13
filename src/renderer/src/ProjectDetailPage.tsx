@@ -2,7 +2,8 @@ import type { AgentView } from "@shared/agent-types";
 import type { GitStatusResult, ProjectMetadataPatch, TerminalSessionView } from "@shared/api-types";
 import type { ProjectTrack, SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import { FolderOpen, RefreshCw, Trash2 } from "lucide-react";
+import type { SharedWorktree } from "@shared/worktree-types";
+import { FileDiff, FolderOpen, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, VSCodeIcon, agentAccentClass } from "./brand-icons";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
@@ -89,6 +90,8 @@ function NewItemForm({ trackTitle, onAdd }: { trackTitle: string; onAdd(text: st
 
 interface ProjectDetailPageProps {
   project: SharedProject;
+  /** When set, the page is scoped to this worktree: its sessions, its git state, its directory. */
+  worktree: SharedWorktree | null;
   sessions: TerminalSessionView[];
   agents: AgentView[];
   vscodeAvailable: boolean;
@@ -98,11 +101,14 @@ interface ProjectDetailPageProps {
   onReveal(): void;
   onOpenInEditor(): void;
   onOpenOnGitHub(): void;
+  onFanOut(): void;
+  onShowDiff(): void;
   onProjectSaved(project: SharedProject): void;
 }
 
 export function ProjectDetailPage({
   project,
+  worktree,
   sessions,
   agents,
   vscodeAvailable,
@@ -112,9 +118,11 @@ export function ProjectDetailPage({
   onReveal,
   onOpenInEditor,
   onOpenOnGitHub,
+  onFanOut,
+  onShowDiff,
   onProjectSaved,
 }: ProjectDetailPageProps) {
-  const name = projectName(project);
+  const name = worktree ? `${projectName(project)} · ${worktree.branch}` : projectName(project);
   const [gitStatus, setGitStatus] = useState<GitStatusResult | null>(null);
   const [gitStatusLoading, setGitStatusLoading] = useState(false);
   const [gitStatusError, setGitStatusError] = useState<string | null>(null);
@@ -132,12 +140,13 @@ export function ProjectDetailPage({
   const loadGitStatus = useCallback(() => {
     setGitStatusLoading(true);
     setGitStatusError(null);
-    window.multiCliWork.projects
-      .gitStatus(project.id)
+    (worktree
+      ? window.multiCliWork.worktrees.gitStatus(worktree.id)
+      : window.multiCliWork.projects.gitStatus(project.id))
       .then(setGitStatus)
       .catch((error) => setGitStatusError(errorMessage(error)))
       .finally(() => setGitStatusLoading(false));
-  }, [project.id]);
+  }, [project.id, worktree]);
 
   useEffect(() => {
     loadGitStatus();
@@ -230,6 +239,14 @@ export function ProjectDetailPage({
               <GitHubIcon size={14} />
               <span>GitHub에서 열기</span>
             </button>
+            <button type="button" onClick={onFanOut}>
+              <Send size={14} />
+              <span>프롬프트 팬아웃</span>
+            </button>
+            <button type="button" onClick={onShowDiff}>
+              <FileDiff size={14} />
+              <span>변경 보기</span>
+            </button>
           </div>
         </section>
 
@@ -263,6 +280,9 @@ export function ProjectDetailPage({
           )}
         </section>
 
+        {/* Memo and checklists are project metadata; editing them from a worktree page would
+            silently write to the whole project, so the card only shows at the project root. */}
+        {worktree ? null : (
         <section className="detail-card detail-card-notes" aria-label="메모">
           <h2>메모</h2>
           {saveError ? (
@@ -324,6 +344,7 @@ export function ProjectDetailPage({
             <NewTrackForm onAdd={(title) => mutateTracks((current) => addTrack(current, title))} />
           </div>
         </section>
+        )}
       </div>
     </section>
   );

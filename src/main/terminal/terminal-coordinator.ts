@@ -8,6 +8,7 @@ import type {
   TerminalSessionView,
 } from "../../shared/api-types";
 import type { SharedProject } from "../../shared/project-types";
+import type { SharedWorktree } from "../../shared/worktree-types";
 import type {
   TerminalAttachment,
   TerminalEvent,
@@ -49,6 +50,8 @@ interface TerminalCoordinatorOptions {
   statusDir?: string;
   claudeSettingsPath: string;
   getProject(projectId: string): Promise<SharedProject | null>;
+  /** Null when the worktree was removed (from the app or by hand). Absent in tests without worktrees. */
+  getWorktree?(worktreeId: string): Promise<SharedWorktree | null>;
   getExecutables(): Promise<ProviderExecutables>;
   /** Null when a session names an agent the user has since removed from `agents.json`. */
   getAgent(agentId: AgentId): AgentDefinition | null;
@@ -78,6 +81,8 @@ function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
     name: view.name,
     kind: view.kind,
     cwd: view.cwd,
+    // Omitted, not null, for root sessions — a state file without worktrees must not change shape.
+    ...(view.worktreeId !== undefined ? { worktreeId: view.worktreeId } : {}),
     providerConversationId: view.providerConversationId,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
@@ -132,11 +137,13 @@ export class TerminalCoordinator {
     this.validateDimensions(input.cols, input.rows);
     const project = await this.options.getProject(input.projectId);
     if (!project) throw new Error(`Unknown project: ${input.projectId}`);
+    const worktree = input.worktreeId ? await this.requireWorktree(input.worktreeId, project.id) : null;
     return this.launch({
       sessionId: this.options.idFactory(),
       projectId: project.id,
       tool: null,
-      cwd: project.rootPath,
+      cwd: worktree ? worktree.path : project.rootPath,
+      ...(worktree ? { worktreeId: worktree.id } : {}),
       kind: input.kind,
       cols: input.cols,
       rows: input.rows,
@@ -171,10 +178,15 @@ export class TerminalCoordinator {
     if (agent.conversationId !== "none" && !saved.providerConversationId) {
       throw new Error(`${saved.kind} session does not have a resumable conversation id`);
     }
-    // Folder sessions re-read the project so a relinked folder resumes at its new root.
+    // Folder sessions re-read the project so a relinked folder resumes at its new root; a worktree
+    // session re-reads its worktree the same way — and refuses if the worktree is gone, because
+    // resuming it at the project root would put the agent in the wrong tree.
     // Maintenance sessions have no project, so their recorded cwd is authoritative.
     let cwd = saved.cwd;
-    if (saved.projectId !== null) {
+    if (saved.worktreeId !== undefined) {
+      const worktree = await this.requireWorktree(saved.worktreeId, saved.projectId);
+      cwd = worktree.path;
+    } else if (saved.projectId !== null) {
       const project = await this.options.getProject(saved.projectId);
       if (!project) throw new Error(`Unknown project: ${saved.projectId}`);
       cwd = project.rootPath;
@@ -186,6 +198,7 @@ export class TerminalCoordinator {
       title: saved.title,
       name: saved.name,
       cwd,
+      ...(saved.worktreeId !== undefined ? { worktreeId: saved.worktreeId } : {}),
       kind: saved.kind,
       cols: input.cols,
       rows: input.rows,
@@ -200,9 +213,14 @@ export class TerminalCoordinator {
     if (view.pid !== null && view.status !== "exited" && view.status !== "error") {
       try {
         const attachment = await this.options.worker.attach(sessionId);
-        // The worker knows nothing about titles, so keep the ones main is tracking.
+        // The worker knows nothing about titles or worktrees, so keep what main is tracking.
         return {
-          session: { ...attachment.session, title: view.title, name: view.name },
+          session: {
+            ...attachment.session,
+            title: view.title,
+            name: view.name,
+            ...(view.worktreeId !== undefined ? { worktreeId: view.worktreeId } : {}),
+          },
           replay: attachment.replay,
           sequence: attachment.sequence,
         };
@@ -262,7 +280,16 @@ export class TerminalCoordinator {
    * from the registry once this resolves, so a partial failure leaves the folder reachable to retry.
    */
   async removeProjectSessions(projectId: string): Promise<void> {
-    const sessions = this.list().filter((session) => session.projectId === projectId);
+    await this.removeSessions(this.list().filter((session) => session.projectId === projectId));
+  }
+
+  /** Same teardown for a worktree — it must run before git deletes the directory, because a live
+   *  process whose cwd is inside it keeps the directory undeletable on Windows. */
+  async removeWorktreeSessions(worktreeId: string): Promise<void> {
+    await this.removeSessions(this.list().filter((session) => session.worktreeId === worktreeId));
+  }
+
+  private async removeSessions(sessions: TerminalSessionView[]): Promise<void> {
     const failures: unknown[] = [];
     for (const session of sessions) {
       try {
@@ -331,6 +358,7 @@ export class TerminalCoordinator {
     projectId: string | null;
     tool: ToolCommand | null;
     cwd: string;
+    worktreeId?: string;
     kind: TerminalSessionView["kind"];
     cols: number;
     rows: number;
@@ -374,6 +402,7 @@ export class TerminalCoordinator {
       ...session,
       title: input.title ?? null,
       name: input.name ?? null,
+      ...(input.worktreeId !== undefined ? { worktreeId: input.worktreeId } : {}),
     };
     this.views.set(view.id, view);
     await this.persistView(view, (state) => ({
@@ -396,6 +425,15 @@ export class TerminalCoordinator {
     const agent = this.options.getAgent(agentId);
     if (!agent) throw new Error(`Unknown agent: ${agentId}. Add it back to agents.json to run it again.`);
     return agent;
+  }
+
+  private async requireWorktree(worktreeId: string, projectId: string | null): Promise<SharedWorktree> {
+    const worktree = (await this.options.getWorktree?.(worktreeId)) ?? null;
+    if (!worktree) throw new Error(`Unknown worktree: ${worktreeId}. It may have been removed.`);
+    if (projectId !== null && worktree.projectId !== projectId) {
+      throw new Error(`Worktree ${worktreeId} does not belong to project ${projectId}`);
+    }
+    return worktree;
   }
 
   /**

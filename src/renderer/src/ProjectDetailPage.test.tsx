@@ -79,6 +79,7 @@ function installApi(options?: { gitStatus?: GitStatusResult; update?: ReturnType
 function baseProps() {
   return {
     project: atlas,
+    worktree: null,
     sessions: [] as TerminalSessionView[],
     agents,
     vscodeAvailable: true,
@@ -88,6 +89,8 @@ function baseProps() {
     onReveal: vi.fn(),
     onOpenInEditor: vi.fn(),
     onOpenOnGitHub: vi.fn(),
+    onFanOut: vi.fn(),
+    onShowDiff: vi.fn(),
     onProjectSaved: vi.fn(),
   };
 }

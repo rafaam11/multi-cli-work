@@ -10,6 +10,8 @@ import { registerMainIpc } from "./ipc";
 import { createProjectActions } from "./projects/project-actions";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
+import { pruneMissingWorktrees } from "./projects/worktree-registry";
+import { WorktreeService } from "./projects/worktree-service";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { CodexSessionTracker } from "./providers/codex-session-tracker";
 import { detectProviderExecutables, type ProviderExecutables } from "./providers/provider-launch";
@@ -78,21 +80,40 @@ export async function createDesktopRuntime(
     };
   }
 
+  const getProject = async (projectId: string) =>
+    (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;
+
+  const worktreeRegistryPath = process.env.MULTI_CLI_WORK_WORKTREES_PATH;
+  // A worktree directory deleted outside the app (by hand, or `git worktree remove` on the CLI)
+  // leaves an entry every action on which would fail — drop those before anything lists them.
+  await pruneMissingWorktrees(
+    new Date().toISOString(),
+    worktreeRegistryPath ? { registryPath: worktreeRegistryPath } : {},
+  ).catch((error) => console.error("Worktree pruning failed", error));
+  // The service and the coordinator call each other (session teardown ↔ worktree cwd lookup);
+  // the explicit annotations break the resulting inference cycle.
+  const worktrees: WorktreeService = new WorktreeService({
+    ...(worktreeRegistryPath ? { registryPath: worktreeRegistryPath } : {}),
+    getProject,
+    removeWorktreeSessions: (worktreeId) => coordinator.removeWorktreeSessions(worktreeId),
+    idFactory: () => crypto.randomUUID(),
+    now: () => new Date().toISOString(),
+  });
+
   const worker = new RestartingTerminalWorker(
     () =>
       utilityProcess.fork(path.join(__dirname, "terminal-worker.js"), [], {
         serviceName: "Multi CLI Work PTY",
       }) as RestartableTerminalWorkerTransport,
   );
-  const coordinator = new TerminalCoordinator({
+  const coordinator: TerminalCoordinator = new TerminalCoordinator({
     worker,
     statePath: path.join(userData, "state.json"),
     logDir: path.join(userData, "session-logs"),
     statusDir: claudeIntegration.statusDir,
     claudeSettingsPath: claudeIntegration.settingsPath,
-    async getProject(projectId) {
-      return (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;
-    },
+    getProject,
+    getWorktree: (worktreeId) => worktrees.get(worktreeId),
     getExecutables,
     getAgent: (agentId) => agentMap.get(agentId) ?? null,
     toolSessionCwd: () => os.homedir(),
@@ -135,6 +156,12 @@ export async function createDesktopRuntime(
   registerMainIpc(ipcMain, {
     projectService,
     coordinator,
+    worktrees: {
+      list: () => worktrees.list(),
+      get: (worktreeId) => worktrees.get(worktreeId),
+      create: (projectId, branch) => worktrees.create(projectId, branch),
+      remove: (worktreeId, force) => worktrees.remove(worktreeId, force),
+    },
     updater: {
       status: updaterStatus,
       check: checkForUpdates,

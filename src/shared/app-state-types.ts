@@ -11,6 +11,11 @@ export interface PersistedTerminalSession {
   name: string | null;
   kind: TerminalKind;
   cwd: string;
+  /**
+   * The worktree this session runs in, absent for sessions at the project root. The key is omitted
+   * (not null) when absent, so a state file that never used worktrees still loads in older builds.
+   */
+  worktreeId?: string;
   providerConversationId: string | null;
   createdAt: string;
   updatedAt: string;

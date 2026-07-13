@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { SharedWorktree } from "@shared/worktree-types";
 import {
   ChevronDown,
   ChevronRight,
@@ -8,6 +9,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderX,
+  GitBranch,
   RefreshCw,
   SquareTerminal,
   TriangleAlert,
@@ -26,9 +28,13 @@ interface ProjectSidebarProps {
   agents: AgentView[];
   /** Sessions that started waiting while off screen — the sidebar's dot badges. */
   unread: Record<string, SessionAttention>;
+  worktrees: SharedWorktree[];
   toolSessions: TerminalSessionView[];
   selectedProjectId: string | null;
   selectedSessionId: string | null;
+  selectedWorktreeId: string | null;
+  onSelectWorktree(worktree: SharedWorktree): void;
+  onWorktreeContextMenu(worktree: SharedWorktree, event: ReactMouseEvent): void;
   expandedProjects: Set<string>;
   editingProjectId: string | null;
   renamingSessionId: string | null;
@@ -101,9 +107,13 @@ export function ProjectSidebar({
   sessions,
   agents,
   unread,
+  worktrees,
   toolSessions,
   selectedProjectId,
   selectedSessionId,
+  selectedWorktreeId,
+  onSelectWorktree,
+  onWorktreeContextMenu,
   expandedProjects,
   editingProjectId,
   renamingSessionId,
@@ -233,6 +243,7 @@ export function ProjectSidebar({
               const projectSessions = sessions
                 .filter((session) => session.projectId === project.id)
                 .sort(byCreation);
+              const projectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
               // The folder row shows the strongest wait among its sessions, so a collapsed
               // folder cannot hide an agent asking for approval.
               const projectAttention = projectSessions.reduce<SessionAttention | null>((strongest, session) => {
@@ -289,9 +300,60 @@ export function ProjectSidebar({
                     <ProjectMetadataEditor project={project} onSaved={onProjectSaved} onClose={onCloseEditor} />
                   ) : null}
                   {expanded ? (
-                    <ul className="session-tree" role="group">
-                      {projectSessions.map((session) => renderSession(session, projectSessions))}
-                    </ul>
+                    <>
+                      <ul className="session-tree" role="group">
+                        {projectSessions
+                          .filter((session) => session.worktreeId === undefined)
+                          .map((session) => renderSession(session, projectSessions))}
+                      </ul>
+                      {/* Third level: project > worktree > sessions. A project without worktrees
+                          keeps its flat two-level shape — no empty middle nodes. */}
+                      {projectWorktrees.length > 0 ? (
+                        <ul className="worktree-tree" role="group" aria-label={`${name} worktree`}>
+                          {projectWorktrees.map((worktree) => {
+                            const worktreeSessions = projectSessions.filter(
+                              (session) => session.worktreeId === worktree.id,
+                            );
+                            const worktreeAttention = worktreeSessions.reduce<SessionAttention | null>(
+                              (strongest, session) => {
+                                const attention = unread[session.id];
+                                if (attention === "approval" || strongest === "approval") return "approval";
+                                return attention ?? strongest;
+                              },
+                              null,
+                            );
+                            return (
+                              <li className="worktree-node" key={worktree.id}>
+                                <button
+                                  className={`worktree-row ${selectedWorktreeId === worktree.id ? "selected" : ""}`}
+                                  type="button"
+                                  onClick={() => onSelectWorktree(worktree)}
+                                  onContextMenu={(event) => onWorktreeContextMenu(worktree, event)}
+                                  aria-label={`${worktree.branch} worktree 선택`}
+                                >
+                                  <GitBranch size={13} aria-hidden="true" />
+                                  <span className="worktree-branch" title={worktree.path}>
+                                    {worktree.branch}
+                                  </span>
+                                  {worktreeAttention ? (
+                                    <span
+                                      className={`unread-dot unread-${worktreeAttention}`}
+                                      title="응답 대기"
+                                      aria-hidden="true"
+                                    />
+                                  ) : null}
+                                </button>
+                                {worktreeSessions.length > 0 ? (
+                                  <ul className="session-tree worktree-sessions" role="group">
+                                    {worktreeSessions.map((session) => renderSession(session, projectSessions))}
+                                  </ul>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </>
                   ) : null}
                 </li>
               );

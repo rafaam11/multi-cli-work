@@ -2,6 +2,7 @@ import type { AgentView } from "./agent-types";
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
+import type { SharedWorktree, WorktreeRemovalResult } from "./worktree-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -16,6 +17,16 @@ export interface GitStatusResult {
   isRepo: boolean;
   branch: string | null;
   changedFileCount: number;
+}
+
+/** Uncommitted changes as one unified diff, for the read-only in-app diff view. */
+export interface GitDiffResult {
+  isRepo: boolean;
+  /** `git diff HEAD` output, possibly cut at the size cap. */
+  diff: string;
+  /** Files git does not track yet — they never appear in the diff text. */
+  untracked: string[];
+  truncated: boolean;
 }
 
 /** VS Code is not an agent — it is the editor the folder menu opens — so it is tracked on its own. */
@@ -45,6 +56,8 @@ export interface TerminalSessionView extends PersistedTerminalSession {
 export interface CreateTerminalInput {
   projectId: string;
   kind: TerminalKind;
+  /** When set, the session runs in this worktree's directory instead of the project root. */
+  worktreeId?: string;
   cols: number;
   rows: number;
 }
@@ -92,6 +105,17 @@ export interface MultiCliWorkApi {
     openInEditor(projectId: string): Promise<void>;
     openOnGitHub(projectId: string): Promise<void>;
     gitStatus(projectId: string): Promise<GitStatusResult>;
+    gitDiff(projectId: string): Promise<GitDiffResult>;
+  };
+  worktrees: {
+    list(): Promise<SharedWorktree[]>;
+    create(projectId: string, branch: string): Promise<SharedWorktree>;
+    /** `force` discards uncommitted changes; the renderer must have shown the second confirmation. */
+    remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult>;
+    reveal(worktreeId: string): Promise<void>;
+    openInEditor(worktreeId: string): Promise<void>;
+    gitStatus(worktreeId: string): Promise<GitStatusResult>;
+    gitDiff(worktreeId: string): Promise<GitDiffResult>;
   };
   providers: {
     availability(): Promise<ProviderAvailability>;

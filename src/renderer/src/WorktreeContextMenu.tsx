@@ -1,34 +1,30 @@
-import { FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
-import { GitHubIcon, VSCodeIcon } from "./brand-icons";
+import { FileDiff, FolderOpen, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
+import { VSCodeIcon } from "./brand-icons";
 
-export interface ProjectContextMenuProps {
-  projectName: string;
+export interface WorktreeContextMenuProps {
+  branch: string;
   x: number;
   y: number;
   vscodeAvailable: boolean;
   onReveal(): void;
   onOpenInEditor(): void;
-  onOpenOnGitHub(): void;
-  onCreateWorktree(): void;
-  onRename(): void;
+  onShowDiff(): void;
   onRemove(): void;
   onClose(): void;
 }
 
-export function ProjectContextMenu({
-  projectName,
+export function WorktreeContextMenu({
+  branch,
   x,
   y,
   vscodeAvailable,
   onReveal,
   onOpenInEditor,
-  onOpenOnGitHub,
-  onCreateWorktree,
-  onRename,
+  onShowDiff,
   onRemove,
   onClose,
-}: ProjectContextMenuProps) {
+}: WorktreeContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,7 +51,7 @@ export function ProjectContextMenu({
     <div
       className="context-menu"
       role="menu"
-      aria-label={`${projectName} 작업`}
+      aria-label={`${branch} worktree 작업`}
       ref={menu}
       style={{ "--context-menu-x": `${x}px`, "--context-menu-y": `${y}px` } as CSSProperties}
     >
@@ -73,23 +69,14 @@ export function ProjectContextMenu({
         <VSCodeIcon size={15} className="brand-icon-vscode" />
         <span>VS Code에서 열기</span>
       </button>
-      <button type="button" role="menuitem" onClick={run(onOpenOnGitHub)}>
-        <GitHubIcon size={15} />
-        <span>GitHub에서 열기</span>
+      <button type="button" role="menuitem" onClick={run(onShowDiff)}>
+        <FileDiff size={15} />
+        <span>변경 보기</span>
       </button>
       <div className="context-menu-separator" role="separator" />
-      <button type="button" role="menuitem" onClick={run(onCreateWorktree)}>
-        <GitBranchPlus size={15} />
-        <span>Worktree 만들기</span>
-      </button>
-      <div className="context-menu-separator" role="separator" />
-      <button type="button" role="menuitem" onClick={run(onRename)}>
-        <Pencil size={15} />
-        <span>이름 변경</span>
-      </button>
       <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
         <Trash2 size={15} />
-        <span>목록에서 제거</span>
+        <span>Worktree 제거</span>
       </button>
     </div>
   );

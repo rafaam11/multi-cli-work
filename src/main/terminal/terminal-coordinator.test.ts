@@ -676,3 +676,109 @@ describe("an agent that is no longer installed", () => {
     await expect(after.resume({ sessionId: "session-1", cols: 80, rows: 24 })).rejects.toThrow(/unknown agent/i);
   });
 });
+
+describe("worktree sessions", () => {
+  const worktree = {
+    id: "worktree-1",
+    projectId: project.id,
+    path: "C:\\Work-wt\\feature",
+    branch: "feature",
+    createdAt: "2026-07-13T00:00:00.000Z",
+    updatedAt: "2026-07-13T00:00:00.000Z",
+  };
+
+  function worktreeCoordinator(root: string, options: { worktreeGone?: boolean } = {}) {
+    let nextId = 0;
+    const worker = new FakeWorker();
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async (id) => (id === project.id ? project : null),
+      getWorktree: async (id) => (!options.worktreeGone && id === worktree.id ? worktree : null),
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: null,
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: {},
+      idFactory: () => `session-${++nextId}`,
+      now: () => "2026-07-13T01:00:00.000Z",
+    });
+    return { instance, worker };
+  }
+
+  it("runs the session in the worktree directory and persists the binding", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = worktreeCoordinator(root);
+    await instance.initialize();
+
+    const session = await instance.create({
+      projectId: project.id,
+      kind: "powershell",
+      worktreeId: worktree.id,
+      cols: 80,
+      rows: 24,
+    });
+
+    expect(worker.create).toHaveBeenCalledWith(expect.objectContaining({ cwd: worktree.path }));
+    expect(session.worktreeId).toBe(worktree.id);
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions[session.id].worktreeId).toBe(worktree.id);
+  });
+
+  it("keeps root sessions' persisted shape unchanged — no worktreeId key at all", async () => {
+    const root = await tempRoot();
+    const { instance } = worktreeCoordinator(root);
+    await instance.initialize();
+
+    await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+
+    const raw = JSON.parse(await fs.readFile(path.join(root, "state.json"), "utf8"));
+    expect(Object.keys(raw.sessions["session-1"])).not.toContain("worktreeId");
+  });
+
+  it("refuses to resume a session whose worktree is gone instead of landing in the wrong tree", async () => {
+    const root = await tempRoot();
+    const before = worktreeCoordinator(root);
+    await before.instance.initialize();
+    const session = await before.instance.create({
+      projectId: project.id,
+      kind: "powershell",
+      worktreeId: worktree.id,
+      cols: 80,
+      rows: 24,
+    });
+    before.worker.emit({ type: "exit", sessionId: session.id, exitCode: 0 });
+    await before.instance.flush();
+
+    const after = worktreeCoordinator(root, { worktreeGone: true });
+    await after.instance.initialize();
+
+    await expect(after.instance.resume({ sessionId: session.id, cols: 80, rows: 24 })).rejects.toThrow(
+      /unknown worktree/i,
+    );
+    expect(after.worker.create).not.toHaveBeenCalled();
+  });
+
+  it("removes only the worktree's sessions, leaving root sessions alone", async () => {
+    const root = await tempRoot();
+    const { instance } = worktreeCoordinator(root);
+    await instance.initialize();
+    const inWorktree = await instance.create({
+      projectId: project.id,
+      kind: "powershell",
+      worktreeId: worktree.id,
+      cols: 80,
+      rows: 24,
+    });
+    const atRoot = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+
+    await instance.removeWorktreeSessions(worktree.id);
+
+    expect(instance.list().map((session) => session.id)).toEqual([atRoot.id]);
+    expect(instance.list()[0].id).not.toBe(inWorktree.id);
+  });
+});

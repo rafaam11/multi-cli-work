@@ -1,11 +1,13 @@
 import type { AgentView } from "@shared/agent-types";
 import type {
+  GitDiffResult,
   ProjectWorkspaceSnapshot,
   ProviderAvailability,
   SessionAttention,
   TerminalSessionView,
 } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, TriangleAlert } from "lucide-react";
 import {
@@ -17,6 +19,8 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { DiffView } from "./DiffView";
+import { FanOutDialog } from "./FanOutDialog";
 import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 import { ProjectDetailPage } from "./ProjectDetailPage";
@@ -25,6 +29,9 @@ import { QuickOpenPalette } from "./QuickOpenPalette";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { TerminalPane } from "./TerminalPane";
 import { WorkspaceHeader } from "./WorkspaceHeader";
+import { WorktreeContextMenu } from "./WorktreeContextMenu";
+import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
+import { fanOutTargets } from "./fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 
@@ -55,6 +62,28 @@ interface SessionMenuState {
   label: string;
   x: number;
   y: number;
+}
+
+interface WorktreeMenuState {
+  worktree: SharedWorktree;
+  x: number;
+  y: number;
+}
+
+interface WorktreeRemovalState {
+  worktree: SharedWorktree;
+  sessionCount: number;
+}
+
+/** The second, force-only confirmation after git refused because of uncommitted changes. */
+interface WorktreeForceState {
+  worktree: SharedWorktree;
+  message: string;
+}
+
+interface DiffViewState {
+  title: string;
+  result: GitDiffResult;
 }
 
 function errorMessage(error: unknown): string {
@@ -111,6 +140,14 @@ export function App() {
   const [removal, setRemoval] = useState<RemovalState | null>(null);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [unread, setUnread] = useState<Record<string, SessionAttention>>({});
+  const [worktrees, setWorktrees] = useState<SharedWorktree[]>([]);
+  const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
+  const [worktreeCreateProject, setWorktreeCreateProject] = useState<SharedProject | null>(null);
+  const [worktreeMenu, setWorktreeMenu] = useState<WorktreeMenuState | null>(null);
+  const [worktreeRemoval, setWorktreeRemoval] = useState<WorktreeRemovalState | null>(null);
+  const [worktreeForce, setWorktreeForce] = useState<WorktreeForceState | null>(null);
+  const [fanOutVisible, setFanOutVisible] = useState(false);
+  const [diffView, setDiffView] = useState<DiffViewState | null>(null);
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -126,6 +163,7 @@ export function App() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedWorktree = worktrees.find((worktree) => worktree.id === selectedWorktreeId) ?? null;
   const selectedSessionLabel = selectedSession
     ? sessionLabel(
         selectedSession,
@@ -168,13 +206,16 @@ export function App() {
       setLoadError(null);
       const forceHome = preservedSelection?.view === "home";
       try {
-        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState] = await Promise.all([
-          window.multiCliWork.projects.list(),
-          window.multiCliWork.terminals.list(),
-          window.multiCliWork.providers.availability(),
-          window.multiCliWork.agents.list(),
-          window.multiCliWork.terminals.state(),
-        ]);
+        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList] =
+          await Promise.all([
+            window.multiCliWork.projects.list(),
+            window.multiCliWork.terminals.list(),
+            window.multiCliWork.providers.availability(),
+            window.multiCliWork.agents.list(),
+            window.multiCliWork.terminals.state(),
+            window.multiCliWork.worktrees.list(),
+          ]);
+        setWorktrees(worktreeList);
         setAgents(agentsSnapshot.agents);
         agentsRef.current = agentsSnapshot.agents;
         setAgentWarning(agentsSnapshot.warning ?? null);
@@ -194,6 +235,7 @@ export function App() {
           setExpandedProjects(new Set(visibleProjects.map((project) => project.id)));
           setSelectedProjectId(null);
           setSelectedSessionId(restoredSession.id);
+          setSelectedWorktreeId(null);
           setActiveView(forceHome ? "home" : "terminal");
           return;
         }
@@ -216,6 +258,7 @@ export function App() {
         setExpandedProjects(new Set(visibleProjects.map((project) => project.id)));
         setSelectedProjectId(initialProject?.id ?? null);
         setSelectedSessionId(initialSession?.id ?? null);
+        setSelectedWorktreeId(initialSession?.worktreeId ?? null);
         setActiveView(forceHome ? "home" : initialSession ? "terminal" : initialProject ? "detail" : "home");
       } catch (error) {
         setLoadError(errorMessage(error));
@@ -335,6 +378,7 @@ export function App() {
   const selectProject = (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedSessionId(null);
+    setSelectedWorktreeId(null);
     setActiveView("detail");
     setExpandedProjects((current) => new Set(current).add(projectId));
     setActionError(null);
@@ -344,9 +388,21 @@ export function App() {
   const selectSession = (session: TerminalSessionView) => {
     setSelectedProjectId(session.projectId);
     setSelectedSessionId(session.id);
+    setSelectedWorktreeId(session.worktreeId ?? null);
     setActiveView("terminal");
     setActionError(null);
     persistSelection(session.projectId, session.id);
+  };
+
+  /** A worktree behaves like a sub-folder: selecting it opens the detail page scoped to it. */
+  const selectWorktree = (worktree: SharedWorktree) => {
+    setSelectedProjectId(worktree.projectId);
+    setSelectedSessionId(null);
+    setSelectedWorktreeId(worktree.id);
+    setActiveView("detail");
+    setExpandedProjects((current) => new Set(current).add(worktree.projectId));
+    setActionError(null);
+    persistSelection(worktree.projectId, null);
   };
 
   const openHome = () => setActiveView("home");
@@ -386,7 +442,7 @@ export function App() {
     }
   };
 
-  const startSession = async (project: SharedProject, kind: TerminalKind) => {
+  const startSession = async (project: SharedProject, kind: TerminalKind, worktreeId?: string) => {
     if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
     setPendingAction(true);
     setActionError(null);
@@ -394,11 +450,13 @@ export function App() {
       const created = await window.multiCliWork.terminals.create({
         projectId: project.id,
         kind,
+        ...(worktreeId !== undefined ? { worktreeId } : {}),
         ...DEFAULT_TERMINAL_SIZE,
       });
       setSessions((current) => replaceSession(current, created));
       setSelectedProjectId(project.id);
       setSelectedSessionId(created.id);
+      setSelectedWorktreeId(worktreeId ?? null);
       setActiveView("terminal");
       persistSelection(project.id, created.id);
     } catch (error) {
@@ -581,6 +639,93 @@ export function App() {
     }
   };
 
+  const handleWorktreeCreated = (worktree: SharedWorktree) => {
+    setWorktreeCreateProject(null);
+    setWorktrees((current) => [...current, worktree]);
+    selectWorktree(worktree);
+  };
+
+  const showDiff = async (target: { worktree: SharedWorktree } | { project: SharedProject }) => {
+    setActionError(null);
+    try {
+      if ("worktree" in target) {
+        const owner = projects.find((project) => project.id === target.worktree.projectId);
+        setDiffView({
+          title: owner ? `${projectName(owner)} · ${target.worktree.branch}` : target.worktree.branch,
+          result: await window.multiCliWork.worktrees.gitDiff(target.worktree.id),
+        });
+      } else {
+        setDiffView({
+          title: projectName(target.project),
+          result: await window.multiCliWork.projects.gitDiff(target.project.id),
+        });
+      }
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
+  const requestWorktreeRemoval = (worktree: SharedWorktree) => {
+    const sessionCount = sessions.filter((session) => session.worktreeId === worktree.id).length;
+    if (sessionCount === 0) {
+      void confirmWorktreeRemoval(worktree);
+      return;
+    }
+    setWorktreeRemoval({ worktree, sessionCount });
+  };
+
+  const cleanupRemovedWorktree = (worktree: SharedWorktree) => {
+    setWorktrees((current) => current.filter((candidate) => candidate.id !== worktree.id));
+    setSessions((current) => current.filter((session) => session.worktreeId !== worktree.id));
+    if (selectedWorktreeId === worktree.id) {
+      setSelectedWorktreeId(null);
+      setSelectedSessionId(null);
+      setActiveView("detail");
+      persistSelection(worktree.projectId, null);
+    }
+  };
+
+  /** First attempt never forces: git refusing over uncommitted changes comes back as a `dirty`
+   *  result, which opens the second, explicit discard confirmation instead of silently deleting. */
+  const confirmWorktreeRemoval = async (worktree: SharedWorktree) => {
+    setWorktreeRemoval(null);
+    setPendingAction(true);
+    setActionError(null);
+    try {
+      const result = await window.multiCliWork.worktrees.remove(worktree.id, false);
+      if (result.removed) cleanupRemovedWorktree(worktree);
+      else setWorktreeForce({ worktree, message: result.message });
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setPendingAction(false);
+    }
+  };
+
+  const forceWorktreeRemoval = async (worktree: SharedWorktree) => {
+    setWorktreeForce(null);
+    setPendingAction(true);
+    setActionError(null);
+    try {
+      const result = await window.multiCliWork.worktrees.remove(worktree.id, true);
+      if (result.removed) cleanupRemovedWorktree(worktree);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setPendingAction(false);
+    }
+  };
+
+  const sendFanOut = async (inputs: Array<{ sessionId: string; data: string }>) => {
+    setFanOutVisible(false);
+    setActionError(null);
+    try {
+      await Promise.all(inputs.map((input) => window.multiCliWork.terminals.write(input.sessionId, input.data)));
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
   // Ordered for the empty query: sessions (most recently active first), folders, then commands.
   const quickOpenItems = useMemo<QuickOpenItem[]>(() => {
     if (!quickOpenVisible) return [];
@@ -658,9 +803,16 @@ export function App() {
         sessions={folderSessions}
         agents={agents}
         unread={unread}
+        worktrees={worktrees}
         toolSessions={toolSessions}
         selectedProjectId={activeView === "home" ? null : selectedProjectId}
         selectedSessionId={activeView === "home" ? null : selectedSessionId}
+        selectedWorktreeId={activeView === "home" ? null : selectedWorktreeId}
+        onSelectWorktree={selectWorktree}
+        onWorktreeContextMenu={(worktree, event) => {
+          event.preventDefault();
+          setWorktreeMenu({ worktree, x: event.clientX, y: event.clientY });
+        }}
         isHome={activeView === "home"}
         onOpenHome={openHome}
         expandedProjects={expandedProjects}
@@ -717,7 +869,9 @@ export function App() {
           agents={agents}
           pendingAction={pendingAction}
           readOnly={Boolean(snapshot && !snapshot.writable)}
-          onStartSession={(kind) => selectedProject && void startSession(selectedProject, kind)}
+          onStartSession={(kind) =>
+            selectedProject && void startSession(selectedProject, kind, selectedWorktree?.id)
+          }
           onStartTool={(tool) => void startTool(tool)}
           onEditAgents={() => void editAgents()}
           onResumeSession={() => void resumeSession()}
@@ -783,17 +937,38 @@ export function App() {
             />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage
-              key={selectedProject.id}
+              key={selectedWorktree ? `${selectedProject.id}:${selectedWorktree.id}` : selectedProject.id}
               project={selectedProject}
-              sessions={folderSessions.filter((session) => session.projectId === selectedProject.id)}
+              worktree={selectedWorktree}
+              sessions={folderSessions.filter((session) =>
+                selectedWorktree
+                  ? session.worktreeId === selectedWorktree.id
+                  : session.projectId === selectedProject.id,
+              )}
               agents={agents}
               vscodeAvailable={availability.vscode}
               pendingAction={pendingAction}
               onSelectSession={selectSession}
-              onStartSession={(kind) => void startSession(selectedProject, kind)}
-              onReveal={() => void runProjectAction(() => window.multiCliWork.projects.reveal(selectedProject.id))}
-              onOpenInEditor={() => void runProjectAction(() => window.multiCliWork.projects.openInEditor(selectedProject.id))}
+              onStartSession={(kind) => void startSession(selectedProject, kind, selectedWorktree?.id)}
+              onReveal={() =>
+                void runProjectAction(() =>
+                  selectedWorktree
+                    ? window.multiCliWork.worktrees.reveal(selectedWorktree.id)
+                    : window.multiCliWork.projects.reveal(selectedProject.id),
+                )
+              }
+              onOpenInEditor={() =>
+                void runProjectAction(() =>
+                  selectedWorktree
+                    ? window.multiCliWork.worktrees.openInEditor(selectedWorktree.id)
+                    : window.multiCliWork.projects.openInEditor(selectedProject.id),
+                )
+              }
               onOpenOnGitHub={() => void runProjectAction(() => window.multiCliWork.projects.openOnGitHub(selectedProject.id))}
+              onFanOut={() => setFanOutVisible(true)}
+              onShowDiff={() =>
+                void showDiff(selectedWorktree ? { worktree: selectedWorktree } : { project: selectedProject })
+              }
               onProjectSaved={handleProjectSaved}
             />
           ) : (
@@ -824,12 +999,31 @@ export function App() {
           onOpenOnGitHub={() =>
             void runProjectAction(() => window.multiCliWork.projects.openOnGitHub(contextMenu.project.id))
           }
+          onCreateWorktree={() => setWorktreeCreateProject(contextMenu.project)}
           onRename={() => {
             setExpandedProjects((current) => new Set(current).add(contextMenu.project.id));
             setEditingProjectId(contextMenu.project.id);
           }}
           onRemove={() => requestRemoval(contextMenu.project)}
           onClose={() => setContextMenu(null)}
+        />
+      ) : null}
+
+      {worktreeMenu ? (
+        <WorktreeContextMenu
+          branch={worktreeMenu.worktree.branch}
+          x={worktreeMenu.x}
+          y={worktreeMenu.y}
+          vscodeAvailable={availability.vscode}
+          onReveal={() =>
+            void runProjectAction(() => window.multiCliWork.worktrees.reveal(worktreeMenu.worktree.id))
+          }
+          onOpenInEditor={() =>
+            void runProjectAction(() => window.multiCliWork.worktrees.openInEditor(worktreeMenu.worktree.id))
+          }
+          onShowDiff={() => void showDiff({ worktree: worktreeMenu.worktree })}
+          onRemove={() => requestWorktreeRemoval(worktreeMenu.worktree)}
+          onClose={() => setWorktreeMenu(null)}
         />
       ) : null}
 
@@ -852,6 +1046,82 @@ export function App() {
           onClose={() => setQuickOpenVisible(false)}
         />
       ) : null}
+
+      {worktreeCreateProject ? (
+        <WorktreeCreateDialog
+          project={worktreeCreateProject}
+          onCreated={handleWorktreeCreated}
+          onClose={() => setWorktreeCreateProject(null)}
+        />
+      ) : null}
+
+      {worktreeRemoval ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="Worktree 제거">
+            <h2>{worktreeRemoval.worktree.branch} worktree를 제거할까요?</h2>
+            <p>
+              이 worktree의 세션 {worktreeRemoval.sessionCount}개가 중지되고 스크롤백이 삭제됩니다. 커밋한 내용은
+              브랜치로 저장소에 남습니다.
+            </p>
+            <footer className="confirm-dialog-actions">
+              <button type="button" onClick={() => setWorktreeRemoval(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={pendingAction}
+                onClick={() => void confirmWorktreeRemoval(worktreeRemoval.worktree)}
+              >
+                제거
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {worktreeForce ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="Worktree 강제 제거">
+            <h2>커밋되지 않은 변경이 있습니다</h2>
+            <p>{worktreeForce.message} 강제 제거하면 이 변경은 되돌릴 수 없이 사라집니다.</p>
+            <footer className="confirm-dialog-actions">
+              <button type="button" onClick={() => setWorktreeForce(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={pendingAction}
+                onClick={() => void forceWorktreeRemoval(worktreeForce.worktree)}
+              >
+                변경을 버리고 강제 제거
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {fanOutVisible && selectedProject ? (
+        <FanOutDialog
+          projectName={projectName(selectedProject)}
+          targets={fanOutTargets(sessions, selectedProject.id).map((session) => ({
+            sessionId: session.id,
+            label: sessionLabel(
+              session,
+              sessions.filter((peer) => peer.projectId === session.projectId),
+              agents,
+            ),
+            detail: session.worktreeId
+              ? (worktrees.find((worktree) => worktree.id === session.worktreeId)?.branch ?? "worktree")
+              : "루트",
+          }))}
+          onSend={(inputs) => void sendFanOut(inputs)}
+          onClose={() => setFanOutVisible(false)}
+        />
+      ) : null}
+
+      {diffView ? <DiffView title={diffView.title} result={diffView.result} onClose={() => setDiffView(null)} /> : null}
 
       {removal ? (
         <div className="modal-backdrop" role="presentation">
