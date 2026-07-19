@@ -660,6 +660,142 @@ describe("TerminalCoordinator", () => {
     expect(stored.state.sessions["session-done"].interruptedByShutdown).toBe(false);
   });
 
+  it("auto-resumes an interrupted session on renderer attach, stitching old scrollback to the new PTY", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    first.worker.emit({ type: "data", sessionId: "session-1", data: "old output\r\n", sequence: 1 });
+    await first.instance.flush();
+    await first.instance.shutdown();
+
+    const secondWorker = new FakeWorker();
+    secondWorker.attach.mockImplementation(async (sessionId: string) => ({
+      session: {
+        id: sessionId,
+        projectId: "project-1",
+        tool: null,
+        kind: "claude",
+        cwd: "C:\\Work",
+        providerConversationId: "session-1",
+        status: "working",
+        pid: 321,
+        createdAt: "2026-07-11T01:00:00.000Z",
+        updatedAt: "2026-07-19T01:00:00.000Z",
+        exitCode: null,
+      } satisfies TerminalSession,
+      replay: "fresh cli\r\n",
+      sequence: 7,
+    }));
+    const second = await coordinator(root, secondWorker);
+    // The user is looking at nothing in particular; a lazy resume must not select the session.
+    await second.instance.select(null, null);
+
+    const result = await second.instance.attachForRenderer("session-1");
+
+    expect(secondWorker.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1", args: expect.arrayContaining(["--resume", "session-1"]) }),
+    );
+    const oldAt = result.replay.indexOf("old output");
+    const separatorAt = result.replay.indexOf("세션 재개됨");
+    const freshAt = result.replay.indexOf("fresh cli");
+    expect(oldAt).toBeGreaterThanOrEqual(0);
+    expect(separatorAt).toBeGreaterThan(oldAt);
+    expect(freshAt).toBeGreaterThan(separatorAt);
+    expect(result).toMatchObject({ sequence: 7, session: { status: "working", pid: 321 } });
+
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-1"].interruptedByShutdown).toBe(false);
+    expect(stored.state).toMatchObject({ selectedProjectId: null, selectedSessionId: null });
+  });
+
+  it("does not auto-resume sessions that exited on their own or died without a marking", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    first.worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await first.instance.flush();
+    await first.instance.shutdown();
+
+    // Finished before shutdown: restored as plain exited.
+    const second = await coordinator(root);
+    await expect(second.instance.attachForRenderer("session-1")).resolves.toMatchObject({
+      session: { status: "exited", pid: null },
+      sequence: 0,
+    });
+    expect(second.worker.create).not.toHaveBeenCalled();
+
+    // Crash: the app never got to mark anything, so nothing auto-resumes.
+    const crashRoot = await tempRoot();
+    const before = await coordinator(crashRoot);
+    await before.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    await before.instance.flush(); // the process dies here without shutdown()
+
+    const after = await coordinator(crashRoot);
+    await expect(after.instance.attachForRenderer("session-1")).resolves.toMatchObject({
+      session: { status: "exited", pid: null },
+    });
+    expect(after.worker.create).not.toHaveBeenCalled();
+  });
+
+  it("coalesces simultaneous attaches from both panes into a single auto-resume", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    await first.instance.shutdown();
+
+    const secondWorker = new FakeWorker();
+    secondWorker.attach.mockImplementation(async (sessionId: string) => ({
+      session: {
+        id: sessionId,
+        projectId: "project-1",
+        tool: null,
+        kind: "claude",
+        cwd: "C:\\Work",
+        providerConversationId: "session-1",
+        status: "working",
+        pid: 321,
+        createdAt: "2026-07-11T01:00:00.000Z",
+        updatedAt: "2026-07-19T01:00:00.000Z",
+        exitCode: null,
+      } satisfies TerminalSession,
+      replay: "",
+      sequence: 1,
+    }));
+    const second = await coordinator(root, secondWorker);
+
+    const [primary, split] = await Promise.all([
+      second.instance.attachForRenderer("session-1"),
+      second.instance.attachForRenderer("session-1"),
+    ]);
+
+    expect(secondWorker.create).toHaveBeenCalledTimes(1);
+    expect(primary.session.pid).toBe(321);
+    expect(split.session.pid).toBe(321);
+  });
+
+  it("falls back to the plain scrollback attach when the auto-resume itself fails", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    first.worker.emit({ type: "data", sessionId: "session-1", data: "history\r\n", sequence: 1 });
+    await first.instance.flush();
+    await first.instance.shutdown();
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const brokenWorker = new FakeWorker();
+    brokenWorker.create.mockRejectedValue(new Error("spawn failed"));
+    const second = await coordinator(root, brokenWorker);
+
+    const result = await second.instance.attachForRenderer("session-1");
+
+    expect(result.session).toMatchObject({ status: "exited", pid: null });
+    expect(result.replay).toContain("history");
+    // The marking survives a failed attempt, so the next attach (or the manual button) retries.
+    expect(second.instance.list()[0].interruptedByShutdown).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith("Lazy auto-resume failed", expect.any(Error));
+    consoleError.mockRestore();
+  });
+
   it("clears the shutdown marking once the session is resumed", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);

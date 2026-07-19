@@ -40,7 +40,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     list: vi.fn(() => []),
     create: vi.fn(async (input) => input),
     createTool: vi.fn(async (input) => input),
-    attach: vi.fn(),
+    attachForRenderer: vi.fn(),
     write: vi.fn(),
     resize: vi.fn(),
     stop: vi.fn(),

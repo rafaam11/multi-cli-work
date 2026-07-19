@@ -32,6 +32,15 @@ import {
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const LOG_TRIM_SLACK_BYTES = 256 * 1024;
 const DEFAULT_LOG_FLUSH_MS = 100;
+/** A lazy auto-resume starts at the same default size the renderer uses, then gets resized to fit. */
+const AUTO_RESUME_COLS = 80;
+const AUTO_RESUME_ROWS = 24;
+
+/** Written into the session log before an auto-resume, so the boundary survives later re-reads. */
+export function resumeSeparatorText(nowIso: string): string {
+  const stamp = nowIso.replace("T", " ").slice(0, 16);
+  return `\r\n\x1b[2m── 세션 재개됨 (앱 재시작) · ${stamp} ──\x1b[0m\r\n\r\n`;
+}
 
 export interface TerminalWorkerGateway {
   create(spec: TerminalLaunchSpec): Promise<TerminalSession>;
@@ -107,6 +116,7 @@ export class TerminalCoordinator {
   private readonly logFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly logWrites = new Map<string, Promise<void>>();
   private readonly removedSessionIds = new Set<string>();
+  private readonly pendingResumes = new Map<string, Promise<string | null>>();
   private readonly codexCorrelationAbort = new AbortController();
   private eventChain: Promise<void> = Promise.resolve();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
@@ -215,6 +225,75 @@ export class TerminalCoordinator {
       resumeConversationId: saved.providerConversationId,
       updateSelection: options.updateSelection,
     });
+  }
+
+  /**
+   * What the renderer's attach goes through. A session that only exited because the app shut down
+   * is resumed here, on first view — the lazy half of session persistence — and its replay stitches
+   * the saved scrollback, a dated separator, and whatever the fresh PTY has said so far. Everything
+   * else falls through to the side-effect-free attach() below.
+   */
+  async attachForRenderer(sessionId: string): Promise<TerminalAttachResult> {
+    const restoredReplay = await this.maybeAutoResume(sessionId);
+    if (restoredReplay === null) return this.attach(sessionId);
+    const view = this.views.get(sessionId);
+    if (!view) throw new Error(`Unknown terminal session: ${sessionId}`);
+    try {
+      const live = await this.options.worker.attach(sessionId);
+      return {
+        session: {
+          ...live.session,
+          title: view.title,
+          name: view.name,
+          interruptedByShutdown: view.interruptedByShutdown,
+          ...(view.worktreeId !== undefined ? { worktreeId: view.worktreeId } : {}),
+        },
+        replay: restoredReplay + live.replay,
+        sequence: live.sequence,
+      };
+    } catch {
+      // The resumed PTY died between resume and attach; the log alone still restores the scrollback.
+      return { session: { ...view }, replay: restoredReplay, sequence: 0 };
+    }
+  }
+
+  /**
+   * Resolves to the replay prefix (saved scrollback + separator) when this attach resumed the
+   * session, or null when there was nothing to resume. Concurrent attaches — the primary and split
+   * panes ask at the same time — share one attempt instead of spawning two PTYs.
+   */
+  private maybeAutoResume(sessionId: string): Promise<string | null> {
+    const view = this.views.get(sessionId);
+    if (!view?.interruptedByShutdown) return Promise.resolve(null);
+    if (view.pid !== null || (view.status !== "exited" && view.status !== "error")) return Promise.resolve(null);
+    const pending = this.pendingResumes.get(sessionId);
+    if (pending) return pending;
+    const attempt = (async () => {
+      try {
+        const appendLog = this.options.appendLog ?? appendSessionLog;
+        await appendLog(
+          this.options.logDir,
+          sessionId,
+          resumeSeparatorText(this.options.now()),
+          MAX_LOG_BYTES,
+          LOG_TRIM_SLACK_BYTES,
+        );
+        // Read before the new PTY's first output can reach the log, so nothing replays twice.
+        const replay = await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES);
+        await this.resume(
+          { sessionId, cols: AUTO_RESUME_COLS, rows: AUTO_RESUME_ROWS },
+          { updateSelection: false },
+        );
+        return replay;
+      } catch (error) {
+        // The marking stays, so the next attach — or the manual resume button — can retry.
+        this.reportAsyncError("Lazy auto-resume failed", error);
+        return null;
+      }
+    })();
+    this.pendingResumes.set(sessionId, attempt);
+    void attempt.finally(() => this.pendingResumes.delete(sessionId));
+    return attempt;
   }
 
   async attach(sessionId: string): Promise<TerminalAttachResult> {
