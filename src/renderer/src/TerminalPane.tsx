@@ -85,6 +85,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       const key = event.code || event.key;
       if (key !== "KeyC" && key !== "KeyV") return true;
       if (event.type !== "keydown") return false;
+      event.preventDefault();
 
       if (key === "KeyC") {
         const selection = terminal.getSelection();

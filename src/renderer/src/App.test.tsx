@@ -62,7 +62,8 @@ vi.mock("@xterm/xterm", () => ({
     }
 
     emitKey(event: Partial<KeyboardEvent>) {
-      return this.keyHandler?.(event as KeyboardEvent) ?? true;
+      const merged = { preventDefault: () => {}, ...event } as KeyboardEvent;
+      return this.keyHandler?.(merged) ?? true;
     }
   },
 }));
@@ -892,7 +893,7 @@ describe("folder workspace", () => {
     expect(terminal.write).toHaveBeenCalledWith("after attach\r\n");
   });
 
-  it("maps Ctrl+Shift+C and Ctrl+Shift+V to the system clipboard without consuming normal terminal keys", async () => {
+  it("maps Ctrl+Shift+C and Ctrl+Shift+V to the system clipboard, preventing the browser's native handling so paste isn't duplicated", async () => {
     const harness = createApi({ sessions: [powershellSession] });
     window.multiCliWork = harness.api;
     render(<App />);
@@ -901,11 +902,31 @@ describe("folder workspace", () => {
     const terminal = terminalHarness.instances.at(-1)!;
     terminal.selection = "selected output";
 
-    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyC" })).toBe(false);
+    const copyPreventDefault = vi.fn();
+    expect(
+      terminal.emitKey({
+        type: "keydown",
+        ctrlKey: true,
+        shiftKey: true,
+        code: "KeyC",
+        preventDefault: copyPreventDefault,
+      }),
+    ).toBe(false);
+    expect(copyPreventDefault).toHaveBeenCalledOnce();
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output"));
 
     vi.mocked(harness.api.terminals.write).mockClear();
-    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyV" })).toBe(false);
+    const pastePreventDefault = vi.fn();
+    expect(
+      terminal.emitKey({
+        type: "keydown",
+        ctrlKey: true,
+        shiftKey: true,
+        code: "KeyV",
+        preventDefault: pastePreventDefault,
+      }),
+    ).toBe(false);
+    expect(pastePreventDefault).toHaveBeenCalledOnce();
     await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith("clipboard paste"));
     expect(harness.api.terminals.write).not.toHaveBeenCalled();
     expect(terminal.emitKey({ type: "keydown", ctrlKey: true, code: "KeyC" })).toBe(true);
