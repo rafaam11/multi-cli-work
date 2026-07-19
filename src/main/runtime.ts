@@ -6,6 +6,14 @@ import type { AgentsSnapshot, ProviderAvailability } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
+import {
+  CONTROL_PIPE_ENV,
+  CONTROL_PIPE_NAME,
+  CONTROL_TOKEN_ENV,
+  ensureControlCli,
+} from "./control/control-cli-installer";
+import { handleControlCommand, type ControlCommandContext } from "./control/control-commands";
+import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
 import { createProjectActions } from "./projects/project-actions";
 import { ProjectService } from "./projects/project-service";
@@ -32,6 +40,12 @@ function stringEnvironment(): Record<string, string> {
   );
 }
 
+/** Windows spells the PATH key however it likes (PATH/Path/path); prepend under whichever exists. */
+function prependPath(env: Record<string, string>, dir: string): Record<string, string> {
+  const key = Object.keys(env).find((candidate) => candidate.toUpperCase() === "PATH") ?? "Path";
+  return { ...env, [key]: env[key] ? `${dir};${env[key]}` : dir };
+}
+
 function availability(executables: ProviderExecutables): ProviderAvailability {
   return { vscode: executables.vscode !== null };
 }
@@ -52,6 +66,12 @@ export async function createDesktopRuntime(
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData);
+  // jk-coding-cli: the client lands in userData/bin (joined to every session's PATH below), the
+  // token rotates per app run, and the pipe name can be overridden so a dev build next to an
+  // installed one gets its own pipe instead of silently losing the CLI.
+  const controlCli = await ensureControlCli(userData);
+  const controlPipeName = process.env[CONTROL_PIPE_ENV] ?? CONTROL_PIPE_NAME;
+  const controlToken = crypto.randomUUID();
   const projectService = new ProjectService({ registryPath });
   const agentRegistryPath = process.env.MULTI_CLI_WORK_AGENTS_PATH;
   const agentOptions = agentRegistryPath ? { registryPath: agentRegistryPath } : {};
@@ -129,10 +149,15 @@ export async function createDesktopRuntime(
           ...(codexSessionsDirectory ? { codexSessionsDirectory } : {}),
         },
       ),
-    env: {
-      ...stringEnvironment(),
-      MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
-    },
+    env: prependPath(
+      {
+        ...stringEnvironment(),
+        MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
+        [CONTROL_PIPE_ENV]: controlPipeName,
+        [CONTROL_TOKEN_ENV]: controlToken,
+      },
+      controlCli.binDir,
+    ),
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
     codexSessions: new CodexSessionTracker({ sessionsDirectory: codexSessionsDirectory }),
@@ -141,6 +166,21 @@ export async function createDesktopRuntime(
 
   const statusWatcher = await startProviderStatusWatcher(claudeIntegration.statusDir, (event) => {
     coordinator.applyProviderStatus(event.sessionId, event.status);
+  });
+
+  const controlContext: ControlCommandContext = {
+    sessions: () => coordinator.list(),
+    write: (sessionId, data) => coordinator.write(sessionId, data),
+    readReplay: async (sessionId) => (await coordinator.attach(sessionId)).replay,
+    create: (input) => coordinator.create(input, { updateSelection: false }),
+    onEvent: (listener) => coordinator.onEvent(listener),
+    projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
+  };
+  const controlServer = await startControlServer({
+    pipeName: controlPipeName,
+    token: controlToken,
+    handle: (request) => handleControlCommand(request, controlContext),
+    log: (message, error) => console.error(message, error),
   });
 
   const attentionTracker = createTerminalAttentionTracker();
@@ -249,6 +289,7 @@ export async function createDesktopRuntime(
   return {
     coordinator,
     async dispose() {
+      controlServer?.close();
       statusWatcher.close();
       await coordinator.shutdown();
       worker.dispose();
