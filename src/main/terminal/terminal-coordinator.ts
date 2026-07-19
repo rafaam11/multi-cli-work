@@ -84,6 +84,7 @@ function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
     // Omitted, not null, for root sessions — a state file without worktrees must not change shape.
     ...(view.worktreeId !== undefined ? { worktreeId: view.worktreeId } : {}),
     providerConversationId: view.providerConversationId,
+    interruptedByShutdown: view.interruptedByShutdown,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
   };
@@ -221,6 +222,7 @@ export class TerminalCoordinator {
             ...attachment.session,
             title: view.title,
             name: view.name,
+            interruptedByShutdown: view.interruptedByShutdown,
             ...(view.worktreeId !== undefined ? { worktreeId: view.worktreeId } : {}),
           },
           replay: attachment.replay,
@@ -368,6 +370,14 @@ export class TerminalCoordinator {
     const active = this.list().filter(
       (session) => session.pid !== null && session.status !== "exited" && session.status !== "error",
     );
+    // Marked and persisted before the PTYs die, so even a stop that hangs cannot lose the marking.
+    // The exit events that follow re-persist the same view objects and keep the flag intact.
+    for (const session of active) {
+      const view = this.views.get(session.id);
+      if (!view) continue;
+      view.interruptedByShutdown = true;
+      await this.persistView(view);
+    }
     await Promise.all(active.map((session) => this.options.worker.stop(session.id).catch(() => undefined)));
     await this.flush(false);
   }
@@ -421,6 +431,8 @@ export class TerminalCoordinator {
       ...session,
       title: input.title ?? null,
       name: input.name ?? null,
+      // A session that just launched — fresh or resumed — is by definition not interrupted anymore.
+      interruptedByShutdown: false,
       ...(input.worktreeId !== undefined ? { worktreeId: input.worktreeId } : {}),
     };
     this.views.set(view.id, view);

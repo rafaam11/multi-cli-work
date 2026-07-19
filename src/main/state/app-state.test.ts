@@ -64,6 +64,18 @@ describe("session agent ids", () => {
     expect(() => parseAppState(stateWithKind(42))).toThrow(/kind is invalid/i);
   });
 
+  it("round-trips the shutdown interruption flag and defaults it to false for older files", () => {
+    const legacy = parseAppState(stateWithKind("powershell"));
+    expect(legacy.sessions["session-1"].interruptedByShutdown).toBe(false);
+
+    const marked = stateWithKind("powershell") as { sessions: Record<string, Record<string, unknown>> };
+    marked.sessions["session-1"].interruptedByShutdown = true;
+    expect(parseAppState(marked).sessions["session-1"].interruptedByShutdown).toBe(true);
+
+    marked.sessions["session-1"].interruptedByShutdown = "yes";
+    expect(() => parseAppState(marked)).toThrow(/interruptedByShutdown/i);
+  });
+
   it("round-trips optional worktree and split keys, and omits both while unused", () => {
     const plain = parseAppState(stateWithKind("powershell"));
     expect(Object.keys(plain)).not.toContain("splitSessionId");
@@ -100,6 +112,7 @@ describe("app state", () => {
             kind: "claude",
             cwd: "C:\\Work",
             providerConversationId: "claude-1",
+            interruptedByShutdown: false,
             createdAt: "2026-07-11T00:00:00.000Z",
             updatedAt: "2026-07-11T01:00:00.000Z",
           },
@@ -134,6 +147,7 @@ describe("app state", () => {
             kind: "powershell",
             cwd: "C:\\Users\\me",
             providerConversationId: null,
+            interruptedByShutdown: false,
             createdAt: "2026-07-11T00:00:00.000Z",
             updatedAt: "2026-07-11T00:00:00.000Z",
           },

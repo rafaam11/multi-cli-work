@@ -601,6 +601,59 @@ describe("TerminalCoordinator", () => {
     expect(worker.stop).toHaveBeenCalledWith("session-1");
   });
 
+  it("marks only live sessions as interrupted by shutdown, surviving the late exit event", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const ids = ["session-live", "session-done"];
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async () => project,
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: null,
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: {},
+      idFactory: () => ids.shift() ?? "session-x",
+      now: () => "2026-07-19T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    // This one genuinely finished before the app quit — it must not be marked.
+    worker.emit({ type: "exit", sessionId: "session-done", exitCode: 0 });
+    await instance.flush();
+
+    await instance.shutdown();
+    // The PTY's exit event can land after the marking write; the marking must survive it.
+    worker.emit({ type: "exit", sessionId: "session-live", exitCode: 0 });
+    await instance.flush();
+
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-live"].interruptedByShutdown).toBe(true);
+    expect(stored.state.sessions["session-done"].interruptedByShutdown).toBe(false);
+  });
+
+  it("clears the shutdown marking once the session is resumed", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    await first.instance.shutdown();
+
+    const second = await coordinator(root);
+    expect(second.instance.list()[0].interruptedByShutdown).toBe(true);
+
+    await second.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-1"].interruptedByShutdown).toBe(false);
+  });
+
   it("aborts pending Codex correlation instead of delaying shutdown", async () => {
     const root = await tempRoot();
     let receivedSignal: AbortSignal | undefined;

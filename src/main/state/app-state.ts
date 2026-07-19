@@ -26,6 +26,7 @@ const SESSION_KEYS = [
   "cwd",
   "worktreeId",
   "providerConversationId",
+  "interruptedByShutdown",
   "createdAt",
   "updatedAt",
 ] as const;
@@ -69,6 +70,13 @@ function toolCommand(value: unknown, label: string): ToolCommand | null {
   return value as ToolCommand;
 }
 
+/** Sessions saved before shutdown marking existed omit the key, which must read as false. */
+function optionalBoolean(value: unknown, label: string): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== "boolean") throw new AppStateError(`${label} must be a boolean`);
+  return value;
+}
+
 /** Likewise, sessions saved before titles and names existed simply omit those keys. */
 function optionalText(value: unknown, label: string): string | null {
   if (value === undefined || value === null) return null;
@@ -99,6 +107,7 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
     cwd: string(value.cwd, `Session ${key}.cwd`),
     ...(worktreeId !== undefined ? { worktreeId } : {}),
     providerConversationId: nullableString(value.providerConversationId, `Session ${key}.providerConversationId`),
+    interruptedByShutdown: optionalBoolean(value.interruptedByShutdown, `Session ${key}.interruptedByShutdown`),
     createdAt: iso(value.createdAt, `Session ${key}.createdAt`),
     updatedAt: iso(value.updatedAt, `Session ${key}.updatedAt`),
   };

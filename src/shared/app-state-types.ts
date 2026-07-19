@@ -17,6 +17,12 @@ export interface PersistedTerminalSession {
    */
   worktreeId?: string;
   providerConversationId: string | null;
+  /**
+   * True when this session shows as exited only because the app itself shut down (quit, update
+   * restart) — not because the CLI ended. The next run auto-resumes such a session when it is first
+   * viewed. Older state files omit the key, which reads as false.
+   */
+  interruptedByShutdown: boolean;
   createdAt: string;
   updatedAt: string;
 }

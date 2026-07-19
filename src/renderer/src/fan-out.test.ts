@@ -12,6 +12,7 @@ function session(id: string, status: TerminalSessionView["status"], projectId = 
     kind: "powershell",
     cwd: "C:\\work",
     providerConversationId: null,
+    interruptedByShutdown: false,
     status,
     pid: status === "exited" || status === "error" ? null : 100,
     exitCode: null,

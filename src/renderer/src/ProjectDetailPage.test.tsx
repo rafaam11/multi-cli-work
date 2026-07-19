@@ -57,6 +57,7 @@ function makeSession(overrides: Partial<TerminalSessionView>): TerminalSessionVi
     kind: "powershell",
     cwd: atlas.rootPath,
     providerConversationId: null,
+    interruptedByShutdown: false,
     status: "idle",
     pid: 100,
     exitCode: null,

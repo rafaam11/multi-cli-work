@@ -107,6 +107,7 @@ const powershellSession: TerminalSessionView = {
   kind: "powershell",
   cwd: atlas.rootPath,
   providerConversationId: null,
+  interruptedByShutdown: false,
   status: "idle",
   pid: 4100,
   exitCode: null,
