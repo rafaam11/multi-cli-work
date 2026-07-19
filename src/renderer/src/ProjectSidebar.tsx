@@ -10,6 +10,8 @@ import {
   FolderPlus,
   FolderX,
   GitBranch,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   SquareTerminal,
   TriangleAlert,
@@ -54,6 +56,8 @@ interface ProjectSidebarProps {
   onRestoreBackup(): void;
   isHome: boolean;
   onOpenHome(): void;
+  collapsed: boolean;
+  onToggleCollapse(): void;
 }
 
 /**
@@ -133,6 +137,8 @@ export function ProjectSidebar({
   onRestoreBackup,
   isHome,
   onOpenHome,
+  collapsed,
+  onToggleCollapse,
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
 
@@ -175,21 +181,32 @@ export function ProjectSidebar({
   };
 
   return (
-    <aside className="project-sidebar">
-      <button
-        type="button"
-        className={`brand-block ${isHome ? "selected" : ""}`}
-        onClick={onOpenHome}
-        aria-label="홈 대시보드 열기"
-      >
-        <span className="brand-mark" aria-hidden="true">
-          <SquareTerminal size={17} strokeWidth={1.8} />
-        </span>
-        <div className="brand-copy">
-          <h1>멀티 터미널 작업기</h1>
-          <span className="brand-context">로컬 워크스페이스</span>
-        </div>
-      </button>
+    <aside className={`project-sidebar ${collapsed ? "collapsed" : ""}`}>
+      <div className="sidebar-top-row">
+        <button
+          type="button"
+          className={`brand-block ${isHome ? "selected" : ""}`}
+          onClick={onOpenHome}
+          aria-label="홈 대시보드 열기"
+        >
+          <span className="brand-mark" aria-hidden="true">
+            <SquareTerminal size={17} strokeWidth={1.8} />
+          </span>
+          <div className="brand-copy">
+            <h1>멀티 터미널 작업기</h1>
+            <span className="brand-context">로컬 워크스페이스</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          className="icon-button sidebar-collapse-toggle"
+          onClick={onToggleCollapse}
+          aria-label={collapsed ? "사이드바 펼치기" : "사이드바 접기"}
+          title={collapsed ? "사이드바 펼치기" : "사이드바 접기"}
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
+      </div>
 
       <nav className="project-navigation" aria-label="폴더">
         <div className="section-heading">

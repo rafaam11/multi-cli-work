@@ -107,20 +107,65 @@ body.sidebar-resizing {
   background: var(--sidebar);
 }
 
+.app-shell.sidebar-collapsed .sidebar-resizer {
+  /* visibility (not display: none) keeps this in CSS Grid's auto-placement flow — removing it
+     from flow would shift the sibling <main> into this track instead of the content column. */
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.project-sidebar.collapsed .brand-copy,
+.project-sidebar.collapsed .project-navigation,
+.project-sidebar.collapsed .registry-warning,
+.project-sidebar.collapsed .update-badge,
+.project-sidebar.collapsed .sidebar-footer {
+  display: none;
+}
+
+.project-sidebar.collapsed .sidebar-top-row {
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.project-sidebar.collapsed .brand-block {
+  flex: 0 0 auto;
+  height: auto;
+  padding: 0;
+  justify-content: center;
+}
+
+.project-sidebar.collapsed .sidebar-collapse-toggle {
+  margin-right: 0;
+}
+
+.sidebar-top-row {
+  display: flex;
+  align-items: center;
+  min-height: 62px;
+  border-bottom: 1px solid var(--line);
+}
+
 .brand-block {
   display: flex;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 10px;
-  min-height: 62px;
+  height: 100%;
   padding: 11px 14px;
   border: 0;
-  border-bottom: 1px solid var(--line);
   color: inherit;
   background: transparent;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.sidebar-collapse-toggle {
+  flex: 0 0 29px;
+  margin-right: 10px;
 }
 
 .brand-block:hover {

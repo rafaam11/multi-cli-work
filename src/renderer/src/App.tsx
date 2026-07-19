@@ -45,6 +45,7 @@ const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 420;
 const MIN_WORKSPACE_WIDTH = 480;
 const SIDEBAR_RESIZER_WIDTH = 4;
+const SIDEBAR_RAIL_WIDTH = 52;
 
 interface ContextMenuState {
   project: SharedProject;
@@ -133,6 +134,7 @@ export function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
@@ -838,8 +840,17 @@ export function App() {
   }, [selectedSession, sessions, projects, agents]);
 
   return (
-    <div className="app-shell" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
+    <div
+      className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+      style={
+        {
+          "--sidebar-width": `${sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth}px`,
+        } as CSSProperties
+      }
+    >
       <ProjectSidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
         snapshot={snapshot}
         projects={projects}
         sessions={folderSessions}
