@@ -72,6 +72,11 @@ interface TerminalCoordinatorOptions {
 
 const DEFAULT_TITLE_POLL_MS = 2_000;
 
+export interface LaunchOptions {
+  /** False for background launches that must not steal the user's current selection. Default true. */
+  updateSelection?: boolean;
+}
+
 function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
   return {
     id: view.id,
@@ -134,7 +139,7 @@ export class TerminalCoordinator {
     return readAppState({ statePath: this.options.statePath });
   }
 
-  async create(input: CreateTerminalInput): Promise<TerminalSessionView> {
+  async create(input: CreateTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
     this.validateDimensions(input.cols, input.rows);
     const project = await this.options.getProject(input.projectId);
     if (!project) throw new Error(`Unknown project: ${input.projectId}`);
@@ -150,6 +155,7 @@ export class TerminalCoordinator {
       rows: input.rows,
       createdAt: this.options.now(),
       resumeConversationId: null,
+      updateSelection: options.updateSelection,
     });
   }
 
@@ -169,7 +175,7 @@ export class TerminalCoordinator {
     });
   }
 
-  async resume(input: ResumeTerminalInput): Promise<TerminalSessionView> {
+  async resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
@@ -207,6 +213,7 @@ export class TerminalCoordinator {
       rows: input.rows,
       createdAt: saved.createdAt,
       resumeConversationId: saved.providerConversationId,
+      updateSelection: options.updateSelection,
     });
   }
 
@@ -395,6 +402,7 @@ export class TerminalCoordinator {
     resumeConversationId: string | null;
     title?: string | null;
     name?: string | null;
+    updateSelection?: boolean;
   }): Promise<TerminalSessionView> {
     const agent = this.requireAgent(input.kind);
     // Codex mints its own conversation id, so the transcripts that already exist have to be noted
@@ -436,11 +444,13 @@ export class TerminalCoordinator {
       ...(input.worktreeId !== undefined ? { worktreeId: input.worktreeId } : {}),
     };
     this.views.set(view.id, view);
-    await this.persistView(view, (state) => ({
-      ...state,
-      selectedProjectId: view.projectId,
-      selectedSessionId: view.id,
-    }));
+    // Launching selects the session — unless the launch is a background one (lazy auto-resume, a
+    // control-CLI spawn) that must not steal what the user is looking at.
+    await this.persistView(view, (state) =>
+      input.updateSelection === false
+        ? state
+        : { ...state, selectedProjectId: view.projectId, selectedSessionId: view.id },
+    );
     if (knownCodexIds && this.options.codexSessions) {
       this.correlateCodexConversation(view.id, view.cwd, knownCodexIds);
     }

@@ -500,6 +500,27 @@ describe("TerminalCoordinator", () => {
     expect(snapshot.source).toBe("primary");
   });
 
+  it("leaves the persisted selection untouched when a launch opts out of it", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await instance.flush();
+    // The user has since moved their selection elsewhere; a background launch must not steal it.
+    await instance.select(null, null);
+
+    await instance.resume({ sessionId: "session-1", cols: 80, rows: 24 }, { updateSelection: false });
+    let stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state).toMatchObject({ selectedProjectId: null, selectedSessionId: null });
+
+    // The default keeps today's behavior: launching a session selects it.
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await instance.flush();
+    await instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state).toMatchObject({ selectedProjectId: "project-1", selectedSessionId: "session-1" });
+  });
+
   it("never forwards resize requests for exited or errored sessions", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
