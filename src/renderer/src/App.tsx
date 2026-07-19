@@ -31,7 +31,7 @@ import { WorkspaceHeader, type SplitCandidate } from "./WorkspaceHeader";
 import { WorkspaceSplit } from "./WorkspaceSplit";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
-import { fanOutTargets } from "./fan-out";
+import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TerminalSessionView } from "@shared/api-types";
+import type { TerminalSessionView } from "./api-types";
 import { fanOutTargets, promptAsTerminalInput } from "./fan-out";
 
 function session(id: string, status: TerminalSessionView["status"], projectId = "project-1"): TerminalSessionView {

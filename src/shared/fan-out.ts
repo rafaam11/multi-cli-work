@@ -1,4 +1,4 @@
-import type { TerminalSessionView } from "@shared/api-types";
+import type { TerminalSessionView } from "./api-types";
 
 const ESC = String.fromCharCode(27);
 const BRACKETED_PASTE_START = `${ESC}[200~`;

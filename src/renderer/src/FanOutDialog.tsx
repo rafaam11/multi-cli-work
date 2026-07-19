@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { promptAsTerminalInput } from "./fan-out";
+import { promptAsTerminalInput } from "@shared/fan-out";
 
 export interface FanOutTargetOption {
   sessionId: string;
