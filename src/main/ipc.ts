@@ -11,6 +11,7 @@ import type {
   SessionAttention,
   UpdaterStatus,
 } from "../shared/api-types";
+import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type { SharedWorktree, WorktreeRemovalResult } from "../shared/worktree-types";
 import type { ToolCommand } from "../shared/terminal-types";
@@ -69,12 +70,24 @@ interface WorktreeGateway {
   remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult>;
 }
 
+interface WorkspaceFilesGateway {
+  listDirectory(rootPath: string, relativePath: string): Promise<FileTreeEntry[]>;
+  readFile(rootPath: string, relativePath: string): Promise<WorkspaceFileContent>;
+  writeFile(rootPath: string, relativePath: string, content: string): Promise<void>;
+}
+
+interface ShellGateway {
+  openExternal(url: string): Promise<void>;
+}
+
 interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
   coordinator: TerminalCoordinatorGateway;
   updater: UpdaterGateway;
   projectActions: ProjectActionsGateway;
   worktrees: WorktreeGateway;
+  workspaceFiles: WorkspaceFilesGateway;
+  shell: ShellGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
@@ -162,6 +175,32 @@ function validateProjectPatch(value: unknown): ProjectMetadataPatch {
     "Project metadata patch",
   );
   return patch as ProjectMetadataPatch;
+}
+
+function validateFileExplorerTarget(value: unknown): FileExplorerTarget {
+  const target = exactObject(value, ["kind", "id"], "File explorer target");
+  if (target.kind !== "project" && target.kind !== "worktree") {
+    throw new Error("File explorer target kind must be 'project' or 'worktree'");
+  }
+  return { kind: target.kind, id: nonEmptyString(target.id, "File explorer target id") };
+}
+
+/** relativePath may legitimately be "" (the target's root), unlike every other string field here. */
+function relativePathString(value: unknown): string {
+  if (typeof value !== "string") throw new Error("Relative path must be a string");
+  return value;
+}
+
+function externalUrl(value: unknown): string {
+  const raw = nonEmptyString(value, "URL");
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("URL is invalid");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http(s) URLs may be opened");
+  return url.toString();
 }
 
 function selectedProject(registry: ProjectRegistryV1, projectId: string): SharedProject {
@@ -260,6 +299,31 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("worktrees:git-diff", async (_event, worktreeId: unknown) =>
     dependencies.projectActions.gitDiff(await worktreePath(worktreeId)),
   );
+
+  const rootPathForTarget = (target: FileExplorerTarget) =>
+    target.kind === "project" ? projectRoot(target.id) : worktreePath(target.id);
+  ipc.handle("workspace-files:list-directory", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.listDirectory(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
+  ipc.handle("workspace-files:read-file", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.readFile(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
+  ipc.handle("workspace-files:write-file", async (_event, target: unknown, relativePath: unknown, content: unknown) => {
+    if (typeof content !== "string") throw new Error("File content must be a string");
+    return dependencies.workspaceFiles.writeFile(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+      content,
+    );
+  });
+  ipc.handle("shell:open-external", async (_event, url: unknown) => dependencies.shell.openExternal(externalUrl(url)));
+
   ipc.handle("providers:availability", () => dependencies.getAvailability());
   ipc.handle("agents:list", () => dependencies.listAgents());
   ipc.handle("agents:edit", () => dependencies.editAgents());

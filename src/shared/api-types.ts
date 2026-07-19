@@ -1,5 +1,6 @@
 import type { AgentView } from "./agent-types";
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
+import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
 import type { SharedWorktree, WorktreeRemovalResult } from "./worktree-types";
@@ -131,6 +132,15 @@ export interface MultiCliWorkApi {
      * Synchronous — it never leaves the preload process.
      */
     pathFor(file: File): string;
+  };
+  workspaceFiles: {
+    listDirectory(target: FileExplorerTarget, relativePath: string): Promise<FileTreeEntry[]>;
+    readFile(target: FileExplorerTarget, relativePath: string): Promise<WorkspaceFileContent>;
+    writeFile(target: FileExplorerTarget, relativePath: string, content: string): Promise<void>;
+  };
+  shell: {
+    /** http(s) only — the main process rejects any other scheme. */
+    openExternal(url: string): Promise<void>;
   };
   attention: {
     /** The sessions currently waiting for the user off screen, and what each waits for. */

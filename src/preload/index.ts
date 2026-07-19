@@ -35,6 +35,18 @@ const api: MultiCliWorkApi = {
     // to the absolute path the renderer pastes into an agent prompt.
     pathFor: (file) => webUtils.getPathForFile(file),
   },
+  // Separate from `files` above (dragged-OS-file path resolution) — this is the project/worktree
+  // file explorer's own read/write surface, keyed by target rather than an absolute path.
+  workspaceFiles: {
+    listDirectory: (target, relativePath) =>
+      ipcRenderer.invoke("workspace-files:list-directory", target, relativePath),
+    readFile: (target, relativePath) => ipcRenderer.invoke("workspace-files:read-file", target, relativePath),
+    writeFile: (target, relativePath, content) =>
+      ipcRenderer.invoke("workspace-files:write-file", target, relativePath, content),
+  },
+  shell: {
+    openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
+  },
   attention: {
     state: () => ipcRenderer.invoke("attention:state"),
     onEvent(listener) {

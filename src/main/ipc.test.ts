@@ -93,12 +93,22 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     create: vi.fn(async () => worktree),
     remove: vi.fn(async () => ({ removed: true as const })),
   };
+  const workspaceFiles = {
+    listDirectory: vi.fn(async () => []),
+    readFile: vi.fn(async () => ({ relativePath: "readme.md", encoding: "utf8" as const, content: "", truncated: false, sizeBytes: 0 })),
+    writeFile: vi.fn(async () => undefined),
+  };
+  const shellGateway = {
+    openExternal: vi.fn(async () => undefined),
+  };
   registerMainIpc(ipc, {
     projectService,
     coordinator,
     updater,
     projectActions,
     worktrees,
+    workspaceFiles,
+    shell: shellGateway,
     appVersion: vi.fn(() => "1.0.0"),
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,
@@ -114,9 +124,12 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     projectService,
     coordinator,
     project,
+    worktree,
     restoreRegistryBackup,
     updater,
     projectActions,
+    workspaceFiles,
+    shellGateway,
     calls,
     onSessionSelected: options.onSessionSelected,
   };
@@ -307,5 +320,57 @@ describe("main IPC boundary", () => {
     expect(updater.install).toHaveBeenCalledOnce();
     expect(updater.openReleases).toHaveBeenCalledOnce();
     expect(updater.openRepository).toHaveBeenCalledOnce();
+  });
+
+  it("resolves a project file explorer target to its rootPath, never trusting a renderer-supplied path", async () => {
+    const { handlers, workspaceFiles, project } = setup();
+
+    await handlers.get("workspace-files:list-directory")!({}, { kind: "project", id: project.id }, "src");
+    await handlers.get("workspace-files:read-file")!({}, { kind: "project", id: project.id }, "readme.md");
+    await handlers.get("workspace-files:write-file")!({}, { kind: "project", id: project.id }, "readme.md", "hi");
+
+    expect(workspaceFiles.listDirectory).toHaveBeenCalledWith(project.rootPath, "src");
+    expect(workspaceFiles.readFile).toHaveBeenCalledWith(project.rootPath, "readme.md");
+    expect(workspaceFiles.writeFile).toHaveBeenCalledWith(project.rootPath, "readme.md", "hi");
+  });
+
+  it("resolves a worktree file explorer target to its path", async () => {
+    const { handlers, workspaceFiles, worktree } = setup();
+
+    await handlers.get("workspace-files:list-directory")!({}, { kind: "worktree", id: worktree.id }, "");
+
+    expect(workspaceFiles.listDirectory).toHaveBeenCalledWith(worktree.path, "");
+  });
+
+  it("rejects a file explorer target with an unknown kind or an injected field", async () => {
+    const { handlers, workspaceFiles } = setup();
+
+    await expect(
+      handlers.get("workspace-files:list-directory")!({}, { kind: "project", id: "project-1", extra: true }, ""),
+    ).rejects.toThrow(/unknown fields/i);
+    await expect(
+      handlers.get("workspace-files:list-directory")!({}, { kind: "session", id: "project-1" }, ""),
+    ).rejects.toThrow(/'project' or 'worktree'/);
+    expect(workspaceFiles.listDirectory).not.toHaveBeenCalled();
+  });
+
+  it("rejects file content that is not a string", async () => {
+    const { handlers, workspaceFiles, project } = setup();
+
+    await expect(
+      handlers.get("workspace-files:write-file")!({}, { kind: "project", id: project.id }, "readme.md", { evil: true }),
+    ).rejects.toThrow(/must be a string/i);
+    expect(workspaceFiles.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("opens only http(s) URLs externally, rejecting other schemes", async () => {
+    const { handlers, shellGateway } = setup();
+
+    await handlers.get("shell:open-external")!({}, "https://example.com/readme");
+    expect(shellGateway.openExternal).toHaveBeenCalledWith("https://example.com/readme");
+
+    await expect(handlers.get("shell:open-external")!({}, "file:///etc/passwd")).rejects.toThrow(/http\(s\)/);
+    await expect(handlers.get("shell:open-external")!({}, "javascript:alert(1)")).rejects.toThrow(/http\(s\)/);
+    expect(shellGateway.openExternal).toHaveBeenCalledOnce();
   });
 });

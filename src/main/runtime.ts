@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell, utilityProcess } from "electron";
 import os from "node:os";
 import path from "node:path";
 import type { AgentDefinition } from "../shared/agent-types";
@@ -18,6 +18,7 @@ import { registerMainIpc } from "./ipc";
 import { createProjectActions } from "./projects/project-actions";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
+import { listWorkspaceDirectory, readWorkspaceFile, writeWorkspaceFile } from "./projects/workspace-files";
 import { pruneMissingWorktrees } from "./projects/worktree-registry";
 import { WorktreeService } from "./projects/worktree-service";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
@@ -210,6 +211,14 @@ export async function createDesktopRuntime(
       openRepository: openRepositoryPage,
     },
     projectActions: createProjectActions({ getExecutables }),
+    workspaceFiles: {
+      listDirectory: listWorkspaceDirectory,
+      readFile: readWorkspaceFile,
+      writeFile: writeWorkspaceFile,
+    },
+    shell: {
+      openExternal: (url) => shell.openExternal(url),
+    },
     appVersion: () => app.getVersion(),
     readRegistry: () => readProjectRegistry({ registryPath }),
     async restoreRegistryBackup() {
