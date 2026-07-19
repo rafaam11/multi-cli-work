@@ -6,6 +6,7 @@ import type {
   SessionAttention,
   TerminalSessionView,
 } from "@shared/api-types";
+import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
@@ -21,6 +22,9 @@ import {
 } from "react";
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
+import { FileExplorer } from "./FileExplorer";
+import { categorizeFile, fileTabId, type OpenFileTab } from "./file-tabs";
+import { FileViewerPane } from "./FileViewerPane";
 import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 import { ProjectDetailPage } from "./ProjectDetailPage";
@@ -35,7 +39,7 @@ import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 
-type ActiveView = "home" | "detail" | "terminal";
+type ActiveView = "home" | "detail" | "terminal" | "file";
 const ACTIVITY_LOG_LIMIT = 20;
 
 const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
@@ -46,6 +50,10 @@ const MAX_SIDEBAR_WIDTH = 420;
 const MIN_WORKSPACE_WIDTH = 480;
 const SIDEBAR_RESIZER_WIDTH = 4;
 const SIDEBAR_RAIL_WIDTH = 52;
+const DEFAULT_RIGHT_SIDEBAR_WIDTH = 280;
+const MIN_RIGHT_SIDEBAR_WIDTH = 220;
+const MAX_RIGHT_SIDEBAR_WIDTH = 480;
+const RIGHT_SIDEBAR_RAIL_WIDTH = 36;
 
 interface ContextMenuState {
   project: SharedProject;
@@ -63,6 +71,11 @@ interface SessionMenuState {
   label: string;
   x: number;
   y: number;
+}
+
+interface SessionRemovalState {
+  session: TerminalSessionView;
+  label: string;
 }
 
 interface WorktreeMenuState {
@@ -135,9 +148,15 @@ export function App() {
   const [pendingAction, setPendingAction] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
+  const [selectedFileTabId, setSelectedFileTabId] = useState<string | null>(null);
+  const [fileTabCloseRequest, setFileTabCloseRequest] = useState<OpenFileTab | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
+  const [sessionRemoval, setSessionRemoval] = useState<SessionRemovalState | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [removal, setRemoval] = useState<RemovalState | null>(null);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
@@ -167,6 +186,7 @@ export function App() {
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const selectedWorktree = worktrees.find((worktree) => worktree.id === selectedWorktreeId) ?? null;
+  const selectedFileTab = openFileTabs.find((tab) => tab.id === selectedFileTabId) ?? null;
   const splitSession = sessions.find((session) => session.id === splitSessionId) ?? null;
   const selectedSessionLabel = selectedSession
     ? sessionLabel(
@@ -183,18 +203,42 @@ export function App() {
     [snapshot],
   );
 
+  const rightSidebarSpace = rightSidebarCollapsed ? RIGHT_SIDEBAR_RAIL_WIDTH : rightSidebarWidth;
+
   const maximumSidebarWidth = useCallback(
     () =>
       Math.max(
         MIN_SIDEBAR_WIDTH,
-        Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - MIN_WORKSPACE_WIDTH - SIDEBAR_RESIZER_WIDTH),
+        Math.min(
+          MAX_SIDEBAR_WIDTH,
+          window.innerWidth - MIN_WORKSPACE_WIDTH - SIDEBAR_RESIZER_WIDTH - rightSidebarSpace - SIDEBAR_RESIZER_WIDTH,
+        ),
       ),
-    [],
+    [rightSidebarSpace],
   );
 
   const clampSidebarWidth = useCallback(
     (width: number) => Math.min(maximumSidebarWidth(), Math.max(MIN_SIDEBAR_WIDTH, width)),
     [maximumSidebarWidth],
+  );
+
+  const leftSidebarSpace = sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth;
+
+  const maximumRightSidebarWidth = useCallback(
+    () =>
+      Math.max(
+        MIN_RIGHT_SIDEBAR_WIDTH,
+        Math.min(
+          MAX_RIGHT_SIDEBAR_WIDTH,
+          window.innerWidth - MIN_WORKSPACE_WIDTH - SIDEBAR_RESIZER_WIDTH - leftSidebarSpace - SIDEBAR_RESIZER_WIDTH,
+        ),
+      ),
+    [leftSidebarSpace],
+  );
+
+  const clampRightSidebarWidth = useCallback(
+    (width: number) => Math.min(maximumRightSidebarWidth(), Math.max(MIN_RIGHT_SIDEBAR_WIDTH, width)),
+    [maximumRightSidebarWidth],
   );
 
   const refreshAgents = useCallback(async () => {
@@ -284,10 +328,13 @@ export function App() {
   }, [loadWorkspace]);
 
   useEffect(() => {
-    const handleWindowResize = () => setSidebarWidth((current) => clampSidebarWidth(current));
+    const handleWindowResize = () => {
+      setSidebarWidth((current) => clampSidebarWidth(current));
+      setRightSidebarWidth((current) => clampRightSidebarWidth(current));
+    };
     window.addEventListener("resize", handleWindowResize);
     return () => window.removeEventListener("resize", handleWindowResize);
-  }, [clampSidebarWidth]);
+  }, [clampSidebarWidth, clampRightSidebarWidth]);
 
   // Editing `agents.json` happens in someone else's editor, so there is no save to listen for.
   // Coming back to the window is the one moment we know to look again.
@@ -328,6 +375,21 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, []);
 
+  // Same capture-phase reasoning as Ctrl+P above, plus it has to beat the browser's own save-page
+  // dialog. Only markdown is editable, so this is a no-op for every other open file.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== "s") return;
+      if (activeView !== "file" || !selectedFileTab || selectedFileTab.category !== "markdown") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (selectedFileTab.dirty) void saveFileTab(selectedFileTab.id);
+    };
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [activeView, selectedFileTab]);
+
   const beginSidebarResize = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -342,6 +404,25 @@ export function App() {
       window.addEventListener("mouseup", handleMouseUp);
     },
     [clampSidebarWidth],
+  );
+
+  const beginRightSidebarResize = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      document.body.classList.add("sidebar-resizing");
+      // The right sidebar is anchored to the window's right edge, so its width is the distance
+      // from the pointer to that edge — the mirror image of the left sidebar's clientX tracking.
+      const handleMouseMove = (moveEvent: MouseEvent) =>
+        setRightSidebarWidth(clampRightSidebarWidth(window.innerWidth - moveEvent.clientX));
+      const handleMouseUp = () => {
+        document.body.classList.remove("sidebar-resizing");
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+      };
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    },
+    [clampRightSidebarWidth],
   );
 
   useEffect(() => {
@@ -549,22 +630,131 @@ export function App() {
     }
   };
 
-  const removeSession = async () => {
-    if (!selectedSession) return;
-    const projectId = selectedSession.projectId;
+  const removeSessionById = async (session: TerminalSessionView) => {
     setPendingAction(true);
     setActionError(null);
     try {
-      await window.multiCliWork.terminals.remove(selectedSession.id);
-      setSessions((current) => current.filter((session) => session.id !== selectedSession.id));
-      setSelectedSessionId(null);
-      setActiveView(projectId ? "detail" : "home");
-      persistSelection(projectId, null);
+      await window.multiCliWork.terminals.remove(session.id);
+      setSessions((current) => current.filter((candidate) => candidate.id !== session.id));
+      if (selectedSessionId === session.id) {
+        setSelectedSessionId(null);
+        setActiveView(session.projectId ? "detail" : "home");
+        persistSelection(session.projectId, null);
+      }
+      if (splitSessionId === session.id) applySplit(null);
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
       setPendingAction(false);
     }
+  };
+
+  const confirmSessionRemoval = async (session: TerminalSessionView) => {
+    setSessionRemoval(null);
+    await removeSessionById(session);
+  };
+
+  const openFile = (target: FileExplorerTarget, targetLabel: string, entry: FileTreeEntry) => {
+    const id = fileTabId(target, entry.relativePath);
+    if (openFileTabs.some((tab) => tab.id === id)) {
+      setSelectedFileTabId(id);
+      setActiveView("file");
+      return;
+    }
+    const category = categorizeFile(entry.extension);
+    const tab: OpenFileTab = {
+      id,
+      target,
+      targetLabel,
+      relativePath: entry.relativePath,
+      name: entry.name,
+      extension: entry.extension,
+      category,
+      encoding: "utf8",
+      content: null,
+      originalContent: null,
+      dirty: false,
+      loading: category !== "unsupported",
+      saving: false,
+      loadError: null,
+      saveError: null,
+      truncated: false,
+    };
+    setOpenFileTabs((current) => [...current, tab]);
+    setSelectedFileTabId(id);
+    setActiveView("file");
+    if (category === "unsupported") return;
+    void window.multiCliWork.workspaceFiles
+      .readFile(target, entry.relativePath)
+      .then((result) => {
+        setOpenFileTabs((current) =>
+          current.map((candidate) =>
+            candidate.id === id
+              ? {
+                  ...candidate,
+                  content: result.content,
+                  originalContent: result.content,
+                  encoding: result.encoding,
+                  truncated: result.truncated,
+                  loading: false,
+                }
+              : candidate,
+          ),
+        );
+      })
+      .catch((error) => {
+        setOpenFileTabs((current) =>
+          current.map((candidate) =>
+            candidate.id === id ? { ...candidate, loading: false, loadError: errorMessage(error) } : candidate,
+          ),
+        );
+      });
+  };
+
+  const updateFileTabContent = (tabId: string, content: string) => {
+    setOpenFileTabs((current) =>
+      current.map((tab) => (tab.id === tabId ? { ...tab, content, dirty: content !== tab.originalContent } : tab)),
+    );
+  };
+
+  const saveFileTab = async (tabId: string) => {
+    const tab = openFileTabs.find((candidate) => candidate.id === tabId);
+    if (!tab || tab.content === null) return;
+    setOpenFileTabs((current) =>
+      current.map((candidate) => (candidate.id === tabId ? { ...candidate, saving: true, saveError: null } : candidate)),
+    );
+    try {
+      await window.multiCliWork.workspaceFiles.writeFile(tab.target, tab.relativePath, tab.content);
+      setOpenFileTabs((current) =>
+        current.map((candidate) =>
+          candidate.id === tabId
+            ? { ...candidate, originalContent: candidate.content, dirty: false, saving: false }
+            : candidate,
+        ),
+      );
+    } catch (error) {
+      setOpenFileTabs((current) =>
+        current.map((candidate) =>
+          candidate.id === tabId ? { ...candidate, saving: false, saveError: errorMessage(error) } : candidate,
+        ),
+      );
+    }
+  };
+
+  const closeFileTabImmediately = (tabId: string) => {
+    setOpenFileTabs((current) => current.filter((tab) => tab.id !== tabId));
+    if (selectedFileTabId === tabId) {
+      setSelectedFileTabId(null);
+      setActiveView(selectedProjectId ? "detail" : "home");
+    }
+  };
+
+  const requestCloseFileTab = (tab: OpenFileTab) => {
+    if (tab.dirty) {
+      setFileTabCloseRequest(tab);
+      return;
+    }
+    closeFileTabImmediately(tab.id);
   };
 
   const renameSession = async (sessionId: string, name: string | null) => {
@@ -820,6 +1010,25 @@ export function App() {
   const headerSession = activeView === "home" ? null : selectedSession;
   const headerSessionLabel = activeView === "home" ? null : selectedSessionLabel;
 
+  // The right-hand file explorer follows whatever the sidebar has selected — a worktree takes
+  // precedence over its owning project, mirroring how the sidebar itself scopes a worktree's tree.
+  const fileExplorerOwnerProject = selectedWorktree
+    ? (projects.find((project) => project.id === selectedWorktree.projectId) ?? null)
+    : selectedProject;
+  const fileExplorerTarget: FileExplorerTarget | null =
+    activeView === "home"
+      ? null
+      : selectedWorktree
+        ? { kind: "worktree", id: selectedWorktree.id }
+        : selectedProject
+          ? { kind: "project", id: selectedProject.id }
+          : null;
+  const fileExplorerTargetLabel = selectedWorktree
+    ? `${fileExplorerOwnerProject ? projectName(fileExplorerOwnerProject) : "worktree"} · ${selectedWorktree.branch}`
+    : fileExplorerOwnerProject
+      ? projectName(fileExplorerOwnerProject)
+      : null;
+
   // Everything but the primary can fill the second pane — including exited sessions, whose
   // read-only scrollback is exactly what a side-by-side comparison wants.
   const splitCandidates = useMemo<SplitCandidate[]>(() => {
@@ -841,10 +1050,11 @@ export function App() {
 
   return (
     <div
-      className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+      className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${rightSidebarCollapsed ? "right-sidebar-collapsed" : ""}`}
       style={
         {
           "--sidebar-width": `${sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth}px`,
+          "--right-sidebar-width": `${rightSidebarCollapsed ? RIGHT_SIDEBAR_RAIL_WIDTH : rightSidebarWidth}px`,
         } as CSSProperties
       }
     >
@@ -900,6 +1110,13 @@ export function App() {
         onProjectSaved={handleProjectSaved}
         onCloseEditor={() => setEditingProjectId(null)}
         onRestoreBackup={() => void restoreFromBackup()}
+        openFileTabs={openFileTabs}
+        selectedFileTabId={activeView === "file" ? selectedFileTabId : null}
+        onSelectFileTab={(tab) => {
+          setSelectedFileTabId(tab.id);
+          setActiveView("file");
+        }}
+        onCloseFileTab={requestCloseFileTab}
       />
 
       <div
@@ -932,7 +1149,7 @@ export function App() {
           onEditAgents={() => void editAgents()}
           onResumeSession={() => void resumeSession()}
           onStopSession={() => void stopSession()}
-          onRemoveSession={() => void removeSession()}
+          onRemoveSession={() => selectedSession && void removeSessionById(selectedSession)}
           onRelinkProject={() => void relinkProject()}
         />
 
@@ -1001,6 +1218,13 @@ export function App() {
               onError={(message) => setActionError(message)}
               onCloseSplit={() => applySplit(null)}
             />
+          ) : activeView === "file" && selectedFileTab ? (
+            <FileViewerPane
+              tab={selectedFileTab}
+              onChangeContent={(content) => updateFileTabContent(selectedFileTab.id, content)}
+              onSave={() => void saveFileTab(selectedFileTab.id)}
+              onClose={() => requestCloseFileTab(selectedFileTab)}
+            />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage
               key={selectedWorktree ? `${selectedProject.id}:${selectedWorktree.id}` : selectedProject.id}
@@ -1052,6 +1276,33 @@ export function App() {
         </div>
       </main>
 
+      <div
+        className="right-sidebar-resizer"
+        role="separator"
+        aria-label="파일 탐색기 크기 조절"
+        aria-orientation="vertical"
+        aria-valuemin={MIN_RIGHT_SIDEBAR_WIDTH}
+        aria-valuemax={maximumRightSidebarWidth()}
+        aria-valuenow={rightSidebarWidth}
+        onMouseDown={beginRightSidebarResize}
+      />
+
+      <FileExplorer
+        collapsed={rightSidebarCollapsed}
+        onToggleCollapse={() => setRightSidebarCollapsed((value) => !value)}
+        target={fileExplorerTarget}
+        targetLabel={fileExplorerTargetLabel}
+        selectedRelativePath={
+          selectedFileTab &&
+          fileExplorerTarget &&
+          selectedFileTab.target.kind === fileExplorerTarget.kind &&
+          selectedFileTab.target.id === fileExplorerTarget.id
+            ? selectedFileTab.relativePath
+            : null
+        }
+        onOpenFile={(entry) => fileExplorerTarget && openFile(fileExplorerTarget, fileExplorerTargetLabel ?? "", entry)}
+      />
+
       {contextMenu ? (
         <ProjectContextMenu
           projectName={projectName(contextMenu.project)}
@@ -1101,6 +1352,7 @@ export function App() {
           canResetName={Boolean(sessionMenu.session.name)}
           onRename={() => setRenamingSessionId(sessionMenu.session.id)}
           onResetName={() => void renameSession(sessionMenu.session.id, null)}
+          onRemove={() => setSessionRemoval({ session: sessionMenu.session, label: sessionMenu.label })}
           onClose={() => setSessionMenu(null)}
         />
       ) : null}
@@ -1188,6 +1440,64 @@ export function App() {
       ) : null}
 
       {diffView ? <DiffView title={diffView.title} result={diffView.result} onClose={() => setDiffView(null)} /> : null}
+
+      {fileTabCloseRequest ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="저장하지 않은 변경 사항">
+            <h2>{fileTabCloseRequest.name}에 저장하지 않은 변경 사항이 있습니다</h2>
+            <p>닫으면 이 변경 사항이 되돌릴 수 없이 사라집니다.</p>
+            <footer className="confirm-dialog-actions">
+              <button type="button" onClick={() => setFileTabCloseRequest(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const tab = fileTabCloseRequest;
+                  setFileTabCloseRequest(null);
+                  await saveFileTab(tab.id);
+                  closeFileTabImmediately(tab.id);
+                }}
+              >
+                저장 후 닫기
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => {
+                  const tab = fileTabCloseRequest;
+                  setFileTabCloseRequest(null);
+                  closeFileTabImmediately(tab.id);
+                }}
+              >
+                변경 사항 버리기
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {sessionRemoval ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="세션 제거">
+            <h2>{sessionRemoval.label} 세션을 제거할까요?</h2>
+            <p>이 세션이 중지되고 스크롤백이 되돌릴 수 없이 삭제됩니다.</p>
+            <footer className="confirm-dialog-actions">
+              <button type="button" onClick={() => setSessionRemoval(null)}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={pendingAction}
+                onClick={() => void confirmSessionRemoval(sessionRemoval.session)}
+              >
+                제거
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
 
       {removal ? (
         <div className="modal-backdrop" role="presentation">

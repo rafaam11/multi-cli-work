@@ -62,9 +62,16 @@ button:focus-visible {
   outline-offset: 1px;
 }
 
+/*
+ * Five explicit columns, and every direct child below is pinned to one with grid-column rather
+ * than left to auto-placement. Auto-placement re-numbers remaining children whenever an earlier
+ * one drops out of flow (e.g. display:none) — that bit the resizer once already (see
+ * .app-shell.sidebar-collapsed .sidebar-resizer below) — so nothing here relies on it.
+ */
 .app-shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width, 264px) 4px minmax(0, 1fr);
+  grid-template-columns:
+    var(--sidebar-width, 264px) 4px minmax(0, 1fr) 4px var(--right-sidebar-width, 280px);
   width: 100%;
   height: 100%;
   background: var(--bg);
@@ -72,6 +79,7 @@ button:focus-visible {
 }
 
 .sidebar-resizer {
+  grid-column: 2;
   position: relative;
   z-index: 4;
   width: 4px;
@@ -79,6 +87,36 @@ button:focus-visible {
   background: var(--line);
   cursor: col-resize;
   touch-action: none;
+}
+
+.right-sidebar-resizer {
+  grid-column: 4;
+  position: relative;
+  z-index: 4;
+  width: 4px;
+  min-height: 0;
+  background: var(--line);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.right-sidebar-resizer::after {
+  position: absolute;
+  inset: 0 -2px;
+  content: "";
+}
+
+.right-sidebar-resizer:hover,
+.right-sidebar-resizer:focus-visible {
+  background: var(--teal);
+  outline: 0;
+}
+
+.app-shell.right-sidebar-collapsed .right-sidebar-resizer {
+  /* visibility (not display: none) keeps this in the grid's explicit column — see the comment
+     above .app-shell for why an item silently falling out of flow is the trap to avoid. */
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .sidebar-resizer::after {
@@ -99,6 +137,7 @@ body.sidebar-resizing {
 }
 
 .project-sidebar {
+  grid-column: 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-width: 0;
@@ -115,11 +154,81 @@ body.sidebar-resizing {
 }
 
 .project-sidebar.collapsed .brand-copy,
-.project-sidebar.collapsed .project-navigation,
 .project-sidebar.collapsed .registry-warning,
 .project-sidebar.collapsed .update-badge,
 .project-sidebar.collapsed .sidebar-footer {
   display: none;
+}
+
+/* ProjectSidebar renders .project-navigation and .sidebar-rail-sessions mutually exclusively (only
+   one is ever mounted), but both get an explicit grid-row anyway rather than relying on
+   auto-placement — an item missing from flow would otherwise shift later siblings up a row (see
+   the .sidebar-resizer incident above). */
+.project-navigation,
+.sidebar-rail-sessions {
+  grid-row: 2;
+}
+
+.sidebar-rail-sessions {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar-rail-sessions ul {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rail-session-button {
+  --session-accent: var(--quiet);
+
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--session-accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--session-accent) 35%, transparent);
+  cursor: pointer;
+}
+
+.rail-session-button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
+}
+
+.rail-session-button.selected {
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 30%, var(--surface-hover));
+  box-shadow: inset 0 0 0 1px var(--session-accent);
+}
+
+.rail-session-button .status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  flex: none;
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+
+.rail-session-button .unread-dot {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  flex: none;
+  box-shadow: 0 0 0 2px var(--sidebar);
 }
 
 .project-sidebar.collapsed .sidebar-top-row {
@@ -166,6 +275,100 @@ body.sidebar-resizing {
 .sidebar-collapse-toggle {
   flex: 0 0 29px;
   margin-right: 10px;
+}
+
+.file-explorer {
+  grid-column: 5;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--sidebar);
+}
+
+/* The explorer's top row holds only the collapse toggle (no brand mark), so it never needs the
+   project sidebar's column-flip on collapse — centering the single button is enough either way. */
+.file-explorer .sidebar-top-row {
+  justify-content: center;
+}
+
+.file-explorer .sidebar-collapse-toggle {
+  margin-right: 0;
+}
+
+.file-explorer-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.file-tree {
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.file-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-tree-row {
+  display: flex;
+  width: 100%;
+  min-height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-tree-row:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.file-tree-row.selected {
+  color: var(--text);
+  background: color-mix(in srgb, var(--teal) 18%, var(--surface-hover));
+  box-shadow: inset 2px 0 0 var(--teal);
+}
+
+.file-tree-toggle {
+  display: grid;
+  width: 13px;
+  flex: 0 0 13px;
+  place-items: center;
+  color: var(--quiet);
+}
+
+.file-tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tree-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  color: var(--quiet);
+  font-size: 11px;
+}
+
+.file-tree-error {
+  color: var(--red);
 }
 
 .brand-block:hover {
@@ -556,49 +759,56 @@ body.sidebar-resizing {
 .session-row.status-starting,
 .monitor-row.status-starting,
 .session-card.status-starting,
-.activity-row.status-starting {
+.activity-row.status-starting,
+.rail-session-button.status-starting {
   --session-accent: var(--blue);
 }
 
 .session-row.status-working,
 .monitor-row.status-working,
 .session-card.status-working,
-.activity-row.status-working {
+.activity-row.status-working,
+.rail-session-button.status-working {
   --session-accent: var(--teal);
 }
 
 .session-row.status-awaiting-input,
 .monitor-row.status-awaiting-input,
 .session-card.status-awaiting-input,
-.activity-row.status-awaiting-input {
+.activity-row.status-awaiting-input,
+.rail-session-button.status-awaiting-input {
   --session-accent: var(--violet);
 }
 
 .session-row.status-awaiting-approval,
 .monitor-row.status-awaiting-approval,
 .session-card.status-awaiting-approval,
-.activity-row.status-awaiting-approval {
+.activity-row.status-awaiting-approval,
+.rail-session-button.status-awaiting-approval {
   --session-accent: var(--amber);
 }
 
 .session-row.status-idle,
 .monitor-row.status-idle,
 .session-card.status-idle,
-.activity-row.status-idle {
+.activity-row.status-idle,
+.rail-session-button.status-idle {
   --session-accent: var(--green);
 }
 
 .session-row.status-exited,
 .monitor-row.status-exited,
 .session-card.status-exited,
-.activity-row.status-exited {
+.activity-row.status-exited,
+.rail-session-button.status-exited {
   --session-accent: var(--quiet);
 }
 
 .session-row.status-error,
 .monitor-row.status-error,
 .session-card.status-error,
-.activity-row.status-error {
+.activity-row.status-error,
+.rail-session-button.status-error {
   --session-accent: var(--red);
 }
 
@@ -628,6 +838,62 @@ body.sidebar-resizing {
   background: var(--surface);
   font-family: inherit;
   font-size: 11px;
+}
+
+/* A file tab reuses .session-row's colour wash and selection ring, but is a flex row of two
+   sibling buttons (open + close) rather than one button with .session-row's 4-column grid — a
+   button cannot nest a button. */
+.file-tab-row {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+}
+
+.file-tab-open {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 7px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-tab-close {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+  align-self: center;
+  margin-right: 6px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--quiet);
+  background: transparent;
+  cursor: pointer;
+}
+
+.file-tab-close:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.file-tab-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.file-tab-dot.dirty {
+  background: var(--amber);
 }
 
 .session-name,
@@ -934,6 +1200,7 @@ body.sidebar-resizing {
 }
 
 .terminal-workspace {
+  grid-column: 3;
   display: grid;
   grid-template-rows: 54px minmax(0, 1fr);
   min-width: 0;
@@ -1627,6 +1894,182 @@ body.sidebar-resizing {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* File viewer pane                                                        */
+/* ---------------------------------------------------------------------- */
+
+.file-viewer-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.file-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.file-viewer-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-viewer-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-viewer-dirty {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.file-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-viewer-body {
+  min-height: 0;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+.file-viewer-state {
+  display: grid;
+  height: 100%;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.file-viewer-error {
+  color: var(--red);
+}
+
+.file-viewer-notice {
+  margin: 0 0 10px;
+  color: var(--amber);
+  font-size: 11px;
+}
+
+.file-viewer-notice.file-viewer-error {
+  color: var(--red);
+}
+
+.file-editor-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.file-viewer-plain {
+  margin: 0;
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.file-viewer-image {
+  display: grid;
+  justify-items: center;
+}
+
+.file-viewer-image img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.file-viewer-markdown {
+  max-width: 780px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.file-viewer-markdown :first-child {
+  margin-top: 0;
+}
+
+.file-viewer-markdown h1,
+.file-viewer-markdown h2,
+.file-viewer-markdown h3 {
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.file-viewer-markdown a {
+  color: var(--teal);
+}
+
+.file-viewer-markdown code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--surface);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.file-viewer-markdown pre {
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--surface);
+  overflow-x: auto;
+}
+
+.file-viewer-markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.file-viewer-markdown blockquote {
+  margin: 0;
+  padding: 2px 14px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.file-viewer-markdown table {
+  border-collapse: collapse;
+}
+
+.file-viewer-markdown th,
+.file-viewer-markdown td {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
 }
 
 /* ---------------------------------------------------------------------- */

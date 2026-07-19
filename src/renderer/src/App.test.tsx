@@ -265,6 +265,14 @@ function createApi(options?: {
     files: {
       pathFor: vi.fn((file: File) => `C:\\dropped\\${file.name}`),
     },
+    workspaceFiles: {
+      listDirectory: vi.fn().mockResolvedValue([]),
+      readFile: vi.fn().mockResolvedValue({ relativePath: "", encoding: "utf8", content: "", truncated: false, sizeBytes: 0 }),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    },
+    shell: {
+      openExternal: vi.fn().mockResolvedValue(undefined),
+    },
     attention: {
       state: vi.fn().mockResolvedValue({}),
       onEvent: vi.fn((listener) => {
@@ -1008,7 +1016,10 @@ describe("folder workspace", () => {
   });
 
   it("clamps a draggable sidebar between stable minimum and viewport-aware maximum widths", async () => {
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: 900 });
+    // The right-hand file explorer also reserves its default width against the same viewport, so
+    // this needs headroom beyond the old single-sidebar 900px to still land on a mid-range max
+    // (900 - 480 workspace - 4 resizer - 280 file explorer - 4 resizer would floor straight to 200).
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1184 });
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);

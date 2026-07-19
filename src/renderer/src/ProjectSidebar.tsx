@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { TerminalStatus } from "@shared/terminal-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import {
   ChevronDown,
@@ -16,8 +17,11 @@ import {
   SquareTerminal,
   TriangleAlert,
   Wrench,
+  X,
 } from "lucide-react";
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { FileIcon } from "./file-icons";
+import type { OpenFileTab } from "./file-tabs";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon } from "./brand-icons";
@@ -58,6 +62,10 @@ interface ProjectSidebarProps {
   onOpenHome(): void;
   collapsed: boolean;
   onToggleCollapse(): void;
+  openFileTabs: OpenFileTab[];
+  selectedFileTabId: string | null;
+  onSelectFileTab(tab: OpenFileTab): void;
+  onCloseFileTab(tab: OpenFileTab): void;
 }
 
 /**
@@ -67,6 +75,15 @@ interface ProjectSidebarProps {
 function byCreation(left: TerminalSessionView, right: TerminalSessionView): number {
   return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
 }
+
+/** Sessions still attached to a live process — what the collapsed rail offers to switch between. */
+const ACTIVE_STATUSES = new Set<TerminalStatus>([
+  "starting",
+  "working",
+  "awaiting-input",
+  "awaiting-approval",
+  "idle",
+]);
 
 function SessionNameInput({
   initialName,
@@ -139,8 +156,42 @@ export function ProjectSidebar({
   onOpenHome,
   collapsed,
   onToggleCollapse,
+  openFileTabs,
+  selectedFileTabId,
+  onSelectFileTab,
+  onCloseFileTab,
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
+
+  const allSessions = useMemo(() => [...sessions, ...toolSessions], [sessions, toolSessions]);
+  const railSessions = useMemo(
+    () => allSessions.filter((session) => ACTIVE_STATUSES.has(session.status)).sort(byCreation),
+    [allSessions],
+  );
+
+  const renderRailSession = (session: TerminalSessionView) => {
+    const agent = findAgent(agents, session.kind);
+    const label = sessionLabel(session, allSessions, agents);
+    const sessionUnread = unread[session.id];
+    return (
+      <li key={session.id}>
+        <button
+          type="button"
+          className={`rail-session-button status-${session.status} ${selectedSessionId === session.id ? "selected" : ""}`}
+          onClick={() => onSelectSession(session)}
+          onContextMenu={(event) => onSessionContextMenu(session, event)}
+          title={label}
+          aria-label={`${label} 세션 열기${sessionUnread ? " (읽지 않음)" : ""}`}
+        >
+          {session.tool ? <Wrench size={15} /> : <AgentIcon agent={agent} size={15} />}
+          <span className={`status-dot status-${session.status}`} aria-hidden="true" />
+          {sessionUnread ? (
+            <span className={`unread-dot unread-${sessionUnread}`} aria-hidden="true" />
+          ) : null}
+        </button>
+      </li>
+    );
+  };
 
   const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
     const agent = findAgent(agents, session.kind);
@@ -180,6 +231,39 @@ export function ProjectSidebar({
     );
   };
 
+  /**
+   * Not a session — a file opened from the right-hand explorer, shown as its own group so it
+   * never mixes with real PTY sessions. A sibling pair of buttons, not a button nesting a button
+   * (invalid HTML — the same trap `.brand-block`'s toggle button hit before).
+   */
+  const renderFileTab = (tab: OpenFileTab) => (
+    <li key={tab.id}>
+      <div className={`session-row file-tab-row ${selectedFileTabId === tab.id ? "selected" : ""}`}>
+        <button
+          type="button"
+          className="file-tab-open"
+          onClick={() => onSelectFileTab(tab)}
+          aria-label={`${tab.name} 파일 열기${tab.dirty ? " (저장 안 됨)" : ""}`}
+        >
+          <span className={`file-tab-dot ${tab.dirty ? "dirty" : ""}`} aria-hidden="true" />
+          <FileIcon extension={tab.extension} size={14} />
+          <span className="session-name" title={tab.relativePath}>
+            {tab.name}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="file-tab-close"
+          onClick={() => onCloseFileTab(tab)}
+          aria-label={`${tab.name} 닫기`}
+          title="닫기"
+        >
+          <X size={12} />
+        </button>
+      </div>
+    </li>
+  );
+
   return (
     <aside className={`project-sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-top-row">
@@ -208,6 +292,11 @@ export function ProjectSidebar({
         </button>
       </div>
 
+      {collapsed ? (
+        <div className="sidebar-rail-sessions" aria-label="진행 중인 세션">
+          <ul role="list">{railSessions.map(renderRailSession)}</ul>
+        </div>
+      ) : (
       <nav className="project-navigation" aria-label="폴더">
         <div className="section-heading">
           <span>폴더</span>
@@ -261,6 +350,9 @@ export function ProjectSidebar({
                 .filter((session) => session.projectId === project.id)
                 .sort(byCreation);
               const projectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
+              const projectFileTabs = openFileTabs.filter(
+                (tab) => tab.target.kind === "project" && tab.target.id === project.id,
+              );
               // The folder row shows the strongest wait among its sessions, so a collapsed
               // folder cannot hide an agent asking for approval.
               const projectAttention = projectSessions.reduce<SessionAttention | null>((strongest, session) => {
@@ -322,6 +414,7 @@ export function ProjectSidebar({
                         {projectSessions
                           .filter((session) => session.worktreeId === undefined)
                           .map((session) => renderSession(session, projectSessions))}
+                        {projectFileTabs.map(renderFileTab)}
                       </ul>
                       {/* Third level: project > worktree > sessions. A project without worktrees
                           keeps its flat two-level shape — no empty middle nodes. */}
@@ -330,6 +423,9 @@ export function ProjectSidebar({
                           {projectWorktrees.map((worktree) => {
                             const worktreeSessions = projectSessions.filter(
                               (session) => session.worktreeId === worktree.id,
+                            );
+                            const worktreeFileTabs = openFileTabs.filter(
+                              (tab) => tab.target.kind === "worktree" && tab.target.id === worktree.id,
                             );
                             const worktreeAttention = worktreeSessions.reduce<SessionAttention | null>(
                               (strongest, session) => {
@@ -360,9 +456,10 @@ export function ProjectSidebar({
                                     />
                                   ) : null}
                                 </button>
-                                {worktreeSessions.length > 0 ? (
+                                {worktreeSessions.length > 0 || worktreeFileTabs.length > 0 ? (
                                   <ul className="session-tree worktree-sessions" role="group">
                                     {worktreeSessions.map((session) => renderSession(session, projectSessions))}
+                                    {worktreeFileTabs.map(renderFileTab)}
                                   </ul>
                                 ) : null}
                               </li>
@@ -389,6 +486,7 @@ export function ProjectSidebar({
           </div>
         ) : null}
       </nav>
+      )}
 
       {snapshot?.warning ? (
         <div className="registry-warning" role="status">

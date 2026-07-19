@@ -1,4 +1,4 @@
-import { Pencil, RotateCcw } from "lucide-react";
+import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 
 export interface SessionContextMenuProps {
@@ -9,6 +9,7 @@ export interface SessionContextMenuProps {
   canResetName: boolean;
   onRename(): void;
   onResetName(): void;
+  onRemove(): void;
   onClose(): void;
 }
 
@@ -19,6 +20,7 @@ export function SessionContextMenu({
   canResetName,
   onRename,
   onResetName,
+  onRemove,
   onClose,
 }: SessionContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null);
@@ -58,6 +60,11 @@ export function SessionContextMenu({
       <button type="button" role="menuitem" disabled={!canResetName} onClick={run(onResetName)}>
         <RotateCcw size={15} />
         <span>제공자 제목 사용</span>
+      </button>
+      <div className="context-menu-separator" role="separator" />
+      <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
+        <Trash2 size={15} />
+        <span>제거</span>
       </button>
     </div>
   );
