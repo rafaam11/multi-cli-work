@@ -110,7 +110,8 @@ async function confirmStoppingSessions(title: string, message: string, confirmLa
     type: "warning",
     title,
     message,
-    detail: "이 앱이 관리하는 Codex, Claude, PowerShell 프로세스가 종료됩니다.",
+    detail:
+      "이 앱이 관리하는 Codex, Claude, PowerShell 프로세스가 종료됩니다. 다음 실행에서 세션을 열람하면 대화가 자동으로 재개됩니다.",
     buttons: ["취소", confirmLabel],
     defaultId: 0,
     cancelId: 0,
