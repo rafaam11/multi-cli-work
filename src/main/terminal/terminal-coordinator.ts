@@ -533,6 +533,7 @@ export class TerminalCoordinator {
     if (knownCodexIds && this.options.codexSessions) {
       this.correlateCodexConversation(view.id, view.cwd, knownCodexIds);
     }
+    this.publish({ type: "created", sessionId: view.id, session: { ...view } });
     this.startTitlePolling();
     return { ...view };
   }

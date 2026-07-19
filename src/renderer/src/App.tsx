@@ -350,6 +350,12 @@ export function App() {
     () =>
       window.multiCliWork.terminals.onEvent((event) => {
         if (event.type === "data") return;
+        // A session the renderer did not start itself — a lazy auto-resume in the other pane, a
+        // jk-coding-cli spawn — still has to appear in the list.
+        if (event.type === "created") {
+          setSessions((current) => replaceSession(current, event.session));
+          return;
+        }
         if (event.type === "status") {
           const previous = sessionsRef.current.find((session) => session.id === event.sessionId);
           if (previous && previous.status !== event.status) {

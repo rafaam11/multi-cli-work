@@ -336,13 +336,18 @@ describe("TerminalCoordinator", () => {
     worker.emit({ type: "data", sessionId: "session-1", data: "first", sequence: 1 });
     worker.emit({ type: "data", sessionId: "session-1", data: "second", sequence: 2 });
 
-    expect(received).toHaveBeenNthCalledWith(1, {
+    // The launch itself announces the session, then output follows in arrival order.
+    expect(received).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ type: "created", sessionId: "session-1" }),
+    );
+    expect(received).toHaveBeenNthCalledWith(2, {
       type: "data",
       sessionId: "session-1",
       data: "first",
       sequence: 1,
     });
-    expect(received).toHaveBeenNthCalledWith(2, {
+    expect(received).toHaveBeenNthCalledWith(3, {
       type: "data",
       sessionId: "session-1",
       data: "second",

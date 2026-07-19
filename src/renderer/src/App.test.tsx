@@ -655,6 +655,24 @@ describe("folder workspace", () => {
     expect((await screen.findAllByText("시작 중")).length).toBeGreaterThan(0);
   });
 
+  it("lists a session announced by a created event even though this window never started it", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "PowerShell 세션 열기" });
+
+    // Started outside the renderer — a jk-coding-cli spawn or a lazy auto-resume elsewhere.
+    await act(async () => {
+      harness.emit({
+        type: "created",
+        sessionId: "session-spawned",
+        session: { ...powershellSession, id: "session-spawned", name: "스폰된 세션", status: "starting" },
+      });
+    });
+
+    expect(await screen.findByRole("button", { name: "스폰된 세션 세션 열기" })).toBeInTheDocument();
+  });
+
   it("names a session after the work it is doing, and carries its status as a row colour", async () => {
     const titled: TerminalSessionView = {
       ...claudeSession,

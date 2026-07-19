@@ -1,4 +1,5 @@
 import type { AgentId, StatusAdapter } from "./agent-types";
+import type { TerminalSessionView } from "./api-types";
 
 /**
  * Which agent a session runs. Sessions record the agent's id rather than a closed union, so a CLI
@@ -61,9 +62,13 @@ export type TerminalWorkerEvent =
 
 /**
  * What the renderer subscribes to. The PTY worker only knows about the events above; the title is
- * read from the provider's transcript in the main process.
+ * read from the provider's transcript, and `created` announces sessions the renderer did not start
+ * itself (a lazy auto-resume in the split pane, a jk-coding-cli spawn) so its list stays complete.
  */
-export type TerminalEvent = TerminalWorkerEvent | { type: "title"; sessionId: string; title: string };
+export type TerminalEvent =
+  | TerminalWorkerEvent
+  | { type: "title"; sessionId: string; title: string }
+  | { type: "created"; sessionId: string; session: TerminalSessionView };
 
 export type TerminalWorkerRequest =
   | { requestId: string; type: "create"; spec: TerminalLaunchSpec }
