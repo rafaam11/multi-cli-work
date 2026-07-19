@@ -172,10 +172,12 @@ export class TerminalCoordinator {
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
-    // An agent that owns no conversation (a plain shell) resumes by relaunching. One that does needs
-    // the id, and a fresh Codex session has none until its transcript has been correlated.
+    // An agent that owns no conversation (a plain shell) resumes by relaunching. An app-generated
+    // id (Claude) exists from the first launch, so its absence is a broken record and an error. A
+    // provider-assigned id (Codex) is missing whenever the transcript was never correlated — that
+    // session relaunches as a fresh conversation and launch() correlates the new transcript.
     const agent = this.requireAgent(saved.kind);
-    if (agent.conversationId !== "none" && !saved.providerConversationId) {
+    if (agent.conversationId === "app-generated" && !saved.providerConversationId) {
       throw new Error(`${saved.kind} session does not have a resumable conversation id`);
     }
     // Folder sessions re-read the project so a relinked folder resumes at its new root; a worktree

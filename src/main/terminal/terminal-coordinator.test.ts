@@ -453,6 +453,38 @@ describe("TerminalCoordinator", () => {
     expect(resumeTracker.waitForNew).not.toHaveBeenCalled();
   });
 
+  it("resumes an uncorrelated Codex session as a fresh conversation and re-correlates", async () => {
+    const root = await tempRoot();
+    // The first run never correlates: the transcript poll comes back empty before shutdown.
+    const neverCorrelated = {
+      snapshot: vi.fn(async () => new Set<string>()),
+      waitForNew: vi.fn(async () => null),
+    };
+    const first = await coordinator(root, new FakeWorker(), neverCorrelated);
+    await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await first.instance.flush();
+    expect(first.instance.list()[0].providerConversationId).toBeNull();
+
+    const lateTracker = {
+      snapshot: vi.fn(async () => new Set<string>()),
+      waitForNew: vi.fn(async () => "codex-late"),
+    };
+    const resumedWorker = new FakeWorker();
+    const resumed = await coordinator(root, resumedWorker, lateTracker);
+
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    await resumed.instance.flush();
+
+    // No conversation id to resume, so it relaunches fresh instead of failing…
+    expect(resumedWorker.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1", providerConversationId: null }),
+    );
+    expect(resumedWorker.create.mock.calls[0][0].args).not.toContain("resume");
+    // …and the new transcript is correlated like any fresh Codex session.
+    expect(lateTracker.snapshot).toHaveBeenCalledWith("C:\\Work");
+    expect(resumed.instance.list()[0].providerConversationId).toBe("codex-late");
+  });
+
   it("exposes the persisted project and session selection after initialization", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
