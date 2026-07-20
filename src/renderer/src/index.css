@@ -735,6 +735,77 @@ body.sidebar-resizing {
   gap: 8px;
 }
 
+.html-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* Preview fills the body edge-to-edge (the native view sits on top), so no padding here; the source
+   view supplies its own padding via .html-source. */
+.html-view-body {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.html-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The main-process WebContentsView is drawn over this hole; it must keep filling the area so its
+   measured rect stays correct. Status text sits behind it, visible only while loading or on error. */
+.html-preview-hole {
+  position: absolute;
+  inset: 0;
+}
+
+.html-source {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+/* A segmented preview/source switch, distinct from the round icon-buttons beside it. */
+.html-view-toggle {
+  display: inline-flex;
+  margin-right: 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.html-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: none;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.html-view-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+
+.html-view-toggle button.is-active {
+  color: var(--text);
+  background: var(--surface);
+}
+
 .file-explorer-body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

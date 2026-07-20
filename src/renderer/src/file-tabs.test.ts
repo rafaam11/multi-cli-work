@@ -14,4 +14,11 @@ describe("categorizeFile", () => {
     expect(categorizeFile("setup.exe", "exe")).toBe("unsupported");
     expect(categorizeFile("archive.7z", "7z")).toBe("unsupported");
   });
+
+  it("routes html to its own preview category, not plain text", () => {
+    expect(categorizeFile("index.html", "html")).toBe("html");
+    expect(categorizeFile("page.htm", "htm")).toBe("html");
+    // Adjacent web assets still open as editable text, not preview.
+    expect(categorizeFile("styles.css", "css")).toBe("text");
+  });
 });

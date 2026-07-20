@@ -1,6 +1,6 @@
-import { EXECUTABLE_EXTENSIONS, IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, type FileExplorerTarget } from "@shared/file-explorer-types";
+import { EXECUTABLE_EXTENSIONS, HTML_EXTENSIONS, IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, type FileExplorerTarget } from "@shared/file-explorer-types";
 
-export type FileTabCategory = "markdown" | "text" | "image" | "unsupported";
+export type FileTabCategory = "markdown" | "html" | "text" | "image" | "unsupported";
 
 /**
  * A file the user opened from the right-hand explorer. Deliberately not a TerminalSessionView —
@@ -33,7 +33,7 @@ export interface OpenFileTab {
  * text or binary from content alone.
  */
 const TEXT_EXTENSIONS = new Set([
-  "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "jsonc", "css", "scss", "less", "html", "htm",
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "jsonc", "css", "scss", "less",
   "xml", "yml", "yaml", "toml", "ini", "cfg", "conf", "env", "txt", "log", "csv", "tsv", "sql",
   "sh", "bash", "zsh", "ps1", "bat", "cmd", "py", "rb", "go", "rs", "java", "kt", "swift",
   "c", "h", "cpp", "cc", "hpp", "cs", "php", "vue", "svelte", "astro", "graphql", "gql", "proto",
@@ -48,6 +48,7 @@ const TEXT_FILENAMES = new Set([
 
 export function categorizeFile(name: string, extension: string | null): FileTabCategory {
   if (extension && MARKDOWN_EXTENSIONS.includes(extension)) return "markdown";
+  if (extension && HTML_EXTENSIONS.includes(extension)) return "html";
   if (extension && IMAGE_EXTENSIONS.includes(extension)) return "image";
   if (extension && EXECUTABLE_EXTENSIONS.includes(extension)) return "unsupported";
   const lowerName = name.toLocaleLowerCase("en-US");

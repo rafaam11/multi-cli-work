@@ -294,6 +294,12 @@ function createApi(options?: {
       setBounds: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
     },
+    htmlPreview: {
+      open: vi.fn().mockResolvedValue(undefined),
+      setBounds: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    },
     clipboard: {
       readText: vi.fn().mockResolvedValue("clipboard paste"),
       writeText: vi.fn().mockResolvedValue(undefined),

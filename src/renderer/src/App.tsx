@@ -31,6 +31,7 @@ import type { GitWorktreeOption } from "./GitPanel";
 import { RightSidebar, type RightSidebarTab } from "./RightSidebar";
 import { categorizeFile, fileTabId, type OpenFileTab } from "./file-tabs";
 import { FileViewerPane } from "./FileViewerPane";
+import { HtmlView } from "./HtmlView";
 import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 import { ProjectDetailPage } from "./ProjectDetailPage";
@@ -395,7 +396,7 @@ export function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
       if (event.key.toLowerCase() !== "s") return;
-      if (activeView !== "file" || !selectedFileTab || !["markdown", "text"].includes(selectedFileTab.category) || selectedFileTab.truncated || selectedFileTab.encoding !== "utf8") return;
+      if (activeView !== "file" || !selectedFileTab || !["markdown", "html", "text"].includes(selectedFileTab.category) || selectedFileTab.truncated || selectedFileTab.encoding !== "utf8") return;
       event.preventDefault();
       event.stopPropagation();
       if (selectedFileTab.dirty) void saveFileTab(selectedFileTab.id);
@@ -750,7 +751,7 @@ export function App() {
 
   const saveFileTab = async (tabId: string) => {
     const tab = openFileTabs.find((candidate) => candidate.id === tabId);
-    if (!tab || tab.content === null || tab.truncated || tab.encoding !== "utf8" || !["markdown", "text"].includes(tab.category)) return false;
+    if (!tab || tab.content === null || tab.truncated || tab.encoding !== "utf8" || !["markdown", "html", "text"].includes(tab.category)) return false;
     setOpenFileTabs((current) =>
       current.map((candidate) => (candidate.id === tabId ? { ...candidate, saving: true, saveError: null } : candidate)),
     );
@@ -1290,6 +1291,13 @@ export function App() {
               onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
               onError={(message) => setActionError(message)}
               onCloseSplit={() => applySplit(null)}
+            />
+          ) : activeView === "file" && selectedFileTab && selectedFileTab.category === "html" ? (
+            <HtmlView
+              tab={selectedFileTab}
+              onChangeContent={(content) => updateFileTabContent(selectedFileTab.id, content)}
+              onSave={() => void saveFileTab(selectedFileTab.id)}
+              onClose={() => requestCloseFileTab(selectedFileTab)}
             />
           ) : activeView === "file" && selectedFileTab ? (
             <FileViewerPane

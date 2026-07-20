@@ -24,5 +24,11 @@ export const IMAGE_EXTENSIONS: readonly string[] = ["png", "jpg", "jpeg", "gif",
 
 export const MARKDOWN_EXTENSIONS: readonly string[] = ["md", "markdown"];
 
+/**
+ * Opened as a browser-rendered preview (relative CSS/JS/images load like a real page) rather than
+ * plain text; the same file stays editable through the preview's "소스" toggle.
+ */
+export const HTML_EXTENSIONS: readonly string[] = ["html", "htm"];
+
 /** Executables are deliberately kept separate from editable text formats. */
 export const EXECUTABLE_EXTENSIONS: readonly string[] = ["exe"];

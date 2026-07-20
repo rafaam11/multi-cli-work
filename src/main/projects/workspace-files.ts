@@ -75,6 +75,18 @@ export async function listWorkspaceDirectory(rootPath: string, relativePath: str
     );
 }
 
+/**
+ * Absolute on-disk path of a workspace file, validated to stay inside the root (same traversal +
+ * symlink checks as every read/write). The html preview turns this into a `file://` URL, so it must
+ * confirm the target is a real file before the WebContentsView is pointed at it.
+ */
+export async function resolveWorkspaceFilePath(rootPath: string, relativePath: string): Promise<string> {
+  const target = await resolveWithinRoot(rootPath, relativePath);
+  const stat = await fs.stat(target);
+  if (!stat.isFile()) throw new Error("Not a file");
+  return target;
+}
+
 export async function readWorkspaceFile(rootPath: string, relativePath: string): Promise<WorkspaceFileContent> {
   const target = await resolveWithinRoot(rootPath, relativePath);
   const stat = await fs.stat(target);

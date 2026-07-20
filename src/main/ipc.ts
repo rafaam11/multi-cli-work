@@ -10,6 +10,7 @@ import type {
   GitGraphOpenResult,
   GitPanelData,
   GitStatusResult,
+  HtmlPreviewBounds,
   ProjectMetadataPatch,
   ProviderAvailability,
   ResumeTerminalInput,
@@ -99,6 +100,13 @@ interface GitGraphGateway {
   close(): void;
 }
 
+interface HtmlPreviewGateway {
+  open(rootPath: string, relativePath: string, bounds: HtmlPreviewBounds): Promise<void>;
+  setBounds(bounds: HtmlPreviewBounds): void;
+  reload(): void;
+  close(): void;
+}
+
 interface ShellGateway {
   openExternal(url: string): Promise<void>;
 }
@@ -117,6 +125,7 @@ interface MainIpcDependencies {
   workspaceFiles: WorkspaceFilesGateway;
   git: GitGateway;
   gitGraph: GitGraphGateway;
+  htmlPreview: HtmlPreviewGateway;
   shell: ShellGateway;
   clipboard: ClipboardGateway;
   appVersion(): string;
@@ -222,8 +231,9 @@ function relativePathString(value: unknown): string {
   return value;
 }
 
-function validateGitGraphBounds(value: unknown): GitGraphBounds {
-  const bounds = exactObject(value, ["x", "y", "width", "height"], "Git Graph bounds");
+/** Shared by the Git Graph and html-preview embeds — both forward the same rect shape. */
+function validateViewBounds(value: unknown): GitGraphBounds {
+  const bounds = exactObject(value, ["x", "y", "width", "height"], "View bounds");
   const numeric = (input: unknown, label: string): number => {
     if (typeof input !== "number" || !Number.isFinite(input)) throw new Error(`${label} must be a finite number`);
     return input;
@@ -380,30 +390,43 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
       content,
     );
   });
-  const gitRoot = (target: unknown) => rootPathForTarget(validateFileExplorerTarget(target));
-  ipc.handle("git:panel-data", async (_event, target: unknown) => dependencies.git.panelData(await gitRoot(target)));
+  const targetRoot = (target: unknown) => rootPathForTarget(validateFileExplorerTarget(target));
+  ipc.handle("git:panel-data", async (_event, target: unknown) => dependencies.git.panelData(await targetRoot(target)));
   ipc.handle("git:checkout", async (_event, target: unknown, branch: unknown) =>
-    dependencies.git.checkout(await gitRoot(target), nonEmptyString(branch, "Branch name")),
+    dependencies.git.checkout(await targetRoot(target), nonEmptyString(branch, "Branch name")),
   );
   ipc.handle("git:create-branch", async (_event, target: unknown, branch: unknown) =>
-    dependencies.git.createBranch(await gitRoot(target), nonEmptyString(branch, "Branch name")),
+    dependencies.git.createBranch(await targetRoot(target), nonEmptyString(branch, "Branch name")),
   );
   ipc.handle("git:commit", async (_event, target: unknown, request: unknown) =>
-    dependencies.git.commit(await gitRoot(target), validateGitCommitRequest(request)),
+    dependencies.git.commit(await targetRoot(target), validateGitCommitRequest(request)),
   );
-  ipc.handle("git:push", async (_event, target: unknown) => dependencies.git.push(await gitRoot(target)));
-  ipc.handle("git:fetch", async (_event, target: unknown) => dependencies.git.fetch(await gitRoot(target)));
-  ipc.handle("git:pull", async (_event, target: unknown) => dependencies.git.pull(await gitRoot(target)));
+  ipc.handle("git:push", async (_event, target: unknown) => dependencies.git.push(await targetRoot(target)));
+  ipc.handle("git:fetch", async (_event, target: unknown) => dependencies.git.fetch(await targetRoot(target)));
+  ipc.handle("git:pull", async (_event, target: unknown) => dependencies.git.pull(await targetRoot(target)));
   ipc.handle("git:file-original", async (_event, target: unknown, relativePath: unknown) =>
-    dependencies.git.fileOriginal(await gitRoot(target), nonEmptyString(relativePath, "Relative path")),
+    dependencies.git.fileOriginal(await targetRoot(target), nonEmptyString(relativePath, "Relative path")),
   );
   ipc.handle("git-graph:open", async (_event, target: unknown, bounds: unknown) =>
-    dependencies.gitGraph.open(await gitRoot(target), validateGitGraphBounds(bounds)),
+    dependencies.gitGraph.open(await targetRoot(target), validateViewBounds(bounds)),
   );
   ipc.handle("git-graph:set-bounds", (_event, bounds: unknown) =>
-    dependencies.gitGraph.setBounds(validateGitGraphBounds(bounds)),
+    dependencies.gitGraph.setBounds(validateViewBounds(bounds)),
   );
   ipc.handle("git-graph:close", () => dependencies.gitGraph.close());
+
+  ipc.handle("html-preview:open", async (_event, target: unknown, relativePath: unknown, bounds: unknown) =>
+    dependencies.htmlPreview.open(
+      await targetRoot(target),
+      nonEmptyString(relativePath, "Relative path"),
+      validateViewBounds(bounds),
+    ),
+  );
+  ipc.handle("html-preview:set-bounds", (_event, bounds: unknown) =>
+    dependencies.htmlPreview.setBounds(validateViewBounds(bounds)),
+  );
+  ipc.handle("html-preview:reload", () => dependencies.htmlPreview.reload());
+  ipc.handle("html-preview:close", () => dependencies.htmlPreview.close());
 
   ipc.handle("shell:open-external", async (_event, url: unknown) => dependencies.shell.openExternal(externalUrl(url)));
   // async so a bad-input throw reaches the renderer as a rejected invoke, matching every other handler.

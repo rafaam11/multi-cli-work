@@ -29,9 +29,17 @@ import { createProjectActions } from "./projects/project-actions";
 import { CodeServeWebManager } from "./providers/code-serve-web";
 import { GitGraphController } from "./providers/git-graph-controller";
 import { GitGraphView } from "./providers/git-graph-view";
+import { HtmlPreviewController } from "./providers/html-preview-controller";
+import { HtmlPreviewView } from "./providers/html-preview-view";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
-import { listWorkspaceDirectory, readWorkspaceFile, runWorkspaceExecutable, writeWorkspaceFile } from "./projects/workspace-files";
+import {
+  listWorkspaceDirectory,
+  readWorkspaceFile,
+  resolveWorkspaceFilePath,
+  runWorkspaceExecutable,
+  writeWorkspaceFile,
+} from "./projects/workspace-files";
 import { pruneMissingWorktrees } from "./projects/worktree-registry";
 import { WorktreeService } from "./projects/worktree-service";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
@@ -205,6 +213,11 @@ export async function createDesktopRuntime(
     getWindow: () => BrowserWindow.getAllWindows()[0] ?? null,
     openExternal: (rootPath) => projectActions.openInEditor(rootPath),
   });
+  const htmlPreviewController = new HtmlPreviewController({
+    view: new HtmlPreviewView(),
+    getWindow: () => BrowserWindow.getAllWindows()[0] ?? null,
+    resolvePath: resolveWorkspaceFilePath,
+  });
 
   const attentionTracker = createTerminalAttentionTracker();
   // One snapshot feeds every surface: window frame + taskbar (via applyAttention) and the
@@ -253,6 +266,12 @@ export async function createDesktopRuntime(
       open: (rootPath, bounds) => gitGraphController.open(rootPath, bounds),
       setBounds: (bounds) => gitGraphController.setBounds(bounds),
       close: () => gitGraphController.close(),
+    },
+    htmlPreview: {
+      open: (rootPath, relativePath, bounds) => htmlPreviewController.open(rootPath, relativePath, bounds),
+      setBounds: (bounds) => htmlPreviewController.setBounds(bounds),
+      reload: () => htmlPreviewController.reload(),
+      close: () => htmlPreviewController.close(),
     },
     shell: {
       openExternal: (url) => shell.openExternal(url),
@@ -338,6 +357,7 @@ export async function createDesktopRuntime(
     coordinator,
     async dispose() {
       gitGraphController.dispose();
+      htmlPreviewController.dispose();
       controlServer?.close();
       statusWatcher.close();
       await coordinator.shutdown();

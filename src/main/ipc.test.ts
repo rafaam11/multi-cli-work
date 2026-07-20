@@ -129,6 +129,12 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     setBounds: vi.fn(() => undefined),
     close: vi.fn(() => undefined),
   };
+  const htmlPreviewGateway = {
+    open: vi.fn(async () => undefined),
+    setBounds: vi.fn(() => undefined),
+    reload: vi.fn(() => undefined),
+    close: vi.fn(() => undefined),
+  };
   registerMainIpc(ipc, {
     projectService,
     coordinator,
@@ -138,6 +144,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     workspaceFiles,
     git: gitGateway,
     gitGraph: gitGraphGateway,
+    htmlPreview: htmlPreviewGateway,
     shell: shellGateway,
     clipboard,
     appVersion: vi.fn(() => "1.0.0"),
@@ -162,6 +169,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     workspaceFiles,
     gitGateway,
     gitGraphGateway,
+    htmlPreviewGateway,
     shellGateway,
     clipboard,
     calls,
@@ -408,6 +416,35 @@ describe("main IPC boundary", () => {
       handlers.get("workspace-files:write-file")!({}, { kind: "project", id: project.id }, "readme.md", { evil: true }),
     ).rejects.toThrow(/must be a string/i);
     expect(workspaceFiles.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("routes html preview open through the target's rootPath with validated bounds", async () => {
+    const { handlers, htmlPreviewGateway, project } = setup();
+    const bounds = { x: 1, y: 2, width: 300, height: 400 };
+
+    await handlers.get("html-preview:open")!({}, { kind: "project", id: project.id }, "site/index.html", bounds);
+    await handlers.get("html-preview:set-bounds")!({}, bounds);
+    await handlers.get("html-preview:reload")!({});
+    await handlers.get("html-preview:close")!({});
+
+    expect(htmlPreviewGateway.open).toHaveBeenCalledWith(project.rootPath, "site/index.html", bounds);
+    expect(htmlPreviewGateway.setBounds).toHaveBeenCalledWith(bounds);
+    expect(htmlPreviewGateway.reload).toHaveBeenCalledOnce();
+    expect(htmlPreviewGateway.close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects html preview bounds that are not finite numbers", async () => {
+    const { handlers, htmlPreviewGateway, project } = setup();
+
+    await expect(
+      handlers.get("html-preview:open")!(
+        {},
+        { kind: "project", id: project.id },
+        "index.html",
+        { x: 0, y: 0, width: Number.NaN, height: 10 },
+      ),
+    ).rejects.toThrow(/finite number/);
+    expect(htmlPreviewGateway.open).not.toHaveBeenCalled();
   });
 
   it("opens only http(s) URLs externally, rejecting other schemes", async () => {

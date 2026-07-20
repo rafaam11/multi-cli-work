@@ -74,6 +74,14 @@ export interface GitGraphBounds {
   height: number;
 }
 
+/** Placeholder rect the renderer measures so the main process can line the html preview up over it. */
+export interface HtmlPreviewBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
  * What opening Git Graph did. "embedded" means the real Git Graph is now in the main area;
  * "external" means embedding failed and an external VS Code window was opened instead; "unavailable"
@@ -217,6 +225,16 @@ export interface MultiCliWorkApi {
     /** Keeps the embedded view aligned with the renderer's placeholder rect. */
     setBounds(bounds: GitGraphBounds): Promise<void>;
     /** Hides the embedded view when the user leaves the Git Graph view. */
+    close(): Promise<void>;
+  };
+  htmlPreview: {
+    /** Renders the file as a browser page over the main area, resolving relative resources. */
+    open(target: FileExplorerTarget, relativePath: string, bounds: HtmlPreviewBounds): Promise<void>;
+    /** Keeps the embedded view aligned with the renderer's placeholder rect. */
+    setBounds(bounds: HtmlPreviewBounds): Promise<void>;
+    /** Re-loads the page from disk (after the source was edited and saved, or a manual refresh). */
+    reload(): Promise<void>;
+    /** Hides the embedded view when the user toggles to source or leaves the file. */
     close(): Promise<void>;
   };
   shell: {
