@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/React-18-1c2230?logo=react&logoColor=61dafb" alt="React 18">
   <img src="https://img.shields.io/badge/TypeScript-5-1c2230?logo=typescript&logoColor=3178c6" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/platform-Windows-1c2230?logo=windows11&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/version-1.3.2-4fb7a4" alt="version 1.3.2">
+  <img src="https://img.shields.io/badge/version-1.3.3-4fb7a4" alt="version 1.3.3">
   <img src="https://img.shields.io/badge/local--only-no%20telemetry-3fb950" alt="local only">
 </p>
 
