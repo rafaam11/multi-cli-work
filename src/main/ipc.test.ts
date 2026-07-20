@@ -125,9 +125,13 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     fileOriginal: vi.fn(async () => ({ content: "", truncated: false })),
   };
   const gitGraphGateway = {
-    open: vi.fn(async () => ({ mode: "embedded" as const })),
-    setBounds: vi.fn(() => undefined),
-    close: vi.fn(() => undefined),
+    list: vi.fn(async () => ({ commits: [], offset: 0, limit: 200, hasMore: false })),
+    commitDetails: vi.fn(),
+    fileDiff: vi.fn(),
+    createBranch: vi.fn(async () => undefined),
+    createTag: vi.fn(async () => undefined),
+    cherryPick: vi.fn(async () => undefined),
+    revert: vi.fn(async () => undefined),
   };
   const htmlPreviewGateway = {
     open: vi.fn(async () => undefined),

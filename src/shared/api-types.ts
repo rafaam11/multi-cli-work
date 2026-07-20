@@ -67,11 +67,58 @@ export interface GitFileOriginal {
   truncated: boolean;
 }
 
-export interface GitGraphBounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+export type GitGraphRefKind = "head" | "local" | "remote" | "tag";
+
+export interface GitGraphRef {
+  name: string;
+  fullName: string;
+  kind: GitGraphRefKind;
+}
+
+export interface GitGraphCommit {
+  hash: string;
+  parents: string[];
+  subject: string;
+  authorName: string;
+  authoredAt: string;
+  refs: GitGraphRef[];
+}
+
+export interface GitGraphPage {
+  commits: GitGraphCommit[];
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export type GitCommitFileStatus = "M" | "A" | "D" | "R";
+
+export interface GitCommitFile {
+  path: string;
+  oldPath?: string;
+  status: GitCommitFileStatus;
+}
+
+export interface GitCommitDetails {
+  hash: string;
+  parents: string[];
+  subject: string;
+  message: string;
+  authorName: string;
+  authorEmail: string;
+  authoredAt: string;
+  committerName: string;
+  committerEmail: string;
+  committedAt: string;
+  files: GitCommitFile[];
+}
+
+export interface GitCommitFileDiff extends GitCommitFile {
+  hash: string;
+  original: string;
+  modified: string;
+  binary: boolean;
+  truncated: boolean;
 }
 
 /** Placeholder rect the renderer measures so the main process can line the html preview up over it. */
@@ -81,16 +128,6 @@ export interface HtmlPreviewBounds {
   width: number;
   height: number;
 }
-
-/**
- * What opening Git Graph did. "embedded" means the real Git Graph is now in the main area;
- * "external" means embedding failed and an external VS Code window was opened instead; "unavailable"
- * means neither worked (VS Code is not installed).
- */
-export type GitGraphOpenResult =
-  | { mode: "embedded" }
-  | { mode: "external"; reason: string }
-  | { mode: "unavailable"; reason: string };
 
 /** VS Code is not an agent — it is the editor the folder menu opens — so it is tracked on its own. */
 export interface ProviderAvailability {
@@ -220,12 +257,13 @@ export interface MultiCliWorkApi {
     fileOriginal(target: FileExplorerTarget, relativePath: string): Promise<GitFileOriginal>;
   };
   gitGraph: {
-    /** Embeds the real Git Graph (VS Code serve-web) over the main area, or falls back externally. */
-    open(target: FileExplorerTarget, bounds: GitGraphBounds): Promise<GitGraphOpenResult>;
-    /** Keeps the embedded view aligned with the renderer's placeholder rect. */
-    setBounds(bounds: GitGraphBounds): Promise<void>;
-    /** Hides the embedded view when the user leaves the Git Graph view. */
-    close(): Promise<void>;
+    list(target: FileExplorerTarget, options: { offset: number; limit: number }): Promise<GitGraphPage>;
+    commitDetails(target: FileExplorerTarget, hash: string): Promise<GitCommitDetails>;
+    fileDiff(target: FileExplorerTarget, hash: string, path: string): Promise<GitCommitFileDiff>;
+    createBranch(target: FileExplorerTarget, hash: string, name: string, checkout: boolean): Promise<void>;
+    createTag(target: FileExplorerTarget, hash: string, name: string): Promise<void>;
+    cherryPick(target: FileExplorerTarget, hash: string): Promise<void>;
+    revert(target: FileExplorerTarget, hash: string): Promise<void>;
   };
   htmlPreview: {
     /** Renders the file as a browser page over the main area, resolving relative resources. */

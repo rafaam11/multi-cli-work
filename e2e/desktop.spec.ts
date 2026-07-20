@@ -222,6 +222,50 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("MCW_COPY_SOURCE");
   });
 
+  test("keeps the Git sidebar contained at 220, 280, and 480px and opens the native graph", async () => {
+    const projectRoot = path.join(tempRoot, "sample-project");
+    const longParent = path.join(projectRoot, "a-very-long-parent-directory-name-that-must-not-expand-the-sidebar", "another-long-parent-directory");
+    await fs.mkdir(longParent, { recursive: true });
+    await fs.writeFile(path.join(longParent, "a-very-long-file-name-that-still-shows-its-status.ts"), "export const changed = true;\n");
+    await execFileAsync("git", ["checkout", "-b", "feature/a-very-long-branch-name-for-responsive-layout"], { cwd: projectRoot });
+
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("tab", { name: "Git" }).click();
+    await expect(page.getByText("a-very-long-file-name-that-still-shows-its-status.ts")).toBeVisible();
+    await page.evaluate(() => {
+      const heading = document.querySelector<HTMLElement>(".git-panel .section-heading > span");
+      const worktree = document.querySelector<HTMLElement>(".git-toolbar-secondary .git-dropdown-label");
+      if (heading) heading.textContent = "an-extremely-long-repository-name-that-must-be-truncated";
+      if (worktree) worktree.textContent = "an-extremely-long-worktree-name-that-must-be-truncated";
+    });
+
+    for (const width of [220, 280, 480]) {
+      const result = await page.evaluate((sidebarWidth) => {
+        const shell = document.querySelector<HTMLElement>(".app-shell")!;
+        shell.style.setProperty("--right-sidebar-width", `${sidebarWidth}px`);
+        const panel = document.querySelector<HTMLElement>(".git-panel")!;
+        const controls = [...panel.querySelectorAll<HTMLElement>("button, .git-status-badge")];
+        return new Promise<{ panel: { scrollWidth: number; clientWidth: number }; controlsVisible: boolean }>((resolve) => requestAnimationFrame(() => resolve({
+          panel: { scrollWidth: panel.scrollWidth, clientWidth: panel.clientWidth },
+          controlsVisible: controls.every((element) => {
+            const rect = element.getBoundingClientRect();
+            const panelRect = panel.getBoundingClientRect();
+            return rect.left >= panelRect.left && rect.right <= panelRect.right;
+          }),
+        })));
+      }, width);
+      expect(result.panel.scrollWidth).toBeLessThanOrEqual(result.panel.clientWidth);
+      expect(result.controlsVisible).toBe(true);
+    }
+
+    await page.evaluate(() => document.querySelector<HTMLElement>(".app-shell")!.style.setProperty("--right-sidebar-width", "280px"));
+    await page.getByRole("button", { name: "Git Graph 열기" }).click();
+    await expect(page.getByRole("region", { name: "Git Graph" })).toBeVisible();
+    await expect(page.locator(".native-graph-row").first()).toBeVisible();
+    await expect(page.getByText(/VS Code|serve-web/)).toHaveCount(0);
+    await execFileAsync("git", ["checkout", "main"], { cwd: projectRoot });
+  });
+
   test("shows the home dashboard from the logo and the project detail page from the folder", async () => {
     await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
     await expect(page.getByRole("region", { name: "홈 대시보드" })).toBeVisible();
@@ -229,7 +273,7 @@ test.describe.serial("Multi CLI Work desktop", () => {
 
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "PowerShell 세션 보기" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /PowerShell \d+ 세션 보기/ }).first()).toBeVisible();
   });
 
   /**

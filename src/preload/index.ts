@@ -60,9 +60,13 @@ const api: MultiCliWorkApi = {
     fileOriginal: (target, relativePath) => ipcRenderer.invoke("git:file-original", target, relativePath),
   },
   gitGraph: {
-    open: (target, bounds) => ipcRenderer.invoke("git-graph:open", target, bounds),
-    setBounds: (bounds) => ipcRenderer.invoke("git-graph:set-bounds", bounds),
-    close: () => ipcRenderer.invoke("git-graph:close"),
+    list: (target, options) => ipcRenderer.invoke("git-graph:list", target, options),
+    commitDetails: (target, hash) => ipcRenderer.invoke("git-graph:commit-details", target, hash),
+    fileDiff: (target, hash, path) => ipcRenderer.invoke("git-graph:file-diff", target, hash, path),
+    createBranch: (target, hash, name, checkout) => ipcRenderer.invoke("git-graph:create-branch", target, hash, name, checkout),
+    createTag: (target, hash, name) => ipcRenderer.invoke("git-graph:create-tag", target, hash, name),
+    cherryPick: (target, hash) => ipcRenderer.invoke("git-graph:cherry-pick", target, hash),
+    revert: (target, hash) => ipcRenderer.invoke("git-graph:revert", target, hash),
   },
   htmlPreview: {
     open: (target, relativePath, bounds) => ipcRenderer.invoke("html-preview:open", target, relativePath, bounds),

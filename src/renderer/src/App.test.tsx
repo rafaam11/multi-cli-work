@@ -290,9 +290,13 @@ function createApi(options?: {
       fileOriginal: vi.fn().mockResolvedValue({ content: "", truncated: false }),
     },
     gitGraph: {
-      open: vi.fn().mockResolvedValue({ mode: "embedded" }),
-      setBounds: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
+      list: vi.fn().mockResolvedValue({ commits: [], offset: 0, limit: 200, hasMore: false }),
+      commitDetails: vi.fn().mockResolvedValue(null),
+      fileDiff: vi.fn().mockResolvedValue(null),
+      createBranch: vi.fn().mockResolvedValue(undefined),
+      createTag: vi.fn().mockResolvedValue(undefined),
+      cherryPick: vi.fn().mockResolvedValue(undefined),
+      revert: vi.fn().mockResolvedValue(undefined),
     },
     htmlPreview: {
       open: vi.fn().mockResolvedValue(undefined),

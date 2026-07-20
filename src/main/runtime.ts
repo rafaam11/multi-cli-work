@@ -26,9 +26,15 @@ import {
   readGitPanelData,
 } from "./projects/git-commands";
 import { createProjectActions } from "./projects/project-actions";
-import { CodeServeWebManager } from "./providers/code-serve-web";
-import { GitGraphController } from "./providers/git-graph-controller";
-import { GitGraphView } from "./providers/git-graph-view";
+import {
+  cherryPickGitCommit,
+  createGitGraphBranch,
+  createGitGraphTag,
+  listGitGraph,
+  readGitCommitDetails,
+  readGitCommitFileDiff,
+  revertGitCommit,
+} from "./projects/git-graph";
 import { HtmlPreviewController } from "./providers/html-preview-controller";
 import { HtmlPreviewView } from "./providers/html-preview-view";
 import { ProjectService } from "./projects/project-service";
@@ -206,13 +212,6 @@ export async function createDesktopRuntime(
   });
 
   const projectActions = createProjectActions({ getExecutables });
-  const gitGraphController = new GitGraphController({
-    serveWeb: new CodeServeWebManager({ resolveCodeCli: async () => (await getExecutables()).vscode }),
-    view: new GitGraphView(),
-    // The app runs a single main window; the embedded view attaches to it.
-    getWindow: () => BrowserWindow.getAllWindows()[0] ?? null,
-    openExternal: (rootPath) => projectActions.openInEditor(rootPath),
-  });
   const htmlPreviewController = new HtmlPreviewController({
     view: new HtmlPreviewView(),
     getWindow: () => BrowserWindow.getAllWindows()[0] ?? null,
@@ -263,9 +262,13 @@ export async function createDesktopRuntime(
       fileOriginal: readGitFileOriginal,
     },
     gitGraph: {
-      open: (rootPath, bounds) => gitGraphController.open(rootPath, bounds),
-      setBounds: (bounds) => gitGraphController.setBounds(bounds),
-      close: () => gitGraphController.close(),
+      list: listGitGraph,
+      commitDetails: readGitCommitDetails,
+      fileDiff: readGitCommitFileDiff,
+      createBranch: createGitGraphBranch,
+      createTag: createGitGraphTag,
+      cherryPick: cherryPickGitCommit,
+      revert: revertGitCommit,
     },
     htmlPreview: {
       open: (rootPath, relativePath, bounds) => htmlPreviewController.open(rootPath, relativePath, bounds),
@@ -356,7 +359,6 @@ export async function createDesktopRuntime(
   return {
     coordinator,
     async dispose() {
-      gitGraphController.dispose();
       htmlPreviewController.dispose();
       controlServer?.close();
       statusWatcher.close();

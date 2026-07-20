@@ -4,10 +4,11 @@ import type {
   CreateTerminalInput,
   CreateToolTerminalInput,
   GitCommitRequest,
+  GitCommitDetails,
+  GitCommitFileDiff,
   GitDiffResult,
   GitFileOriginal,
-  GitGraphBounds,
-  GitGraphOpenResult,
+  GitGraphPage,
   GitPanelData,
   GitStatusResult,
   HtmlPreviewBounds,
@@ -95,9 +96,13 @@ interface GitGateway {
 }
 
 interface GitGraphGateway {
-  open(rootPath: string, bounds: GitGraphBounds): Promise<GitGraphOpenResult>;
-  setBounds(bounds: GitGraphBounds): void;
-  close(): void;
+  list(rootPath: string, options: { offset: number; limit: number }): Promise<GitGraphPage>;
+  commitDetails(rootPath: string, hash: string): Promise<GitCommitDetails>;
+  fileDiff(rootPath: string, hash: string, path: string): Promise<GitCommitFileDiff>;
+  createBranch(rootPath: string, hash: string, name: string, checkout: boolean): Promise<void>;
+  createTag(rootPath: string, hash: string, name: string): Promise<void>;
+  cherryPick(rootPath: string, hash: string): Promise<void>;
+  revert(rootPath: string, hash: string): Promise<void>;
 }
 
 interface HtmlPreviewGateway {
@@ -231,8 +236,7 @@ function relativePathString(value: unknown): string {
   return value;
 }
 
-/** Shared by the Git Graph and html-preview embeds — both forward the same rect shape. */
-function validateViewBounds(value: unknown): GitGraphBounds {
+function validateViewBounds(value: unknown): HtmlPreviewBounds {
   const bounds = exactObject(value, ["x", "y", "width", "height"], "View bounds");
   const numeric = (input: unknown, label: string): number => {
     if (typeof input !== "number" || !Number.isFinite(input)) throw new Error(`${label} must be a finite number`);
@@ -244,6 +248,15 @@ function validateViewBounds(value: unknown): GitGraphBounds {
     width: numeric(bounds.width, "width"),
     height: numeric(bounds.height, "height"),
   };
+}
+
+function validateGitGraphPageOptions(value: unknown): { offset: number; limit: number } {
+  const options = exactObject(value, ["offset", "limit"], "Git Graph page options");
+  const offset = integer(options.offset, "Git Graph offset");
+  const limit = integer(options.limit, "Git Graph limit");
+  if (offset < 0) throw new Error("Git Graph offset must be non-negative");
+  if (limit < 1 || limit > 500) throw new Error("Git Graph limit must be between 1 and 500");
+  return { offset, limit };
 }
 
 function validateGitCommitRequest(value: unknown): GitCommitRequest {
@@ -407,13 +420,28 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("git:file-original", async (_event, target: unknown, relativePath: unknown) =>
     dependencies.git.fileOriginal(await targetRoot(target), nonEmptyString(relativePath, "Relative path")),
   );
-  ipc.handle("git-graph:open", async (_event, target: unknown, bounds: unknown) =>
-    dependencies.gitGraph.open(await targetRoot(target), validateViewBounds(bounds)),
+  ipc.handle("git-graph:list", async (_event, target: unknown, options: unknown) =>
+    dependencies.gitGraph.list(await targetRoot(target), validateGitGraphPageOptions(options)),
   );
-  ipc.handle("git-graph:set-bounds", (_event, bounds: unknown) =>
-    dependencies.gitGraph.setBounds(validateViewBounds(bounds)),
+  ipc.handle("git-graph:commit-details", async (_event, target: unknown, hash: unknown) =>
+    dependencies.gitGraph.commitDetails(await targetRoot(target), nonEmptyString(hash, "Commit hash")),
   );
-  ipc.handle("git-graph:close", () => dependencies.gitGraph.close());
+  ipc.handle("git-graph:file-diff", async (_event, target: unknown, hash: unknown, filePath: unknown) =>
+    dependencies.gitGraph.fileDiff(await targetRoot(target), nonEmptyString(hash, "Commit hash"), nonEmptyString(filePath, "Diff path")),
+  );
+  ipc.handle("git-graph:create-branch", async (_event, target: unknown, hash: unknown, name: unknown, checkout: unknown) => {
+    if (typeof checkout !== "boolean") throw new Error("Checkout must be a boolean");
+    return dependencies.gitGraph.createBranch(await targetRoot(target), nonEmptyString(hash, "Commit hash"), nonEmptyString(name, "Branch name"), checkout);
+  });
+  ipc.handle("git-graph:create-tag", async (_event, target: unknown, hash: unknown, name: unknown) =>
+    dependencies.gitGraph.createTag(await targetRoot(target), nonEmptyString(hash, "Commit hash"), nonEmptyString(name, "Tag name")),
+  );
+  ipc.handle("git-graph:cherry-pick", async (_event, target: unknown, hash: unknown) =>
+    dependencies.gitGraph.cherryPick(await targetRoot(target), nonEmptyString(hash, "Commit hash")),
+  );
+  ipc.handle("git-graph:revert", async (_event, target: unknown, hash: unknown) =>
+    dependencies.gitGraph.revert(await targetRoot(target), nonEmptyString(hash, "Commit hash")),
+  );
 
   ipc.handle("html-preview:open", async (_event, target: unknown, relativePath: unknown, bounds: unknown) =>
     dependencies.htmlPreview.open(
