@@ -9,6 +9,11 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_WRITE_BYTES = 5 * 1024 * 1024;
 const MAX_RELATIVE_PATH_LENGTH = 4096;
 
+function isUtf8Text(buffer: Buffer): boolean {
+  if (buffer.includes(0)) return false;
+  return Buffer.from(buffer.toString("utf8"), "utf8").equals(buffer);
+}
+
 function normalizeForCompare(value: string): string {
   return path.win32.normalize(value).replaceAll("/", "\\").toLocaleLowerCase("en-US");
 }
@@ -78,15 +83,36 @@ export async function readWorkspaceFile(rootPath: string, relativePath: string):
   const isImage = extension !== null && IMAGE_EXTENSIONS.includes(extension);
   const maxBytes = isImage ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
   const truncated = stat.size > maxBytes;
-  const buffer = await fs.readFile(target);
-  const slice = truncated ? buffer.subarray(0, maxBytes) : buffer;
+  // Do not accidentally read a huge binary just to discard most of it in the renderer.
+  const handle = await fs.open(target, "r");
+  const slice = Buffer.alloc(Math.min(stat.size, maxBytes));
+  try {
+    await handle.read(slice, 0, slice.length, 0);
+  } finally {
+    await handle.close();
+  }
+  const encoding: "utf8" | "base64" = isImage || !isUtf8Text(slice) ? "base64" : "utf8";
   return {
     relativePath,
-    encoding: isImage ? "base64" : "utf8",
-    content: isImage ? slice.toString("base64") : slice.toString("utf8"),
+    encoding,
+    content: encoding === "base64" ? slice.toString("base64") : slice.toString("utf8"),
     truncated,
     sizeBytes: stat.size,
   };
+}
+
+/** Runs only a real .exe inside the selected project/worktree root. */
+export async function runWorkspaceExecutable(
+  rootPath: string,
+  relativePath: string,
+  openPath: (target: string) => Promise<string>,
+): Promise<void> {
+  const target = await resolveWithinRoot(rootPath, relativePath);
+  const stat = await fs.stat(target);
+  if (!stat.isFile()) throw new Error("Not a file");
+  if (extensionOf(path.basename(target)) !== "exe") throw new Error("Only .exe files can be run");
+  const result = await openPath(target);
+  if (result) throw new Error(result);
 }
 
 export async function writeWorkspaceFile(rootPath: string, relativePath: string, content: string): Promise<void> {

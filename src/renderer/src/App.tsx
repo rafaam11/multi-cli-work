@@ -1,5 +1,6 @@
 import type { AgentView } from "@shared/agent-types";
 import type {
+  GitChangeEntry,
   GitDiffResult,
   ProjectWorkspaceSnapshot,
   ProviderAvailability,
@@ -12,6 +13,8 @@ import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, TriangleAlert } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -22,7 +25,10 @@ import {
 } from "react";
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
-import { FileExplorer } from "./FileExplorer";
+import type { GitDiffFile } from "./GitDiffPane";
+import { GitGraphEmbed } from "./GitGraphEmbed";
+import type { GitWorktreeOption } from "./GitPanel";
+import { RightSidebar, type RightSidebarTab } from "./RightSidebar";
 import { categorizeFile, fileTabId, type OpenFileTab } from "./file-tabs";
 import { FileViewerPane } from "./FileViewerPane";
 import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
@@ -39,7 +45,10 @@ import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 
-type ActiveView = "home" | "detail" | "terminal" | "file";
+type ActiveView = "home" | "detail" | "terminal" | "file" | "git-diff" | "git-graph";
+
+// Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
+const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
 const ACTIVITY_LOG_LIMIT = 20;
 
 const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
@@ -150,9 +159,14 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
+  const [gitDiffFile, setGitDiffFile] = useState<GitDiffFile | null>(null);
+  /** Where closing the diff pane returns to — whatever view was active when it opened. */
+  const gitDiffReturnView = useRef<ActiveView>("detail");
   const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
   const [selectedFileTabId, setSelectedFileTabId] = useState<string | null>(null);
   const [fileTabCloseRequest, setFileTabCloseRequest] = useState<OpenFileTab | null>(null);
+  const [executableRequest, setExecutableRequest] = useState<{ target: FileExplorerTarget; entry: FileTreeEntry; error: string | null; running: boolean } | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
@@ -376,12 +390,12 @@ export function App() {
   }, []);
 
   // Same capture-phase reasoning as Ctrl+P above, plus it has to beat the browser's own save-page
-  // dialog. Only markdown is editable, so this is a no-op for every other open file.
+  // dialog. Image, binary, and truncated files remain read-only.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
       if (event.key.toLowerCase() !== "s") return;
-      if (activeView !== "file" || !selectedFileTab || selectedFileTab.category !== "markdown") return;
+      if (activeView !== "file" || !selectedFileTab || !["markdown", "text"].includes(selectedFileTab.category) || selectedFileTab.truncated || selectedFileTab.encoding !== "utf8") return;
       event.preventDefault();
       event.stopPropagation();
       if (selectedFileTab.dirty) void saveFileTab(selectedFileTab.id);
@@ -655,13 +669,17 @@ export function App() {
   };
 
   const openFile = (target: FileExplorerTarget, targetLabel: string, entry: FileTreeEntry) => {
+    if (entry.extension === "exe") {
+      setExecutableRequest({ target, entry, error: null, running: false });
+      return;
+    }
     const id = fileTabId(target, entry.relativePath);
     if (openFileTabs.some((tab) => tab.id === id)) {
       setSelectedFileTabId(id);
       setActiveView("file");
       return;
     }
-    const category = categorizeFile(entry.extension);
+    const category = categorizeFile(entry.name, entry.extension);
     const tab: OpenFileTab = {
       id,
       target,
@@ -711,6 +729,19 @@ export function App() {
       });
   };
 
+  const forceOpenFileTab = (tabId: string) => {
+    const tab = openFileTabs.find((candidate) => candidate.id === tabId);
+    if (!tab || tab.loading) return;
+    setOpenFileTabs((current) => current.map((candidate) => candidate.id === tabId ? { ...candidate, loading: true, loadError: null } : candidate));
+    void window.multiCliWork.workspaceFiles.readFile(tab.target, tab.relativePath).then((result) => {
+      setOpenFileTabs((current) => current.map((candidate) => candidate.id === tabId ? (
+        result.encoding === "utf8" && !result.truncated
+          ? { ...candidate, category: "text", encoding: result.encoding, content: result.content, originalContent: result.content, truncated: false, loading: false }
+          : { ...candidate, encoding: result.encoding, truncated: result.truncated, loading: false, loadError: result.truncated ? "파일이 너무 커서 강제로 열 수 없습니다." : "UTF-8 텍스트가 아니거나 바이너리 파일입니다." }
+      ) : candidate));
+    }).catch((error) => setOpenFileTabs((current) => current.map((candidate) => candidate.id === tabId ? { ...candidate, loading: false, loadError: errorMessage(error) } : candidate)));
+  };
+
   const updateFileTabContent = (tabId: string, content: string) => {
     setOpenFileTabs((current) =>
       current.map((tab) => (tab.id === tabId ? { ...tab, content, dirty: content !== tab.originalContent } : tab)),
@@ -719,7 +750,7 @@ export function App() {
 
   const saveFileTab = async (tabId: string) => {
     const tab = openFileTabs.find((candidate) => candidate.id === tabId);
-    if (!tab || tab.content === null) return;
+    if (!tab || tab.content === null || tab.truncated || tab.encoding !== "utf8" || !["markdown", "text"].includes(tab.category)) return false;
     setOpenFileTabs((current) =>
       current.map((candidate) => (candidate.id === tabId ? { ...candidate, saving: true, saveError: null } : candidate)),
     );
@@ -732,12 +763,14 @@ export function App() {
             : candidate,
         ),
       );
+      return true;
     } catch (error) {
       setOpenFileTabs((current) =>
         current.map((candidate) =>
           candidate.id === tabId ? { ...candidate, saving: false, saveError: errorMessage(error) } : candidate,
         ),
       );
+      return false;
     }
   };
 
@@ -1029,6 +1062,46 @@ export function App() {
       ? projectName(fileExplorerOwnerProject)
       : null;
 
+  // The git tab's worktree dropdown lists the owning project's main repo plus its worktrees;
+  // picking one drives the same selection handlers as the left sidebar, so the whole right
+  // sidebar (git tab and file explorer alike) follows.
+  const gitWorktreeOptions: GitWorktreeOption[] = fileExplorerOwnerProject
+    ? [
+        { worktreeId: null, label: `메인 · ${projectName(fileExplorerOwnerProject)}` },
+        ...worktrees
+          .filter((worktree) => worktree.projectId === fileExplorerOwnerProject.id)
+          .map((worktree) => ({ worktreeId: worktree.id, label: worktree.branch })),
+      ]
+    : [];
+  const selectGitWorktreeOption = (worktreeId: string | null) => {
+    if (!fileExplorerOwnerProject) return;
+    if (worktreeId === null) {
+      selectProject(fileExplorerOwnerProject.id);
+      return;
+    }
+    const worktree = worktrees.find((candidate) => candidate.id === worktreeId);
+    if (worktree) selectWorktree(worktree);
+  };
+  const openGitDiff = (change: GitChangeEntry) => {
+    if (!fileExplorerTarget) return;
+    if (activeView !== "git-diff") gitDiffReturnView.current = activeView;
+    setGitDiffFile({
+      target: fileExplorerTarget,
+      path: change.path,
+      status: change.status,
+      ...(change.renamedFrom !== undefined ? { renamedFrom: change.renamedFrom } : {}),
+      targetLabel: fileExplorerTargetLabel,
+    });
+    setActiveView("git-diff");
+  };
+  const closeGitDiff = () => {
+    setGitDiffFile(null);
+    setActiveView(gitDiffReturnView.current);
+  };
+  const openGitGraph = () => {
+    if (fileExplorerTarget) setActiveView("git-graph");
+  };
+
   // Everything but the primary can fill the second pane — including exited sessions, whose
   // read-only scrollback is exactly what a side-by-side comparison wants.
   const splitCandidates = useMemo<SplitCandidate[]>(() => {
@@ -1224,7 +1297,14 @@ export function App() {
               onChangeContent={(content) => updateFileTabContent(selectedFileTab.id, content)}
               onSave={() => void saveFileTab(selectedFileTab.id)}
               onClose={() => requestCloseFileTab(selectedFileTab)}
+              onForceOpen={() => forceOpenFileTab(selectedFileTab.id)}
             />
+          ) : activeView === "git-diff" && gitDiffFile ? (
+            <Suspense fallback={<div className="git-diff-state">불러오는 중</div>}>
+              <GitDiffPane file={gitDiffFile} onClose={closeGitDiff} />
+            </Suspense>
+          ) : activeView === "git-graph" && fileExplorerTarget ? (
+            <GitGraphEmbed target={fileExplorerTarget} targetLabel={fileExplorerTargetLabel} />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage
               key={selectedWorktree ? `${selectedProject.id}:${selectedWorktree.id}` : selectedProject.id}
@@ -1279,7 +1359,7 @@ export function App() {
       <div
         className="right-sidebar-resizer"
         role="separator"
-        aria-label="파일 탐색기 크기 조절"
+        aria-label="우측 사이드바 크기 조절"
         aria-orientation="vertical"
         aria-valuemin={MIN_RIGHT_SIDEBAR_WIDTH}
         aria-valuemax={maximumRightSidebarWidth()}
@@ -1287,9 +1367,11 @@ export function App() {
         onMouseDown={beginRightSidebarResize}
       />
 
-      <FileExplorer
+      <RightSidebar
         collapsed={rightSidebarCollapsed}
         onToggleCollapse={() => setRightSidebarCollapsed((value) => !value)}
+        activeTab={rightSidebarTab}
+        onSelectTab={setRightSidebarTab}
         target={fileExplorerTarget}
         targetLabel={fileExplorerTargetLabel}
         selectedRelativePath={
@@ -1301,6 +1383,10 @@ export function App() {
             : null
         }
         onOpenFile={(entry) => fileExplorerTarget && openFile(fileExplorerTarget, fileExplorerTargetLabel ?? "", entry)}
+        worktreeOptions={gitWorktreeOptions}
+        onSelectWorktreeOption={selectGitWorktreeOption}
+        onOpenDiff={openGitDiff}
+        onOpenGraph={openGitGraph}
       />
 
       {contextMenu ? (
@@ -1455,8 +1541,7 @@ export function App() {
                 onClick={async () => {
                   const tab = fileTabCloseRequest;
                   setFileTabCloseRequest(null);
-                  await saveFileTab(tab.id);
-                  closeFileTabImmediately(tab.id);
+                  if (await saveFileTab(tab.id)) closeFileTabImmediately(tab.id);
                 }}
               >
                 저장 후 닫기
@@ -1471,6 +1556,33 @@ export function App() {
                 }}
               >
                 변경 사항 버리기
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {executableRequest ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="EXE 실행 확인">
+            <h2>이 프로그램을 실행할까요?</h2>
+            <p>{executableRequest.entry.relativePath}</p>
+            {executableRequest.error ? <p className="file-viewer-error" role="alert">{executableRequest.error}</p> : null}
+            <footer className="confirm-dialog-actions">
+              <button type="button" disabled={executableRequest.running} onClick={() => setExecutableRequest(null)}>취소</button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={executableRequest.running}
+                onClick={() => {
+                  const request = executableRequest;
+                  setExecutableRequest({ ...request, running: true, error: null });
+                  void window.multiCliWork.workspaceFiles.runExecutable(request.target, request.entry.relativePath)
+                    .then(() => setExecutableRequest(null))
+                    .catch((error) => setExecutableRequest((current) => current ? { ...current, running: false, error: errorMessage(error) } : null));
+                }}
+              >
+                {executableRequest.running ? "실행 중" : "실행"}
               </button>
             </footer>
           </div>

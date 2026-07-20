@@ -23,3 +23,6 @@ export interface WorkspaceFileContent {
 export const IMAGE_EXTENSIONS: readonly string[] = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"];
 
 export const MARKDOWN_EXTENSIONS: readonly string[] = ["md", "markdown"];
+
+/** Executables are deliberately kept separate from editable text formats. */
+export const EXECUTABLE_EXTENSIONS: readonly string[] = ["exe"];

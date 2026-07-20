@@ -81,17 +81,24 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
     };
 
     terminal.attachCustomKeyEventHandler((event) => {
-      if (!event.ctrlKey || !event.shiftKey) return true;
+      if (!event.ctrlKey || event.altKey) return true;
       const key = event.code || event.key;
       if (key !== "KeyC" && key !== "KeyV") return true;
       if (event.type !== "keydown") return false;
-      event.preventDefault();
-
       if (key === "KeyC") {
         const selection = terminal.getSelection();
-        if (selection) void navigator.clipboard.writeText(selection).catch(reportError);
+        if (!selection) {
+          // Plain Ctrl+C is the terminal interrupt. Ctrl+Shift+C is still consumed as the
+          // explicit copy shortcut, even if there is nothing to copy.
+          if (!event.shiftKey) return true;
+          event.preventDefault();
+          return false;
+        }
+        event.preventDefault();
+        void window.multiCliWork.clipboard.writeText(selection).catch(reportError);
       } else if (!isReadOnly(sessionRef.current)) {
-        void navigator.clipboard
+        event.preventDefault();
+        void window.multiCliWork.clipboard
           .readText()
           .then((text) => {
             if (!disposed && text && !isReadOnly(sessionRef.current)) {
@@ -99,6 +106,8 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
             }
           })
           .catch(reportError);
+      } else {
+        event.preventDefault();
       }
       return false;
     });

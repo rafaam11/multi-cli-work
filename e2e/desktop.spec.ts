@@ -185,6 +185,43 @@ test.describe.serial("Multi CLI Work desktop", () => {
     });
   });
 
+  test("pastes each Ctrl+V shortcut exactly once from Electron's native clipboard", async () => {
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("button", { name: "새 PowerShell 세션" }).click();
+    const terminal = page.getByRole("region", { name: "powershell 터미널" });
+    await terminal.click();
+    await page.keyboard.type("$global:mcwPasteCount = 0");
+    await page.keyboard.press("Enter");
+
+    await app.evaluate(({ clipboard }) => clipboard.writeText('$global:mcwPasteCount++; Write-Output ("MCW_CTRL_V_" + $global:mcwPasteCount)'));
+    await page.keyboard.press("Control+v");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_V_1");
+    await expect(page.locator(".xterm-rows")).not.toContainText("MCW_CTRL_V_2");
+
+    await app.evaluate(({ clipboard }) => clipboard.writeText('$global:mcwPasteCount++; Write-Output ("MCW_CTRL_SHIFT_V_" + $global:mcwPasteCount)'));
+    await page.keyboard.press("Control+Shift+v");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_SHIFT_V_2");
+    await expect(page.locator(".xterm-rows")).not.toContainText("MCW_CTRL_SHIFT_V_3");
+
+    await page.keyboard.type("Write-Output MCW_COPY_SOURCE");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_COPY_SOURCE");
+    const copyRow = page.locator(".xterm-rows > div").filter({ hasText: "MCW_COPY_SOURCE" }).last();
+    const box = await copyRow.boundingBox();
+    if (!box) throw new Error("Copy source row is not visible");
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
+    await page.mouse.up();
+
+    await page.keyboard.press("Control+c");
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("MCW_COPY_SOURCE");
+    await page.keyboard.press("Control+Shift+c");
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("MCW_COPY_SOURCE");
+  });
+
   test("shows the home dashboard from the logo and the project detail page from the folder", async () => {
     await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
     await expect(page.getByRole("region", { name: "홈 대시보드" })).toBeVisible();

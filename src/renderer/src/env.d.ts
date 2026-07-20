@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { MultiCliWorkApi } from "@shared/api-types";
 
 declare global {

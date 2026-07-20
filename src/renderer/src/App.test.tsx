@@ -269,6 +269,34 @@ function createApi(options?: {
       listDirectory: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue({ relativePath: "", encoding: "utf8", content: "", truncated: false, sizeBytes: 0 }),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      runExecutable: vi.fn().mockResolvedValue(undefined),
+    },
+    git: {
+      panelData: vi.fn().mockResolvedValue({
+        isRepo: true,
+        currentBranch: "main",
+        upstream: null,
+        ahead: null,
+        behind: null,
+        branches: ["main"],
+        changes: [],
+      }),
+      checkout: vi.fn().mockResolvedValue(undefined),
+      createBranch: vi.fn().mockResolvedValue(undefined),
+      commit: vi.fn().mockResolvedValue(undefined),
+      push: vi.fn().mockResolvedValue(undefined),
+      fetch: vi.fn().mockResolvedValue(undefined),
+      pull: vi.fn().mockResolvedValue(undefined),
+      fileOriginal: vi.fn().mockResolvedValue({ content: "", truncated: false }),
+    },
+    gitGraph: {
+      open: vi.fn().mockResolvedValue({ mode: "embedded" }),
+      setBounds: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    },
+    clipboard: {
+      readText: vi.fn().mockResolvedValue("clipboard paste"),
+      writeText: vi.fn().mockResolvedValue(undefined),
     },
     shell: {
       openExternal: vi.fn().mockResolvedValue(undefined),
@@ -350,13 +378,6 @@ beforeEach(() => {
   terminalHarness.fit.mockReset();
   terminalHarness.resizeObservers.length = 0;
   Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024, writable: true });
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: {
-      readText: vi.fn().mockResolvedValue("clipboard paste"),
-      writeText: vi.fn().mockResolvedValue(undefined),
-    },
-  });
   vi.stubGlobal(
     "ResizeObserver",
     class ResizeObserverMock {
@@ -901,7 +922,7 @@ describe("folder workspace", () => {
     expect(terminal.write).toHaveBeenCalledWith("after attach\r\n");
   });
 
-  it("maps Ctrl+Shift+C and Ctrl+Shift+V to the system clipboard, preventing the browser's native handling so paste isn't duplicated", async () => {
+  it("maps both copy and paste shortcuts to the native clipboard without duplicate terminal input", async () => {
     const harness = createApi({ sessions: [powershellSession] });
     window.multiCliWork = harness.api;
     render(<App />);
@@ -915,13 +936,16 @@ describe("folder workspace", () => {
       terminal.emitKey({
         type: "keydown",
         ctrlKey: true,
-        shiftKey: true,
         code: "KeyC",
         preventDefault: copyPreventDefault,
       }),
     ).toBe(false);
     expect(copyPreventDefault).toHaveBeenCalledOnce();
-    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output"));
+    await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith("selected output"));
+
+    terminal.selection = "shift selected output";
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyC" })).toBe(false);
+    await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith("shift selected output"));
 
     vi.mocked(harness.api.terminals.write).mockClear();
     const pastePreventDefault = vi.fn();
@@ -929,7 +953,6 @@ describe("folder workspace", () => {
       terminal.emitKey({
         type: "keydown",
         ctrlKey: true,
-        shiftKey: true,
         code: "KeyV",
         preventDefault: pastePreventDefault,
       }),
@@ -937,7 +960,38 @@ describe("folder workspace", () => {
     expect(pastePreventDefault).toHaveBeenCalledOnce();
     await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith("clipboard paste"));
     expect(harness.api.terminals.write).not.toHaveBeenCalled();
+
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyV" })).toBe(false);
+    await waitFor(() => expect(terminal.paste).toHaveBeenCalledTimes(2));
+    // With nothing selected, a plain Ctrl+C stays the terminal interrupt rather than a copy.
+    terminal.selection = "";
     expect(terminal.emitKey({ type: "keydown", ctrlKey: true, code: "KeyC" })).toBe(true);
+  });
+
+  it("consumes Ctrl+Shift+C without a selection but leaves Ctrl+C available for terminal interrupt", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    const terminal = terminalHarness.instances.at(-1)!;
+
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, shiftKey: true, code: "KeyC" })).toBe(false);
+    expect(harness.api.clipboard.writeText).not.toHaveBeenCalled();
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, code: "KeyC" })).toBe(true);
+  });
+
+  it("does not paste into a read-only terminal", async () => {
+    const harness = createApi({ sessions: [{ ...powershellSession, status: "exited", pid: null, exitCode: 0 }] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    const terminal = terminalHarness.instances.at(-1)!;
+    expect(terminal.emitKey({ type: "keydown", ctrlKey: true, code: "KeyV" })).toBe(false);
+    await Promise.resolve();
+    expect(harness.api.clipboard.readText).not.toHaveBeenCalled();
+    expect(terminal.paste).not.toHaveBeenCalled();
   });
 
   it("does not resize after a running session transitions to exited", async () => {

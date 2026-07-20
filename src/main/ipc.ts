@@ -3,7 +3,12 @@ import type {
   AgentsSnapshot,
   CreateTerminalInput,
   CreateToolTerminalInput,
+  GitCommitRequest,
   GitDiffResult,
+  GitFileOriginal,
+  GitGraphBounds,
+  GitGraphOpenResult,
+  GitPanelData,
   GitStatusResult,
   ProjectMetadataPatch,
   ProviderAvailability,
@@ -74,10 +79,33 @@ interface WorkspaceFilesGateway {
   listDirectory(rootPath: string, relativePath: string): Promise<FileTreeEntry[]>;
   readFile(rootPath: string, relativePath: string): Promise<WorkspaceFileContent>;
   writeFile(rootPath: string, relativePath: string, content: string): Promise<void>;
+  runExecutable(rootPath: string, relativePath: string): Promise<void>;
+}
+
+interface GitGateway {
+  panelData(rootPath: string): Promise<GitPanelData>;
+  checkout(rootPath: string, branch: string): Promise<void>;
+  createBranch(rootPath: string, branch: string): Promise<void>;
+  commit(rootPath: string, request: GitCommitRequest): Promise<void>;
+  push(rootPath: string): Promise<void>;
+  fetch(rootPath: string): Promise<void>;
+  pull(rootPath: string): Promise<void>;
+  fileOriginal(rootPath: string, relativePath: string): Promise<GitFileOriginal>;
+}
+
+interface GitGraphGateway {
+  open(rootPath: string, bounds: GitGraphBounds): Promise<GitGraphOpenResult>;
+  setBounds(bounds: GitGraphBounds): void;
+  close(): void;
 }
 
 interface ShellGateway {
   openExternal(url: string): Promise<void>;
+}
+
+interface ClipboardGateway {
+  readText(): string;
+  writeText(text: string): void;
 }
 
 interface MainIpcDependencies {
@@ -87,7 +115,10 @@ interface MainIpcDependencies {
   projectActions: ProjectActionsGateway;
   worktrees: WorktreeGateway;
   workspaceFiles: WorkspaceFilesGateway;
+  git: GitGateway;
+  gitGraph: GitGraphGateway;
   shell: ShellGateway;
+  clipboard: ClipboardGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
@@ -189,6 +220,33 @@ function validateFileExplorerTarget(value: unknown): FileExplorerTarget {
 function relativePathString(value: unknown): string {
   if (typeof value !== "string") throw new Error("Relative path must be a string");
   return value;
+}
+
+function validateGitGraphBounds(value: unknown): GitGraphBounds {
+  const bounds = exactObject(value, ["x", "y", "width", "height"], "Git Graph bounds");
+  const numeric = (input: unknown, label: string): number => {
+    if (typeof input !== "number" || !Number.isFinite(input)) throw new Error(`${label} must be a finite number`);
+    return input;
+  };
+  return {
+    x: numeric(bounds.x, "x"),
+    y: numeric(bounds.y, "y"),
+    width: numeric(bounds.width, "width"),
+    height: numeric(bounds.height, "height"),
+  };
+}
+
+function validateGitCommitRequest(value: unknown): GitCommitRequest {
+  const input = exactObject(value, ["summary", "description", "paths"], "Git commit input");
+  if (typeof input.description !== "string") throw new Error("Commit description must be a string");
+  if (!Array.isArray(input.paths) || input.paths.some((path) => typeof path !== "string" || path.length === 0)) {
+    throw new Error("Commit paths must be non-empty strings");
+  }
+  return {
+    summary: nonEmptyString(input.summary, "Commit summary"),
+    description: input.description,
+    paths: input.paths as string[],
+  };
 }
 
 function externalUrl(value: unknown): string {
@@ -322,7 +380,44 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
       content,
     );
   });
+  const gitRoot = (target: unknown) => rootPathForTarget(validateFileExplorerTarget(target));
+  ipc.handle("git:panel-data", async (_event, target: unknown) => dependencies.git.panelData(await gitRoot(target)));
+  ipc.handle("git:checkout", async (_event, target: unknown, branch: unknown) =>
+    dependencies.git.checkout(await gitRoot(target), nonEmptyString(branch, "Branch name")),
+  );
+  ipc.handle("git:create-branch", async (_event, target: unknown, branch: unknown) =>
+    dependencies.git.createBranch(await gitRoot(target), nonEmptyString(branch, "Branch name")),
+  );
+  ipc.handle("git:commit", async (_event, target: unknown, request: unknown) =>
+    dependencies.git.commit(await gitRoot(target), validateGitCommitRequest(request)),
+  );
+  ipc.handle("git:push", async (_event, target: unknown) => dependencies.git.push(await gitRoot(target)));
+  ipc.handle("git:fetch", async (_event, target: unknown) => dependencies.git.fetch(await gitRoot(target)));
+  ipc.handle("git:pull", async (_event, target: unknown) => dependencies.git.pull(await gitRoot(target)));
+  ipc.handle("git:file-original", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.git.fileOriginal(await gitRoot(target), nonEmptyString(relativePath, "Relative path")),
+  );
+  ipc.handle("git-graph:open", async (_event, target: unknown, bounds: unknown) =>
+    dependencies.gitGraph.open(await gitRoot(target), validateGitGraphBounds(bounds)),
+  );
+  ipc.handle("git-graph:set-bounds", (_event, bounds: unknown) =>
+    dependencies.gitGraph.setBounds(validateGitGraphBounds(bounds)),
+  );
+  ipc.handle("git-graph:close", () => dependencies.gitGraph.close());
+
   ipc.handle("shell:open-external", async (_event, url: unknown) => dependencies.shell.openExternal(externalUrl(url)));
+  // async so a bad-input throw reaches the renderer as a rejected invoke, matching every other handler.
+  ipc.handle("clipboard:read-text", async () => dependencies.clipboard.readText());
+  ipc.handle("clipboard:write-text", async (_event, text: unknown) => {
+    if (typeof text !== "string") throw new Error("Clipboard text must be a string");
+    dependencies.clipboard.writeText(text);
+  });
+  ipc.handle("workspace-files:run-executable", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.runExecutable(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
 
   ipc.handle("providers:availability", () => dependencies.getAvailability());
   ipc.handle("agents:list", () => dependencies.listAgents());

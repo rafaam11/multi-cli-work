@@ -1,4 +1,4 @@
-import { IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, type FileExplorerTarget } from "@shared/file-explorer-types";
+import { EXECUTABLE_EXTENSIONS, IMAGE_EXTENSIONS, MARKDOWN_EXTENSIONS, type FileExplorerTarget } from "@shared/file-explorer-types";
 
 export type FileTabCategory = "markdown" | "text" | "image" | "unsupported";
 
@@ -36,13 +36,22 @@ const TEXT_EXTENSIONS = new Set([
   "ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "jsonc", "css", "scss", "less", "html", "htm",
   "xml", "yml", "yaml", "toml", "ini", "cfg", "conf", "env", "txt", "log", "csv", "tsv", "sql",
   "sh", "bash", "zsh", "ps1", "bat", "cmd", "py", "rb", "go", "rs", "java", "kt", "swift",
-  "c", "h", "cpp", "cc", "hpp", "cs", "php", "gitignore", "gitattributes", "editorconfig",
+  "c", "h", "cpp", "cc", "hpp", "cs", "php", "vue", "svelte", "astro", "graphql", "gql", "proto",
+  "dockerfile", "makefile", "lock", "properties", "gradle", "r", "lua", "dart", "scala", "pl", "ex", "exs",
+  "clj", "hs", "fs", "fsx", "vb", "tex", "rst", "adoc", "diff", "patch", "gitignore", "gitattributes", "editorconfig",
 ]);
 
-export function categorizeFile(extension: string | null): FileTabCategory {
+const TEXT_FILENAMES = new Set([
+  ".env", ".gitignore", ".gitattributes", ".editorconfig", ".npmrc", ".nvmrc", ".prettierrc", ".eslintrc",
+  "dockerfile", "makefile", "license", "copying", "readme", "procfile",
+]);
+
+export function categorizeFile(name: string, extension: string | null): FileTabCategory {
   if (extension && MARKDOWN_EXTENSIONS.includes(extension)) return "markdown";
   if (extension && IMAGE_EXTENSIONS.includes(extension)) return "image";
-  if (extension && TEXT_EXTENSIONS.has(extension)) return "text";
+  if (extension && EXECUTABLE_EXTENSIONS.includes(extension)) return "unsupported";
+  const lowerName = name.toLocaleLowerCase("en-US");
+  if (TEXT_FILENAMES.has(lowerName) || lowerName.startsWith(".env.") || (extension && TEXT_EXTENSIONS.has(extension))) return "text";
   return "unsupported";
 }
 

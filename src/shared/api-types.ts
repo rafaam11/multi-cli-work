@@ -30,6 +30,60 @@ export interface GitDiffResult {
   truncated: boolean;
 }
 
+export type GitChangeStatus = "M" | "A" | "D" | "R" | "U" | "?";
+
+export interface GitChangeEntry {
+  /** Repo-relative path, "/"-separated exactly as git reports it. */
+  path: string;
+  status: GitChangeStatus;
+  /** Renames only: the path the file moved from. */
+  renamedFrom?: string;
+}
+
+/** Everything the right-sidebar git tab draws, gathered in one read. */
+export interface GitPanelData {
+  isRepo: boolean;
+  /** null while HEAD is detached. */
+  currentBranch: string | null;
+  upstream: string | null;
+  /** Commits ahead of / behind upstream; null when the branch has no upstream. */
+  ahead: number | null;
+  behind: number | null;
+  /** Local branches, most recently committed first. */
+  branches: string[];
+  changes: GitChangeEntry[];
+}
+
+export interface GitCommitRequest {
+  summary: string;
+  description: string;
+  /** Repo-relative paths of the files the user checked. */
+  paths: string[];
+}
+
+/** The HEAD-side content of one file for the diff pane. Empty for paths new since HEAD. */
+export interface GitFileOriginal {
+  content: string;
+  truncated: boolean;
+}
+
+export interface GitGraphBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * What opening Git Graph did. "embedded" means the real Git Graph is now in the main area;
+ * "external" means embedding failed and an external VS Code window was opened instead; "unavailable"
+ * means neither worked (VS Code is not installed).
+ */
+export type GitGraphOpenResult =
+  | { mode: "embedded" }
+  | { mode: "external"; reason: string }
+  | { mode: "unavailable"; reason: string };
+
 /** VS Code is not an agent — it is the editor the folder menu opens — so it is tracked on its own. */
 export interface ProviderAvailability {
   vscode: boolean;
@@ -95,6 +149,10 @@ export type UpdaterStatus =
 
 export interface MultiCliWorkApi {
   platform: NodeJS.Platform;
+  clipboard: {
+    readText(): Promise<string>;
+    writeText(text: string): Promise<void>;
+  };
   projects: {
     list(): Promise<ProjectWorkspaceSnapshot>;
     addFolder(): Promise<SharedProject | null>;
@@ -137,6 +195,29 @@ export interface MultiCliWorkApi {
     listDirectory(target: FileExplorerTarget, relativePath: string): Promise<FileTreeEntry[]>;
     readFile(target: FileExplorerTarget, relativePath: string): Promise<WorkspaceFileContent>;
     writeFile(target: FileExplorerTarget, relativePath: string, content: string): Promise<void>;
+    runExecutable(target: FileExplorerTarget, relativePath: string): Promise<void>;
+  };
+  git: {
+    panelData(target: FileExplorerTarget): Promise<GitPanelData>;
+    checkout(target: FileExplorerTarget, branch: string): Promise<void>;
+    createBranch(target: FileExplorerTarget, branch: string): Promise<void>;
+    /** Commits exactly the checked files; untracked ones are staged first. */
+    commit(target: FileExplorerTarget, request: GitCommitRequest): Promise<void>;
+    /** Publishes with `-u origin <branch>` when the branch has no upstream yet. */
+    push(target: FileExplorerTarget): Promise<void>;
+    fetch(target: FileExplorerTarget): Promise<void>;
+    /** Fast-forward only — diverged branches are the terminal's job, not this button's. */
+    pull(target: FileExplorerTarget): Promise<void>;
+    /** HEAD-side file content for the diff pane; the working-tree side comes from workspaceFiles. */
+    fileOriginal(target: FileExplorerTarget, relativePath: string): Promise<GitFileOriginal>;
+  };
+  gitGraph: {
+    /** Embeds the real Git Graph (VS Code serve-web) over the main area, or falls back externally. */
+    open(target: FileExplorerTarget, bounds: GitGraphBounds): Promise<GitGraphOpenResult>;
+    /** Keeps the embedded view aligned with the renderer's placeholder rect. */
+    setBounds(bounds: GitGraphBounds): Promise<void>;
+    /** Hides the embedded view when the user leaves the Git Graph view. */
+    close(): Promise<void>;
   };
   shell: {
     /** http(s) only — the main process rejects any other scheme. */

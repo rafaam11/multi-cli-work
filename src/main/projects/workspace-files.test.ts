@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { listWorkspaceDirectory, readWorkspaceFile, writeWorkspaceFile } from "./workspace-files";
+import { listWorkspaceDirectory, readWorkspaceFile, runWorkspaceExecutable, writeWorkspaceFile } from "./workspace-files";
 
 let tempRoot: string;
 let projectRoot: string;
@@ -68,6 +68,28 @@ describe("readWorkspaceFile", () => {
 
   it("rejects reading a directory", async () => {
     await expect(readWorkspaceFile(projectRoot, "src")).rejects.toThrow(/Not a file/);
+  });
+
+  it("returns non-image binary files as base64 instead of lossy text", async () => {
+    await fs.writeFile(path.join(projectRoot, "data.bin"), Buffer.from([0, 255, 1]));
+    await expect(readWorkspaceFile(projectRoot, "data.bin")).resolves.toMatchObject({ encoding: "base64", content: "AP8B" });
+  });
+
+  it("reads only the preview cap and marks a large text file as truncated", async () => {
+    await fs.writeFile(path.join(projectRoot, "large.txt"), "a".repeat(2 * 1024 * 1024 + 1), "utf8");
+    await expect(readWorkspaceFile(projectRoot, "large.txt")).resolves.toMatchObject({ encoding: "utf8", truncated: true });
+  });
+});
+
+describe("runWorkspaceExecutable", () => {
+  it("runs a real exe in the root and propagates shell errors", async () => {
+    await fs.writeFile(path.join(projectRoot, "tool.exe"), "not really executable");
+    await expect(runWorkspaceExecutable(projectRoot, "tool.exe", async () => "Windows blocked this file")).rejects.toThrow("Windows blocked this file");
+  });
+
+  it("refuses non-executables and root escapes", async () => {
+    await expect(runWorkspaceExecutable(projectRoot, "readme.md", async () => "")).rejects.toThrow(/Only .exe/);
+    await expect(runWorkspaceExecutable(projectRoot, "../secret.exe", async () => "")).rejects.toThrow(/escapes/);
   });
 });
 

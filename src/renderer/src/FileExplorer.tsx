@@ -1,20 +1,11 @@
 import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
-import {
-  ChevronDown,
-  ChevronRight,
-  Folder,
-  FolderOpen,
-  PanelRightClose,
-  PanelRightOpen,
-  RefreshCw,
-  TriangleAlert,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, FolderOpen, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { FileIcon } from "./file-icons";
 
 export interface FileExplorerProps {
-  collapsed: boolean;
-  onToggleCollapse(): void;
+  /** True while another right-sidebar tab is active or the sidebar is collapsed to its rail. */
+  hidden: boolean;
   target: FileExplorerTarget | null;
   targetLabel: string | null;
   selectedRelativePath: string | null;
@@ -123,14 +114,7 @@ function TreeNode({
   );
 }
 
-export function FileExplorer({
-  collapsed,
-  onToggleCollapse,
-  target,
-  targetLabel,
-  selectedRelativePath,
-  onOpenFile,
-}: FileExplorerProps) {
+export function FileExplorer({ hidden, target, targetLabel, selectedRelativePath, onOpenFile }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [childrenByDir, setChildrenByDir] = useState<Record<string, DirectoryState>>({});
 
@@ -147,14 +131,14 @@ export function FileExplorer({
   useEffect(() => {
     setExpandedDirs(new Set());
     setChildrenByDir({});
-    if (target && !collapsed) loadDirectory(target, "");
+    if (target && !hidden) loadDirectory(target, "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetKey(target)]);
 
   useEffect(() => {
-    if (target && !collapsed && !childrenByDir[""]) loadDirectory(target, "");
+    if (target && !hidden && !childrenByDir[""]) loadDirectory(target, "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapsed]);
+  }, [hidden]);
 
   const toggleDir = (relativePath: string) => {
     if (!target) return;
@@ -177,54 +161,40 @@ export function FileExplorer({
     loadDirectory(target, "");
   };
 
+  if (hidden) return null;
+
   return (
-    <aside className={`file-explorer ${collapsed ? "collapsed" : ""}`}>
-      <div className="sidebar-top-row">
+    <div className="file-explorer-body">
+      <div className="section-heading">
+        <span>{targetLabel ?? "파일 탐색기"}</span>
         <button
+          className="icon-button"
           type="button"
-          className="icon-button sidebar-collapse-toggle"
-          onClick={onToggleCollapse}
-          aria-label={collapsed ? "파일 탐색기 펼치기" : "파일 탐색기 접기"}
-          title={collapsed ? "파일 탐색기 펼치기" : "파일 탐색기 접기"}
+          onClick={refresh}
+          disabled={!target}
+          aria-label="파일 목록 새로고침"
+          title="파일 목록 새로고침"
         >
-          {collapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+          <RefreshCw size={16} />
         </button>
       </div>
-
-      {collapsed ? null : (
-        <div className="file-explorer-body">
-          <div className="section-heading">
-            <span>{targetLabel ?? "파일 탐색기"}</span>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={refresh}
-              disabled={!target}
-              aria-label="파일 목록 새로고침"
-              title="파일 목록 새로고침"
-            >
-              <RefreshCw size={16} />
-            </button>
-          </div>
-          {!target ? (
-            <div className="sidebar-empty">
-              <span>폴더를 선택하면 파일을 볼 수 있습니다</span>
-            </div>
-          ) : (
-            <div className="file-tree" role="tree" aria-label="파일 탐색기">
-              <DirectoryChildren
-                state={childrenByDir[""]}
-                depth={0}
-                expandedDirs={expandedDirs}
-                childrenByDir={childrenByDir}
-                selectedRelativePath={selectedRelativePath}
-                onToggleDir={toggleDir}
-                onOpenFile={onOpenFile}
-              />
-            </div>
-          )}
+      {!target ? (
+        <div className="sidebar-empty">
+          <span>폴더를 선택하면 파일을 볼 수 있습니다</span>
+        </div>
+      ) : (
+        <div className="file-tree" role="tree" aria-label="파일 탐색기">
+          <DirectoryChildren
+            state={childrenByDir[""]}
+            depth={0}
+            expandedDirs={expandedDirs}
+            childrenByDir={childrenByDir}
+            selectedRelativePath={selectedRelativePath}
+            onToggleDir={toggleDir}
+            onOpenFile={onOpenFile}
+          />
         </div>
       )}
-    </aside>
+    </div>
   );
 }

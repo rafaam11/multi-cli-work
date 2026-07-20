@@ -9,6 +9,7 @@ interface FileViewerPaneProps {
   onChangeContent(content: string): void;
   onSave(): void;
   onClose(): void;
+  onForceOpen(): void;
 }
 
 function imageMimeSubtype(extension: string | null): string {
@@ -72,7 +73,15 @@ function FileViewerContent({
     );
   }
   if (tab.category === "text") {
-    return <pre className="file-viewer-plain">{tab.content ?? ""}</pre>;
+    return (
+      <textarea
+        className="file-editor-textarea"
+        spellCheck={false}
+        value={tab.content ?? ""}
+        onChange={(event) => onChangeContent(event.target.value)}
+        aria-label={`${tab.name} 편집`}
+      />
+    );
   }
   return (
     <div className="file-viewer-state">
@@ -86,9 +95,10 @@ function FileViewerContent({
  * no syntax highlighting, matching the "don't build what's hard to represent well" scope this was
  * built to.
  */
-export function FileViewerPane({ tab, onChangeContent, onSave, onClose }: FileViewerPaneProps) {
+export function FileViewerPane({ tab, onChangeContent, onSave, onClose, onForceOpen }: FileViewerPaneProps) {
   const [markdownMode, setMarkdownMode] = useState<"preview" | "edit">("preview");
   const isMarkdown = tab.category === "markdown";
+  const editable = (isMarkdown || tab.category === "text") && tab.encoding === "utf8" && !tab.truncated;
 
   return (
     <section className="file-viewer-pane" aria-label={`${tab.name} 파일 보기`}>
@@ -100,7 +110,7 @@ export function FileViewerPane({ tab, onChangeContent, onSave, onClose }: FileVi
           {tab.dirty ? <span className="file-viewer-dirty" title="저장하지 않은 변경" aria-hidden="true" /> : null}
         </div>
         <div className="file-viewer-actions">
-          {isMarkdown ? (
+          {editable ? (
             <button
               type="button"
               className="icon-button"
@@ -151,7 +161,19 @@ export function FileViewerPane({ tab, onChangeContent, onSave, onClose }: FileVi
                 {tab.saveError}
               </p>
             ) : null}
-            <FileViewerContent tab={tab} markdownMode={markdownMode} onChangeContent={onChangeContent} />
+            {tab.category === "unsupported" ? (
+              <div className="file-viewer-state">
+                <span>이 파일 형식은 아직 읽지 않았습니다.</span>
+                <button type="button" onClick={onForceOpen}>텍스트로 강제 열기</button>
+              </div>
+            ) : tab.encoding !== "utf8" && tab.category !== "image" ? (
+              <div className="file-viewer-state file-viewer-error">
+                <TriangleAlert size={18} />
+                <span>UTF-8 텍스트가 아니거나 바이너리 파일이라 편집할 수 없습니다.</span>
+              </div>
+            ) : (
+              <FileViewerContent tab={tab} markdownMode={markdownMode} onChangeContent={onChangeContent} />
+            )}
           </>
         )}
       </div>

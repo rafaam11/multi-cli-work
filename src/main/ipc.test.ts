@@ -97,9 +97,37 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     listDirectory: vi.fn(async () => []),
     readFile: vi.fn(async () => ({ relativePath: "readme.md", encoding: "utf8" as const, content: "", truncated: false, sizeBytes: 0 })),
     writeFile: vi.fn(async () => undefined),
+    runExecutable: vi.fn(async () => undefined),
   };
   const shellGateway = {
     openExternal: vi.fn(async () => undefined),
+  };
+  const clipboard = {
+    readText: vi.fn(() => "clipboard text"),
+    writeText: vi.fn(),
+  };
+  const gitGateway = {
+    panelData: vi.fn(async () => ({
+      isRepo: true,
+      currentBranch: "main",
+      upstream: null,
+      ahead: null,
+      behind: null,
+      branches: ["main"],
+      changes: [],
+    })),
+    checkout: vi.fn(async () => undefined),
+    createBranch: vi.fn(async () => undefined),
+    commit: vi.fn(async () => undefined),
+    push: vi.fn(async () => undefined),
+    fetch: vi.fn(async () => undefined),
+    pull: vi.fn(async () => undefined),
+    fileOriginal: vi.fn(async () => ({ content: "", truncated: false })),
+  };
+  const gitGraphGateway = {
+    open: vi.fn(async () => ({ mode: "embedded" as const })),
+    setBounds: vi.fn(() => undefined),
+    close: vi.fn(() => undefined),
   };
   registerMainIpc(ipc, {
     projectService,
@@ -108,7 +136,10 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     projectActions,
     worktrees,
     workspaceFiles,
+    git: gitGateway,
+    gitGraph: gitGraphGateway,
     shell: shellGateway,
+    clipboard,
     appVersion: vi.fn(() => "1.0.0"),
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,
@@ -129,13 +160,27 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     updater,
     projectActions,
     workspaceFiles,
+    gitGateway,
+    gitGraphGateway,
     shellGateway,
+    clipboard,
     calls,
     onSessionSelected: options.onSessionSelected,
   };
 }
 
 describe("main IPC boundary", () => {
+  it("reads and writes the native clipboard, rejecting non-string writes", async () => {
+    const { handlers, clipboard } = setup();
+
+    await expect(handlers.get("clipboard:read-text")!({})).resolves.toBe("clipboard text");
+    await handlers.get("clipboard:write-text")!({}, "selected output");
+    await expect(handlers.get("clipboard:write-text")!({}, { text: "injected" })).rejects.toThrow(/clipboard text/i);
+
+    expect(clipboard.readText).toHaveBeenCalledOnce();
+    expect(clipboard.writeText).toHaveBeenCalledWith("selected output");
+  });
+
   it("marks a selected terminal seen after persisting selection", async () => {
     const onSessionSelected = vi.fn();
     const { handlers } = setup({ onSessionSelected });
@@ -328,10 +373,12 @@ describe("main IPC boundary", () => {
     await handlers.get("workspace-files:list-directory")!({}, { kind: "project", id: project.id }, "src");
     await handlers.get("workspace-files:read-file")!({}, { kind: "project", id: project.id }, "readme.md");
     await handlers.get("workspace-files:write-file")!({}, { kind: "project", id: project.id }, "readme.md", "hi");
+    await handlers.get("workspace-files:run-executable")!({}, { kind: "project", id: project.id }, "tool.exe");
 
     expect(workspaceFiles.listDirectory).toHaveBeenCalledWith(project.rootPath, "src");
     expect(workspaceFiles.readFile).toHaveBeenCalledWith(project.rootPath, "readme.md");
     expect(workspaceFiles.writeFile).toHaveBeenCalledWith(project.rootPath, "readme.md", "hi");
+    expect(workspaceFiles.runExecutable).toHaveBeenCalledWith(project.rootPath, "tool.exe");
   });
 
   it("resolves a worktree file explorer target to its path", async () => {

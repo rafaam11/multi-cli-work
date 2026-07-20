@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell, utilityProcess } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell, utilityProcess } from "electron";
 import os from "node:os";
 import path from "node:path";
 import type { AgentDefinition } from "../shared/agent-types";
@@ -15,10 +15,23 @@ import {
 import { handleControlCommand, type ControlCommandContext } from "./control/control-commands";
 import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
+import {
+  checkoutGitBranch,
+  commitGitFiles,
+  createGitBranch,
+  fetchGitRemote,
+  pullGitFastForward,
+  pushCurrentBranch,
+  readGitFileOriginal,
+  readGitPanelData,
+} from "./projects/git-commands";
 import { createProjectActions } from "./projects/project-actions";
+import { CodeServeWebManager } from "./providers/code-serve-web";
+import { GitGraphController } from "./providers/git-graph-controller";
+import { GitGraphView } from "./providers/git-graph-view";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
-import { listWorkspaceDirectory, readWorkspaceFile, writeWorkspaceFile } from "./projects/workspace-files";
+import { listWorkspaceDirectory, readWorkspaceFile, runWorkspaceExecutable, writeWorkspaceFile } from "./projects/workspace-files";
 import { pruneMissingWorktrees } from "./projects/worktree-registry";
 import { WorktreeService } from "./projects/worktree-service";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
@@ -184,6 +197,15 @@ export async function createDesktopRuntime(
     log: (message, error) => console.error(message, error),
   });
 
+  const projectActions = createProjectActions({ getExecutables });
+  const gitGraphController = new GitGraphController({
+    serveWeb: new CodeServeWebManager({ resolveCodeCli: async () => (await getExecutables()).vscode }),
+    view: new GitGraphView(),
+    // The app runs a single main window; the embedded view attaches to it.
+    getWindow: () => BrowserWindow.getAllWindows()[0] ?? null,
+    openExternal: (rootPath) => projectActions.openInEditor(rootPath),
+  });
+
   const attentionTracker = createTerminalAttentionTracker();
   // One snapshot feeds every surface: window frame + taskbar (via applyAttention) and the
   // renderer's sidebar badges (via the broadcast).
@@ -210,15 +232,32 @@ export async function createDesktopRuntime(
       openReleases: openReleasesPage,
       openRepository: openRepositoryPage,
     },
-    projectActions: createProjectActions({ getExecutables }),
+    projectActions,
     workspaceFiles: {
       listDirectory: listWorkspaceDirectory,
       readFile: readWorkspaceFile,
       writeFile: writeWorkspaceFile,
+      runExecutable: (rootPath, relativePath) => runWorkspaceExecutable(rootPath, relativePath, shell.openPath),
+    },
+    git: {
+      panelData: readGitPanelData,
+      checkout: checkoutGitBranch,
+      createBranch: createGitBranch,
+      commit: commitGitFiles,
+      push: pushCurrentBranch,
+      fetch: fetchGitRemote,
+      pull: pullGitFastForward,
+      fileOriginal: readGitFileOriginal,
+    },
+    gitGraph: {
+      open: (rootPath, bounds) => gitGraphController.open(rootPath, bounds),
+      setBounds: (bounds) => gitGraphController.setBounds(bounds),
+      close: () => gitGraphController.close(),
     },
     shell: {
       openExternal: (url) => shell.openExternal(url),
     },
+    clipboard,
     appVersion: () => app.getVersion(),
     readRegistry: () => readProjectRegistry({ registryPath }),
     async restoreRegistryBackup() {
@@ -298,6 +337,7 @@ export async function createDesktopRuntime(
   return {
     coordinator,
     async dispose() {
+      gitGraphController.dispose();
       controlServer?.close();
       statusWatcher.close();
       await coordinator.shutdown();

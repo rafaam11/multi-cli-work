@@ -4,6 +4,10 @@ import type { TerminalEvent } from "../shared/terminal-types";
 
 const api: MultiCliWorkApi = {
   platform: process.platform,
+  clipboard: {
+    readText: () => ipcRenderer.invoke("clipboard:read-text"),
+    writeText: (text) => ipcRenderer.invoke("clipboard:write-text", text),
+  },
   projects: {
     list: () => ipcRenderer.invoke("projects:list"),
     addFolder: () => ipcRenderer.invoke("projects:add-folder"),
@@ -43,6 +47,22 @@ const api: MultiCliWorkApi = {
     readFile: (target, relativePath) => ipcRenderer.invoke("workspace-files:read-file", target, relativePath),
     writeFile: (target, relativePath, content) =>
       ipcRenderer.invoke("workspace-files:write-file", target, relativePath, content),
+    runExecutable: (target, relativePath) => ipcRenderer.invoke("workspace-files:run-executable", target, relativePath),
+  },
+  git: {
+    panelData: (target) => ipcRenderer.invoke("git:panel-data", target),
+    checkout: (target, branch) => ipcRenderer.invoke("git:checkout", target, branch),
+    createBranch: (target, branch) => ipcRenderer.invoke("git:create-branch", target, branch),
+    commit: (target, request) => ipcRenderer.invoke("git:commit", target, request),
+    push: (target) => ipcRenderer.invoke("git:push", target),
+    fetch: (target) => ipcRenderer.invoke("git:fetch", target),
+    pull: (target) => ipcRenderer.invoke("git:pull", target),
+    fileOriginal: (target, relativePath) => ipcRenderer.invoke("git:file-original", target, relativePath),
+  },
+  gitGraph: {
+    open: (target, bounds) => ipcRenderer.invoke("git-graph:open", target, bounds),
+    setBounds: (bounds) => ipcRenderer.invoke("git-graph:set-bounds", bounds),
+    close: () => ipcRenderer.invoke("git-graph:close"),
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
