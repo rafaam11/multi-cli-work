@@ -65,6 +65,12 @@ const STATUS_TITLES: Record<GitChangeEntry["status"], string> = {
   "?": "추적 안 됨",
 };
 
+function pathParts(filePath: string): { name: string; parent: string } {
+  const normalized = filePath.replace(/\\/g, "/");
+  const separator = normalized.lastIndexOf("/");
+  return separator < 0 ? { name: normalized, parent: "" } : { name: normalized.slice(separator + 1), parent: normalized.slice(0, separator) };
+}
+
 function StatusBadge({ status }: { status: GitChangeEntry["status"] }) {
   return (
     <span className={`git-status-badge status-${status === "?" ? "untracked" : status}`} title={STATUS_TITLES[status]}>
@@ -131,9 +137,11 @@ export function GitPanel({
     const tick = () => load(target, { silent: true });
     const interval = window.setInterval(tick, POLL_INTERVAL_MS);
     window.addEventListener("focus", tick);
+    window.addEventListener("mcw:git-refresh", tick);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", tick);
+      window.removeEventListener("mcw:git-refresh", tick);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hidden, targetKey(target)]);
@@ -149,7 +157,10 @@ export function GitPanel({
         if (target) load(target, { silent: true });
       })
       .catch((cause) => setError(errorMessage(cause)))
-      .finally(() => setBusy(false));
+      .finally(() => {
+        setBusy(false);
+        window.dispatchEvent(new Event("mcw:git-refresh"));
+      });
   };
 
   const changes = data?.isRepo ? data.changes : [];
@@ -208,7 +219,7 @@ export function GitPanel({
   return (
     <div className="git-panel">
       <div className="section-heading">
-        <span>{targetLabel ?? "Git"}</span>
+        <span title={targetLabel ?? "Git"}>{targetLabel ?? "Git"}</span>
         <button
           className="icon-button"
           type="button"
@@ -307,8 +318,9 @@ export function GitPanel({
               ) : null}
             </div>
 
-            <div className="session-menu-anchor git-dropdown-anchor" ref={worktreeAnchor}>
-              <button
+            <div className="git-toolbar-secondary">
+              <div className="session-menu-anchor git-dropdown-anchor" ref={worktreeAnchor}>
+                <button
                 type="button"
                 className="git-dropdown-button"
                 onClick={() => setWorktreeMenuOpen((open) => !open)}
@@ -320,11 +332,11 @@ export function GitPanel({
                 <FolderGit2 size={13} />
                 <span className="git-dropdown-label">{currentWorktreeLabel}</span>
                 <ChevronDown size={12} />
-              </button>
-              {worktreeMenuOpen ? (
-                <div className="provider-menu git-dropdown-menu" role="menu" aria-label="워크트리 선택">
-                  {worktreeOptions.map((option) => (
-                    <button
+                </button>
+                {worktreeMenuOpen ? (
+                  <div className="provider-menu git-dropdown-menu" role="menu" aria-label="워크트리 선택">
+                    {worktreeOptions.map((option) => (
+                      <button
                       key={option.worktreeId ?? "__main__"}
                       type="button"
                       role="menuitem"
@@ -336,22 +348,23 @@ export function GitPanel({
                     >
                       {option.worktreeId === currentWorktreeId ? <Check size={13} /> : <FolderGit2 size={13} />}
                       <span>{option.label}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
 
-            <button
-              type="button"
-              className="icon-button git-graph-button"
-              onClick={onOpenGraph}
-              disabled={busy || !data?.isRepo}
-              aria-label="Git Graph 열기"
-              title="Git Graph 열기"
-            >
-              <GitGraph size={15} />
-            </button>
+              <button
+                type="button"
+                className="icon-button git-graph-button"
+                onClick={onOpenGraph}
+                disabled={busy || !data?.isRepo}
+                aria-label="Git Graph 열기"
+                title="Git Graph 열기"
+              >
+                <GitGraph size={15} />
+              </button>
+            </div>
           </div>
 
           <div className="git-sync-row">
@@ -398,8 +411,9 @@ export function GitPanel({
             {changes.length === 0 ? (
               <div className="git-menu-empty">커밋할 변경사항이 없습니다</div>
             ) : (
-              changes.map((change) => (
-                <div key={change.path} className="git-change-row" title={change.renamedFrom ? `${change.renamedFrom} → ${change.path}` : change.path}>
+              changes.map((change) => {
+                const parts = pathParts(change.path);
+                return <div key={change.path} className="git-change-row" title={change.renamedFrom ? `${change.renamedFrom} → ${change.path}` : change.path}>
                   <input
                     type="checkbox"
                     checked={!uncheckedPaths.has(change.path)}
@@ -412,11 +426,12 @@ export function GitPanel({
                     onClick={() => onOpenDiff(change)}
                     title="변경 내용 비교 열기"
                   >
-                    {change.path}
+                    <strong>{parts.name}</strong>
+                    {parts.parent ? <span>{parts.parent}</span> : null}
                   </button>
                   <StatusBadge status={change.status} />
-                </div>
-              ))
+                </div>;
+              })
             )}
           </div>
 

@@ -282,6 +282,7 @@ body.sidebar-resizing {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
+  overflow: hidden;
   min-height: 0;
   border-left: 1px solid var(--line);
   background: var(--sidebar);
@@ -338,6 +339,8 @@ body.sidebar-resizing {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .right-sidebar-body > .file-explorer-body,
@@ -362,6 +365,20 @@ body.sidebar-resizing {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.git-panel .section-heading,
+.git-panel .section-heading > span {
+  min-width: 0;
+}
+
+.git-panel .section-heading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .git-panel .sidebar-empty {
@@ -373,6 +390,8 @@ body.sidebar-resizing {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .git-error-banner {
@@ -399,6 +418,15 @@ body.sidebar-resizing {
   align-items: center;
   gap: 4px;
   padding: 8px 8px 0;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.git-toolbar-secondary {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 4px;
 }
 
 .git-dropdown-anchor {
@@ -495,6 +523,8 @@ body.sidebar-resizing {
   align-items: center;
   gap: 4px;
   padding: 6px 8px 0;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .git-sync-row .command-button {
@@ -548,6 +578,11 @@ body.sidebar-resizing {
   min-height: 26px;
   padding: 0 10px;
   font-size: 12px;
+  min-width: 0;
+}
+
+.git-change-row > input {
+  flex: 0 0 auto;
 }
 
 .git-change-row:hover {
@@ -564,10 +599,23 @@ body.sidebar-resizing {
   background: transparent;
   font-size: 12px;
   text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.git-change-path strong,
+.git-change-path span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
 }
+
+.git-change-path strong { color: var(--text); font-weight: 600; }
+.git-change-path span { margin-top: 2px; color: var(--quiet); font-size: 10px; }
 
 .git-change-row:hover .git-change-path {
   color: var(--text);
@@ -691,11 +739,77 @@ body.sidebar-resizing {
 
 .git-graph-embed {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   height: 100%;
 }
+
+@container (max-width: 310px) {
+  .git-toolbar > .git-dropdown-anchor { flex-basis: 100%; }
+  .git-toolbar-secondary { flex-basis: 100%; }
+  .git-sync-row .command-button { flex: 1 1 calc(33% - 4px); }
+  .git-ahead-behind { flex-basis: 100%; }
+}
+
+.native-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.native-graph-header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.native-graph-header strong { font-size: 13px; }
+.native-graph-header span { min-width: 0; overflow: hidden; color: var(--quiet); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.native-graph-error { margin: 7px 10px; }
+.native-graph-list { min-width: 0; min-height: 0; overflow: auto; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
+.native-graph-item { min-width: 620px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.native-graph-row { display: flex; width: 100%; min-width: 0; align-items: stretch; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.native-graph-row:hover, .native-graph-row.selected { background: var(--surface-hover); }
+.native-graph-cell { flex: 0 0 auto; }
+.native-graph-cell path { fill: none; stroke-width: 1.5; }
+.native-graph-summary { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 12px; padding: 4px 8px; }
+.native-graph-subject { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 5px; overflow: hidden; font-size: 12px; white-space: nowrap; }
+.native-graph-subject > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.native-graph-ref { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; max-width: 150px; padding: 1px 5px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 9.5px; text-overflow: ellipsis; }
+.native-graph-ref.ref-head { color: var(--green); border-color: color-mix(in srgb, var(--green) 50%, var(--line)); }
+.native-graph-ref.ref-tag { color: var(--amber); }
+.native-graph-ref.ref-remote { color: var(--violet); }
+.native-graph-ref[role="button"] { cursor: pointer; }
+.native-graph-ref[role="button"]:hover, .native-graph-ref[role="button"]:focus-visible { border-color: var(--teal); outline: none; }
+.native-graph-meta { display: grid; flex: 0 0 275px; grid-template-columns: minmax(80px, 1fr) 90px 62px; gap: 8px; color: var(--quiet); font-size: 10.5px; }
+.native-graph-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-graph-meta code { color: var(--muted); }
+.native-graph-more { display: flex; flex: 0 0 30px; align-items: center; justify-content: center; color: var(--quiet); }
+.native-graph-details { padding: 10px 18px 12px max(32px, 5%); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.native-graph-message { margin: 0 0 9px; color: var(--text); font: 12px/1.45 inherit; white-space: pre-wrap; }
+.native-graph-details dl { display: grid; gap: 3px; margin: 0 0 10px; color: var(--muted); font-size: 10.5px; }
+.native-graph-details dl > div { display: grid; grid-template-columns: 58px minmax(0, 1fr); }
+.native-graph-details dt { color: var(--quiet); }
+.native-graph-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.native-graph-files { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.native-graph-files button { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 8px; border: 0; border-bottom: 1px solid var(--line); color: var(--muted); background: transparent; text-align: left; cursor: pointer; }
+.native-graph-files button:last-child { border-bottom: 0; }
+.native-graph-files button:hover, .native-graph-files button.active { color: var(--text); background: var(--surface-hover); }
+.native-graph-files button span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-graph-diff { height: 360px; margin-top: 8px; border: 1px solid var(--line); }
+.native-graph-inline-state, .native-graph-warning { display: flex; align-items: center; gap: 6px; padding: 10px; color: var(--quiet); font-size: 11px; }
+.native-graph-warning { padding-bottom: 0; color: var(--amber); }
+.native-graph-load-more { display: flex; justify-content: center; width: calc(100% - 24px); margin: 12px; }
+.native-graph-menu { position: fixed; z-index: 80; width: 210px; }
+.native-graph-dialog { width: min(420px, calc(100vw - 32px)); padding: 14px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--text); background: var(--surface); box-shadow: 0 18px 60px #0008; }
+.native-graph-dialog header, .native-graph-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.native-graph-dialog h2 { margin: 0; font-size: 14px; }
+.native-graph-dialog p { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.native-graph-dialog > label:not(.native-graph-check) { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11px; }
+.native-graph-dialog input[type="text"], .native-graph-dialog label > input:not([type]) { padding: 7px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--bg); }
+.native-graph-check { display: flex; align-items: center; gap: 7px; margin: 10px 0; font-size: 11px; }
+.native-graph-dialog footer { justify-content: flex-end; margin-top: 14px; }
 
 /* The native WebContentsView is drawn over this hole by the main process; it must keep filling the
    main area so its measured rect stays correct. The status text sits behind it and shows only while
