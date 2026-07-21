@@ -7,9 +7,18 @@ import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
   session: TerminalSessionView;
+  /** Bytes to send instead of a plain Enter when Shift is held. Null keeps xterm's own handling. */
+  shiftEnterBytes: string | null;
   onAttached(session: TerminalSessionView): void;
   onError(message: string): void;
 }
+
+/**
+ * Scaffolding for the open investigation into Codex scrollback rendering blank. Dev-only, so the
+ * packaged app carries neither the console noise nor the `__send` handle onto a live PTY. Remove
+ * this and its uses once that bug is closed.
+ */
+const SCROLLBACK_DEBUG = import.meta.env.DEV && import.meta.env.MODE !== "test";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -19,9 +28,10 @@ function isReadOnly(session: TerminalSessionView): boolean {
   return session.status === "exited" || session.status === "error";
 }
 
-export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps) {
+export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(session);
+  const shiftEnterRef = useRef(shiftEnterBytes);
   const onAttachedRef = useRef(onAttached);
   const onErrorRef = useRef(onError);
   const scheduleResizeRef = useRef<() => void>(() => undefined);
@@ -29,6 +39,7 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
   const readOnly = isReadOnly(session);
 
   sessionRef.current = session;
+  shiftEnterRef.current = shiftEnterBytes;
   onAttachedRef.current = onAttached;
   onErrorRef.current = onError;
 
@@ -74,13 +85,46 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    if (SCROLLBACK_DEBUG) {
+      console.log("[DEBUG scrollback] before open", session.id, {
+        hostWidth: host.clientWidth,
+        hostHeight: host.clientHeight,
+      });
+    }
     terminal.open(host);
+    if (SCROLLBACK_DEBUG) {
+      // __dump() prints what the buffer actually holds, which separates a rendering fault from
+      // lost data; __send() pushes a raw sequence to the PTY to see what a CLI makes of it.
+      Object.assign(window, {
+        __term: terminal,
+        __dump: (lines = 60) => {
+          const buffer = terminal.buffer.active;
+          const start = Math.max(0, buffer.baseY + buffer.cursorY - lines);
+          for (let row = start; row <= buffer.baseY + buffer.cursorY; row++) {
+            console.log(row, JSON.stringify(buffer.getLine(row)?.translateToString(true) ?? null));
+          }
+        },
+        __send: (data: string) => window.multiCliWork.terminals.write(session.id, data),
+      });
+      console.log("[DEBUG scrollback] after open", session.id, { cols: terminal.cols, rows: terminal.rows });
+    }
 
     const reportError = (error: unknown) => {
       if (!disposed) onErrorRef.current(getErrorMessage(error));
     };
 
     terminal.attachCustomKeyEventHandler((event) => {
+      // Shift+Enter reaches xterm as a plain Enter, so a CLI that wants a newline there never sees
+      // one. Agents that name a substitute get it written straight to the PTY instead.
+      if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        const bytes = shiftEnterRef.current;
+        if (bytes === null) return true;
+        event.preventDefault();
+        if (event.type === "keydown" && !isReadOnly(sessionRef.current)) {
+          void window.multiCliWork.terminals.write(session.id, bytes).catch(reportError);
+        }
+        return false;
+      }
       if (!event.ctrlKey || event.altKey) return true;
       const key = event.code || event.key;
       if (key !== "KeyC" && key !== "KeyV") return true;
@@ -116,6 +160,16 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       if (disposed || isReadOnly(sessionRef.current)) return;
       try {
         fitAddon.fit();
+        if (SCROLLBACK_DEBUG) {
+          // Every fit, so a mid-session reflow is visible too.
+          console.log("[DEBUG scrollback] after fit", session.id, {
+            cols: terminal.cols,
+            rows: terminal.rows,
+            replayAttached,
+            hostWidth: host.clientWidth,
+            hostHeight: host.clientHeight,
+          });
+        }
         if (terminal.cols > 0 && terminal.rows > 0) {
           void window.multiCliWork.terminals
             .resize(session.id, terminal.cols, terminal.rows)
@@ -169,6 +223,14 @@ export function TerminalPane({ session, onAttached, onError }: TerminalPaneProps
       .attach(session.id)
       .then((attachment) => {
         if (disposed) return;
+        if (SCROLLBACK_DEBUG) {
+          // The size at the moment the saved scrollback is replayed.
+          console.log("[DEBUG scrollback] before replay write", session.id, {
+            cols: terminal.cols,
+            rows: terminal.rows,
+            replayLength: attachment.replay.length,
+          });
+        }
         terminal.write(attachment.replay);
         replayAttached = true;
         for (const output of pendingOutput) {

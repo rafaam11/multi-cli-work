@@ -19,6 +19,7 @@ function agentFixture(id: string, label: string, available: boolean): AgentView 
     conversationId: "none",
     statusAdapter: "signals",
     titleSource: "none",
+    shiftEnter: "enter",
     icon: id,
     accentColor: null,
     builtin: true,

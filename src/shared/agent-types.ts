@@ -38,6 +38,29 @@ export type TitleSource = "none" | "claude-transcript" | "codex-transcript";
  */
 export type ConversationIdOwner = "none" | "app-generated" | "provider-assigned";
 
+/**
+ * What Shift+Enter sends to this CLI.
+ *
+ * xterm.js encodes Enter as CR whether or not Shift is held, and speaks neither the kitty keyboard
+ * protocol nor modifyOtherKeys, so a CLI can never see Shift+Enter as a key of its own. The app has
+ * to substitute a sequence the CLI already understands.
+ *
+ * - `enter` — no substitution: Shift+Enter stays an ordinary Enter and submits. The default,
+ *   because a CLI that does not recognise the alternative would receive junk instead.
+ * - `alt-enter` — ESC CR, which crossterm-based TUIs read as Alt+Enter. Verified against Codex:
+ *   each press moves its composer down exactly one row.
+ */
+export type ShiftEnterSequence = "enter" | "alt-enter";
+
+/** Built from its code point so this file carries no raw control character. */
+const ESC = String.fromCharCode(0x1b);
+
+/** What each `ShiftEnterSequence` writes to the PTY. `null` leaves the keypress to xterm. */
+export const SHIFT_ENTER_BYTES: Record<ShiftEnterSequence, string | null> = {
+  enter: null,
+  "alt-enter": `${ESC}\r`,
+};
+
 export interface AgentDefinition {
   id: AgentId;
   /** What the UI calls this agent. */
@@ -53,6 +76,7 @@ export interface AgentDefinition {
   conversationId: ConversationIdOwner;
   statusAdapter: StatusAdapter;
   titleSource: TitleSource;
+  shiftEnter: ShiftEnterSequence;
   /** Key of a built-in brand icon. Null falls back to a monogram tinted with `accentColor`. */
   icon: string | null;
   /** Hex colour for the monogram fallback. Built-ins leave this null and use their icon's own CSS. */

@@ -135,6 +135,47 @@ describe("ProjectService project management", () => {
     expect(registry.projects[PROJECT_IDS.project].updatedAt).toBe("2026-07-11T03:00:00.000Z");
   });
 
+  it("reorders projects into a contiguous order and parks omitted ones behind the listed ones", async () => {
+    const workspace = await tempWorkspace("service-reorder");
+    const registryPath = path.join(workspace, "registry", "projects.json");
+    const directories = ["alpha", "beta", "gamma"].map((name) => path.join(workspace, name));
+    await Promise.all(directories.map((directory) => fs.mkdir(directory)));
+    const ids: string[] = [PROJECT_IDS.first, PROJECT_IDS.second, PROJECT_IDS.manual];
+    const service = new ProjectService({
+      registryPath,
+      now: () => "2026-07-21T00:00:00.000Z",
+      idFactory: () => ids.shift() ?? PROJECT_IDS.project,
+    });
+    for (const directory of directories) await service.registerManualFolder(directory);
+
+    const registry = await service.reorderProjects([PROJECT_IDS.manual, PROJECT_IDS.first, PROJECT_IDS.second]);
+
+    expect(registry.projects[PROJECT_IDS.manual].order).toBe(0);
+    expect(registry.projects[PROJECT_IDS.first].order).toBe(1);
+    expect(registry.projects[PROJECT_IDS.second].order).toBe(2);
+
+    // A caller that only knows about the folders it can see must not scramble the rest.
+    const partial = await service.reorderProjects([PROJECT_IDS.second]);
+    expect(partial.projects[PROJECT_IDS.second].order).toBe(0);
+    expect(partial.projects[PROJECT_IDS.manual].order).toBe(1);
+    expect(partial.projects[PROJECT_IDS.first].order).toBe(2);
+
+    expect((await readProjectRegistry({ registryPath })).registry.projects[PROJECT_IDS.second].order).toBe(0);
+  });
+
+  it("rejects a reorder that names an unknown or duplicated project", async () => {
+    const workspace = await tempWorkspace("service-reorder-invalid");
+    const registryPath = path.join(workspace, "registry", "projects.json");
+    const projectDirectory = path.join(workspace, "project");
+    await fs.mkdir(projectDirectory);
+    const service = new ProjectService({ registryPath, idFactory: () => PROJECT_IDS.project });
+    await service.registerManualFolder(projectDirectory);
+
+    await expect(service.reorderProjects([PROJECT_IDS.project, PROJECT_IDS.missing])).rejects.toThrow(/unknown/i);
+    await expect(service.reorderProjects([PROJECT_IDS.project, PROJECT_IDS.project])).rejects.toThrow(/duplicate/i);
+    await expect(service.reorderProjects(["" as string])).rejects.toThrow(ProjectServiceError);
+  });
+
   it("relinks an existing project to a validated directory without changing its id or metadata", async () => {
     const workspace = await tempWorkspace("service-relink");
     const registryPath = path.join(workspace, "registry", "projects.json");

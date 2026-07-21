@@ -125,6 +125,51 @@ export class ProjectService {
     });
   }
 
+  /**
+   * Rewrites `order` across every project in one registry transaction — the sidebar's drag-to-sort.
+   * Doing it as a single update keeps the list from being briefly half-sorted, which N separate
+   * metadata writes would allow.
+   *
+   * `orderedIds` need not be exhaustive: anything it omits keeps its relative position after the
+   * listed projects, so a caller working from a filtered view cannot scramble what it cannot see.
+   */
+  async reorderProjects(orderedIds: readonly string[]): Promise<ProjectRegistryV1> {
+    if (!Array.isArray(orderedIds) || orderedIds.some((id) => typeof id !== "string" || id.length === 0)) {
+      throw new ProjectServiceError("Project order must be a list of project ids");
+    }
+    if (new Set(orderedIds).size !== orderedIds.length) {
+      throw new ProjectServiceError("Project order contains duplicate ids");
+    }
+    const now = this.now();
+    return this.updateRegistry((registry) => {
+      const unknown = orderedIds.filter((id) => !registry.projects[id]);
+      if (unknown.length > 0) {
+        throw new ProjectServiceError(`Project order references unknown projects: ${unknown.join(", ")}`);
+      }
+      const listed = new Set(orderedIds);
+      const trailing = Object.values(registry.projects)
+        .filter((project) => !listed.has(project.id))
+        .sort(
+          (left, right) =>
+            (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER) ||
+            left.id.localeCompare(right.id),
+        )
+        .map((project) => project.id);
+      const projects = { ...registry.projects };
+      [...orderedIds, ...trailing].forEach((id, index) => {
+        const project = projects[id];
+        if (project.order === index) return;
+        projects[id] = { ...project, order: index, updatedAt: now };
+      });
+      const next: ProjectRegistryV1 = { ...registry, updatedAt: now, projects };
+      try {
+        return parseProjectRegistry(next);
+      } catch (error) {
+        throw new ProjectServiceError("Project reorder is invalid", { cause: error });
+      }
+    });
+  }
+
   async relinkProject(projectId: string, rootPath: string): Promise<ProjectRegistryV1> {
     const validatedPath = await this.validateDirectory(rootPath);
     const normalizedTarget = normalizeProjectPath(validatedPath, this.options.platform);

@@ -32,6 +32,7 @@ interface ProjectServiceGateway {
   findMissingProjectRoots(registry: ProjectRegistryV1): Promise<string[]>;
   registerManualFolder(rootPath: string, displayName?: string | null): Promise<ProjectRegistryV1>;
   updateProjectMetadata(projectId: string, update: ProjectMetadataUpdate): Promise<ProjectRegistryV1>;
+  reorderProjects(orderedIds: readonly string[]): Promise<ProjectRegistryV1>;
   removeProject(projectId: string): Promise<ProjectRegistryV1>;
   relinkProject(projectId: string, rootPath: string): Promise<ProjectRegistryV1>;
 }
@@ -319,6 +320,14 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("projects:update", async (_event, projectId: unknown, patch: unknown) => {
     const id = nonEmptyString(projectId, "Project id");
     return selectedProject(await dependencies.projectService.updateProjectMetadata(id, validateProjectPatch(patch)), id);
+  });
+  // Returns the whole snapshot, not one project: a reorder rewrites `order` across the list.
+  ipc.handle("projects:reorder", async (_event, orderedIds: unknown) => {
+    if (!Array.isArray(orderedIds)) throw new Error("Project order must be an array of project ids");
+    await dependencies.projectService.reorderProjects(
+      orderedIds.map((id) => nonEmptyString(id, "Project id")),
+    );
+    return workspaceSnapshot();
   });
   ipc.handle("projects:remove", async (_event, projectId: unknown) => {
     const id = nonEmptyString(projectId, "Project id");

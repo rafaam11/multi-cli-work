@@ -30,6 +30,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     findMissingProjectRoots: vi.fn(async () => [project.id]),
     registerManualFolder: vi.fn(async () => registry),
     updateProjectMetadata: vi.fn(async () => registry),
+    reorderProjects: vi.fn(async () => registry),
     removeProject: vi.fn(async () => {
       calls.push("removeProject");
       return registry;

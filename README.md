@@ -99,6 +99,7 @@
       "resumeArgs": [],                // 재개일 때 앞에 붙는다
       "conversationId": "none",        // "none" | "app-generated"
       "statusAdapter": "signals",      // "signals" | "osc9"
+      "shiftEnter": "enter",           // "enter" | "alt-enter"
       "accentColor": "#4285f4"         // 아이콘 모노그램 색 (선택)
     }
   }
@@ -108,6 +109,8 @@
 **치환 토큰** — `{cwd}` · `{sessionId}` · `{conversationId}`(재개 인자에서만). 리터럴 중괄호는 `{{` `}}`. 모르는 토큰은 조용히 통과시키지 않고 **거부**한다 — 오타가 명령줄에 그대로 실려 나가지 않도록.
 
 **상태 어댑터** — `signals`는 프로세스 생사만 본다. **작업 중과 입력 대기를 구별하지 못하므로** 그 세션은 `대기`에 머문다("모르겠다"가 정직한 답이라서, 빠져나올 길 없는 `작업 중`에 가두지 않는다). CLI가 OSC 9 알림을 쏜다면 `osc9`를 고른다 — 빌트인 Codex와 같은 정확도를 얻는다(알림을 켜는 플래그는 그 에이전트의 `args`에 직접 넣는다).
+
+**Shift+Enter** — 터미널은 Shift 여부와 상관없이 Enter를 CR로 보내므로, CLI는 Shift+Enter를 별도의 키로 볼 수 없다. `alt-enter`를 고르면 대신 ESC CR(Alt+Enter)을 보내 crossterm 기반 TUI가 줄바꿈으로 받는다 — 빌트인 Codex가 이걸 쓴다. 그 시퀀스를 모르는 CLI는 쓰레기 입력을 받게 되므로 기본값은 `enter`(그냥 제출)다.
 
 **재개** — `conversationId: "app-generated"`로 두고 `newSessionArgs`에 `{sessionId}`, `resumeArgs`에 `{conversationId}`를 넣으면 앱이 발급한 id로 대화를 이어붙인다. `"none"`이면 재개는 그냥 새로 띄우는 것이다.
 

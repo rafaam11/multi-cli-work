@@ -138,6 +138,14 @@ const claudeSession: TerminalSessionView = {
   updatedAt: "2026-07-11T02:30:00.000Z",
 };
 
+const codexSession: TerminalSessionView = {
+  ...powershellSession,
+  id: "session-codex",
+  kind: "codex",
+  createdAt: "2026-07-11T04:00:00.000Z",
+  updatedAt: "2026-07-11T04:00:00.000Z",
+};
+
 /** A session left behind by an agent the user has since removed from `agents.json`. */
 const removedAgentSession: TerminalSessionView = {
   ...powershellSession,
@@ -176,6 +184,7 @@ function agentFixture(id: string, label: string, available: boolean): AgentView 
     conversationId: "none",
     statusAdapter: "signals",
     titleSource: "none",
+    shiftEnter: "enter",
     icon: id,
     accentColor: null,
     builtin: true,
@@ -186,7 +195,7 @@ function agentFixture(id: string, label: string, available: boolean): AgentView 
 const agentFixtures: AgentView[] = [
   agentFixture("powershell", "PowerShell", true),
   agentFixture("claude", "Claude Code", true),
-  agentFixture("codex", "Codex", false),
+  { ...agentFixture("codex", "Codex", false), shiftEnter: "alt-enter" },
 ];
 
 function createApi(options?: {
@@ -237,6 +246,7 @@ function createApi(options?: {
       list: vi.fn().mockResolvedValue(snapshot),
       addFolder: vi.fn().mockResolvedValue(null),
       update: vi.fn(),
+      reorder: vi.fn().mockResolvedValue(registry(projects)),
       remove: vi.fn().mockImplementation(async (projectId: string) => registry(projects.filter((project) => project.id !== projectId))),
       relink: vi.fn().mockResolvedValue(null),
       restoreBackup: vi.fn().mockResolvedValue(registry(projects)),
@@ -1445,5 +1455,64 @@ describe("file drop", () => {
 
     const terminal = terminalHarness.instances.at(-1)!;
     expect(terminal.paste).not.toHaveBeenCalled();
+  });
+});
+
+describe("Shift+Enter", () => {
+  const ESC_CR = `${String.fromCharCode(0x1b)}\r`;
+
+  it("sends Alt+Enter to an agent that asks for it, so Codex inserts a newline instead of submitting", async () => {
+    const harness = createApi({
+      sessions: [codexSession],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: codexSession.id },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "codex 터미널" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
+
+    const terminal = terminalHarness.instances.at(-1)!;
+    // False keeps xterm from also sending its own CR, which would submit the prompt anyway.
+    expect(terminal.emitKey({ type: "keydown", key: "Enter", shiftKey: true })).toBe(false);
+
+    await waitFor(() => expect(harness.api.terminals.write).toHaveBeenCalledWith(codexSession.id, ESC_CR));
+  });
+
+  it("leaves Shift+Enter alone for an agent with no substitute, so it still submits", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
+
+    const terminal = terminalHarness.instances.at(-1)!;
+    expect(terminal.emitKey({ type: "keydown", key: "Enter", shiftKey: true })).toBe(true);
+    expect(harness.api.terminals.write).not.toHaveBeenCalledWith(powershellSession.id, ESC_CR);
+  });
+
+  it("writes once per press, not again on keyup", async () => {
+    const harness = createApi({
+      sessions: [codexSession],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: codexSession.id },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "codex 터미널" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
+
+    const terminal = terminalHarness.instances.at(-1)!;
+    terminal.emitKey({ type: "keydown", key: "Enter", shiftKey: true });
+    expect(terminal.emitKey({ type: "keyup", key: "Enter", shiftKey: true })).toBe(false);
+
+    await waitFor(() =>
+      expect(
+        (harness.api.terminals.write as ReturnType<typeof vi.fn>).mock.calls.filter(
+          ([, data]) => data === ESC_CR,
+        ),
+      ).toHaveLength(1),
+    );
   });
 });

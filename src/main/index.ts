@@ -64,6 +64,9 @@ function createWindow(): BrowserWindow {
   } else {
     void window.loadFile(rendererTarget.value);
   }
+  // Dev only, and never in the packaged app: the terminal buffer has to be inspectable without
+  // hunting for a menu shortcut while the scrollback rendering bug is open.
+  if (!app.isPackaged) window.webContents.openDevTools({ mode: "detach" });
   applyAttentionSnapshot(window, windowAttention);
   return window;
 }

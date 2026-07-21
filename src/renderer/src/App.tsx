@@ -811,6 +811,15 @@ export function App() {
     }
   };
 
+  const reorderProjects = async (orderedIds: string[]) => {
+    setActionError(null);
+    try {
+      setSnapshot(await window.multiCliWork.projects.reorder(orderedIds));
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
   const handleProjectSaved = (updated: SharedProject) => {
     setSnapshot((current) =>
       current
@@ -1162,6 +1171,7 @@ export function App() {
         onSelectProject={selectProject}
         onSelectSession={selectSession}
         onToggleProject={toggleProject}
+        onReorderProjects={(orderedIds) => void reorderProjects(orderedIds)}
         onProjectContextMenu={(project, event) => {
           event.preventDefault();
           setContextMenu({ project, x: event.clientX, y: event.clientY });
@@ -1278,6 +1288,7 @@ export function App() {
           ) : activeView === "terminal" && selectedSession ? (
             <WorkspaceSplit
               session={selectedSession}
+              agents={agents}
               splitSession={splitSession}
               splitSessionLabel={
                 splitSession

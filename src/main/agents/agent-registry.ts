@@ -7,6 +7,7 @@ import {
   type AgentRegistryV1,
   BUILTIN_AGENT_IDS,
   type ConversationIdOwner,
+  type ShiftEnterSequence,
   type StatusAdapter,
   USER_STATUS_ADAPTERS,
 } from "../../shared/agent-types";
@@ -32,6 +33,7 @@ const AGENT_KEYS = [
   "conversationId",
   "statusAdapter",
   "titleSource",
+  "shiftEnter",
   "icon",
   "accentColor",
 ] as const;
@@ -39,6 +41,8 @@ const AGENT_KEYS = [
 /** Conversation ownership a user-defined agent may claim. `provider-assigned` needs a transcript
  * correlator, which only the built-in Codex agent has. */
 const USER_CONVERSATION_OWNERS: readonly ConversationIdOwner[] = ["none", "app-generated"];
+
+const SHIFT_ENTER_SEQUENCES: readonly ShiftEnterSequence[] = ["enter", "alt-enter"];
 
 export class AgentRegistryError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -107,6 +111,12 @@ function parseUserAgent(value: unknown, key: string): AgentDefinition {
     );
   }
 
+  // Unlike titles or icons, this is not built-in only: any crossterm-based CLI a user adds wants it.
+  const shiftEnter = (value.shiftEnter ?? "enter") as ShiftEnterSequence;
+  if (!SHIFT_ENTER_SEQUENCES.includes(shiftEnter)) {
+    throw new AgentRegistryError(`agent ${key}.shiftEnter must be one of: ${SHIFT_ENTER_SEQUENCES.join(", ")}`);
+  }
+
   if (value.titleSource !== undefined && value.titleSource !== "none") {
     throw new AgentRegistryError(`agent ${key}.titleSource must be "none": transcript titles are built-in only`);
   }
@@ -128,6 +138,7 @@ function parseUserAgent(value: unknown, key: string): AgentDefinition {
     conversationId,
     statusAdapter,
     titleSource: "none",
+    shiftEnter,
     icon: null,
     accentColor,
     builtin: false,

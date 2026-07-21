@@ -1167,6 +1167,35 @@ body.sidebar-resizing {
   color: var(--red);
 }
 
+/* Folder drag-to-sort. The insertion point is a line rather than a highlight, so it cannot be
+   read as "drop inside this folder" — nesting is not something the tree supports. */
+.project-row {
+  position: relative;
+}
+
+.project-row.dragging {
+  opacity: 0.45;
+}
+
+.project-row.drop-before::after,
+.project-row.drop-after::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--teal);
+  content: "";
+  pointer-events: none;
+}
+
+.project-row.drop-before::after {
+  top: -1px;
+}
+
+.project-row.drop-after::after {
+  bottom: -1px;
+}
+
 .tree-toggle {
   display: grid;
   width: 26px;

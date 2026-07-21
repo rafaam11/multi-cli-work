@@ -12,6 +12,7 @@ const api: MultiCliWorkApi = {
     list: () => ipcRenderer.invoke("projects:list"),
     addFolder: () => ipcRenderer.invoke("projects:add-folder"),
     update: (projectId, patch) => ipcRenderer.invoke("projects:update", projectId, patch),
+    reorder: (orderedIds) => ipcRenderer.invoke("projects:reorder", orderedIds),
     remove: (projectId) => ipcRenderer.invoke("projects:remove", projectId),
     relink: (projectId) => ipcRenderer.invoke("projects:relink", projectId),
     restoreBackup: () => ipcRenderer.invoke("projects:restore-backup"),

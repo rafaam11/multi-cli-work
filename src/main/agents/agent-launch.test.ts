@@ -97,6 +97,7 @@ function userAgent(overrides: Partial<AgentDefinition>): AgentDefinition {
     conversationId: "none",
     statusAdapter: "signals",
     titleSource: "none",
+    shiftEnter: "enter",
     icon: null,
     accentColor: null,
     builtin: false,

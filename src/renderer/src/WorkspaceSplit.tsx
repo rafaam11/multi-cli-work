@@ -1,3 +1,5 @@
+import type { AgentView } from "@shared/agent-types";
+import { SHIFT_ENTER_BYTES } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import { X } from "lucide-react";
 import { useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
@@ -5,6 +7,7 @@ import { TerminalPane } from "./TerminalPane";
 
 interface WorkspaceSplitProps {
   session: TerminalSessionView;
+  agents: AgentView[];
   /** The secondary pane's session; null (or the primary itself) renders a single terminal. */
   splitSession: TerminalSessionView | null;
   splitSessionLabel: string | null;
@@ -20,12 +23,15 @@ interface WorkspaceSplitProps {
  */
 export function WorkspaceSplit({
   session,
+  agents,
   splitSession,
   splitSessionLabel,
   onAttached,
   onError,
   onCloseSplit,
 }: WorkspaceSplitProps) {
+  const shiftEnterBytes = (pane: TerminalSessionView): string | null =>
+    SHIFT_ENTER_BYTES[agents.find((agent) => agent.id === pane.kind)?.shiftEnter ?? "enter"];
   const [ratio, setRatio] = useState(0.5);
   const container = useRef<HTMLDivElement>(null);
   const secondary = splitSession && splitSession.id !== session.id ? splitSession : null;
@@ -46,13 +52,25 @@ export function WorkspaceSplit({
   };
 
   if (!secondary) {
-    return <TerminalPane key={session.id} session={session} onAttached={onAttached} onError={onError} />;
+    return <TerminalPane
+        key={session.id}
+        session={session}
+        shiftEnterBytes={shiftEnterBytes(session)}
+        onAttached={onAttached}
+        onError={onError}
+      />;
   }
 
   return (
     <div className="workspace-split" ref={container} style={{ "--split-ratio": ratio } as CSSProperties}>
       <div className="split-pane split-primary">
-        <TerminalPane key={session.id} session={session} onAttached={onAttached} onError={onError} />
+        <TerminalPane
+        key={session.id}
+        session={session}
+        shiftEnterBytes={shiftEnterBytes(session)}
+        onAttached={onAttached}
+        onError={onError}
+      />
       </div>
       <div
         className="split-divider"
@@ -70,7 +88,13 @@ export function WorkspaceSplit({
             <X size={13} />
           </button>
         </header>
-        <TerminalPane key={secondary.id} session={secondary} onAttached={onAttached} onError={onError} />
+        <TerminalPane
+          key={secondary.id}
+          session={secondary}
+          shiftEnterBytes={shiftEnterBytes(secondary)}
+          onAttached={onAttached}
+          onError={onError}
+        />
       </div>
     </div>
   );

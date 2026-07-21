@@ -3,7 +3,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { SHIFT_ENTER_BYTES } from "../../shared/agent-types";
 import { AGENT_REGISTRY_PATH, AgentRegistryError, parseAgentRegistry, readAgentRegistry } from "./agent-registry";
+import { BUILTIN_AGENTS } from "./builtin-agents";
 
 const tempRoots: string[] = [];
 
@@ -116,6 +118,32 @@ describe("user agent validation", () => {
 
   it("rejects unknown fields so a typo does not silently do nothing", () => {
     expect(parseOne({ ...GEMINI, arguments: ["--yolo"] })).toThrow(/unknown fields/i);
+  });
+
+  it("defaults shiftEnter to a plain Enter and lets a crossterm CLI opt into Alt+Enter", () => {
+    const registry = parseAgentRegistry({
+      schemaVersion: 1,
+      updatedAt: "2026-07-13T00:00:00.000Z",
+      agents: { gemini: GEMINI, opencode: { id: "opencode", commands: ["opencode"], shiftEnter: "alt-enter" } },
+    });
+
+    expect(registry.agents.gemini.shiftEnter).toBe("enter");
+    expect(registry.agents.opencode.shiftEnter).toBe("alt-enter");
+    expect(() =>
+      parseAgentRegistry({
+        schemaVersion: 1,
+        updatedAt: "2026-07-13T00:00:00.000Z",
+        agents: { gemini: { ...GEMINI, shiftEnter: "csi-u" } },
+      }),
+    ).toThrow(AgentRegistryError);
+  });
+
+  it("ships Alt+Enter only for Codex, whose composer is the one that needs it", () => {
+    expect(BUILTIN_AGENTS.codex.shiftEnter).toBe("alt-enter");
+    expect(BUILTIN_AGENTS.claude.shiftEnter).toBe("enter");
+    expect(BUILTIN_AGENTS.powershell.shiftEnter).toBe("enter");
+    expect(SHIFT_ENTER_BYTES["alt-enter"]).toBe(`${String.fromCharCode(0x1b)}\r`);
+    expect(SHIFT_ENTER_BYTES.enter).toBeNull();
   });
 
   it("accepts a resumable agent that mints its own session id", () => {

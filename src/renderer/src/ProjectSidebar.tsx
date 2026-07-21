@@ -22,6 +22,7 @@ import {
 import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { FileIcon } from "./file-icons";
 import type { OpenFileTab } from "./file-tabs";
+import { reorderIds, type DropPosition } from "./project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon } from "./brand-icons";
@@ -51,6 +52,7 @@ interface ProjectSidebarProps {
   onSelectProject(projectId: string): void;
   onSelectSession(session: TerminalSessionView): void;
   onToggleProject(projectId: string): void;
+  onReorderProjects(orderedIds: string[]): void;
   onProjectContextMenu(project: SharedProject, event: ReactMouseEvent): void;
   onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
   onRenameSession(sessionId: string, name: string | null): void;
@@ -145,6 +147,7 @@ export function ProjectSidebar({
   onSelectProject,
   onSelectSession,
   onToggleProject,
+  onReorderProjects,
   onProjectContextMenu,
   onSessionContextMenu,
   onRenameSession,
@@ -162,6 +165,22 @@ export function ProjectSidebar({
   onCloseFileTab,
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
+  const [drag, setDrag] = useState<{ id: string; over: { id: string; position: DropPosition } | null } | null>(null);
+
+  const endDrag = () => setDrag(null);
+
+  const dropOn = (targetId: string, position: DropPosition) => {
+    if (!drag) return;
+    const ordered = reorderIds(
+      projects.map((project) => project.id),
+      drag.id,
+      targetId,
+      position,
+    );
+    endDrag();
+    // A drag that put the folder back where it started is not worth a registry write.
+    if (ordered.some((id, index) => id !== projects[index]?.id)) onReorderProjects(ordered);
+  };
 
   const allSessions = useMemo(() => [...sessions, ...toolSessions], [sessions, toolSessions]);
   const railSessions = useMemo(
@@ -341,7 +360,15 @@ export function ProjectSidebar({
             <span>아직 폴더가 없습니다</span>
           </div>
         ) : (
-          <ul className="project-tree" role="tree">
+          <ul
+            className="project-tree"
+            role="tree"
+            onDragLeave={(event) => {
+              // Only when the pointer actually left the list, not on every hop between rows.
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+              setDrag((current) => (current?.over ? { ...current, over: null } : current));
+            }}
+          >
             {projects.map((project) => {
               const name = projectName(project);
               const expanded = expandedProjects.has(project.id);
@@ -363,8 +390,44 @@ export function ProjectSidebar({
               return (
                 <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
                   <div
-                    className={`project-row ${selectedProjectId === project.id ? "selected" : ""} ${rootMissing ? "missing" : ""}`}
+                    className={[
+                      "project-row",
+                      selectedProjectId === project.id ? "selected" : "",
+                      rootMissing ? "missing" : "",
+                      drag?.id === project.id ? "dragging" : "",
+                      drag?.over?.id === project.id ? `drop-${drag.over.position}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                     onContextMenu={(event) => onProjectContextMenu(project, event)}
+                    draggable={!readOnly}
+                    onDragStart={(event) => {
+                      // A payload is required for the drag to start at all; the id we act on is
+                      // tracked in state, because dragover cannot read dataTransfer.
+                      event.dataTransfer.setData("text/plain", project.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      setDrag({ id: project.id, over: null });
+                    }}
+                    onDragOver={(event) => {
+                      if (!drag || drag.id === project.id) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      const position: DropPosition =
+                        event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+                      setDrag((current) =>
+                        !current || (current.over?.id === project.id && current.over.position === position)
+                          ? current
+                          : { ...current, over: { id: project.id, position } },
+                      );
+                    }}
+                    onDrop={(event) => {
+                      if (!drag || drag.id === project.id) return;
+                      event.preventDefault();
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      dropOn(project.id, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
+                    }}
+                    onDragEnd={endDrag}
                   >
                     <button
                       className="tree-toggle"

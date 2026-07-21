@@ -28,6 +28,7 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentId, AgentDefinition> = {
     conversationId: "none",
     statusAdapter: "signals",
     titleSource: "none",
+    shiftEnter: "enter",
     icon: "powershell",
     accentColor: null,
     builtin: true,
@@ -44,6 +45,9 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentId, AgentDefinition> = {
     conversationId: "app-generated",
     statusAdapter: "claude-hook",
     titleSource: "claude-transcript",
+    // Claude Code has its own documented newline key (backslash then Enter), so Shift+Enter is
+    // left alone rather than remapped to a sequence it has no binding for.
+    shiftEnter: "enter",
     icon: "claude",
     accentColor: null,
     builtin: true,
@@ -58,6 +62,9 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentId, AgentDefinition> = {
     conversationId: "provider-assigned",
     statusAdapter: "osc9",
     titleSource: "codex-transcript",
+    // Codex advertises "Shift+⏎ newline" but can only see it over a keyboard protocol xterm.js
+    // does not speak. Alt+Enter is the binding it does recognise from a plain byte stream.
+    shiftEnter: "alt-enter",
     icon: "codex",
     accentColor: null,
     builtin: true,

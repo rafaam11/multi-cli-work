@@ -202,6 +202,8 @@ export interface MultiCliWorkApi {
     list(): Promise<ProjectWorkspaceSnapshot>;
     addFolder(): Promise<SharedProject | null>;
     update(projectId: string, patch: ProjectMetadataPatch): Promise<SharedProject>;
+    /** Folder drag-to-sort. Ids not listed keep their relative position after the listed ones. */
+    reorder(orderedIds: string[]): Promise<ProjectWorkspaceSnapshot>;
     remove(projectId: string): Promise<ProjectWorkspaceSnapshot>;
     relink(projectId: string): Promise<SharedProject | null>;
     restoreBackup(): Promise<ProjectWorkspaceSnapshot>;
