@@ -1,6 +1,6 @@
 {
   "name": "multi-cli-work",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Project-oriented Windows workspace for Codex, Claude Code, and PowerShell sessions",
   "main": "out/main/index.js",
   "private": true,
