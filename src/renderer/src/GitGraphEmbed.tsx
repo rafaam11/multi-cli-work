@@ -1,8 +1,22 @@
 import type { GitCommitDetails, GitGraphCommit } from "@shared/api-types";
 import type { FileExplorerTarget } from "@shared/file-explorer-types";
-import { computeGitGraphLanes } from "@shared/git-graph-lanes";
-import { Check, Copy, FileWarning, GitBranch, GitCommit, MoreHorizontal, RefreshCw, Tag, TriangleAlert, X } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { layoutGitGraph } from "@shared/git-graph-layout";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  GitBranch,
+  GitCommit,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Tag,
+  TriangleAlert,
+  X,
+} from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GitGraphSvg, gutterWidth, ROW_HEIGHT } from "./GitGraphSvg";
 
 export interface GitGraphEmbedProps {
   target: FileExplorerTarget;
@@ -10,9 +24,11 @@ export interface GitGraphEmbedProps {
 }
 
 const PAGE_SIZE = 200;
-const LANE_GAP = 16;
-const LANE_START = 12;
-const LANE_COLORS = ["#4fb7a4", "#d9a441", "#8e75d1", "#d46a6a", "#5f9ed1", "#72b65b"];
+const OVERSCAN = 8;
+/** How close to the bottom the scroller gets before the next page is pulled. */
+const LOAD_MORE_MARGIN = 300;
+/** Stands in for the real viewport before it is measured, so the first paint is not blank. */
+const ASSUMED_VIEWPORT = 800;
 
 function targetKey(target: FileExplorerTarget) {
   return `${target.kind}:${target.id}`;
@@ -28,26 +44,6 @@ function relativeTime(value: string) {
   const units: [Intl.RelativeTimeFormatUnit, number][] = [["year", 31_536_000], ["month", 2_592_000], ["day", 86_400], ["hour", 3_600], ["minute", 60]];
   for (const [unit, size] of units) if (Math.abs(seconds) >= size) return formatter.format(Math.round(seconds / size), unit);
   return formatter.format(seconds, "second");
-}
-
-function GraphCell({ commit, row }: { commit: GitGraphCommit; row: ReturnType<typeof computeGitGraphLanes>[number] }) {
-  const width = Math.max(row.lanesBefore.length, row.lanesAfter.length, 1) * LANE_GAP + 10;
-  const x = (lane: number) => LANE_START + lane * LANE_GAP;
-  return (
-    <svg className="native-graph-cell" width={width} height="38" aria-hidden="true">
-      {row.lanesBefore.map((hash, index) => {
-        if (hash === commit.hash) return null;
-        const after = row.lanesAfter.indexOf(hash);
-        return after < 0 ? null : <path key={hash} d={`M ${x(index)} 0 L ${x(after)} 38`} stroke={LANE_COLORS[index % LANE_COLORS.length]} />;
-      })}
-      {commit.parents.map((parent, index) => {
-        const parentLane = row.lanesAfter.indexOf(parent);
-        return <path key={parent} d={`M ${x(row.lane)} 19 C ${x(row.lane)} 27, ${x(parentLane)} 29, ${x(parentLane)} 38`} stroke={LANE_COLORS[(row.lane + index) % LANE_COLORS.length]} />;
-      })}
-      {row.lanesBefore.slice(row.lane, row.lane + 1).map(() => <path key="top" d={`M ${x(row.lane)} 0 L ${x(row.lane)} 19`} stroke={LANE_COLORS[row.lane % LANE_COLORS.length]} />)}
-      <circle cx={x(row.lane)} cy="19" r="4" fill={LANE_COLORS[row.lane % LANE_COLORS.length]} />
-    </svg>
-  );
 }
 
 const GitCommitDiff = lazy(() => import("./GitCommitDiff").then((module) => ({ default: module.GitCommitDiff })));
@@ -96,36 +92,167 @@ function GraphDialog({ state, busy, onClose, onRun }: { state: NonNullable<Dialo
   </form></div>;
 }
 
+function RefBadge({ commit, onCheckout }: { commit: GitGraphCommit; onCheckout(branch: string): void }) {
+  return <>{commit.refs.map((ref) => {
+    const icon = ref.kind === "head" ? <Check size={10} /> : ref.kind === "tag" ? <Tag size={10} /> : <GitBranch size={10} />;
+    // Local branches double as a checkout control; the rest are labels. Either way they are siblings
+    // of the row rather than nested inside it, so neither nests one control within another.
+    return ref.kind === "local"
+      ? <button type="button" className={`native-graph-ref ref-${ref.kind}`} key={`${ref.kind}:${ref.fullName}`} title={`${ref.name} checkout`} onClick={(event) => { event.stopPropagation(); onCheckout(ref.name); }}>{icon}{ref.name}</button>
+      : <span className={`native-graph-ref ref-${ref.kind}`} key={`${ref.kind}:${ref.fullName}`} title={ref.fullName}>{icon}{ref.name}</span>;
+  })}</>;
+}
+
 export function GitGraphEmbed({ target, targetLabel }: GitGraphEmbedProps) {
   const [commits, setCommits] = useState<GitGraphCommit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uncommittedCount, setUncommittedCount] = useState(0);
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
+  const [detailsHeight, setDetailsHeight] = useState(0);
   const [menu, setMenu] = useState<{ commit: GitGraphCommit; x: number; y: number } | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [busy, setBusy] = useState(false);
-  const lanes = useMemo(() => computeGitGraphLanes(commits), [commits]);
+  const [query, setQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
 
-  const load = async (append = false) => {
-    append ? setLoadingMore(true) : setLoading(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
+  /** Bumped by every refresh so a page that is still in flight cannot overwrite the newer list. */
+  const generationRef = useRef(0);
+
+  const refresh = useCallback(() => {
+    const generation = ++generationRef.current;
+    const current = () => generation === generationRef.current;
+    setLoading(true);
     setError(null);
-    try {
-      const page = await window.multiCliWork.gitGraph.list(target, { offset: append ? commits.length : 0, limit: PAGE_SIZE });
-      setCommits((current) => append ? [...current, ...page.commits] : page.commits);
-      setHasMore(page.hasMore);
-    } catch (cause) { setError(message(cause)); }
-    finally { setLoading(false); setLoadingMore(false); }
+    window.multiCliWork.gitGraph
+      .list(target, { offset: 0, limit: PAGE_SIZE })
+      .then((page) => { if (current()) { setCommits(page.commits); setHasMore(page.hasMore); } })
+      .catch((cause) => { if (current()) setError(message(cause)); })
+      .finally(() => { if (current()) { setLoading(false); loadingMoreRef.current = false; } });
+    // Reuses the git tab's read rather than adding an IPC channel for one number.
+    window.multiCliWork.git
+      .panelData(target)
+      .then((data) => { if (current()) setUncommittedCount(data.isRepo ? data.changes.length : 0); })
+      .catch(() => { /* The graph is still usable without the pending-changes row. */ });
+  }, [targetKey(target)]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMoreRef.current || !hasMore) return;
+    loadingMoreRef.current = true;
+    const generation = generationRef.current;
+    const offset = commits.length;
+    window.multiCliWork.gitGraph
+      .list(target, { offset, limit: PAGE_SIZE })
+      .then((page) => {
+        if (generation !== generationRef.current) return;
+        // Appending only when the list is still the length we asked from makes a duplicated scroll
+        // event a no-op rather than a doubled page.
+        setCommits((list) => (list.length === offset ? [...list, ...page.commits] : list));
+        setHasMore(page.hasMore);
+      })
+      .catch((cause) => { if (generation === generationRef.current) setError(message(cause)); })
+      .finally(() => { loadingMoreRef.current = false; });
+  }, [targetKey(target), hasMore, commits.length]);
+
+  useEffect(() => {
+    setCommits([]);
+    setSelectedHash(null);
+    setQuery("");
+    setScrollTop(0);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const handler = () => refresh();
+    window.addEventListener("focus", handler);
+    window.addEventListener("mcw:git-refresh", handler);
+    return () => {
+      window.removeEventListener("focus", handler);
+      window.removeEventListener("mcw:git-refresh", handler);
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    const host = scrollRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setViewportHeight(host.clientHeight));
+    observer.observe(host);
+    setViewportHeight(host.clientHeight);
+    return () => observer.disconnect();
+  }, []);
+
+  // The expanded block is measured rather than assumed, because the rows below it and the graph
+  // overlay both have to shift by exactly its height.
+  useEffect(() => {
+    const host = detailsRef.current;
+    if (!host) { setDetailsHeight(0); return; }
+    if (typeof ResizeObserver === "undefined") { setDetailsHeight(host.offsetHeight); return; }
+    const observer = new ResizeObserver(() => setDetailsHeight(host.offsetHeight));
+    observer.observe(host);
+    setDetailsHeight(host.offsetHeight);
+    return () => observer.disconnect();
+  }, [selectedHash]);
+
+  const layout = useMemo(() => layoutGitGraph(commits), [commits]);
+  const headHash = useMemo(() => commits.find((commit) => commit.refs.some((ref) => ref.kind === "head"))?.hash ?? null, [commits]);
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+    const found: number[] = [];
+    commits.forEach((commit, index) => {
+      if (
+        commit.subject.toLowerCase().includes(needle) ||
+        commit.authorName.toLowerCase().includes(needle) ||
+        commit.hash.startsWith(needle) ||
+        commit.refs.some((ref) => ref.name.toLowerCase().includes(needle))
+      ) found.push(index);
+    });
+    return found;
+  }, [commits, query]);
+
+  const expandedRow = selectedHash === null ? -1 : commits.findIndex((commit) => commit.hash === selectedHash);
+  const pendingOffset = uncommittedCount > 0 ? ROW_HEIGHT : 0;
+  const expansion = expandedRow >= 0 ? detailsHeight : 0;
+  /** Rows, the expanded block and the graph overlay all derive their Y from this one function. */
+  const rowTop = (row: number) => pendingOffset + row * ROW_HEIGHT + (expandedRow >= 0 && row > expandedRow ? detailsHeight : 0);
+  const rowY = (row: number) => rowTop(row) + ROW_HEIGHT / 2;
+  const contentHeight = pendingOffset + commits.length * ROW_HEIGHT + expansion;
+
+  const rowAt = (y: number) => {
+    const local = y - pendingOffset;
+    if (expandedRow < 0 || local < (expandedRow + 1) * ROW_HEIGHT + detailsHeight) return Math.floor(local / ROW_HEIGHT);
+    return Math.floor((local - detailsHeight) / ROW_HEIGHT);
+  };
+  const measuredHeight = viewportHeight || ASSUMED_VIEWPORT;
+  const first = Math.max(0, rowAt(scrollTop) - OVERSCAN);
+  const last = Math.min(commits.length - 1, rowAt(scrollTop + measuredHeight) + OVERSCAN);
+
+  const scrollToRow = (row: number) => {
+    const host = scrollRef.current;
+    if (!host) return;
+    host.scrollTop = Math.max(0, rowTop(row) - (host.clientHeight || ASSUMED_VIEWPORT) / 2);
+    setScrollTop(host.scrollTop);
   };
 
-  useEffect(() => { setCommits([]); setSelectedHash(null); void load(false); }, [targetKey(target)]);
-  useEffect(() => {
-    const refresh = () => void load(false);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("mcw:git-refresh", refresh);
-    return () => { window.removeEventListener("focus", refresh); window.removeEventListener("mcw:git-refresh", refresh); };
-  });
+  const gotoMatch = (delta: number) => {
+    if (matches.length === 0) return;
+    const next = (matchIndex + delta + matches.length) % matches.length;
+    setMatchIndex(next);
+    scrollToRow(matches[next]);
+  };
+
+  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const host = event.currentTarget;
+    setScrollTop(host.scrollTop);
+    if (host.scrollHeight - host.scrollTop - host.clientHeight <= LOAD_MORE_MARGIN) loadMore();
+  };
 
   const runAction = async (name?: string, checkout?: boolean) => {
     if (!dialog) return;
@@ -147,20 +274,93 @@ export function GitGraphEmbed({ target, targetLabel }: GitGraphEmbedProps) {
     finally { setBusy(false); window.dispatchEvent(new Event("mcw:git-refresh")); }
   };
 
+  const gutter = gutterWidth(layout.laneCount);
+  const activeMatch = matches[matchIndex] ?? -1;
+
   return <section className="git-graph-embed" aria-label="Git Graph">
-    <header className="native-graph-header"><div><GitCommit size={17} /><strong>Git Graph</strong><span title={targetLabel ?? ""}>{targetLabel}</span></div><button type="button" className="icon-button" onClick={() => void load(false)} disabled={loading} aria-label="Git Graph 새로고침"><RefreshCw size={16} className={loading ? "spin" : undefined} /></button></header>
+    <header className="native-graph-header">
+      <div><GitCommit size={17} /><strong>Git Graph</strong><span title={targetLabel ?? ""}>{targetLabel}</span></div>
+      <div className="native-graph-find">
+        <Search size={13} />
+        <input
+          type="search"
+          value={query}
+          placeholder="커밋 검색"
+          aria-label="커밋 검색"
+          onChange={(event) => { setQuery(event.target.value); setMatchIndex(0); }}
+          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); gotoMatch(event.shiftKey ? -1 : 1); } }}
+        />
+        {query.trim() ? <span className="native-graph-find-count">{matches.length === 0 ? "결과 없음" : `${matchIndex + 1}/${matches.length}`}</span> : null}
+        <button type="button" className="icon-button" onClick={() => gotoMatch(-1)} disabled={matches.length === 0} aria-label="이전 결과"><ChevronUp size={14} /></button>
+        <button type="button" className="icon-button" onClick={() => gotoMatch(1)} disabled={matches.length === 0} aria-label="다음 결과"><ChevronDown size={14} /></button>
+      </div>
+      <button type="button" className="icon-button" onClick={refresh} disabled={loading} aria-label="Git Graph 새로고침"><RefreshCw size={16} className={loading ? "spin" : undefined} /></button>
+    </header>
+
     {error ? <div className="git-error-banner native-graph-error" role="alert"><TriangleAlert size={14} /><span>{error}</span><button type="button" className="icon-button" onClick={() => setError(null)} aria-label="오류 닫기">×</button></div> : null}
-    <div className="native-graph-list">
-      {loading && commits.length === 0 ? <div className="git-graph-status"><RefreshCw className="spin" size={20} /><p>커밋 불러오는 중…</p></div> : commits.length === 0 ? <div className="git-graph-status"><GitCommit size={20} /><p>아직 커밋이 없습니다</p></div> : commits.map((commit, index) => <div className="native-graph-item" key={commit.hash}>
-        <button type="button" className={`native-graph-row ${selectedHash === commit.hash ? "selected" : ""}`} onClick={() => setSelectedHash((current) => current === commit.hash ? null : commit.hash)} onContextMenu={(event) => { event.preventDefault(); setMenu({ commit, x: event.clientX, y: event.clientY }); }}>
-          <GraphCell commit={commit} row={lanes[index]} />
-          <div className="native-graph-summary"><div className="native-graph-subject">{commit.refs.map((ref) => <span className={`native-graph-ref ref-${ref.kind}`} key={`${ref.kind}:${ref.fullName}`} {...(ref.kind === "local" ? { role: "button", tabIndex: 0, title: `${ref.name} checkout`, onClick: (event: React.MouseEvent) => { event.stopPropagation(); void checkoutRef(ref.name); }, onKeyDown: (event: React.KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); void checkoutRef(ref.name); } } } : { title: ref.fullName })}>{ref.kind === "head" ? <Check size={10} /> : ref.kind === "tag" ? <Tag size={10} /> : <GitBranch size={10} />}{ref.name}</span>)}<span>{commit.subject}</span></div><div className="native-graph-meta"><span>{commit.authorName}</span><time title={new Date(commit.authoredAt).toLocaleString()}>{relativeTime(commit.authoredAt)}</time><code>{commit.hash.slice(0, 8)}</code></div></div>
-          <span className="native-graph-more" onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ commit, x: rect.right, y: rect.bottom }); }}><MoreHorizontal size={16} /></span>
-        </button>
-        {selectedHash === commit.hash ? <CommitDetails target={target} hash={commit.hash} /> : null}
-      </div>)}
-      {hasMore ? <button type="button" className="command-button native-graph-load-more" disabled={loadingMore} onClick={() => void load(true)}>{loadingMore ? "불러오는 중…" : "더 불러오기"}</button> : null}
+
+    {query.trim() && matches.length > 0 ? <p className="native-graph-find-note">불러온 {commits.length}개 커밋에서 검색합니다. 목록은 그래프가 끊기지 않도록 그대로 둡니다.</p> : null}
+
+    <div className="native-graph-list" ref={scrollRef} onScroll={handleScroll}>
+      {loading && commits.length === 0 ? <div className="git-graph-status"><RefreshCw className="spin" size={20} /><p>커밋 불러오는 중…</p></div>
+        : commits.length === 0 ? <div className="git-graph-status"><GitCommit size={20} /><p>아직 커밋이 없습니다</p></div>
+        : <div className="native-graph-content" style={{ height: contentHeight }}>
+          <GitGraphSvg
+            layout={layout}
+            first={first}
+            last={last}
+            height={contentHeight}
+            rowY={rowY}
+            headHash={headHash}
+            uncommittedY={uncommittedCount > 0 ? ROW_HEIGHT / 2 : null}
+          />
+
+          {uncommittedCount > 0 ? (
+            <div className="native-graph-row native-graph-pending" style={{ top: 0, paddingLeft: gutter }}>
+              <span className="native-graph-subject">미커밋 변경 {uncommittedCount}건</span>
+            </div>
+          ) : null}
+
+          {commits.slice(first, last + 1).map((commit, offset) => {
+            const index = first + offset;
+            const classes = ["native-graph-row"];
+            if (commit.hash === selectedHash) classes.push("selected");
+            if (matches.includes(index)) classes.push("matched");
+            if (index === activeMatch) classes.push("active-match");
+            return (
+              <div
+                key={commit.hash}
+                className={classes.join(" ")}
+                style={{ top: rowTop(index), paddingLeft: gutter }}
+                role="button"
+                tabIndex={0}
+                aria-expanded={commit.hash === selectedHash}
+                onClick={() => setSelectedHash((current) => current === commit.hash ? null : commit.hash)}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedHash((current) => current === commit.hash ? null : commit.hash); } }}
+                onContextMenu={(event) => { event.preventDefault(); setMenu({ commit, x: event.clientX, y: event.clientY }); }}
+              >
+                <span className="native-graph-subject"><RefBadge commit={commit} onCheckout={(branch) => void checkoutRef(branch)} /><span>{commit.subject}</span></span>
+                <time className="native-graph-date" title={new Date(commit.authoredAt).toLocaleString()}>{relativeTime(commit.authoredAt)}</time>
+                <span className="native-graph-author" title={commit.authorName}>{commit.authorName}</span>
+                <code className="native-graph-hash">{commit.hash.slice(0, 8)}</code>
+                <button
+                  type="button"
+                  className="icon-button native-graph-more"
+                  aria-label={`${commit.subject} 커밋 작업`}
+                  onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ commit, x: rect.right, y: rect.bottom }); }}
+                ><MoreHorizontal size={15} /></button>
+              </div>
+            );
+          })}
+
+          {expandedRow >= 0 && selectedHash ? (
+            <div className="native-graph-details-slot" ref={detailsRef} style={{ top: rowTop(expandedRow) + ROW_HEIGHT }}>
+              <CommitDetails target={target} hash={selectedHash} />
+            </div>
+          ) : null}
+        </div>}
     </div>
+
     {menu ? <div className="provider-menu native-graph-menu" role="menu" aria-label="커밋 작업" style={{ left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - 240) }} onMouseLeave={() => setMenu(null)}>
       <button role="menuitem" type="button" onClick={() => { void window.multiCliWork.clipboard.writeText(menu.commit.hash); setMenu(null); }}><Copy size={13} />해시 복사</button>
       <button role="menuitem" type="button" onClick={() => { setDialog({ kind: "branch", commit: menu.commit }); setMenu(null); }}><GitBranch size={13} />브랜치 만들기</button>
