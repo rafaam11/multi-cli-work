@@ -9,7 +9,9 @@ interface TerminalPaneProps {
   session: TerminalSessionView;
   /** Bytes to send instead of a plain Enter when Shift is held. Null keeps xterm's own handling. */
   shiftEnterBytes: string | null;
+  refreshRequest: number;
   onAttached(session: TerminalSessionView): void;
+  onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
 }
 
@@ -21,12 +23,21 @@ function isReadOnly(session: TerminalSessionView): boolean {
   return session.status === "exited" || session.status === "error";
 }
 
-export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: TerminalPaneProps) {
+export function TerminalPane({
+  session,
+  shiftEnterBytes,
+  refreshRequest,
+  onAttached,
+  onRefreshComplete,
+  onError,
+}: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(session);
   const shiftEnterRef = useRef(shiftEnterBytes);
   const onAttachedRef = useRef(onAttached);
+  const onRefreshCompleteRef = useRef(onRefreshComplete);
   const onErrorRef = useRef(onError);
+  const lastRefreshRequestRef = useRef(refreshRequest);
   const scheduleResizeRef = useRef<() => void>(() => undefined);
   const [attaching, setAttaching] = useState(true);
   const readOnly = isReadOnly(session);
@@ -34,13 +45,18 @@ export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: 
   sessionRef.current = session;
   shiftEnterRef.current = shiftEnterBytes;
   onAttachedRef.current = onAttached;
+  onRefreshCompleteRef.current = onRefreshComplete;
   onErrorRef.current = onError;
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const refreshing = refreshRequest !== lastRefreshRequestRef.current;
+    lastRefreshRequestRef.current = refreshRequest;
+    setAttaching(true);
 
     let disposed = false;
+    let refreshCompleted = false;
     let replayAttached = false;
     let resizeTimer: number | undefined;
     const pendingOutput: Array<{ data: string; sequence: number }> = [];
@@ -82,6 +98,11 @@ export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: 
 
     const reportError = (error: unknown) => {
       if (!disposed) onErrorRef.current(getErrorMessage(error));
+    };
+    const finishRefresh = () => {
+      if (!refreshing || refreshCompleted) return;
+      refreshCompleted = true;
+      onRefreshCompleteRef.current(session.id);
     };
 
     terminal.attachCustomKeyEventHandler((event) => {
@@ -128,10 +149,10 @@ export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: 
     });
 
     const resize = () => {
-      if (disposed || isReadOnly(sessionRef.current)) return;
+      if (disposed) return;
       try {
         fitAddon.fit();
-        if (terminal.cols > 0 && terminal.rows > 0) {
+        if (!isReadOnly(sessionRef.current) && terminal.cols > 0 && terminal.rows > 0) {
           void window.multiCliWork.terminals
             .resize(session.id, terminal.cols, terminal.rows)
             .catch(reportError);
@@ -180,8 +201,10 @@ export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: 
     const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(host);
 
-    void window.multiCliWork.terminals
-      .attach(session.id)
+    const attachment = refreshing
+      ? window.multiCliWork.terminals.refresh(session.id)
+      : window.multiCliWork.terminals.attach(session.id);
+    void attachment
       .then((attachment) => {
         if (disposed) return;
         terminal.write(attachment.replay);
@@ -194,10 +217,12 @@ export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: 
         setAttaching(false);
         scheduleResize();
         terminal.focus();
+        finishRefresh();
       })
       .catch((error) => {
-        setAttaching(false);
+        if (!disposed) setAttaching(false);
         reportError(error);
+        finishRefresh();
       });
 
     return () => {
@@ -211,8 +236,9 @@ export function TerminalPane({ session, shiftEnterBytes, onAttached, onError }: 
       fitAddon.dispose();
       terminal.dispose();
       scheduleResizeRef.current = () => undefined;
+      finishRefresh();
     };
-  }, [session.id]);
+  }, [session.id, refreshRequest]);
 
   useEffect(() => {
     if (!readOnly) scheduleResizeRef.current();

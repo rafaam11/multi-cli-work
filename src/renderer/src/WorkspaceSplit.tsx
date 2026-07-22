@@ -11,7 +11,9 @@ interface WorkspaceSplitProps {
   /** The secondary pane's session; null (or the primary itself) renders a single terminal. */
   splitSession: TerminalSessionView | null;
   splitSessionLabel: string | null;
+  refreshRequests: Readonly<Record<string, number>>;
   onAttached(session: TerminalSessionView): void;
+  onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
   onCloseSplit(): void;
 }
@@ -26,7 +28,9 @@ export function WorkspaceSplit({
   agents,
   splitSession,
   splitSessionLabel,
+  refreshRequests,
   onAttached,
+  onRefreshComplete,
   onError,
   onCloseSplit,
 }: WorkspaceSplitProps) {
@@ -56,7 +60,9 @@ export function WorkspaceSplit({
         key={session.id}
         session={session}
         shiftEnterBytes={shiftEnterBytes(session)}
+        refreshRequest={refreshRequests[session.id] ?? 0}
         onAttached={onAttached}
+        onRefreshComplete={onRefreshComplete}
         onError={onError}
       />;
   }
@@ -68,7 +74,9 @@ export function WorkspaceSplit({
         key={session.id}
         session={session}
         shiftEnterBytes={shiftEnterBytes(session)}
+        refreshRequest={refreshRequests[session.id] ?? 0}
         onAttached={onAttached}
+        onRefreshComplete={onRefreshComplete}
         onError={onError}
       />
       </div>
@@ -92,7 +100,9 @@ export function WorkspaceSplit({
           key={secondary.id}
           session={secondary}
           shiftEnterBytes={shiftEnterBytes(secondary)}
+          refreshRequest={refreshRequests[secondary.id] ?? 0}
           onAttached={onAttached}
+          onRefreshComplete={onRefreshComplete}
           onError={onError}
         />
       </div>

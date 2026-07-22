@@ -15,6 +15,7 @@ const terminalHarness = vi.hoisted(() => ({
     options: { cursorBlink?: boolean; cursorStyle?: string };
     write: ReturnType<typeof vi.fn>;
     paste: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
     emitInput(data: string): void;
     emitKey(event: Partial<KeyboardEvent>): boolean;
     selection: string;
@@ -42,7 +43,7 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon() {}
     open() {}
     focus() {}
-    dispose() {}
+    dispose = vi.fn();
 
     onData(listener: (data: string) => void) {
       this.inputListeners.add(listener);
@@ -339,6 +340,14 @@ function createApi(options?: {
           session: sessionId === claudeSession.id ? (resumedSession ?? claudeSession) : (known ?? powershellSession),
           replay: `${sessionId} replay\r\n`,
           sequence: 0,
+        };
+      }),
+      refresh: vi.fn().mockImplementation(async (sessionId: string) => {
+        const known = [...sessions, created, toolSession].find((session) => session.id === sessionId);
+        return {
+          session: known ?? powershellSession,
+          replay: `${sessionId} refreshed\r\n`,
+          sequence: 1,
         };
       }),
       write: vi.fn().mockResolvedValue(undefined),
@@ -1391,6 +1400,93 @@ describe("workspace split", () => {
     expect(harness.api.terminals.split).toHaveBeenLastCalledWith(null);
     expect(screen.getByRole("region", { name: "claude 터미널" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "powershell 터미널" })).not.toBeInTheDocument();
+  });
+
+  it("recreates xterm and uses refresh without stopping or resuming the selected session", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(powershellSession.id));
+    const previous = terminalHarness.instances.at(-1)!;
+
+    fireEvent.click(screen.getByRole("button", { name: "세션 새로고침" }));
+
+    await waitFor(() => expect(harness.api.terminals.refresh).toHaveBeenCalledWith(powershellSession.id));
+    expect(terminalHarness.instances.at(-1)).not.toBe(previous);
+    expect(previous.dispose).toHaveBeenCalledOnce();
+    expect(harness.api.terminals.stop).not.toHaveBeenCalled();
+    expect(harness.api.terminals.resume).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an exited session's scrollback without resuming it", async () => {
+    const harness = createApi({
+      sessions: [claudeSession],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: claudeSession.id },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "claude 터미널" });
+    fireEvent.click(screen.getByRole("button", { name: "세션 새로고침" }));
+
+    await waitFor(() => expect(harness.api.terminals.refresh).toHaveBeenCalledWith(claudeSession.id));
+    expect(harness.api.terminals.resume).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "세션 재개" })).toBeInTheDocument();
+  });
+
+  it("refreshes an off-screen context-menu session without changing selection or the main pane", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    const primary = terminalHarness.instances.at(-1)!;
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Claude Code 세션 열기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "새로고침" }));
+
+    await waitFor(() => expect(harness.api.terminals.refresh).toHaveBeenCalledWith(claudeSession.id));
+    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
+    expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "PowerShell 세션 열기");
+    expect(primary.dispose).not.toHaveBeenCalled();
+    expect(harness.api.terminals.select).not.toHaveBeenCalled();
+  });
+
+  it("refreshes only the secondary pane when its session is shown in a split", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    fireEvent.click(screen.getByRole("button", { name: "화면 분할" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Claude Code" }));
+    await screen.findByRole("region", { name: "claude 터미널" });
+    const primary = terminalHarness.instances.at(-2)!;
+    const secondary = terminalHarness.instances.at(-1)!;
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Claude Code 세션 열기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "새로고침" }));
+
+    await waitFor(() => expect(harness.api.terminals.refresh).toHaveBeenCalledWith(claudeSession.id));
+    expect(primary.dispose).not.toHaveBeenCalled();
+    expect(secondary.dispose).toHaveBeenCalledOnce();
+    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
+  });
+
+  it("shows refresh failures and restores the header button's busy state", async () => {
+    const harness = createApi();
+    vi.mocked(harness.api.terminals.refresh).mockRejectedValueOnce(new Error("refresh unavailable"));
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    const button = screen.getByRole("button", { name: "세션 새로고침" });
+    fireEvent.click(button);
+
+    expect(button).toBeDisabled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("refresh unavailable");
+    await waitFor(() => expect(button).toBeEnabled());
   });
 });
 

@@ -41,6 +41,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     list: vi.fn(() => []),
     create: vi.fn(async (input) => input),
     createTool: vi.fn(async (input) => input),
+    attach: vi.fn(),
     attachForRenderer: vi.fn(),
     write: vi.fn(),
     resize: vi.fn(),
@@ -323,6 +324,20 @@ describe("main IPC boundary", () => {
 
     expect(coordinator.rename).toHaveBeenNthCalledWith(1, "session-1", "레지스트리 분리");
     expect(coordinator.rename).toHaveBeenNthCalledWith(2, "session-1", null);
+  });
+
+  it("validates refresh session ids and uses the side-effect-free coordinator attach", async () => {
+    const { handlers, coordinator } = setup();
+    coordinator.attach.mockResolvedValueOnce({ replay: "latest", sequence: 4 });
+
+    expect(() => handlers.get("terminals:refresh")!({}, "")).toThrow(/session id/i);
+    await expect(handlers.get("terminals:refresh")!({}, "session-1")).resolves.toEqual({
+      replay: "latest",
+      sequence: 4,
+    });
+
+    expect(coordinator.attach).toHaveBeenCalledWith("session-1");
+    expect(coordinator.attachForRenderer).not.toHaveBeenCalled();
   });
 
   it("only accepts the maintenance commands the main process knows about", async () => {

@@ -292,6 +292,8 @@ export interface MultiCliWorkApi {
     create(input: CreateTerminalInput): Promise<TerminalSessionView>;
     createTool(input: CreateToolTerminalInput): Promise<TerminalSessionView>;
     attach(sessionId: string): Promise<TerminalAttachResult>;
+    /** Re-reads replay and status without resuming or replacing the underlying process. */
+    refresh(sessionId: string): Promise<TerminalAttachResult>;
     write(sessionId: string, data: string): Promise<void>;
     resize(sessionId: string, cols: number, rows: number): Promise<void>;
     stop(sessionId: string): Promise<void>;

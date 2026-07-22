@@ -96,6 +96,7 @@ const api: MultiCliWorkApi = {
     create: (input) => ipcRenderer.invoke("terminals:create", input),
     createTool: (input) => ipcRenderer.invoke("terminals:create-tool", input),
     attach: (sessionId) => ipcRenderer.invoke("terminals:attach", sessionId),
+    refresh: (sessionId) => ipcRenderer.invoke("terminals:refresh", sessionId),
     write: (sessionId, data) => ipcRenderer.invoke("terminals:write", sessionId, data),
     resize: (sessionId, cols, rows) => ipcRenderer.invoke("terminals:resize", sessionId, cols, rows),
     stop: (sessionId) => ipcRenderer.invoke("terminals:stop", sessionId),

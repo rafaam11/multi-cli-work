@@ -44,6 +44,8 @@ interface TerminalCoordinatorGateway {
   createTool(input: CreateToolTerminalInput): Promise<unknown>;
   /** The renderer-facing attach: it may lazily auto-resume a session interrupted by app shutdown. */
   attachForRenderer(sessionId: string): Promise<unknown>;
+  /** Side-effect-free attach used by an explicit screen refresh. */
+  attach(sessionId: string): Promise<unknown>;
   write(sessionId: string, data: string): Promise<void>;
   resize(sessionId: string, cols: number, rows: number): Promise<void>;
   stop(sessionId: string): Promise<void>;
@@ -491,6 +493,9 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   );
   ipc.handle("terminals:attach", (_event, sessionId: unknown) =>
     dependencies.coordinator.attachForRenderer(nonEmptyString(sessionId, "Session id")),
+  );
+  ipc.handle("terminals:refresh", (_event, sessionId: unknown) =>
+    dependencies.coordinator.attach(nonEmptyString(sessionId, "Session id")),
   );
   ipc.handle("terminals:write", (_event, sessionId: unknown, data: unknown) => {
     if (typeof data !== "string") throw new Error("Terminal input must be a string");

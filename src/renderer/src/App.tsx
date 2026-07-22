@@ -156,6 +156,8 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState(false);
+  const [refreshRequests, setRefreshRequests] = useState<Record<string, number>>({});
+  const [refreshingSessionIds, setRefreshingSessionIds] = useState<Set<string>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH);
@@ -642,6 +644,36 @@ export function App() {
       setActionError(errorMessage(error));
     } finally {
       setPendingAction(false);
+    }
+  };
+
+  const finishSessionRefresh = (sessionId: string) => {
+    setRefreshingSessionIds((current) => {
+      const next = new Set(current);
+      next.delete(sessionId);
+      return next;
+    });
+  };
+
+  const refreshSession = async (sessionId: string) => {
+    if (refreshingSessionIds.has(sessionId)) return;
+    setActionError(null);
+    setRefreshingSessionIds((current) => new Set(current).add(sessionId));
+
+    const displayed =
+      activeView === "terminal" && (selectedSessionId === sessionId || splitSessionId === sessionId);
+    if (displayed) {
+      setRefreshRequests((current) => ({ ...current, [sessionId]: (current[sessionId] ?? 0) + 1 }));
+      return;
+    }
+
+    try {
+      const attachment = await window.multiCliWork.terminals.refresh(sessionId);
+      setSessions((current) => mergeAttachedSession(current, attachment.session));
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      finishSessionRefresh(sessionId);
     }
   };
 
@@ -1222,6 +1254,7 @@ export function App() {
           projectMissing={selectedProjectMissing}
           agents={agents}
           pendingAction={pendingAction}
+          refreshing={Boolean(headerSession && refreshingSessionIds.has(headerSession.id))}
           readOnly={Boolean(snapshot && !snapshot.writable)}
           splitActive={Boolean(splitSession)}
           splitCandidates={splitCandidates}
@@ -1232,6 +1265,7 @@ export function App() {
           onStartTool={(tool) => void startTool(tool)}
           onEditAgents={() => void editAgents()}
           onResumeSession={() => void resumeSession()}
+          onRefreshSession={() => headerSession && void refreshSession(headerSession.id)}
           onStopSession={() => void stopSession()}
           onRemoveSession={() => selectedSession && void removeSessionById(selectedSession)}
           onRelinkProject={() => void relinkProject()}
@@ -1299,7 +1333,9 @@ export function App() {
                     )
                   : null
               }
+              refreshRequests={refreshRequests}
               onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
+              onRefreshComplete={finishSessionRefresh}
               onError={(message) => setActionError(message)}
               onCloseSplit={() => applySplit(null)}
             />
@@ -1455,6 +1491,7 @@ export function App() {
           x={sessionMenu.x}
           y={sessionMenu.y}
           canResetName={Boolean(sessionMenu.session.name)}
+          onRefresh={() => void refreshSession(sessionMenu.session.id)}
           onRename={() => setRenamingSessionId(sessionMenu.session.id)}
           onResetName={() => void renameSession(sessionMenu.session.id, null)}
           onRemove={() => setSessionRemoval({ session: sessionMenu.session, label: sessionMenu.label })}

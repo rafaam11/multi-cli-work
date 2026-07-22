@@ -2,7 +2,7 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, ToolCommand } from "@shared/terminal-types";
-import { CircleStop, Columns2, FolderOpen, MonitorDot, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
+import { CircleStop, Columns2, FolderOpen, MonitorDot, Plus, RefreshCw, RotateCcw, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import {
@@ -31,6 +31,7 @@ interface WorkspaceHeaderProps {
   projectMissing: boolean;
   agents: AgentView[];
   pendingAction: boolean;
+  refreshing: boolean;
   readOnly: boolean;
   splitActive: boolean;
   splitCandidates: SplitCandidate[];
@@ -39,6 +40,7 @@ interface WorkspaceHeaderProps {
   onStartTool(tool: ToolCommand): void;
   onEditAgents(): void;
   onResumeSession(): void;
+  onRefreshSession(): void;
   onStopSession(): void;
   onRemoveSession(): void;
   onRelinkProject(): void;
@@ -63,6 +65,7 @@ export function WorkspaceHeader({
   projectMissing,
   agents,
   pendingAction,
+  refreshing,
   readOnly,
   splitActive,
   splitCandidates,
@@ -71,6 +74,7 @@ export function WorkspaceHeader({
   onStartTool,
   onEditAgents,
   onResumeSession,
+  onRefreshSession,
   onStopSession,
   onRemoveSession,
   onRelinkProject,
@@ -141,6 +145,18 @@ export function WorkspaceHeader({
           >
             <RotateCcw size={14} />
             <span>재개</span>
+          </button>
+        ) : null}
+        {selectedSession ? (
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onRefreshSession}
+            disabled={refreshing}
+            aria-label="세션 새로고침"
+            title="세션 새로고침"
+          >
+            <RefreshCw className={refreshing ? "spin" : undefined} size={15} />
           </button>
         ) : null}
         {selectedSession && !finished ? (

@@ -1,4 +1,4 @@
-import { Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 
 export interface SessionContextMenuProps {
@@ -7,6 +7,7 @@ export interface SessionContextMenuProps {
   y: number;
   /** A session that only carries its provider's fallback label has no custom name to clear. */
   canResetName: boolean;
+  onRefresh(): void;
   onRename(): void;
   onResetName(): void;
   onRemove(): void;
@@ -18,6 +19,7 @@ export function SessionContextMenu({
   x,
   y,
   canResetName,
+  onRefresh,
   onRename,
   onResetName,
   onRemove,
@@ -53,6 +55,10 @@ export function SessionContextMenu({
       ref={menu}
       style={{ "--context-menu-x": `${x}px`, "--context-menu-y": `${y}px` } as CSSProperties}
     >
+      <button type="button" role="menuitem" onClick={run(onRefresh)}>
+        <RefreshCw size={15} />
+        <span>새로고침</span>
+      </button>
       <button type="button" role="menuitem" onClick={run(onRename)}>
         <Pencil size={15} />
         <span>이름 변경</span>
