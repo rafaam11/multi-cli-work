@@ -48,12 +48,13 @@ async function resolveWithinRoot(
   if (path.isAbsolute(relativePath) || relativePath.includes("\0")) throw new Error("Invalid path");
   const resolvedRoot = path.resolve(rootPath);
   const target = path.resolve(resolvedRoot, relativePath);
-  const normalizedRoot = normalizeForCompare(resolvedRoot, platform);
-  if (!withinRoot(normalizedRoot, normalizeForCompare(target, platform), platform)) {
+  const normalizedResolvedRoot = normalizeForCompare(resolvedRoot, platform);
+  if (!withinRoot(normalizedResolvedRoot, normalizeForCompare(target, platform), platform)) {
     throw new Error("Path escapes the project root");
   }
+  const realRoot = await fs.realpath(resolvedRoot).catch(() => resolvedRoot);
   const real = await fs.realpath(target).catch(() => target);
-  if (!withinRoot(normalizedRoot, normalizeForCompare(real, platform), platform)) {
+  if (!withinRoot(normalizeForCompare(realRoot, platform), normalizeForCompare(real, platform), platform)) {
     throw new Error("Path escapes the project root");
   }
   return target;

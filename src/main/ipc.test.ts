@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
 
@@ -228,7 +229,7 @@ describe("main IPC boundary", () => {
 
     const result = await handlers.get("projects:add-folder")!({});
 
-    expect(projectService.registerManualFolder).toHaveBeenCalledWith("C:\\Work", "Work");
+    expect(projectService.registerManualFolder).toHaveBeenCalledWith("C:\\Work", path.basename("C:\\Work"));
     expect(result).toEqual(project);
   });
 

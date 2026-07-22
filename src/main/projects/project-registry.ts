@@ -236,14 +236,16 @@ export function upsertManualProject(
   options: UpsertOptions = {},
 ): ProjectRegistryV1 {
   const now = options.now ?? new Date().toISOString();
-  const normalized = normalizeProjectPath(folder.rootPath, options.platform);
+  const platform = options.platform ?? process.platform;
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const normalized = normalizeProjectPath(folder.rootPath, platform);
   const existing = Object.values(registry.projects).find(
-    (project) => normalizeProjectPath(project.rootPath, options.platform) === normalized,
+    (project) => normalizeProjectPath(project.rootPath, platform) === normalized,
   );
   const id = existing?.id ?? (options.idFactory ?? randomUUID)();
   const next: SharedProject = {
     id,
-    rootPath: existing?.rootPath ?? path.resolve(folder.rootPath),
+    rootPath: existing?.rootPath ?? pathApi.resolve(folder.rootPath),
     displayName: existing?.displayName ?? folder.displayName ?? null,
     sources: SOURCES.filter((source) => [...(existing?.sources ?? []), "manual"].includes(source)),
     providerRefs: {
