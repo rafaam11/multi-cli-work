@@ -70,7 +70,6 @@ jobs:
           path: |
             release/Multi-CLI-Work-*-linux-x64.deb
             release/Multi-CLI-Work-*-linux-x64.AppImage
-            release/Multi-CLI-Work-*-linux-x64.AppImage.blockmap
             release/latest-linux.yml
 
   draft-release:

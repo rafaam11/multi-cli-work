@@ -4,7 +4,10 @@
   "description": "Project-oriented Windows and Linux workspace for Codex, Claude Code, PowerShell, and Bash sessions",
   "main": "out/main/index.js",
   "private": true,
-  "author": "uiop3847",
+  "author": {
+    "name": "uiop3847",
+    "email": "uiop3847@gmail.com"
+  },
   "engines": {
     "node": ">=22.12.0"
   },
@@ -82,7 +85,7 @@
       ],
       "category": "Development",
       "icon": "build/icon.png",
-      "artifactName": "Multi-CLI-Work-${version}-linux-${arch}.${ext}",
+      "artifactName": "Multi-CLI-Work-${version}-linux-x64.${ext}",
       "desktop": {
         "entry": {
           "Name": "Multi CLI Work",
