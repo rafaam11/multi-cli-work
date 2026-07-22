@@ -38,7 +38,18 @@ const TOOL_SHELL_COMMANDS: Record<ToolCommand, string> = {
  * Tool sessions run a CLI maintenance command inside PowerShell. `-NoExit` keeps the shell
  * alive so the output stays readable and interactive prompts can still be answered.
  */
-export function buildToolLaunch(tool: ToolCommand, executables: ProviderExecutables): ProviderLaunchCommand {
+export function buildToolLaunch(
+  tool: ToolCommand,
+  executables: ProviderExecutables,
+  platform: NodeJS.Platform = executables.agents.bash ? "linux" : "win32",
+): ProviderLaunchCommand {
+  if (platform !== "win32") {
+    return {
+      executable: requireExecutable(executables.agents.bash, "Bash"),
+      args: ["--login", "-i", "-c", `${TOOL_SHELL_COMMANDS[tool]}; exec bash --login`],
+      providerConversationId: null,
+    };
+  }
   return {
     executable: requireExecutable(executables.agents.powershell, "PowerShell"),
     args: ["-NoLogo", "-NoExit", "-Command", TOOL_SHELL_COMMANDS[tool]],
@@ -88,30 +99,38 @@ export function pickWindowsExecutable(candidates: string[]): string | null {
   );
 }
 
-export async function findOnPath(command: string): Promise<string | null> {
+export async function findOnPath(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string | null> {
   try {
-    const locator = process.platform === "win32" ? "where.exe" : "which";
-    const { stdout } = await execFileAsync(locator, [command], { windowsHide: true, timeout: 3_000 });
+    const locator = platform === "win32" ? "where.exe" : "which";
+    const { stdout } = await execFileAsync(locator, [command], { env, windowsHide: true, timeout: 3_000 });
     const candidates = stdout.split(/\r?\n/).filter(Boolean);
-    return process.platform === "win32" ? pickWindowsExecutable(candidates) : candidates[0] ?? null;
+    return platform === "win32" ? pickWindowsExecutable(candidates) : candidates[0] ?? null;
   } catch {
     return null;
   }
 }
 
 /** An agent names its executables in preference order, so PowerShell can ask for `pwsh` first. */
-async function resolveAgent(agent: AgentDefinition): Promise<string | null> {
+async function resolveAgent(agent: AgentDefinition, platform: NodeJS.Platform, env: NodeJS.ProcessEnv): Promise<string | null> {
   for (const command of agent.commands) {
-    const resolved = await findOnPath(command);
+    const resolved = await findOnPath(command, platform, env);
     if (resolved) return resolved;
   }
   return null;
 }
 
-export async function detectProviderExecutables(agents: readonly AgentDefinition[]): Promise<ProviderExecutables> {
+export async function detectProviderExecutables(
+  agents: readonly AgentDefinition[],
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ProviderExecutables> {
   const [resolved, vscode] = await Promise.all([
-    Promise.all(agents.map(async (agent) => [agent.id, await resolveAgent(agent)] as const)),
-    findOnPath("code"),
+    Promise.all(agents.map(async (agent) => [agent.id, await resolveAgent(agent, platform, env)] as const)),
+    findOnPath("code", platform, env),
   ]);
   return { agents: Object.fromEntries(resolved), vscode };
 }

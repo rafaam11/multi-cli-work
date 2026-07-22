@@ -4,7 +4,7 @@
  */
 export type AgentId = string;
 
-export const BUILTIN_AGENT_IDS = ["powershell", "claude", "codex"] as const;
+export const BUILTIN_AGENT_IDS = ["powershell", "bash", "claude", "codex"] as const;
 export type BuiltinAgentId = (typeof BUILTIN_AGENT_IDS)[number];
 
 /**

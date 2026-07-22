@@ -3,8 +3,14 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { listWorkspaceDirectory, readWorkspaceFile, runWorkspaceExecutable, writeWorkspaceFile } from "./workspace-files";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  isWorkspaceExecutable,
+  listWorkspaceDirectory,
+  readWorkspaceFile,
+  runWorkspaceExecutable,
+  writeWorkspaceFile,
+} from "./workspace-files";
 
 let tempRoot: string;
 let projectRoot: string;
@@ -34,7 +40,9 @@ describe("listWorkspaceDirectory", () => {
 
   it("lists a nested directory with a relativePath built from the parent", async () => {
     const entries = await listWorkspaceDirectory(projectRoot, "src");
-    expect(entries).toEqual([{ name: "index.ts", relativePath: "src/index.ts", kind: "file", extension: "ts" }]);
+    expect(entries).toEqual([
+      { name: "index.ts", relativePath: "src/index.ts", kind: "file", extension: "ts", executable: false },
+    ]);
   });
 
   it("rejects a relative path that escapes the root via ..", async () => {
@@ -70,6 +78,19 @@ describe("readWorkspaceFile", () => {
     await expect(readWorkspaceFile(projectRoot, "src")).rejects.toThrow(/Not a file/);
   });
 
+  it("reports executable files using the target platform rules", async () => {
+    await fs.writeFile(path.join(projectRoot, "run.sh"), "#!/bin/sh\n");
+    await fs.chmod(path.join(projectRoot, "run.sh"), 0o755);
+
+    const entries = await listWorkspaceDirectory(projectRoot, "", "linux");
+
+    expect(isWorkspaceExecutable("run.sh", 0o100755, true, "linux")).toBe(true);
+    expect(isWorkspaceExecutable("run.sh", 0o100644, true, "linux")).toBe(false);
+    expect(isWorkspaceExecutable("tool.exe", 0, true, "win32")).toBe(true);
+    if (process.platform !== "win32") expect(entries.find((entry) => entry.name === "run.sh")?.executable).toBe(true);
+    expect(entries.find((entry) => entry.name === "readme.md")?.executable).toBe(false);
+  });
+
   it("returns non-image binary files as base64 instead of lossy text", async () => {
     await fs.writeFile(path.join(projectRoot, "data.bin"), Buffer.from([0, 255, 1]));
     await expect(readWorkspaceFile(projectRoot, "data.bin")).resolves.toMatchObject({ encoding: "base64", content: "AP8B" });
@@ -84,12 +105,28 @@ describe("readWorkspaceFile", () => {
 describe("runWorkspaceExecutable", () => {
   it("runs a real exe in the root and propagates shell errors", async () => {
     await fs.writeFile(path.join(projectRoot, "tool.exe"), "not really executable");
-    await expect(runWorkspaceExecutable(projectRoot, "tool.exe", async () => "Windows blocked this file")).rejects.toThrow("Windows blocked this file");
+    await expect(
+      runWorkspaceExecutable(projectRoot, "tool.exe", async () => "Windows blocked this file", "win32"),
+    ).rejects.toThrow("Windows blocked this file");
+  });
+
+  it("runs only regular files with an execute bit on Linux", async () => {
+    if (process.platform === "win32") return;
+    const tool = path.join(projectRoot, "tool");
+    await fs.writeFile(tool, "#!/bin/sh\n");
+    await fs.chmod(tool, 0o755);
+    const run = vi.fn(async () => undefined);
+
+    await runWorkspaceExecutable(projectRoot, "tool", run, "linux");
+    expect(run).toHaveBeenCalledWith(tool);
+
+    await fs.chmod(tool, 0o644);
+    await expect(runWorkspaceExecutable(projectRoot, "tool", run, "linux")).rejects.toThrow(/executable permission/);
   });
 
   it("refuses non-executables and root escapes", async () => {
-    await expect(runWorkspaceExecutable(projectRoot, "readme.md", async () => "")).rejects.toThrow(/Only .exe/);
-    await expect(runWorkspaceExecutable(projectRoot, "../secret.exe", async () => "")).rejects.toThrow(/escapes/);
+    await expect(runWorkspaceExecutable(projectRoot, "readme.md", async () => "", "win32")).rejects.toThrow(/Only .exe/);
+    await expect(runWorkspaceExecutable(projectRoot, "../secret.exe", async () => "", "win32")).rejects.toThrow(/escapes/);
   });
 });
 

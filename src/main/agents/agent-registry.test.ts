@@ -39,17 +39,26 @@ describe("agent registry", () => {
   });
 
   it("returns the built-ins when the user has no agents.json", async () => {
-    const snapshot = await readAgentRegistry({ registryPath: await tempRegistryPath() });
+    const snapshot = await readAgentRegistry({ registryPath: await tempRegistryPath(), platform: "win32" });
 
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(["powershell", "claude", "codex"]);
     expect(snapshot.warning).toBeUndefined();
+  });
+
+  it("selects the native shell without changing shared built-in ids", async () => {
+    const registryPath = await tempRegistryPath();
+    const linux = await readAgentRegistry({ registryPath, platform: "linux" });
+    const windows = await readAgentRegistry({ registryPath, platform: "win32" });
+
+    expect(linux.agents.map((agent) => agent.id)).toEqual(["bash", "claude", "codex"]);
+    expect(windows.agents.map((agent) => agent.id)).toEqual(["powershell", "claude", "codex"]);
   });
 
   it("appends a user agent to the built-ins with signal-based defaults", async () => {
     const registryPath = await tempRegistryPath();
     await writeRegistry(registryPath, { gemini: GEMINI });
 
-    const snapshot = await readAgentRegistry({ registryPath });
+    const snapshot = await readAgentRegistry({ registryPath, platform: "win32" });
 
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(["powershell", "claude", "codex", "gemini"]);
     expect(snapshot.agents.at(-1)).toMatchObject({
@@ -68,7 +77,7 @@ describe("agent registry", () => {
     const registryPath = await tempRegistryPath();
     await fs.writeFile(registryPath, "{ not json", "utf8");
 
-    const snapshot = await readAgentRegistry({ registryPath });
+    const snapshot = await readAgentRegistry({ registryPath, platform: "win32" });
 
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(["powershell", "claude", "codex"]);
     expect(snapshot.warning).toMatch(/built-in agents are available/i);

@@ -14,12 +14,24 @@ function isUtf8Text(buffer: Buffer): boolean {
   return Buffer.from(buffer.toString("utf8"), "utf8").equals(buffer);
 }
 
-function normalizeForCompare(value: string): string {
-  return path.win32.normalize(value).replaceAll("/", "\\").toLocaleLowerCase("en-US");
+function normalizeForCompare(value: string, platform: NodeJS.Platform): string {
+  if (platform === "win32") return path.win32.normalize(value).replaceAll("/", "\\").toLocaleLowerCase("en-US");
+  return path.posix.normalize(value.replaceAll("\\", "/"));
 }
 
-function withinRoot(normalizedRoot: string, normalizedCandidate: string): boolean {
-  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}\\`);
+export function isWorkspaceExecutable(
+  fileName: string,
+  mode: number,
+  isFile: boolean,
+  platform: NodeJS.Platform,
+): boolean {
+  if (!isFile) return false;
+  return platform === "win32" ? extensionOf(fileName) === "exe" : (mode & 0o111) !== 0;
+}
+
+function withinRoot(normalizedRoot: string, normalizedCandidate: string, platform: NodeJS.Platform): boolean {
+  const separator = platform === "win32" ? "\\" : "/";
+  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${separator}`);
 }
 
 /**
@@ -27,17 +39,21 @@ function withinRoot(normalizedRoot: string, normalizedCandidate: string): boolea
  * that steps outside it — including via a symlink or junction, which `path.resolve` alone would
  * not catch (the resolved *string* can stay inside the root while the real target does not).
  */
-async function resolveWithinRoot(rootPath: string, relativePath: string): Promise<string> {
+async function resolveWithinRoot(
+  rootPath: string,
+  relativePath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string> {
   if (relativePath.length > MAX_RELATIVE_PATH_LENGTH) throw new Error("Path is too long");
   if (path.isAbsolute(relativePath) || relativePath.includes("\0")) throw new Error("Invalid path");
   const resolvedRoot = path.resolve(rootPath);
   const target = path.resolve(resolvedRoot, relativePath);
-  const normalizedRoot = normalizeForCompare(resolvedRoot);
-  if (!withinRoot(normalizedRoot, normalizeForCompare(target))) {
+  const normalizedRoot = normalizeForCompare(resolvedRoot, platform);
+  if (!withinRoot(normalizedRoot, normalizeForCompare(target, platform), platform)) {
     throw new Error("Path escapes the project root");
   }
   const real = await fs.realpath(target).catch(() => target);
-  if (!withinRoot(normalizedRoot, normalizeForCompare(real))) {
+  if (!withinRoot(normalizedRoot, normalizeForCompare(real, platform), platform)) {
     throw new Error("Path escapes the project root");
   }
   return target;
@@ -52,25 +68,33 @@ function relativeChildPath(parentRelativePath: string, childName: string): strin
   return parentRelativePath ? `${parentRelativePath}/${childName}` : childName;
 }
 
-export async function listWorkspaceDirectory(rootPath: string, relativePath: string): Promise<FileTreeEntry[]> {
-  const target = await resolveWithinRoot(rootPath, relativePath);
+export async function listWorkspaceDirectory(
+  rootPath: string,
+  relativePath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<FileTreeEntry[]> {
+  const target = await resolveWithinRoot(rootPath, relativePath, platform);
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(target, { withFileTypes: true });
   } catch (error) {
     throw new Error(`Could not read directory: ${(error as Error).message}`);
   }
-  return entries
-    .filter((entry) => entry.name !== ".git")
-    .map(
-      (entry): FileTreeEntry => ({
+  const result = await Promise.all(
+    entries.filter((entry) => entry.name !== ".git").map(async (entry): Promise<FileTreeEntry> => {
+      const extension = entry.isDirectory() ? null : extensionOf(entry.name);
+      const mode = entry.isFile() ? (await fs.stat(path.join(target, entry.name))).mode : 0;
+      const executable = isWorkspaceExecutable(entry.name, mode, entry.isFile(), platform);
+      return {
         name: entry.name,
         relativePath: relativeChildPath(relativePath, entry.name),
         kind: entry.isDirectory() ? "directory" : "file",
-        extension: entry.isDirectory() ? null : extensionOf(entry.name),
-      }),
-    )
-    .sort((left, right) =>
+        extension,
+        executable,
+      };
+    }),
+  );
+  return result.sort((left, right) =>
       left.kind !== right.kind ? (left.kind === "directory" ? -1 : 1) : left.name.localeCompare(right.name),
     );
 }
@@ -117,12 +141,14 @@ export async function readWorkspaceFile(rootPath: string, relativePath: string):
 export async function runWorkspaceExecutable(
   rootPath: string,
   relativePath: string,
-  openPath: (target: string) => Promise<string>,
+  openPath: (target: string) => Promise<string | void>,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<void> {
-  const target = await resolveWithinRoot(rootPath, relativePath);
+  const target = await resolveWithinRoot(rootPath, relativePath, platform);
   const stat = await fs.stat(target);
   if (!stat.isFile()) throw new Error("Not a file");
-  if (extensionOf(path.basename(target)) !== "exe") throw new Error("Only .exe files can be run");
+  if (platform === "win32" && extensionOf(path.basename(target)) !== "exe") throw new Error("Only .exe files can be run");
+  if (platform !== "win32" && (stat.mode & 0o111) === 0) throw new Error("File has no executable permission bit");
   const result = await openPath(target);
   if (result) throw new Error(result);
 }

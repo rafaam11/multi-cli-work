@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell, utilityProcess } from "electron";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import type { AgentDefinition } from "../shared/agent-types";
@@ -7,6 +8,7 @@ import type { TerminalEvent } from "../shared/terminal-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
 import {
+  CONTROL_ENDPOINT_ENV,
   CONTROL_PIPE_ENV,
   CONTROL_PIPE_NAME,
   CONTROL_TOKEN_ENV,
@@ -56,6 +58,7 @@ import { readSessionTitle } from "./providers/session-title";
 import { createTerminalAttentionTracker, type AttentionSnapshot } from "./attention-policy";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
 import { checkForUpdates, openReleasesPage, openRepositoryPage, updaterStatus } from "./updater";
+import { discoverSessionEnvironment, prependPath } from "./platform-env";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
 import {
   RestartingTerminalWorker,
@@ -66,12 +69,6 @@ function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
-}
-
-/** Windows spells the PATH key however it likes (PATH/Path/path); prepend under whichever exists. */
-function prependPath(env: Record<string, string>, dir: string): Record<string, string> {
-  const key = Object.keys(env).find((candidate) => candidate.toUpperCase() === "PATH") ?? "Path";
-  return { ...env, [key]: env[key] ? `${dir};${env[key]}` : dir };
 }
 
 function availability(executables: ProviderExecutables): ProviderAvailability {
@@ -93,23 +90,25 @@ export async function createDesktopRuntime(
   // Both transcript directories are only overridden so tests can point at a fixture.
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
-  const claudeIntegration = await ensureClaudeIntegration(userData);
+  const claudeIntegration = await ensureClaudeIntegration(userData, process.platform);
   // jk-coding-cli: the client lands in userData/bin (joined to every session's PATH below), the
   // token rotates per app run, and the pipe name can be overridden so a dev build next to an
   // installed one gets its own pipe instead of silently losing the CLI.
   const controlCli = await ensureControlCli(userData);
   const controlPipeName = process.env[CONTROL_PIPE_ENV] ?? CONTROL_PIPE_NAME;
   const controlToken = crypto.randomUUID();
+  const providerEnvironment = await discoverSessionEnvironment(stringEnvironment());
   const projectService = new ProjectService({ registryPath });
   const agentRegistryPath = process.env.MULTI_CLI_WORK_AGENTS_PATH;
-  const agentOptions = agentRegistryPath ? { registryPath: agentRegistryPath } : {};
+  const agentOptions = { ...(agentRegistryPath ? { registryPath: agentRegistryPath } : {}), platform: process.platform };
 
   // `agents.json` is the user's to edit while the app runs, so the registry is re-read whenever the
   // renderer asks for the list rather than pinned at startup.
   let agentSnapshot = await readAgentRegistry(agentOptions);
   let agentMap = agentsById(agentSnapshot.agents);
   let executablePromise: Promise<ProviderExecutables> | null = null;
-  const getExecutables = () => (executablePromise ??= detectProviderExecutables(agentSnapshot.agents));
+  const getExecutables = () =>
+    (executablePromise ??= detectProviderExecutables(agentSnapshot.agents, process.platform, providerEnvironment));
 
   /** What a PATH lookup depends on. The renderer asks for the list on every window focus, and each
    *  lookup spawns `where.exe` per agent — so only an actual change to the agents is worth a rescan. */
@@ -154,6 +153,15 @@ export async function createDesktopRuntime(
         serviceName: "Multi CLI Work PTY",
       }) as RestartableTerminalWorkerTransport,
   );
+  const sessionEnvironment = prependPath(
+    {
+      ...providerEnvironment,
+      MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
+      [CONTROL_PIPE_ENV]: controlPipeName,
+      [CONTROL_TOKEN_ENV]: controlToken,
+    },
+    controlCli.binDir,
+  );
   const coordinator: TerminalCoordinator = new TerminalCoordinator({
     worker,
     statePath: path.join(userData, "state.json"),
@@ -177,25 +185,11 @@ export async function createDesktopRuntime(
           ...(codexSessionsDirectory ? { codexSessionsDirectory } : {}),
         },
       ),
-    env: prependPath(
-      {
-        ...stringEnvironment(),
-        MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
-        [CONTROL_PIPE_ENV]: controlPipeName,
-        [CONTROL_TOKEN_ENV]: controlToken,
-      },
-      controlCli.binDir,
-    ),
+    env: sessionEnvironment,
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
     codexSessions: new CodexSessionTracker({ sessionsDirectory: codexSessionsDirectory }),
   });
-  await coordinator.initialize();
-
-  const statusWatcher = await startProviderStatusWatcher(claudeIntegration.statusDir, (event) => {
-    coordinator.applyProviderStatus(event.sessionId, event.status);
-  });
-
   const controlContext: ControlCommandContext = {
     sessions: () => coordinator.list(),
     write: (sessionId, data) => coordinator.write(sessionId, data),
@@ -209,6 +203,12 @@ export async function createDesktopRuntime(
     token: controlToken,
     handle: (request) => handleControlCommand(request, controlContext),
     log: (message, error) => console.error(message, error),
+  });
+  if (controlServer) sessionEnvironment[CONTROL_ENDPOINT_ENV] = controlServer.endpoint;
+  await coordinator.initialize();
+
+  const statusWatcher = await startProviderStatusWatcher(claudeIntegration.statusDir, (event) => {
+    coordinator.applyProviderStatus(event.sessionId, event.status);
   });
 
   const projectActions = createProjectActions({ getExecutables });
@@ -249,7 +249,23 @@ export async function createDesktopRuntime(
       listDirectory: listWorkspaceDirectory,
       readFile: readWorkspaceFile,
       writeFile: writeWorkspaceFile,
-      runExecutable: (rootPath, relativePath) => runWorkspaceExecutable(rootPath, relativePath, shell.openPath),
+      runExecutable: (rootPath, relativePath) =>
+        runWorkspaceExecutable(rootPath, relativePath, async (target) => {
+          if (process.platform === "win32") return shell.openPath(target);
+          await new Promise<void>((resolve, reject) => {
+            const child = spawn(target, [], {
+              cwd: path.dirname(target),
+              detached: true,
+              stdio: "ignore",
+              shell: false,
+            });
+            child.once("error", reject);
+            child.once("spawn", () => {
+              child.unref();
+              resolve();
+            });
+          });
+        }),
     },
     git: {
       panelData: readGitPanelData,

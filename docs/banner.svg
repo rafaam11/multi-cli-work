@@ -23,7 +23,7 @@
 
   <!-- title + tagline -->
   <text x="186" y="90" font-family="Segoe UI, system-ui, sans-serif" font-size="40" font-weight="700" fill="#e7ebe8">멀티 터미널 작업기</text>
-  <text x="188" y="123" font-family="Segoe UI, system-ui, sans-serif" font-size="17" fill="#9aa49f">Codex · Claude Code · PowerShell 세션을 프로젝트 단위로 — 로컬 전용 데스크톱 앱</text>
+  <text x="188" y="123" font-family="Segoe UI, system-ui, sans-serif" font-size="17" fill="#9aa49f">Codex · Claude Code · PowerShell/Bash 세션을 프로젝트 단위로 — 로컬 전용 데스크톱 앱</text>
 
   <!-- chips -->
   <g font-family="Segoe UI, system-ui, sans-serif" font-size="13" font-weight="600">

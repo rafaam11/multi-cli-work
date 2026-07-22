@@ -41,12 +41,20 @@ describe("CodexSessionTracker", () => {
     const sessionsDirectory = await tempRoot();
     await writeSession(sessionsDirectory, "existing", "codex-existing", "C:\\Work");
     await writeSession(sessionsDirectory, "other", "codex-other", "C:\\Other");
-    const tracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 5 });
+    const tracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 5, platform: "win32" });
     const known = await tracker.snapshot("c:\\work\\");
 
     await writeSession(sessionsDirectory, "created", "codex-created", "C:\\Work");
 
     await expect(tracker.waitForNew("C:\\WORK", known)).resolves.toBe("codex-created");
+  });
+
+  it("keeps Linux working-directory case significant", async () => {
+    const sessionsDirectory = await tempRoot();
+    await writeSession(sessionsDirectory, "upper", "codex-upper", "/home/me/Project");
+    const tracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 1, platform: "linux" });
+    expect(await tracker.snapshot("/home/me/project")).toEqual(new Set());
+    expect(await tracker.snapshot("/home/me/Project")).toEqual(new Set(["codex-upper"]));
   });
 
   it("ignores malformed metadata and returns null after the retry window", async () => {
@@ -72,8 +80,8 @@ describe("CodexSessionTracker", () => {
     const sessionsDirectory = await tempRoot();
     await writeSession(sessionsDirectory, "created-first", "codex-created-first", "C:\\Work");
     await writeSession(sessionsDirectory, "created-second", "codex-created-second", "C:\\Work");
-    const firstTracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 2 });
-    const secondTracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 2 });
+    const firstTracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 2, platform: "win32" });
+    const secondTracker = new CodexSessionTracker({ sessionsDirectory, pollIntervalMs: 1, maxAttempts: 2, platform: "win32" });
 
     const correlated = await Promise.all([
       firstTracker.waitForNew("C:\\Work", new Set()),

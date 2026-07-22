@@ -3,23 +3,23 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-34-2b2a28?logo=electron&logoColor=9feaf9" alt="Electron 34">
+  <img src="https://img.shields.io/badge/Electron-43-2b2a28?logo=electron&logoColor=9feaf9" alt="Electron 43">
   <img src="https://img.shields.io/badge/React-18-1c2230?logo=react&logoColor=61dafb" alt="React 18">
   <img src="https://img.shields.io/badge/TypeScript-5-1c2230?logo=typescript&logoColor=3178c6" alt="TypeScript 5">
-  <img src="https://img.shields.io/badge/platform-Windows-1c2230?logo=windows11&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/version-1.4.3-4fb7a4" alt="version 1.4.3">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Ubuntu-1c2230" alt="Windows and Ubuntu">
+  <img src="https://img.shields.io/badge/version-1.5.0-4fb7a4" alt="version 1.5.0">
   <img src="https://img.shields.io/badge/local--only-no%20telemetry-3fb950" alt="local only">
 </p>
 
-**멀티 터미널 작업기**는 여러 개의 **CLI 에이전트 세션을 작업 폴더 단위로 묶어** 한 창에서 굴리는 **로컬 전용 Windows 데스크톱 앱**(Electron)이다. **Codex · Claude Code · PowerShell** 이 기본으로 들어 있고, 그 밖의 CLI는 `agents.json`에 적어 넣으면 같은 자격으로 붙는다.
+**멀티 터미널 작업기**는 여러 개의 **CLI 에이전트 세션을 작업 폴더 단위로 묶어** 한 창에서 굴리는 **로컬 전용 Windows·Ubuntu 데스크톱 앱**(Electron)이다. **Codex · Claude Code**와 OS 기본 셸(**Windows PowerShell / Linux Bash**)이 들어 있고, 그 밖의 CLI는 `agents.json`에 적어 넣으면 같은 자격으로 붙는다.
 
 - 왼쪽 트리에 **열어둔 폴더**, 그 아래 **세션들**. 오른쪽엔 지금 보고 있는 터미널 하나.
 - 좌측 상단 로고를 누르면 전체 세션을 한눈에 보는 **홈 대시보드**로, 폴더를 누르면 그 폴더의 세션·git 상태·메모를 모아보는 **상세 페이지**로 이동한다. 세션을 직접 누르면 바로 터미널이 뜬다.
-- 각 세션이 **무슨 상태인지**(작업 중 · 입력 대기 · 종료) 한눈에 보이고, 다른 세션이 나를 기다리기 시작하면 **Windows 알림**이 뜬다.
+- 각 세션이 **무슨 상태인지**(작업 중 · 입력 대기 · 종료) 한눈에 보이고, 다른 세션이 나를 기다리기 시작하면 **데스크톱 알림**이 뜬다.
 - 창을 닫아도 **트레이에 상주**하며 세션은 계속 돈다. 앱을 재시작하면 폴더·탭·스크롤백이 복원된다.
 - 폴더 목록은 이 앱만의 것(`~/.multi-cli-work/projects.json`)이다. 열어둔 폴더만 남고, 저절로 늘어나지 않는다.
 
-터미널·창·스크롤백은 이 앱 안에만 있고, 네트워크 포트를 열지 않는다(렌더러↔main은 Electron IPC). 업데이트 확인 외에 외부로 나가는 통신은 없다.
+터미널·창·스크롤백은 이 앱 안에만 있다. Windows 제어 CLI는 사용자 named pipe, Linux 제어 CLI는 임의의 `127.0.0.1` 포트와 실행별 bearer token을 사용한다. 외부 인터페이스에는 바인딩하지 않으며 업데이트 확인 외에 외부로 나가는 통신은 없다.
 
 ## 미리보기
 
@@ -33,11 +33,11 @@
 
 ## 빠른 시작
 
-1. [Releases](https://github.com/rafaam11/multi-cli-work/releases)에서 **`Multi-CLI-Work-Setup-x.y.z.exe`** 를 내려받아 실행한다.
-2. 서명되지 않은 빌드라 Windows SmartScreen 경고가 뜬다 — **추가 정보 → 실행**으로 진행한다.
-3. 설치는 **사용자 단위**라 관리자 권한이 필요 없다. 바탕화면/시작 메뉴의 **Multi CLI Work**(앱 내부 표시명은 "멀티 터미널 작업기")로 실행한다.
+1. [Releases](https://github.com/rafaam11/multi-cli-work/releases)에서 Windows 또는 Ubuntu x64 자산을 받는다.
+2. Windows는 `Multi-CLI-Work-Setup-x.y.z.exe`를 실행한다. 서명되지 않은 빌드는 SmartScreen의 **추가 정보 → 실행**으로 진행한다.
+3. Ubuntu 22.04 x64는 `.deb` 설치를 권장한다: `sudo apt install ./Multi-CLI-Work-*-linux-x64.deb`. AppImage는 `chmod +x` 후 직접 실행하며 FUSE2가 필요 없다.
 
-**Node.js 설치는 필요 없다**(Electron에 런타임이 내장됨). 다만 세션을 띄우려면 그 CLI가 있어야 한다 — PowerShell은 Windows 기본, `claude`·`codex`는 `PATH`에 있으면 자동 인식하고 없으면 해당 메뉴가 비활성된다. 다른 CLI를 붙이려면 아래 **에이전트 추가**를 본다.
+**Node.js 설치는 필요 없다**(Electron에 런타임이 내장됨). Linux DEB는 상태 훅과 `jk`용 Python 3를 의존성으로 설치한다. PowerShell/Bash는 OS에 맞춰 노출되고, `claude`·`codex`는 로그인 셸 `PATH`에서 자동 인식한다. 자세한 설치 절차는 [`docs/installation.md`](docs/installation.md)를 본다.
 
 ## 업데이트 (자동)
 
@@ -52,10 +52,10 @@
 - **폴더 트리** — 폴더 하나에 세션 여러 개를 중첩해 붙인다. **＋** 로 작업할 폴더를 열면 목록에 남고, 앱을 껐다 켜도 그대로다. 자동 발견은 하지 않는다 — **내가 연 폴더만** 보인다.
 - **폴더 우클릭 메뉴** — **파일 탐색기에서 열기** · **VS Code로 열기**(`code`) · **GitHub에서 열기**(`origin` 리모트를 브라우저로) · **이름 변경** · **목록에서 제거**. 제거는 UI 목록에서만 빼는 것이고 **디스크의 폴더는 건드리지 않는다**(세션이 남아 있으면 먼저 확인한다).
 - **세션 이름 = 하는 일** — Claude는 자기가 붙인 세션 제목(`ai-title`)을, Codex는 첫 프롬프트를 트랜스크립트에서 읽어 세션 이름으로 쓴다. 작업이 바뀌면 이름도 따라 바뀐다. 세션을 **우클릭 → 이름 변경** 하면 직접 붙인 이름이 우선하고, **제공자 제목 사용** 으로 되돌린다.
-- **에이전트는 데이터다** — PowerShell · Claude Code · Codex는 코드에 박힌 특별한 존재가 아니라 **빌트인 정의**일 뿐이다. `~/.multi-cli-work/agents.json`에 같은 형식으로 적으면 Gemini CLI든 무엇이든 런처에 나란히 선다. 헤더의 🔧 **도구 → 에이전트 추가**를 누르면 예시가 담긴 파일이 편집기로 열리고, 저장하고 앱으로 돌아오면 목록이 갱신된다. 자세한 건 아래 [에이전트 추가](#에이전트-추가).
-- **세션 상태 7종** — `starting` · `working` · `awaiting-input` · `awaiting-approval` · `idle` · `exited` · `error`. 각 세션 행이 **상태 색으로 물든다**(작업 중=teal, 입력 대기=violet, 대기=green, 종료=회색, 오류=red). 무엇으로 판정하는지는 에이전트가 고르는 **상태 어댑터**가 정한다 — Claude는 앱 전용 **훅 오버레이**(`--settings`), Codex는 **OSC 9 알림**, PowerShell은 프로세스 신호뿐이다. 다만 아래 권한 플래그를 항상 붙이므로 `awaiting-approval`은 실질적으로 뜨지 않는다.
+- **에이전트는 데이터다** — OS 기본 셸 · Claude Code · Codex는 코드에 박힌 특별한 존재가 아니라 **빌트인 정의**일 뿐이다. `~/.multi-cli-work/agents.json`에 같은 형식으로 적으면 Gemini CLI든 무엇이든 런처에 나란히 선다. 헤더의 🔧 **도구 → 에이전트 추가**를 누르면 예시가 담긴 파일이 편집기로 열리고, 저장하고 앱으로 돌아오면 목록이 갱신된다. 자세한 건 아래 [에이전트 추가](#에이전트-추가).
+- **세션 상태 7종** — `starting` · `working` · `awaiting-input` · `awaiting-approval` · `idle` · `exited` · `error`. Claude는 앱 전용 **훅 오버레이**, Codex는 **OSC 9 알림**, PowerShell/Bash는 프로세스 신호로 판정한다.
 - **권한 프롬프트 없이 실행** — Claude는 `--dangerously-skip-permissions`, Codex는 `--dangerously-bypass-approvals-and-sandbox` 로 항상 실행한다. 승인 대기로 멈추지 않는 대신 **에이전트가 확인 없이 파일을 고치고 명령을 돌린다** — 신뢰하는 저장소에서만 쓸 것.
-- **알림은 놓치지 않게** — **화면에 없는** 세션이 입력 대기나 승인 대기에 들어가면 Windows 알림과 작업표시줄 깜빡임이 함께 켜지고, 창 제목 앞에 표시가 남는다. 같은 상태로 계속 머물면 다시 울리지 않으며, 해당 세션을 열거나 작업이 재개되면 표시가 해제된다.
+- **알림은 놓치지 않게** — **화면에 없는** 세션이 입력 대기나 승인 대기에 들어가면 데스크톱 알림·창 attention·제목·트레이 툴팁으로 표시한다. Windows에서는 작업표시줄 오버레이도 사용한다.
 - **읽지 않음 배지** — 알림과 같은 판정을 사이드바에도 그린다. 화면 밖에서 응답을 기다리기 시작한 세션 행에 점 배지(입력 대기=violet, 승인 대기=amber)가 붙고, 접힌 폴더 행에는 하위 세션 중 가장 급한 상태가 올라온다. 작업표시줄 아이콘에는 오버레이 점, 트레이 툴팁에는 대기 세션 수가 함께 표시된다.
 - **빠른 열기 (Ctrl+P)** — 세션·폴더·명령(새 세션 · 홈 대시보드 · 에이전트 추가 · 업데이트 확인)을 한 팔레트에서 퍼지 검색으로 찾아 Enter 한 번에 이동한다. 터미널에 포커스가 있어도 단축키가 먹는다.
 - **Git worktree 병렬 세션** — 폴더 우클릭 → **Worktree 만들기**로 브랜치를 저장소 옆 전용 폴더(`<repo>-wt/<브랜치>`)에 체크아웃하면, 사이드바가 **프로젝트 > worktree > 세션** 3단이 되고 그 안의 세션은 서로를 밟지 않는다. worktree 목록은 별도 파일(`worktrees.json`)이라 폴더 목록과 독립적이다. **제거는 두 겹으로 막혀 있다**: 커밋 안 된 변경이 있으면 git이 거부한 이유를 그대로 보여주고, "변경을 버리고 강제 제거"를 명시적으로 눌러야만 강제한다.
@@ -64,7 +64,7 @@
 - **터미널 2분할** — 헤더의 분할 버튼으로 다른 세션(종료된 세션의 스크롤백 포함)을 오른쪽에 나란히 띄운다. 가운데를 드래그해 비율을 조절하고, 분할에 떠 있는 세션은 화면에 있는 것이므로 알림·배지를 만들지 않는다. 2분할까지만 — 에이전트 한 쌍을 비교하는 용도다.
 - **파일 드래그&드롭** — 탐색기에서 파일·이미지를 터미널에 끌어다 놓으면 따옴표 처리된 절대 경로가 입력줄에 붙는다. 스크린샷을 에이전트에게 보여줄 때 경로를 타이핑할 필요가 없다.
 - **트레이 상주 · 세션 영속성** — 창을 닫으면 트레이로 숨고 PTY는 살아 있다. **종료**는 "돌고 있는 세션을 끄겠냐"고 확인한 뒤에만 종료한다. 재시작하면 폴더·탭·**바운드 스크롤백**이 복원되고, **앱 종료로 중단된 세션은 처음 열람하는 순간 자동으로 재개**된다(`claude --resume` / `codex resume`) — 이전 기록과 새 출력 사이에는 날짜 구분선이 남는다. 열람할 때만 프로세스가 뜨는 **지연 재개**라 세션이 많아도 메모리를 아낀다. 스스로 종료했거나 크래시로 죽어 마지막 상태가 불확실한 세션은 자동 재개하지 않는다(수동 **재개** 버튼은 그대로).
-- **jk-coding-cli (앱 제어 CLI)** — 앱이 띄운 터미널 안에서만 쓸 수 있는 오케스트레이션 CLI(별칭 `jk`). `list`(세션 목록) · `send`(다른 세션의 프롬프트에 텍스트 전송, 자기 자신 금지, 멀티라인은 `--stdin`) · `read`(화면 tail 읽기) · `wait`(세션이 지정 상태가 될 때까지 대기, 타임아웃 필수) · `spawn`(새 세션 생성 — 사이드바에 즉시 나타나되 보고 있는 화면을 뺏지 않는다). 에이전트가 에이전트를 부린다 — Claude 세션이 Codex 세션에 일을 넘기고 완료를 기다리는 식. 로컬 named pipe로만 통신하며, 실행마다 회전하는 토큰을 앱이 띄운 세션의 환경변수로만 나눠주므로 앱 밖 프로세스는 접근할 수 없다. 중지·제거 같은 파괴적 명령은 의도적으로 없다.
+- **jk-coding-cli (앱 제어 CLI)** — 앱이 띄운 터미널 안에서만 쓸 수 있는 오케스트레이션 CLI(별칭 `jk`). `list` · `send` · `read` · `wait` · `spawn`을 제공한다. Windows는 named pipe, Linux는 loopback TCP를 사용하고 둘 다 1MiB 한 줄 JSON 제한과 실행별 token 인증을 적용한다. 중지·제거 같은 파괴적 명령은 의도적으로 없다.
 - **CLI 업데이트** — 헤더의 🔧 **도구** 에서 **Claude Code 업데이트** / **Codex 업데이트**. 홈 디렉토리에서 도는 **폴더에 속하지 않는 터미널**이 열려 `claude update` / `codex update` 출력을 그대로 보여준다. 폴더를 하나도 안 열었어도 쓸 수 있다.
 - **레지스트리 자가 복구** — 목록 파일이 깨지면 읽기 전용으로 내려앉고 경고 배너에 **복구** 버튼이 뜬다. 검증된 `.bak`으로 되돌린다.
 - **자동 업데이트** — 위 참조.
@@ -73,7 +73,7 @@
 
 **폴더 열기** — 사이드바의 **＋** 로 작업할 폴더를 연다. 한 번 연 폴더는 앱을 재시작해도 목록에 남는다. 더 안 쓰면 우클릭 → **목록에서 제거**.
 
-**상세 페이지 · 세션 만들기** — 폴더를 클릭하면(세션을 직접 클릭하지 않는 한) 상세 페이지로 이동한다. 세션이 없으면 **PowerShell · Claude Code · Codex** 시작 버튼이, 있으면 세션 카드 목록이 뜬다. 헤더의 런처 버튼은 세션 유무와 상관없이 항상 떠 있고, 세션이 하나라도 생기면 그 자리가 **＋ 새 세션** 드롭다운으로 바뀐다. 세션은 그 폴더를 작업 디렉토리로 열린다. 설치되지 않은 CLI는 비활성으로 표시된다.
+**상세 페이지 · 세션 만들기** — 폴더를 클릭하면 상세 페이지로 이동한다. 세션이 없으면 **PowerShell(Windows) 또는 Bash(Linux) · Claude Code · Codex** 시작 버튼이 뜬다. 설치되지 않은 CLI는 비활성으로 표시된다.
 
 **홈으로 돌아가기** — 좌측 상단 로고를 누르면 현재 선택을 건드리지 않고 홈 대시보드로 이동한다. 세션 모니터·빠른 실행·최근 활동 피드 어디서든 클릭 한 번으로 해당 세션으로 돌아갈 수 있다.
 
@@ -144,13 +144,13 @@
 | 경로 | 내용 |
 |---|---|
 | `~/.multi-cli-work/projects.json` | 열어둔 폴더 목록 |
-| `~/.multi-cli-work/agents.json` | 사용자가 추가한 CLI 에이전트(빌트인 3종은 코드에 있다) |
+| `~/.multi-cli-work/agents.json` | 사용자가 추가한 CLI 에이전트(OS별 3종 빌트인은 코드에 있다) |
 | `~/.multi-cli-work/worktrees.json` | 앱이 만든 git worktree 목록 |
 | `userData/state.json` | 창·탭·선택·재개 상태 |
 | `userData/session-logs/` | 바운드 스크롤백 |
 | `userData/hooks/` · `claude-settings.json` | 앱 전용 Claude 훅 오버레이 |
 | `userData/provider-status/` | 세션 상태 파일(종료 시 자동 정리) |
-| `userData/bin/` | jk-coding-cli 클라이언트(`.ps1`/`.cmd`, 시작 시 재생성) |
+| `userData/bin/` | jk 클라이언트(Windows `.ps1`/`.cmd`, Linux Python 실행 스크립트; 시작 시 재생성) |
 
 ## 개발
 
@@ -169,12 +169,14 @@ npm run dev        # electron-vite dev (main/preload/renderer HMR + Electron 창
 | `npm test` | vitest 유닛 테스트 |
 | `npm run typecheck` | TypeScript 타입 검사(node + web 2패스) |
 | `npm run build` | typecheck + 프로덕션 번들(`out/`) |
-| `npm run test:e2e` | 빌드 후 Playwright로 **실제 ConPTY 세션**을 Electron에서 구동 |
-| `npm run dist` | Windows 설치본 빌드 → `release/`에 setup.exe 생성(로컬) |
+| `npm run test:e2e` | 빌드 후 Playwright로 **실제 ConPTY/Unix PTY 세션**을 Electron에서 구동 |
+| `npm run dist` / `npm run dist:win` | Windows NSIS 설치본 빌드 |
+| `npm run dist:linux` | Linux x64 DEB·AppImage 빌드 |
+| `npm run dist:linux:x64` | Linux x64 DEB·AppImage 빌드 |
 | `npm run rebuild:native` | `node-pty`를 현재 Electron ABI로 재빌드 |
 
-**요구사항** — Windows 10 1809 이상, 개발에는 Node.js 20+. 선택적으로 `claude`·`codex`가 `PATH`에 있으면 해당 세션을 띄울 수 있다.
+**요구사항** — Windows 10 1809 이상 또는 Ubuntu 22.04 x64. 개발에는 Node.js 22.12+가 필요하다. macOS, Ubuntu 20.04 이하, 기타 CPU 아키텍처, headless 환경은 v1.5.0 공식 범위가 아니다.
 
-**릴리스** — `package.json` 버전을 올려 `chore: release vX.Y.Z` 로 커밋하고 **`v*` 태그를 푸시**하면 GitHub Actions(`.github/workflows/release.yml`)가 설치본 + `latest.yml` + `.blockmap` 을 같은 태그의 **draft 릴리스**에 올린다. 사람이 검토 후 **수동 publish** 한다. `latest.yml` 이 없으면 기존 사용자가 새 버전을 발견하지 못하고, `appId`(`com.rafaam11.multicliwork`)를 바꾸면 업데이터가 기존 설치본을 알아보지 못한다 — 둘 다 건드리지 않는다.
+**릴리스** — `v*` 태그를 푸시하면 태그와 `package.json` 버전을 먼저 비교한 뒤 Windows 2022와 Ubuntu 22.04 x64 작업이 테스트·패키징한다. 결과는 한 작업이 모아 동일한 **draft 릴리스**에 올린다. 자세한 기준은 [`docs/release/v1.5.0.md`](docs/release/v1.5.0.md)다.
 
-> CI 러너는 `windows-2022` + Python 3.11로 고정돼 있다. `windows-latest`는 Visual Studio 2026만 담긴 이미지로 옮겨갔고 node-gyp이 이를 인식하지 못하며, Python 3.12에는 node-gyp이 쓰는 `distutils`가 없어 **`node-pty` 네이티브 빌드가 둘 다에서 깨진다.** 태그를 다시 밀지 않고 러너를 검증하려면 `workflow_dispatch` 로 수동 실행한다(publish 없이 패키징만).
+개발·설치·로컬 데이터 세부 문서: [`docs/development.md`](docs/development.md) · [`docs/installation.md`](docs/installation.md) · [`docs/local-data.md`](docs/local-data.md)

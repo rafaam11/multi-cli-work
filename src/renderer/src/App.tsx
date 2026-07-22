@@ -702,7 +702,7 @@ export function App() {
   };
 
   const openFile = (target: FileExplorerTarget, targetLabel: string, entry: FileTreeEntry) => {
-    if (entry.extension === "exe") {
+    if (entry.executable) {
       setExecutableRequest({ target, entry, error: null, running: false });
       return;
     }

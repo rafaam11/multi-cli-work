@@ -204,6 +204,7 @@ export interface AgentRegistrySnapshot {
 
 export interface AgentRegistryOptions {
   registryPath?: string;
+  platform?: NodeJS.Platform;
 }
 
 /**
@@ -212,7 +213,7 @@ export interface AgentRegistryOptions {
  */
 export async function readAgentRegistry(options: AgentRegistryOptions = {}): Promise<AgentRegistrySnapshot> {
   const registryPath = options.registryPath ?? AGENT_REGISTRY_PATH;
-  const builtins = builtinAgents();
+  const builtins = builtinAgents(options.platform);
   let snapshot: JsonStoreSnapshot<AgentRegistryV1>;
   try {
     snapshot = await readJsonStore(STORE, registryPath);

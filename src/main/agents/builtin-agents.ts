@@ -33,6 +33,21 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentId, AgentDefinition> = {
     accentColor: null,
     builtin: true,
   },
+  bash: {
+    id: "bash",
+    label: "Bash",
+    commands: ["bash"],
+    args: ["--login"],
+    newSessionArgs: [],
+    resumeArgs: [],
+    conversationId: "none",
+    statusAdapter: "signals",
+    titleSource: "none",
+    shiftEnter: "enter",
+    icon: null,
+    accentColor: "#4eaa25",
+    builtin: true,
+  },
   claude: {
     id: "claude",
     label: "Claude Code",
@@ -71,6 +86,7 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentId, AgentDefinition> = {
   },
 };
 
-export function builtinAgents(): AgentDefinition[] {
-  return Object.values(BUILTIN_AGENTS);
+export function builtinAgents(platform: NodeJS.Platform = process.platform): AgentDefinition[] {
+  const shellId: BuiltinAgentId = platform === "win32" ? "powershell" : "bash";
+  return [BUILTIN_AGENTS[shellId], BUILTIN_AGENTS.claude, BUILTIN_AGENTS.codex];
 }

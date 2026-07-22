@@ -12,12 +12,15 @@ const MAX_REQUEST_BYTES = 1024 * 1024;
 
 export interface ControlServerOptions {
   pipeName: string;
+  platform?: NodeJS.Platform;
   token: string;
   handle(request: ControlRequest): Promise<ControlResponse>;
   log?(message: string, error: unknown): void;
 }
 
 export interface ControlServer {
+  endpoint: string;
+  /** Kept for the v1.5 Windows client and existing integrations. */
   pipePath: string;
   close(): void;
 }
@@ -34,7 +37,8 @@ function tokenMatches(expected: string, received: unknown): boolean {
  * to an installed one. The app keeps running; only the CLI is unavailable in that copy.
  */
 export function startControlServer(options: ControlServerOptions): Promise<ControlServer | null> {
-  const pipePath = `\\\\.\\pipe\\${options.pipeName}`;
+  const platform = options.platform ?? process.platform;
+  const pipePath = platform === "win32" ? `\\\\.\\pipe\\${options.pipeName}` : "";
   return new Promise((resolve) => {
     let listening = false;
     const server = net.createServer((socket) => {
@@ -85,10 +89,17 @@ export function startControlServer(options: ControlServerOptions): Promise<Contr
       options.log?.("jk-coding-cli control server unavailable", error);
       if (!listening) resolve(null);
     });
-    server.listen(pipePath, () => {
+    const onListening = () => {
       listening = true;
-      resolve({ pipePath, close: () => server.close() });
-    });
+      const address = server.address();
+      const endpoint =
+        typeof address === "object" && address !== null
+          ? `tcp://127.0.0.1:${address.port}`
+          : `pipe://${options.pipeName}`;
+      resolve({ endpoint, pipePath: platform === "win32" ? pipePath : endpoint, close: () => server.close() });
+    };
+    if (platform === "win32") server.listen(pipePath, onListening);
+    else server.listen({ host: "127.0.0.1", port: 0 }, onListening);
   });
 }
 

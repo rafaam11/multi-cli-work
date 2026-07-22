@@ -9,6 +9,10 @@ const execFileAsync = promisify(execFile);
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const NOW = "2026-07-11T12:00:00.000Z";
+const WINDOWS = process.platform === "win32";
+const SHELL_ID = WINDOWS ? "powershell" : "bash";
+const SHELL_LABEL = WINDOWS ? "PowerShell" : "Bash";
+const shellCommand = (windows: string, linux: string) => (WINDOWS ? windows : linux);
 
 let tempRoot: string;
 let app: ElectronApplication;
@@ -95,8 +99,10 @@ test.describe.serial("Multi CLI Work desktop", () => {
             "echo-agent": {
               id: "echo-agent",
               label: "Echo Agent",
-              commands: ["powershell"],
-              args: ["-NoLogo", "-NoExit", "-Command", "Write-Output MCW_CUSTOM_AGENT_READY"],
+              commands: [WINDOWS ? "powershell" : "bash"],
+              args: WINDOWS
+                ? ["-NoLogo", "-NoExit", "-Command", "Write-Output MCW_CUSTOM_AGENT_READY"]
+                : ["--login", "-c", "printf 'MCW_CUSTOM_AGENT_READY\\n'; exec bash --login"],
               conversationId: "none",
               statusAdapter: "signals",
               accentColor: "#4285f4",
@@ -116,17 +122,17 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
-  test("runs a real PowerShell PTY and remains framed at both supported window sizes", async () => {
+  test("runs a real native PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    await page.getByRole("button", { name: "새 PowerShell 세션" }).click();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
     // The launchers stay exposed after the folder has a session.
     await expect(page.getByRole("button", { name: "새 Claude Code 세션" })).toBeVisible();
 
-    const terminal = page.getByRole("region", { name: "powershell 터미널" });
+    const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
     await terminal.click();
-    await page.keyboard.type("Write-Output MCW_PTY_READY");
+    await page.keyboard.type(shellCommand("Write-Output MCW_PTY_READY", "echo MCW_PTY_READY"));
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_PTY_READY");
     await attachScreenshot("desktop-1280x820");
@@ -160,11 +166,10 @@ test.describe.serial("Multi CLI Work desktop", () => {
       });
     });
     await terminal.click();
-    await page.keyboard.type(
-      "[Console]::Write(([char]27).ToString() + '[32mMCW_ANSI_GREEN' + ([char]27).ToString() + '[0m' + [Environment]::NewLine); " +
-        "[Console]::Write(([char]27).ToString() + ']9;MCW_OSC_SIGNAL' + ([char]7).ToString()); " +
-        "1..250 | ForEach-Object { 'MCW_BURST_' + $_ }; exit 7",
-    );
+    await page.keyboard.type(shellCommand(
+      "[Console]::Write(([char]27).ToString() + '[32mMCW_ANSI_GREEN' + ([char]27).ToString() + '[0m' + [Environment]::NewLine); [Console]::Write(([char]27).ToString() + ']9;MCW_OSC_SIGNAL' + ([char]7).ToString()); 1..250 | ForEach-Object { 'MCW_BURST_' + $_ }; exit 7",
+      "printf '\\e[32mMCW_ANSI_GREEN\\e[0m'; echo; printf '\\e]9;MCW_OSC_SIGNAL\\a'; i=1; while [ $i -le 250 ]; do echo MCW_BURST_$i; i=$((i+1)); done; exit 7",
+    ));
     await page.keyboard.press("Enter");
 
     await expect(page.locator(".xterm-rows")).toContainText("MCW_ANSI_GREEN");
@@ -187,25 +192,37 @@ test.describe.serial("Multi CLI Work desktop", () => {
 
   test("pastes each Ctrl+V shortcut exactly once from Electron's native clipboard", async () => {
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    await page.getByRole("button", { name: "새 PowerShell 세션" }).click();
-    const terminal = page.getByRole("region", { name: "powershell 터미널" });
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await terminal.click();
-    await page.keyboard.type("$global:mcwPasteCount = 0");
+    await page.keyboard.type(shellCommand("$global:mcwPasteCount = 0", "mcwPasteCount=0"));
     await page.keyboard.press("Enter");
 
-    await app.evaluate(({ clipboard }) => clipboard.writeText('$global:mcwPasteCount++; Write-Output ("MCW_CTRL_V_" + $global:mcwPasteCount)'));
+    await app.evaluate(
+      ({ clipboard }, command) => clipboard.writeText(command),
+      shellCommand(
+        '$global:mcwPasteCount++; Write-Output ("MCW_CTRL_V_" + $global:mcwPasteCount)',
+        'mcwPasteCount=$((mcwPasteCount+1)); echo "MCW_CTRL_V_$mcwPasteCount"',
+      ),
+    );
     await page.keyboard.press("Control+v");
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_V_1");
     await expect(page.locator(".xterm-rows")).not.toContainText("MCW_CTRL_V_2");
 
-    await app.evaluate(({ clipboard }) => clipboard.writeText('$global:mcwPasteCount++; Write-Output ("MCW_CTRL_SHIFT_V_" + $global:mcwPasteCount)'));
+    await app.evaluate(
+      ({ clipboard }, command) => clipboard.writeText(command),
+      shellCommand(
+        '$global:mcwPasteCount++; Write-Output ("MCW_CTRL_SHIFT_V_" + $global:mcwPasteCount)',
+        'mcwPasteCount=$((mcwPasteCount+1)); echo "MCW_CTRL_SHIFT_V_$mcwPasteCount"',
+      ),
+    );
     await page.keyboard.press("Control+Shift+v");
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_SHIFT_V_2");
     await expect(page.locator(".xterm-rows")).not.toContainText("MCW_CTRL_SHIFT_V_3");
 
-    await page.keyboard.type("Write-Output MCW_COPY_SOURCE");
+    await page.keyboard.type(shellCommand("Write-Output MCW_COPY_SOURCE", "echo MCW_COPY_SOURCE"));
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_COPY_SOURCE");
     const copyRow = page.locator(".xterm-rows > div").filter({ hasText: "MCW_COPY_SOURCE" }).last();
@@ -220,6 +237,12 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("MCW_COPY_SOURCE");
     await page.keyboard.press("Control+Shift+c");
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("MCW_COPY_SOURCE");
+    await terminal.click();
+    await page.keyboard.type("exit");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".active-status")).toHaveText("종료됨");
+    await page.getByRole("button", { name: "세션 제거" }).click();
+    await expect(page.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeHidden();
   });
 
   test("keeps the Git sidebar contained at 220, 280, and 480px and opens the native graph", async () => {
@@ -273,7 +296,7 @@ test.describe.serial("Multi CLI Work desktop", () => {
 
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /PowerShell \d+ 세션 보기/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`${SHELL_LABEL}( \\d+)? 세션 보기`) }).first()).toBeVisible();
   });
 
   /**
@@ -282,7 +305,7 @@ test.describe.serial("Multi CLI Work desktop", () => {
    */
   test("runs an agent the user added in agents.json", async () => {
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    await expect(page.getByRole("button", { name: "새 PowerShell 세션" })).toBeVisible();
+    await expect(page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` })).toBeVisible();
 
     await page.getByRole("button", { name: "새 Echo Agent 세션" }).click();
 
@@ -315,10 +338,10 @@ test.describe.serial("Multi CLI Work desktop", () => {
     const palette = page.getByRole("dialog", { name: "빠른 열기" });
     await expect(palette).toBeVisible();
 
-    await page.keyboard.type("power");
+    await page.keyboard.type(WINDOWS ? "power" : "bash");
     await page.keyboard.press("Enter");
     await expect(palette).toBeHidden();
-    await expect(page.getByRole("region", { name: "powershell 터미널" })).toBeVisible();
+    await expect(page.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeVisible();
 
     await page.keyboard.press("Control+p");
     await expect(palette).toBeVisible();
@@ -341,11 +364,11 @@ test.describe.serial("Multi CLI Work desktop", () => {
 
     // The new worktree opens scoped; a session started here runs in the worktree directory.
     await expect(page.getByRole("button", { name: "feature/e2e worktree 선택" })).toBeVisible();
-    await page.getByRole("button", { name: "새 PowerShell 세션" }).click();
-    const terminal = page.getByRole("region", { name: "powershell 터미널" });
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
     await terminal.click();
-    await page.keyboard.type('Write-Output ("MCW_PWD_" + $PWD.Path)');
+    await page.keyboard.type(shellCommand('Write-Output ("MCW_PWD_" + $PWD.Path)', 'echo "MCW_PWD_$PWD"'));
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("sample-project-wt");
     await attachScreenshot("worktree-session");
@@ -355,21 +378,26 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await page.getByRole("button", { name: "프롬프트 팬아웃" }).click();
     const fanOut = page.getByRole("dialog", { name: "프롬프트 팬아웃" });
     await expect(fanOut.getByRole("checkbox")).toHaveCount(2);
-    await fanOut.getByRole("textbox", { name: "팬아웃 프롬프트" }).fill("Write-Output MCW_FANOUT_OK");
+    await fanOut.getByRole("textbox", { name: "팬아웃 프롬프트" }).fill(
+      shellCommand("Write-Output MCW_FANOUT_OK", "echo MCW_FANOUT_OK"),
+    );
     await attachScreenshot("fan-out");
     await fanOut.getByRole("button", { name: "2개 세션에 전송" }).click();
     await expect(fanOut).toBeHidden();
-    await page.getByRole("button", { name: "PowerShell 2 세션 열기" }).click();
+    await page.getByRole("button", { name: `${SHELL_LABEL} 2 세션 열기` }).click();
     await expect(page.locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
     await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
     await expect(page.locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
 
     // Leave an uncommitted file in the worktree, then read it back from the diff view.
-    await page.getByRole("button", { name: "PowerShell 2 세션 열기" }).click();
+    await page.getByRole("button", { name: `${SHELL_LABEL} 2 세션 열기` }).click();
     await page.locator(".terminal-surface").click();
     // The marker is concatenated so it appears in the command's OUTPUT only — the echoed input
     // line must not satisfy the wait, or the diff races the file write.
-    await page.keyboard.type('Set-Content -Path wip.txt -Value MCW_DIRTY; Write-Output ("MCW_WROTE_" + "DONE")');
+    await page.keyboard.type(shellCommand(
+      'Set-Content -Path wip.txt -Value MCW_DIRTY; Write-Output ("MCW_WROTE_" + "DONE")',
+      "echo MCW_DIRTY > wip.txt; echo MCW_WROTE_DONE",
+    ));
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
     await page.getByRole("button", { name: "feature/e2e worktree 선택" }).click({ button: "right" });
@@ -407,8 +435,8 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await app.close();
     ({ app, page } = await launchApp());
 
-    await expect(page.getByRole("button", { name: "PowerShell 세션 열기" })).toBeVisible();
-    await page.getByRole("button", { name: "PowerShell 세션 열기" }).click();
+    await expect(page.getByRole("button", { name: `${SHELL_LABEL} 세션 열기` })).toBeVisible();
+    await page.getByRole("button", { name: `${SHELL_LABEL} 세션 열기` }).click();
     await expect(page.getByRole("button", { name: "세션 재개" })).toBeVisible();
   });
 
@@ -417,7 +445,7 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
     await page.getByRole("button", { name: "세션 재개" }).click();
     await expect(page.locator(".active-status")).not.toHaveText("종료됨");
-    await page.getByRole("button", { name: "PowerShell 세션 열기" }).click();
+    await page.getByRole("button", { name: `${SHELL_LABEL} 세션 열기` }).click();
     await page.getByRole("button", { name: "세션 재개" }).click();
     await expect(page.locator(".active-status")).not.toHaveText("종료됨");
 
@@ -426,18 +454,18 @@ test.describe.serial("Multi CLI Work desktop", () => {
 
     const left = page.locator(".split-primary");
     const right = page.locator(".split-secondary");
-    await expect(left.getByRole("region", { name: "powershell 터미널" })).toBeVisible();
+    await expect(left.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeVisible();
     await expect(right.getByRole("region", { name: "echo-agent 터미널" })).toBeVisible();
 
     // Input typed into one pane must never leak into the other.
     await left.locator(".terminal-surface").click();
-    await page.keyboard.type("Write-Output MCW_SPLIT_LEFT");
+    await page.keyboard.type(shellCommand("Write-Output MCW_SPLIT_LEFT", "echo MCW_SPLIT_LEFT"));
     await page.keyboard.press("Enter");
     await expect(left.locator(".xterm-rows")).toContainText("MCW_SPLIT_LEFT");
     await expect(right.locator(".xterm-rows")).not.toContainText("MCW_SPLIT_LEFT");
 
     await right.locator(".terminal-surface").click();
-    await page.keyboard.type("Write-Output MCW_SPLIT_RIGHT");
+    await page.keyboard.type(shellCommand("Write-Output MCW_SPLIT_RIGHT", "echo MCW_SPLIT_RIGHT"));
     await page.keyboard.press("Enter");
     await expect(right.locator(".xterm-rows")).toContainText("MCW_SPLIT_RIGHT");
     await expect(left.locator(".xterm-rows")).not.toContainText("MCW_SPLIT_RIGHT");

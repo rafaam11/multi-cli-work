@@ -21,7 +21,7 @@ describe("ensureControlCli", () => {
   it("writes the CLI script and both command shims into userData/bin", async () => {
     const userData = await tempRoot();
 
-    const { binDir } = await ensureControlCli(userData);
+    const { binDir } = await ensureControlCli(userData, "win32");
 
     expect(binDir).toBe(path.join(userData, "bin"));
     const script = await fs.readFile(path.join(binDir, "jk-coding-cli.ps1"), "utf8");
@@ -46,10 +46,20 @@ describe("ensureControlCli", () => {
     await fs.mkdir(binDir, { recursive: true });
     await fs.writeFile(path.join(binDir, "jk-coding-cli.ps1"), "old contents", "utf8");
 
-    await ensureControlCli(userData);
+    await ensureControlCli(userData, "win32");
 
     const script = await fs.readFile(path.join(binDir, "jk-coding-cli.ps1"), "utf8");
     expect(script).not.toBe("old contents");
     expect(script).toContain("JK_CODING_CLI_TOKEN");
+  });
+
+  it("writes executable Python 3 clients on Linux", async () => {
+    const userData = await tempRoot();
+    const { binDir } = await ensureControlCli(userData, "linux");
+    for (const name of ["jk", "jk-coding-cli"]) {
+      const file = path.join(binDir, name);
+      expect(await fs.readFile(file, "utf8")).toContain("#!/usr/bin/env python3");
+      if (process.platform !== "win32") expect((await fs.stat(file)).mode & 0o111).not.toBe(0);
+    }
   });
 });

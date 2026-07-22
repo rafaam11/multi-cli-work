@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from "electron";
 import electronUpdater, { type ProgressInfo, type UpdateInfo } from "electron-updater";
 import type { UpdaterStatus } from "../shared/api-types";
+import { quitAndInstallArguments } from "./updater-platform";
 
 // electron-updater ships CommonJS; a named import is undefined once the main process is bundled.
 const { autoUpdater } = electronUpdater;
@@ -55,8 +56,10 @@ export function quitAndInstall(): void {
   if (!app.isPackaged) return;
   // isSilent=true runs the NSIS installer with /S. It also makes quitAndInstall read isForceRunAfter
   // instead of autoRunAppAfterInstall, so both flags must be true for the app to come back up.
-  autoUpdater.quitAndInstall(true, true);
+  const [isSilent, isForceRunAfter] = quitAndInstallArguments(process.platform);
+  autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
 }
+
 
 export function openReleasesPage(): void {
   void shell.openExternal(RELEASES_URL);

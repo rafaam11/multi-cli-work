@@ -1,46 +1,89 @@
 name: release
 
-# v* 태그를 푸시하면 Windows 설치본(NSIS)을 빌드해 GitHub 릴리스(draft)에 올린다.
-# electron-builder의 GitHub publish 기본값이 draft이므로, 자산이 채워진 draft를 사람이 검토하고
-# GitHub에서 수동 publish한다. 이 앱은 ConPTY·PowerShell 의존이라 Windows 단일 잡이다.
-# workflow_dispatch로 수동 실행하면 publish 없이 패키징만 검증한다(태그를 다시 밀지 않아도 됨).
-#
-# 러너는 windows-2022로 고정한다. windows-latest는 Visual Studio 2026만 담긴 이미지로 옮겨갔고,
-# electron-rebuild가 쓰는 node-gyp이 VS 2026을 인식하지 못해 node-pty 리빌드가 실패한다.
-
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  verify-version:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require tag and package version to match
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${package_version}" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json v${package_version}" >&2
+            exit 1
+          }
+
+  windows:
+    needs: verify-version
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.12.0
           cache: npm
-
-      # node-gyp이 번들한 gyp는 Python 3.12에서 제거된 distutils를 import한다(러너 기본은 3.12+).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            release/Multi-CLI-Work-Setup-*.exe
+            release/Multi-CLI-Work-Setup-*.exe.blockmap
+            release/latest.yml
 
-      # postinstall의 electron-builder install-app-deps가 node-pty를 Electron ABI로 리빌드한다.
-      - name: Install dependencies
-        run: npm ci
+  linux:
+    needs: verify-version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3
+      - run: npm ci
+      - name: Rebuild node-pty for the native Electron ABI
+        run: npm run rebuild:native
+      - run: npm test
+      - run: npm run build
+      - name: Package Linux assets
+        run: npx electron-builder --linux deb AppImage --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x64
+          path: |
+            release/Multi-CLI-Work-*-linux-x64.deb
+            release/Multi-CLI-Work-*-linux-x64.AppImage
+            release/Multi-CLI-Work-*-linux-x64.AppImage.blockmap
+            release/latest-linux.yml
 
-      - name: Build (typecheck + electron-vite)
-        run: npm run build
-
-      - name: Package & publish (draft)
-        run: npx electron-builder --win --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  draft-release:
+    if: github.ref_type == 'tag'
+    needs: [windows, linux]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: release/*

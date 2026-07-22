@@ -38,7 +38,7 @@
   <!-- ── utility process ── -->
   <rect x="566" y="258" width="288" height="128" rx="10" fill="#1c201f" stroke="#343b38"/>
   <text x="710" y="284" font-size="13" font-weight="700" fill="#e7ebe8" text-anchor="middle">utilityProcess</text>
-  <text x="710" y="308" font-size="11" fill="#9aa49f" text-anchor="middle">node-pty ConPTY × N</text>
+  <text x="710" y="308" font-size="11" fill="#9aa49f" text-anchor="middle">node-pty (ConPTY / Unix PTY) × N</text>
   <rect x="590" y="324" width="240" height="44" rx="7" fill="#202524" stroke="#343b38"/>
   <text x="606" y="343" font-size="10" fill="#9aa49f">bounded ring buffer (UTF-8 경계 보존)</text>
   <text x="606" y="360" font-size="9.5" fill="#717b76">크래시 시 지수 백오프 재시작 · 5회 후 정지</text>
@@ -63,7 +63,7 @@
     <rect x="672" y="404" width="70" height="30" rx="6" fill="#202524" stroke="#46504c"/>
     <text x="707" y="424" font-size="10" fill="#e7ebe8" text-anchor="middle">codex</text>
     <rect x="754" y="404" width="100" height="30" rx="6" fill="#202524" stroke="#46504c"/>
-    <text x="804" y="424" font-size="10" fill="#e7ebe8" text-anchor="middle">PowerShell</text>
+    <text x="804" y="424" font-size="10" fill="#e7ebe8" text-anchor="middle">PS / Bash</text>
   </g>
   <line x1="710" y1="386" x2="710" y2="404" stroke="#46504c" stroke-width="1.3"/>
 

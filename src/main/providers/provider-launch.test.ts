@@ -34,12 +34,12 @@ describe("executable resolution", () => {
 
 describe("tool launch commands", () => {
   it("runs each CLI update inside a PowerShell session that stays open", () => {
-    expect(buildToolLaunch("claude-update", base.executables)).toEqual({
+    expect(buildToolLaunch("claude-update", base.executables, "win32")).toEqual({
       executable: base.executables.agents.powershell,
       args: ["-NoLogo", "-NoExit", "-Command", "claude update"],
       providerConversationId: null,
     });
-    expect(buildToolLaunch("codex-update", base.executables).args).toEqual([
+    expect(buildToolLaunch("codex-update", base.executables, "win32").args).toEqual([
       "-NoLogo",
       "-NoExit",
       "-Command",
@@ -47,10 +47,22 @@ describe("tool launch commands", () => {
     ]);
   });
 
+  it("runs update commands in a login Bash on Linux", () => {
+    const linux = {
+      ...base.executables,
+      agents: { ...base.executables.agents, bash: "/bin/bash" },
+    };
+    expect(buildToolLaunch("claude-update", linux, "linux")).toEqual({
+      executable: "/bin/bash",
+      args: ["--login", "-i", "-c", "claude update; exec bash --login"],
+      providerConversationId: null,
+    });
+  });
+
   it("fails when PowerShell is unavailable", () => {
     const withoutPowerShell = { ...base.executables, agents: { ...base.executables.agents, powershell: null } };
 
-    expect(() => buildToolLaunch("claude-update", withoutPowerShell)).toThrow(/PowerShell executable is not available/);
+    expect(() => buildToolLaunch("claude-update", withoutPowerShell, "win32")).toThrow(/PowerShell executable is not available/);
   });
 });
 

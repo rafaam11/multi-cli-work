@@ -1,12 +1,12 @@
 {
   "name": "multi-cli-work",
-  "version": "1.4.3",
-  "description": "Project-oriented Windows workspace for Codex, Claude Code, and PowerShell sessions",
+  "version": "1.5.0",
+  "description": "Project-oriented Windows and Linux workspace for Codex, Claude Code, PowerShell, and Bash sessions",
   "main": "out/main/index.js",
   "private": true,
   "author": "uiop3847",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "electron-vite dev",
@@ -17,7 +17,10 @@
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w node-pty",
     "test:e2e": "npm run build && playwright test",
-    "dist": "npm run build && electron-builder --win --publish never",
+    "dist": "npm run dist:win",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build && electron-builder --linux deb AppImage --x64 --publish never",
+    "dist:linux:x64": "npm run build && electron-builder --linux deb AppImage --x64 --publish never",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -34,7 +37,7 @@
     "remark-gfm": "4.0.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "3.7.2",
+    "@electron/rebuild": "4.2.0",
     "@playwright/test": "1.61.1",
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.1.0",
@@ -43,8 +46,8 @@
     "@types/react": "18.3.18",
     "@types/react-dom": "18.3.5",
     "@vitejs/plugin-react": "4.3.4",
-    "electron": "34.0.0",
-    "electron-builder": "25.1.8",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
     "electron-vite": "3.1.0",
     "jsdom": "26.0.0",
     "typescript": "5.7.3",
@@ -54,16 +57,56 @@
   "build": {
     "appId": "com.rafaam11.multicliwork",
     "productName": "Multi CLI Work",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
     "files": [
       "out/**"
     ],
-    "artifactName": "Multi-CLI-Work-Setup-${version}.${ext}",
     "win": {
       "target": "nsis",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "Multi-CLI-Work-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        },
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ],
+      "category": "Development",
+      "icon": "build/icon.png",
+      "artifactName": "Multi-CLI-Work-${version}-linux-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "Name": "Multi CLI Work",
+          "Comment": "Workspace for Codex, Claude Code, and terminal sessions",
+          "Categories": "Development;Utility;"
+        }
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "python3"
+      ]
+    },
+    "toolsets": {
+      "appimage": "1.0.3"
     },
     "nsis": {
       "oneClick": false,

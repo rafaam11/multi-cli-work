@@ -10,6 +10,7 @@ interface CodexSessionTrackerOptions {
   pollIntervalMs?: number;
   maxAttempts?: number;
   maxFiles?: number;
+  platform?: NodeJS.Platform;
 }
 
 interface SessionMetadata {
@@ -25,15 +26,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizedCwd(cwd: string): string {
-  if (path.win32.isAbsolute(cwd)) {
+function normalizedCwd(cwd: string, platform: NodeJS.Platform): string {
+  if (platform === "win32") {
     return path.win32.normalize(path.win32.resolve(cwd)).replaceAll("/", "\\").toLocaleLowerCase("en-US");
   }
   return path.posix.normalize(path.posix.resolve(cwd));
 }
 
-function claimsForDirectory(directory: string): Set<string> {
-  const key = path.resolve(directory).replaceAll("/", "\\").toLocaleLowerCase("en-US");
+function claimsForDirectory(directory: string, platform: NodeJS.Platform): Set<string> {
+  const resolved = path.resolve(directory);
+  const key = platform === "win32" ? resolved.replaceAll("/", "\\").toLocaleLowerCase("en-US") : resolved;
   const existing = transcriptClaims.get(key);
   if (existing) return existing;
   const claims = new Set<string>();
@@ -88,6 +90,7 @@ export class CodexSessionTracker {
   private readonly pollIntervalMs: number;
   private readonly maxAttempts: number;
   private readonly maxFiles: number;
+  private readonly platform: NodeJS.Platform;
   private readonly claimedTranscriptIds: Set<string>;
 
   constructor(options: CodexSessionTrackerOptions = {}) {
@@ -95,7 +98,8 @@ export class CodexSessionTracker {
     this.pollIntervalMs = options.pollIntervalMs ?? 400;
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.maxFiles = options.maxFiles ?? 300;
-    this.claimedTranscriptIds = claimsForDirectory(this.sessionsDirectory);
+    this.platform = options.platform ?? process.platform;
+    this.claimedTranscriptIds = claimsForDirectory(this.sessionsDirectory, this.platform);
   }
 
   async snapshot(cwd: string): Promise<ReadonlySet<string>> {
@@ -125,7 +129,7 @@ export class CodexSessionTracker {
   }
 
   private async sessionsForCwd(cwd: string): Promise<SessionMetadata[]> {
-    const requested = normalizedCwd(cwd);
+    const requested = normalizedCwd(cwd, this.platform);
     const files = await collectJsonlFiles(this.sessionsDirectory);
     const recent = (
       await Promise.all(
@@ -143,7 +147,7 @@ export class CodexSessionTracker {
       .slice(0, this.maxFiles);
     const metadata = await Promise.all(recent.map(({ filePath, modifiedAt }) => readMetadata(filePath, modifiedAt)));
     return metadata
-      .filter((entry): entry is SessionMetadata => entry !== null && normalizedCwd(entry.cwd) === requested)
+      .filter((entry): entry is SessionMetadata => entry !== null && normalizedCwd(entry.cwd, this.platform) === requested)
       .sort((left, right) => right.modifiedAt - left.modifiedAt);
   }
 }

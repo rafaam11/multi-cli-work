@@ -8,6 +8,8 @@ export interface FileTreeEntry {
   kind: "file" | "directory";
   /** Lowercase, no leading dot. null for directories and extension-less files. */
   extension: string | null;
+  /** Computed by the main process using the native platform's executable rules. */
+  executable: boolean;
 }
 
 export interface WorkspaceFileContent {

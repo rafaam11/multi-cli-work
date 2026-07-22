@@ -18,6 +18,7 @@ let runtime: DesktopRuntime | null = null;
 let isQuitting = false;
 let shouldFocusWhenReady = false;
 let quitRequestInProgress = false;
+let trayUnavailable = false;
 let windowAttention: AttentionSnapshot = { window: "none", unread: {} };
 
 if (process.env.MULTI_CLI_WORK_USER_DATA) {
@@ -46,6 +47,10 @@ function createWindow(): BrowserWindow {
   window.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
+    if (trayUnavailable) {
+      void requestQuit();
+      return;
+    }
     window.hide();
   });
   window.on("closed", () => {
@@ -71,7 +76,7 @@ function createWindow(): BrowserWindow {
 function applyAttentionSnapshot(window: BrowserWindow, snapshot: AttentionSnapshot): void {
   if (window.isDestroyed()) return;
   applyWindowAttention(window, snapshot.window);
-  const badge = taskbarBadgeSpec(snapshot);
+  const badge = process.platform === "win32" ? taskbarBadgeSpec(snapshot) : null;
   if (badge) {
     const image = nativeImage.createFromBitmap(badge.bitmap, { width: badge.size, height: badge.size });
     image.addRepresentation({
@@ -179,7 +184,8 @@ function createTray(): Tray {
       { label: "종료", click: () => void requestQuit() },
     ]),
   );
-  nextTray.on("double-click", showMainWindow);
+  if (process.platform === "linux") nextTray.on("click", showMainWindow);
+  else nextTray.on("double-click", showMainWindow);
   return nextTray;
 }
 
@@ -201,7 +207,13 @@ if (!hasSingleInstanceLock) {
     try {
       runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit, updateWindowAttention);
       mainWindow = createWindow();
-      tray = createTray();
+      try {
+        tray = createTray();
+      } catch (error) {
+        trayUnavailable = true;
+        mainWindow.show();
+        console.error("Tray creation failed; close will quit instead of hiding the app.", error);
+      }
       initUpdater();
       if (shouldFocusWhenReady) showMainWindow();
     } catch (error) {

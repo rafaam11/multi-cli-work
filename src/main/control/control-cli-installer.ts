@@ -11,6 +11,8 @@ import path from "node:path";
 /** Fixed local pipe the control server listens on; `JK_CODING_CLI_PIPE` overrides it in dev/tests. */
 export const CONTROL_PIPE_NAME = "jk-coding-cli";
 export const CONTROL_PIPE_ENV = "JK_CODING_CLI_PIPE";
+/** Platform-independent pipe:// or tcp:// endpoint for clients introduced in v1.5. */
+export const CONTROL_ENDPOINT_ENV = "JK_CODING_CLI_ENDPOINT";
 /** Rotated on every app start and handed only to app-spawned sessions. */
 export const CONTROL_TOKEN_ENV = "JK_CODING_CLI_TOKEN";
 
@@ -163,6 +165,78 @@ const CONTROL_CLI_CMD = [
   "",
 ].join("\r\n");
 
+export const CONTROL_CLI_PYTHON = String.raw`#!/usr/bin/env python3
+import json, os, socket, sys
+
+def fail(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+def parse(argv):
+    if not argv or argv[0] in ("help", "--help", "-h"):
+        print("jk-coding-cli: list|send|read|wait|spawn [options]")
+        raise SystemExit(0)
+    command, rest, flags, positional = argv[0], argv[1:], {}, []
+    i = 0
+    while i < len(rest):
+        value = rest[i]
+        if value.startswith("--"):
+            name = value[2:]
+            if name in ("json", "stdin"): flags[name] = True
+            else:
+                i += 1
+                if i >= len(rest): fail("옵션 %s 에 값이 없습니다." % value)
+                flags[name] = rest[i]
+        else: positional.append(value)
+        i += 1
+    args = {}
+    if command == "list":
+        if "project" in flags: args["projectId"] = flags["project"]
+    elif command == "send":
+        if not positional: fail("send: 대상 sessionId가 필요합니다.")
+        args["sessionId"] = positional[0]
+        args["text"] = sys.stdin.read() if flags.get("stdin") else " ".join(positional[1:])
+        if not args["text"].strip(): fail("send: 보낼 텍스트가 비어 있습니다.")
+    elif command in ("read", "wait"):
+        if not positional: fail(command + ": sessionId가 필요합니다.")
+        args["sessionId"] = positional[0]
+        if "lines" in flags: args["lines"] = int(flags["lines"])
+        if "status" in flags: args["status"] = flags["status"]
+        if "timeout" in flags: args["timeoutSeconds"] = int(flags["timeout"])
+    elif command == "spawn":
+        if "project" not in flags or "agent" not in flags: fail("spawn: --project와 --agent가 필요합니다.")
+        args.update(projectId=flags["project"], kind=flags["agent"])
+        if "worktree" in flags: args["worktreeId"] = flags["worktree"]
+    else: fail("알 수 없는 명령: " + command)
+    return command, flags, args
+
+command, flags, args = parse(sys.argv[1:])
+token = os.environ.get("JK_CODING_CLI_TOKEN")
+endpoint = os.environ.get("JK_CODING_CLI_ENDPOINT", "")
+if not token: fail("jk-coding-cli: 멀티 터미널 작업기 안의 세션에서만 사용할 수 있습니다 (토큰 없음).")
+if not endpoint.startswith("tcp://127.0.0.1:"): fail("jk-coding-cli: 지원하지 않는 제어 endpoint입니다.")
+port = int(endpoint.rsplit(":", 1)[1])
+request = dict(token=token, callerSessionId=os.environ.get("MULTI_CLI_WORK_SESSION_ID"), command=command, args=args)
+try:
+    with socket.create_connection(("127.0.0.1", port), timeout=3) as connection:
+        connection.sendall((json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n").encode())
+        stream = connection.makefile("r", encoding="utf-8")
+        response = json.loads(stream.readline())
+except Exception as error: fail("jk-coding-cli: 앱에 연결할 수 없습니다: " + str(error))
+if not response.get("ok"): fail("jk-coding-cli: " + str(response.get("error", "unknown error")))
+result = response.get("result") or {}
+if flags.get("json"): print(json.dumps(result, ensure_ascii=False)); raise SystemExit(0)
+if command == "list":
+    sessions = result.get("sessions", [])
+    if not sessions: print("(세션 없음)")
+    for item in sessions:
+        print("%s  %-10s  %-17s  %s  %s" % (item["id"], item["kind"], item["status"], item.get("projectName") or "-", item.get("name") or item.get("title") or "-"))
+elif command == "send": print("전송됨 -> " + result["sessionId"])
+elif command == "read": print(result.get("text", ""))
+elif command == "wait": print(result["sessionId"] + ": " + result["status"])
+elif command == "spawn": print(result["sessionId"])
+`;
+
 async function replaceFile(filePath: string, content: string): Promise<void> {
   const tempPath = `${filePath}.${process.pid}.tmp`;
   try {
@@ -173,11 +247,22 @@ async function replaceFile(filePath: string, content: string): Promise<void> {
   }
 }
 
-export async function ensureControlCli(userDataPath: string): Promise<{ binDir: string }> {
+export async function ensureControlCli(
+  userDataPath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<{ binDir: string }> {
   const binDir = path.join(userDataPath, "bin");
   await fs.mkdir(binDir, { recursive: true });
-  await replaceFile(path.join(binDir, "jk-coding-cli.ps1"), CONTROL_CLI_SCRIPT);
-  await replaceFile(path.join(binDir, "jk-coding-cli.cmd"), CONTROL_CLI_CMD);
-  await replaceFile(path.join(binDir, "jk.cmd"), CONTROL_CLI_CMD);
+  if (platform === "win32") {
+    await replaceFile(path.join(binDir, "jk-coding-cli.ps1"), CONTROL_CLI_SCRIPT);
+    await replaceFile(path.join(binDir, "jk-coding-cli.cmd"), CONTROL_CLI_CMD);
+    await replaceFile(path.join(binDir, "jk.cmd"), CONTROL_CLI_CMD);
+  } else {
+    const client = path.join(binDir, "jk-coding-cli");
+    const alias = path.join(binDir, "jk");
+    await replaceFile(client, CONTROL_CLI_PYTHON);
+    await replaceFile(alias, CONTROL_CLI_PYTHON);
+    await Promise.all([fs.chmod(client, 0o755), fs.chmod(alias, 0o755)]);
+  }
   return { binDir };
 }
