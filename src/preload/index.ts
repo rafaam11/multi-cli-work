@@ -24,7 +24,12 @@ const api: MultiCliWorkApi = {
   },
   worktrees: {
     list: () => ipcRenderer.invoke("worktrees:list"),
-    create: (projectId, branch) => ipcRenderer.invoke("worktrees:create", projectId, branch),
+    sync: () => ipcRenderer.invoke("worktrees:sync"),
+    creationOptions: (projectId) => ipcRenderer.invoke("worktrees:creation-options", projectId),
+    previewPath: (projectId, branch) => ipcRenderer.invoke("worktrees:preview-path", projectId, branch),
+    create: (projectId, request) => ipcRenderer.invoke("worktrees:create", projectId, request),
+    unlock: (worktreeId) => ipcRenderer.invoke("worktrees:unlock", worktreeId),
+    cleanupStale: (projectId) => ipcRenderer.invoke("worktrees:cleanup-stale", projectId),
     remove: (worktreeId, force) => ipcRenderer.invoke("worktrees:remove", worktreeId, force),
     reveal: (worktreeId) => ipcRenderer.invoke("worktrees:reveal", worktreeId),
     openInEditor: (worktreeId) => ipcRenderer.invoke("worktrees:open-editor", worktreeId),

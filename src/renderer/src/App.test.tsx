@@ -259,7 +259,18 @@ function createApi(options?: {
     },
     worktrees: {
       list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
+      sync: vi.fn().mockResolvedValue({
+        workspaces: [
+          ...projects.map((project) => ({ workspaceKey: `project:${project.id}:main`, kind: "main" as const, projectId: project.id, worktreeId: null, path: project.rootPath, branch: "main", head: "0123456789abcdef", changedFileCount: 0, availability: "available" as const, lockedReason: null, prunableReason: null })),
+          ...(options?.worktrees ?? []).map((worktree) => ({ workspaceKey: `worktree:${worktree.id}`, kind: "worktree" as const, projectId: worktree.projectId, worktreeId: worktree.id, path: worktree.path, branch: worktree.branch, head: "0123456789abcdef", changedFileCount: 0, availability: "available" as const, lockedReason: null, prunableReason: null })),
+        ],
+        warnings: {},
+      }),
+      creationOptions: vi.fn().mockResolvedValue({ localBranches: [], remoteBranches: [], checkedOutBranches: [], defaultStartPoint: "main" }),
+      previewPath: vi.fn().mockResolvedValue("C:\\Work-wt\\feature"),
       create: vi.fn(),
+      unlock: vi.fn().mockResolvedValue(undefined),
+      cleanupStale: vi.fn().mockResolvedValue({ workspaces: [], warnings: {} }),
       remove: vi.fn().mockResolvedValue({ removed: true }),
       reveal: vi.fn().mockResolvedValue(undefined),
       openInEditor: vi.fn().mockResolvedValue(undefined),
@@ -403,6 +414,7 @@ function createApi(options?: {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   terminalHarness.instances.length = 0;
   terminalHarness.fit.mockReset();
   terminalHarness.resizeObservers.length = 0;

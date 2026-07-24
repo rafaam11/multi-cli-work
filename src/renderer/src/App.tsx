@@ -9,7 +9,7 @@ import type {
 } from "@shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
-import type { SharedWorktree } from "@shared/worktree-types";
+import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, TriangleAlert } from "lucide-react";
 import {
@@ -152,6 +152,12 @@ export function App() {
   const sessionsRef = useRef<TerminalSessionView[]>([]);
   const activityIdRef = useRef(0);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("multi-cli-work.projects.v1") ?? "{}") as { collapsed?: string[] };
+      return new Set(stored.collapsed ?? []);
+    } catch { return new Set(); }
+  });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -179,6 +185,8 @@ export function App() {
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [unread, setUnread] = useState<Record<string, SessionAttention>>({});
   const [worktrees, setWorktrees] = useState<SharedWorktree[]>([]);
+  const [workspaceViews, setWorkspaceViews] = useState<GitWorkspaceView[]>([]);
+  const [worktreeWarnings, setWorktreeWarnings] = useState<Record<string, string>>({});
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
   const [worktreeCreateProject, setWorktreeCreateProject] = useState<SharedProject | null>(null);
   const [worktreeMenu, setWorktreeMenu] = useState<WorktreeMenuState | null>(null);
@@ -280,14 +288,44 @@ export function App() {
             window.multiCliWork.terminals.state(),
             window.multiCliWork.worktrees.list(),
           ]);
+        // The project registry is the primary sidebar data. Publish it before optional selection
+        // restoration and Git enrichment so either concern cannot blank the whole tree.
+        setSnapshot(registrySnapshot);
+        setSessions(terminalSessions);
+        setAvailability(providers);
+        setLoading(false);
+        setWorkspaceViews(Object.values(registrySnapshot.registry.projects).map((project) => ({
+          workspaceKey: `project:${project.id}:main`,
+          kind: "main",
+          projectId: project.id,
+          worktreeId: null,
+          path: project.rootPath,
+          branch: null,
+          head: null,
+          changedFileCount: 0,
+          availability: "available",
+          lockedReason: null,
+          prunableReason: null,
+        })));
         setWorktrees(worktreeList);
+        // Git discovery is project-scoped and must never hold the whole sidebar in a loading state.
+        void window.multiCliWork.worktrees.sync().then(async (worktreeSnapshot) => {
+          setWorkspaceViews(worktreeSnapshot.workspaces);
+          setWorktreeWarnings(worktreeSnapshot.warnings);
+          setWorktrees(await window.multiCliWork.worktrees.list());
+        }).catch(() => undefined);
         setAgents(agentsSnapshot.agents);
         agentsRef.current = agentsSnapshot.agents;
         setAgentWarning(agentsSnapshot.warning ?? null);
         const visibleProjects = Object.values(registrySnapshot.registry.projects).sort(
           (left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER),
         );
-        const preferredProjectId = preservedSelection ? preservedSelection.projectId : appState.state.selectedProjectId;
+        let savedWorkspaceKey: string | null = null;
+        try { savedWorkspaceKey = localStorage.getItem("multi-cli-work.last-workspace.v1"); } catch { /* unavailable storage */ }
+        const savedWorktree = !preservedSelection && savedWorkspaceKey?.startsWith("worktree:")
+          ? worktreeList.find((worktree) => worktree.id === savedWorkspaceKey.slice("worktree:".length)) ?? null
+          : null;
+        const preferredProjectId = preservedSelection ? preservedSelection.projectId : savedWorktree?.projectId ?? appState.state.selectedProjectId;
         const preferredSessionId = preservedSelection ? preservedSelection.sessionId : appState.state.selectedSessionId;
         const restoredSession = terminalSessions.find((session) => session.id === preferredSessionId) ?? null;
 
@@ -301,7 +339,7 @@ export function App() {
           setSnapshot(registrySnapshot);
           setSessions(terminalSessions);
           setAvailability(providers);
-          setExpandedProjects(new Set(visibleProjects.map((project) => project.id)));
+          setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
           setSelectedProjectId(null);
           setSelectedSessionId(restoredSession.id);
           setSelectedWorktreeId(null);
@@ -325,10 +363,10 @@ export function App() {
         setSnapshot(registrySnapshot);
         setSessions(terminalSessions);
         setAvailability(providers);
-        setExpandedProjects(new Set(visibleProjects.map((project) => project.id)));
+        setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
         setSelectedProjectId(initialProject?.id ?? null);
         setSelectedSessionId(initialSession?.id ?? null);
-        setSelectedWorktreeId(initialSession?.worktreeId ?? null);
+        setSelectedWorktreeId(initialSession?.worktreeId ?? (savedWorktree && savedWorktree.projectId === initialProject?.id ? savedWorktree.id : null));
         setSplitSessionId(restoredSplitId);
         setActiveView(forceHome ? "home" : initialSession ? "terminal" : initialProject ? "detail" : "home");
       } catch (error) {
@@ -358,6 +396,11 @@ export function App() {
   useEffect(() => {
     const handleFocus = () => {
       void refreshAgents().catch(() => undefined);
+      void window.multiCliWork.worktrees.sync().then((next) => {
+        setWorkspaceViews(next.workspaces);
+        setWorktreeWarnings(next.warnings);
+        return window.multiCliWork.worktrees.list();
+      }).then(setWorktrees).catch(() => undefined);
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
@@ -490,6 +533,7 @@ export function App() {
   }, []);
 
   const selectProject = (projectId: string) => {
+    try { localStorage.setItem("multi-cli-work.last-workspace.v1", `main:${projectId}`); } catch { /* unavailable storage */ }
     setSelectedProjectId(projectId);
     setSelectedSessionId(null);
     setSelectedWorktreeId(null);
@@ -519,6 +563,7 @@ export function App() {
 
   /** A worktree behaves like a sub-folder: selecting it opens the detail page scoped to it. */
   const selectWorktree = (worktree: SharedWorktree) => {
+    try { localStorage.setItem("multi-cli-work.last-workspace.v1", `worktree:${worktree.id}`); } catch { /* unavailable storage */ }
     setSelectedProjectId(worktree.projectId);
     setSelectedSessionId(null);
     setSelectedWorktreeId(worktree.id);
@@ -533,8 +578,11 @@ export function App() {
   const toggleProject = (projectId: string) => {
     setExpandedProjects((current) => {
       const next = new Set(current);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
+      const collapsed = new Set(collapsedProjectIds);
+      if (next.has(projectId)) { next.delete(projectId); collapsed.add(projectId); }
+      else { next.add(projectId); collapsed.delete(projectId); }
+      setCollapsedProjectIds(collapsed);
+      try { localStorage.setItem("multi-cli-work.projects.v1", JSON.stringify({ version: 1, collapsed: [...collapsed] })); } catch { /* unavailable storage */ }
       return next;
     });
   };
@@ -544,22 +592,24 @@ export function App() {
     try {
       const added = await window.multiCliWork.projects.addFolder();
       if (!added) return;
+      const { project, worktreeId } = added;
       setSnapshot((current) =>
         current
           ? {
               ...current,
               registry: {
                 ...current.registry,
-                projects: { ...current.registry.projects, [added.id]: added },
+                projects: { ...current.registry.projects, [project.id]: project },
               },
             }
           : current,
       );
-      setExpandedProjects((current) => new Set(current).add(added.id));
-      setSelectedProjectId(added.id);
+      setExpandedProjects((current) => new Set(current).add(project.id));
+      setSelectedProjectId(project.id);
       setSelectedSessionId(null);
+      setSelectedWorktreeId(worktreeId);
       setActiveView("detail");
-      persistSelection(added.id, null);
+      persistSelection(project.id, null);
     } catch (error) {
       setActionError(errorMessage(error));
     }
@@ -1040,6 +1090,12 @@ export function App() {
         detail: project.rootPath,
       }),
     );
+    const workspaceItems = workspaceViews.map((workspace): QuickOpenItem => ({
+      key: workspace.kind === "main" ? `workspace:main:${workspace.projectId}` : `workspace:worktree:${workspace.worktreeId}`,
+      kind: "workspace",
+      label: workspace.kind === "main" ? `${nameById.get(workspace.projectId) ?? "프로젝트"} · 메인` : workspace.branch ?? `detached @ ${workspace.head?.slice(0, 7) ?? "unknown"}`,
+      detail: workspace.path,
+    }));
     const commandItems: QuickOpenItem[] = [
       { key: "command:home", kind: "command", label: "홈 대시보드 열기", detail: null },
       ...(selectedProject && !selectedProjectMissing
@@ -1057,8 +1113,8 @@ export function App() {
       { key: "command:edit-agents", kind: "command", label: "에이전트 추가 (agents.json)", detail: null },
       { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
     ];
-    return [...sessionItems, ...projectItems, ...commandItems];
-  }, [quickOpenVisible, sessions, projects, agents, selectedProject, selectedProjectMissing]);
+    return [...sessionItems, ...workspaceItems, ...projectItems, ...commandItems];
+  }, [quickOpenVisible, sessions, projects, workspaceViews, agents, selectedProject, selectedProjectMissing]);
 
   const handleQuickOpenSelect = (item: QuickOpenItem) => {
     setQuickOpenVisible(false);
@@ -1068,6 +1124,11 @@ export function App() {
       if (session) selectSession(session);
     } else if (prefix === "project") {
       selectProject(rest.join(":"));
+    } else if (prefix === "workspace" && rest[0] === "main") {
+      selectProject(rest.slice(1).join(":"));
+    } else if (prefix === "workspace" && rest[0] === "worktree") {
+      const worktree = worktrees.find((candidate) => candidate.id === rest.slice(1).join(":"));
+      if (worktree) selectWorktree(worktree);
     } else if (item.key === "command:home") {
       openHome();
     } else if (item.key === "command:edit-agents") {
@@ -1182,6 +1243,8 @@ export function App() {
         agents={agents}
         unread={unread}
         worktrees={worktrees}
+        workspaceViews={workspaceViews}
+        worktreeWarnings={worktreeWarnings}
         toolSessions={toolSessions}
         selectedProjectId={activeView === "home" ? null : selectedProjectId}
         selectedSessionId={activeView === "home" ? null : selectedSessionId}
@@ -1480,6 +1543,12 @@ export function App() {
             void runProjectAction(() => window.multiCliWork.worktrees.openInEditor(worktreeMenu.worktree.id))
           }
           onShowDiff={() => void showDiff({ worktree: worktreeMenu.worktree })}
+          locked={Boolean(workspaceViews.find((view) => view.worktreeId === worktreeMenu.worktree.id)?.lockedReason)}
+          stale={workspaceViews.find((view) => view.worktreeId === worktreeMenu.worktree.id)?.availability === "missing"}
+          onSync={() => void loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId, view: activeView })}
+          onFetch={() => void window.multiCliWork.git.fetch({ kind: "worktree", id: worktreeMenu.worktree.id }).then(() => loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId, view: activeView })).catch((error) => setActionError(errorMessage(error)))}
+          onUnlock={() => void window.multiCliWork.worktrees.unlock(worktreeMenu.worktree.id).then(() => loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId, view: activeView })).catch((error) => setActionError(errorMessage(error)))}
+          onCleanupStale={() => void window.multiCliWork.worktrees.cleanupStale(worktreeMenu.worktree.projectId).then((next) => { setWorkspaceViews(next.workspaces); setWorktreeWarnings(next.warnings); return window.multiCliWork.worktrees.list(); }).then(setWorktrees).catch((error) => setActionError(errorMessage(error)))}
           onRemove={() => requestWorktreeRemoval(worktreeMenu.worktree)}
           onClose={() => setWorktreeMenu(null)}
         />

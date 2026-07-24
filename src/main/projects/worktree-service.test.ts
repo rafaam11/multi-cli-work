@@ -44,7 +44,7 @@ function project(): SharedProject {
   };
 }
 
-function service(removeWorktreeSessions = vi.fn(async () => undefined)) {
+function service(removeWorktreeSessions = vi.fn(async () => undefined), hasWorktreeSessions?: (id: string) => boolean) {
   let nextId = 0;
   return {
     removeWorktreeSessions,
@@ -52,6 +52,7 @@ function service(removeWorktreeSessions = vi.fn(async () => undefined)) {
       registryPath,
       getProject: async (projectId) => (projectId === "project-1" ? project() : null),
       removeWorktreeSessions,
+      ...(hasWorktreeSessions ? { hasWorktreeSessions } : {}),
       idFactory: () => `worktree-${++nextId}`,
       now: () => "2026-07-13T01:00:00.000Z",
     }),
@@ -75,6 +76,56 @@ afterEach(async () => {
 });
 
 describe("worktree service against a real repo", () => {
+  it("discovers external worktrees and reuses their registry id", async () => {
+    const { service: worktrees } = service();
+    const externalPath = path.join(tempRoot, "외부 worktree");
+    await git(repoRoot, "worktree", "add", "-b", "external", externalPath);
+
+    const first = await worktrees.sync([project()]);
+    const discovered = first.workspaces.find((workspace) => workspace.path === externalPath);
+    expect(discovered).toMatchObject({ kind: "worktree", branch: "external", availability: "available" });
+
+    const second = await worktrees.sync([project()]);
+    expect(second.workspaces.find((workspace) => workspace.path === externalPath)?.worktreeId).toBe(
+      discovered?.worktreeId,
+    );
+    await expect(worktrees.ownerForPath(externalPath, [project()])).resolves.toEqual({
+      projectId: "project-1",
+      worktreeId: discovered?.worktreeId,
+    });
+  });
+
+  it("creates new, existing local and remote tracking branches with collision-free paths", async () => {
+    const { service: worktrees } = service();
+    await git(repoRoot, "branch", "existing");
+    const bare = path.join(tempRoot, "remote.git");
+    await git(tempRoot, "init", "--bare", bare);
+    await git(repoRoot, "remote", "add", "origin", bare);
+    await git(repoRoot, "push", "-u", "origin", "main");
+    await git(repoRoot, "branch", "-r");
+
+    const firstPath = defaultWorktreePath(repoRoot, "feature/new");
+    await fs.mkdir(firstPath, { recursive: true });
+    const preview = await worktrees.previewPath("project-1", "feature/new");
+    expect(preview).toBe(`${firstPath}-2`);
+
+    const created = await worktrees.create("project-1", {
+      kind: "new",
+      branch: "feature/new",
+      startPoint: "main",
+    });
+    const local = await worktrees.create("project-1", { kind: "local", branch: "existing" });
+    const remote = await worktrees.create("project-1", {
+      kind: "remote",
+      remoteRef: "origin/main",
+      localBranch: "tracked-main",
+    });
+
+    expect(created.path).toBe(`${firstPath}-2`);
+    expect((await git(local.path, "branch", "--show-current")).trim()).toBe("existing");
+    expect((await git(remote.path, "rev-parse", "--abbrev-ref", "@{upstream}")).trim()).toBe("origin/main");
+  });
+
   it("creates a git worktree outside the repo and records it", async () => {
     const { service: worktrees } = service();
 
@@ -130,6 +181,31 @@ describe("worktree service against a real repo", () => {
     expect(forced).toEqual({ removed: true });
     expect(removeWorktreeSessions).toHaveBeenCalledWith(created.id);
     await expect(fs.stat(created.path)).rejects.toThrow();
+  });
+
+  it("requires an explicit unlock before removal", async () => {
+    const { service: worktrees } = service();
+    const created = await worktrees.create("project-1", "feature-locked");
+    await git(repoRoot, "worktree", "lock", "--reason", "test lock", created.path);
+
+    await expect(worktrees.remove(created.id, false)).rejects.toThrow(/unlocked/i);
+    await worktrees.unlock(created.id);
+    await expect(worktrees.remove(created.id, false)).resolves.toEqual({ removed: true });
+  });
+
+  it("keeps stale registry entries that still own sessions during explicit cleanup", async () => {
+    const active = new Set<string>();
+    const { service: worktrees } = service(undefined, (id) => active.has(id));
+    const created = await worktrees.create("project-1", "feature-stale");
+    active.add(created.id);
+    await git(repoRoot, "worktree", "remove", created.path);
+
+    await worktrees.cleanupStale("project-1");
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeDefined();
+
+    active.clear();
+    await worktrees.cleanupStale("project-1");
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeUndefined();
   });
 
   it("prunes registry entries whose directory has disappeared", async () => {

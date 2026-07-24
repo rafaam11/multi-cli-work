@@ -116,6 +116,18 @@ export async function removeWorktreeEntry(
   });
 }
 
+export async function replaceWorktreeEntries(
+  worktrees: Record<string, SharedWorktree>,
+  now: string,
+  options: WorktreeRegistryOptions = {},
+): Promise<WorktreeRegistryV1> {
+  return updateJsonStore(STORE, registryPathOf(options), (registry) => ({
+    ...registry,
+    updatedAt: now,
+    worktrees,
+  }));
+}
+
 /**
  * A worktree whose directory is gone (deleted by hand, or removed via git on the command line) has
  * nothing left for the app to offer, so its entry is dropped at startup rather than shown as a node

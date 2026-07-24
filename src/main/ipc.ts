@@ -20,7 +20,13 @@ import type {
 } from "../shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
-import type { SharedWorktree, WorktreeRemovalResult } from "../shared/worktree-types";
+import type {
+  SharedWorktree,
+  WorktreeCreateOptions,
+  WorktreeCreateRequest,
+  WorktreeRemovalResult,
+  WorktreeWorkspaceSnapshot,
+} from "../shared/worktree-types";
 import type { ToolCommand } from "../shared/terminal-types";
 import type { ProjectMetadataUpdate } from "./projects/project-service";
 
@@ -75,8 +81,14 @@ interface ProjectActionsGateway {
 
 interface WorktreeGateway {
   list(): Promise<SharedWorktree[]>;
+  sync(projects: SharedProject[]): Promise<WorktreeWorkspaceSnapshot>;
   get(worktreeId: string): Promise<SharedWorktree | null>;
-  create(projectId: string, branch: string): Promise<SharedWorktree>;
+  creationOptions(projectId: string): Promise<WorktreeCreateOptions>;
+  previewPath(projectId: string, branch: string): Promise<string>;
+  create(projectId: string, request: WorktreeCreateRequest): Promise<SharedWorktree>;
+  unlock(worktreeId: string): Promise<void>;
+  cleanupStale(projectId: string): Promise<WorktreeWorkspaceSnapshot>;
+  ownerForPath(rootPath: string, projects: SharedProject[]): Promise<{ projectId: string; worktreeId: string | null } | null>;
   remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult>;
 }
 
@@ -233,6 +245,31 @@ function validateFileExplorerTarget(value: unknown): FileExplorerTarget {
   return { kind: target.kind, id: nonEmptyString(target.id, "File explorer target id") };
 }
 
+function validateWorktreeCreateRequest(value: unknown): WorktreeCreateRequest {
+  if (!isRecord(value)) throw new Error("Worktree create request must be an object");
+  if (value.kind === "new") {
+    const input = exactObject(value, ["kind", "branch", "startPoint"], "New worktree request");
+    return {
+      kind: "new",
+      branch: nonEmptyString(input.branch, "Branch name"),
+      startPoint: nonEmptyString(input.startPoint, "Start point"),
+    };
+  }
+  if (value.kind === "local") {
+    const input = exactObject(value, ["kind", "branch"], "Local worktree request");
+    return { kind: "local", branch: nonEmptyString(input.branch, "Branch name") };
+  }
+  if (value.kind === "remote") {
+    const input = exactObject(value, ["kind", "remoteRef", "localBranch"], "Remote worktree request");
+    return {
+      kind: "remote",
+      remoteRef: nonEmptyString(input.remoteRef, "Remote ref"),
+      localBranch: nonEmptyString(input.localBranch, "Local branch"),
+    };
+  }
+  throw new Error("Worktree create request kind is invalid");
+}
+
 /** relativePath may legitimately be "" (the target's root), unlike every other string field here. */
 function relativePathString(value: unknown): string {
   if (typeof value !== "string") throw new Error("Relative path must be a string");
@@ -316,8 +353,13 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("projects:add-folder", async () => {
     const rootPath = await dependencies.chooseDirectory();
     if (!rootPath) return null;
+    const current = await dependencies.readRegistry();
+    const owner = await dependencies.worktrees.ownerForPath(rootPath, Object.values(current.registry.projects));
+    if (owner) {
+      return { project: selectedProject(current.registry, owner.projectId), worktreeId: owner.worktreeId };
+    }
     const registry = await dependencies.projectService.registerManualFolder(rootPath, path.basename(rootPath));
-    return projectForPath(registry, rootPath);
+    return { project: projectForPath(registry, rootPath), worktreeId: null };
   });
   ipc.handle("projects:update", async (_event, projectId: unknown, patch: unknown) => {
     const id = nonEmptyString(projectId, "Project id");
@@ -372,8 +414,30 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     return worktree.path;
   };
   ipc.handle("worktrees:list", () => dependencies.worktrees.list());
-  ipc.handle("worktrees:create", (_event, projectId: unknown, branch: unknown) =>
-    dependencies.worktrees.create(nonEmptyString(projectId, "Project id"), nonEmptyString(branch, "Branch name")),
+  ipc.handle("worktrees:sync", async () => {
+    const { registry } = await dependencies.readRegistry();
+    return dependencies.worktrees.sync(Object.values(registry.projects));
+  });
+  ipc.handle("worktrees:creation-options", (_event, projectId: unknown) =>
+    dependencies.worktrees.creationOptions(nonEmptyString(projectId, "Project id")),
+  );
+  ipc.handle("worktrees:preview-path", (_event, projectId: unknown, branch: unknown) =>
+    dependencies.worktrees.previewPath(
+      nonEmptyString(projectId, "Project id"),
+      nonEmptyString(branch, "Branch name"),
+    ),
+  );
+  ipc.handle("worktrees:create", (_event, projectId: unknown, request: unknown) =>
+    dependencies.worktrees.create(
+      nonEmptyString(projectId, "Project id"),
+      validateWorktreeCreateRequest(request),
+    ),
+  );
+  ipc.handle("worktrees:unlock", (_event, worktreeId: unknown) =>
+    dependencies.worktrees.unlock(nonEmptyString(worktreeId, "Worktree id")),
+  );
+  ipc.handle("worktrees:cleanup-stale", (_event, projectId: unknown) =>
+    dependencies.worktrees.cleanupStale(nonEmptyString(projectId, "Project id")),
   );
   ipc.handle("worktrees:remove", (_event, worktreeId: unknown, force: unknown) => {
     if (typeof force !== "boolean") throw new Error("Worktree remove force flag must be a boolean");

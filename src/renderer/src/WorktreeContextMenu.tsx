@@ -1,4 +1,4 @@
-import { FileDiff, FolderOpen, Trash2 } from "lucide-react";
+import { FileDiff, FolderOpen, RefreshCw, Trash2, Unlock } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 import { VSCodeIcon } from "./brand-icons";
 
@@ -10,6 +10,12 @@ export interface WorktreeContextMenuProps {
   onReveal(): void;
   onOpenInEditor(): void;
   onShowDiff(): void;
+  locked?: boolean;
+  stale?: boolean;
+  onSync(): void;
+  onFetch(): void;
+  onUnlock(): void;
+  onCleanupStale(): void;
   onRemove(): void;
   onClose(): void;
 }
@@ -22,6 +28,12 @@ export function WorktreeContextMenu({
   onReveal,
   onOpenInEditor,
   onShowDiff,
+  locked = false,
+  stale = false,
+  onSync,
+  onFetch,
+  onUnlock,
+  onCleanupStale,
   onRemove,
   onClose,
 }: WorktreeContextMenuProps) {
@@ -73,8 +85,12 @@ export function WorktreeContextMenu({
         <FileDiff size={15} />
         <span>변경 보기</span>
       </button>
+      <button type="button" role="menuitem" onClick={run(onSync)}><RefreshCw size={15} /><span>Git에서 동기화</span></button>
+      <button type="button" role="menuitem" onClick={run(onFetch)}><RefreshCw size={15} /><span>Fetch --prune</span></button>
+      {locked ? <button type="button" role="menuitem" onClick={run(onUnlock)}><Unlock size={15} /><span>Worktree 잠금 해제</span></button> : null}
+      {stale ? <button type="button" role="menuitem" onClick={run(onCleanupStale)}><Trash2 size={15} /><span>Stale 관리정보 정리</span></button> : null}
       <div className="context-menu-separator" role="separator" />
-      <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
+      <button type="button" role="menuitem" className="danger-item" disabled={locked} onClick={run(onRemove)}>
         <Trash2 size={15} />
         <span>Worktree 제거</span>
       </button>

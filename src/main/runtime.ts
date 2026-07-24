@@ -48,7 +48,6 @@ import {
   runWorkspaceExecutable,
   writeWorkspaceFile,
 } from "./projects/workspace-files";
-import { pruneMissingWorktrees } from "./projects/worktree-registry";
 import { WorktreeService } from "./projects/worktree-service";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { CodexSessionTracker } from "./providers/codex-session-tracker";
@@ -131,18 +130,13 @@ export async function createDesktopRuntime(
     (await readProjectRegistry({ registryPath })).registry.projects[projectId] ?? null;
 
   const worktreeRegistryPath = process.env.MULTI_CLI_WORK_WORKTREES_PATH;
-  // A worktree directory deleted outside the app (by hand, or `git worktree remove` on the CLI)
-  // leaves an entry every action on which would fail — drop those before anything lists them.
-  await pruneMissingWorktrees(
-    new Date().toISOString(),
-    worktreeRegistryPath ? { registryPath: worktreeRegistryPath } : {},
-  ).catch((error) => console.error("Worktree pruning failed", error));
   // The service and the coordinator call each other (session teardown ↔ worktree cwd lookup);
   // the explicit annotations break the resulting inference cycle.
   const worktrees: WorktreeService = new WorktreeService({
     ...(worktreeRegistryPath ? { registryPath: worktreeRegistryPath } : {}),
     getProject,
     removeWorktreeSessions: (worktreeId) => coordinator.removeWorktreeSessions(worktreeId),
+    hasWorktreeSessions: (worktreeId) => coordinator.list().some((session) => session.worktreeId === worktreeId),
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
   });
@@ -233,8 +227,14 @@ export async function createDesktopRuntime(
     coordinator,
     worktrees: {
       list: () => worktrees.list(),
+      sync: (projects) => worktrees.sync(projects),
       get: (worktreeId) => worktrees.get(worktreeId),
-      create: (projectId, branch) => worktrees.create(projectId, branch),
+      creationOptions: (projectId) => worktrees.creationOptions(projectId),
+      previewPath: (projectId, branch) => worktrees.previewPath(projectId, branch),
+      create: (projectId, request) => worktrees.create(projectId, request),
+      unlock: (worktreeId) => worktrees.unlock(worktreeId),
+      cleanupStale: (projectId) => worktrees.cleanupStale(projectId),
+      ownerForPath: (rootPath, projects) => worktrees.ownerForPath(rootPath, projects),
       remove: (worktreeId, force) => worktrees.remove(worktreeId, force),
     },
     updater: {

@@ -426,6 +426,33 @@ test.describe.serial("Multi CLI Work desktop", () => {
     ).toBe(false);
   });
 
+  test("discovers an externally-created worktree and safely removes it after a real PTY change", async () => {
+    const projectRoot = path.join(tempRoot, "sample-project");
+    const externalPath = path.join(tempRoot, "external worktree");
+    await execFileAsync("git", ["-C", projectRoot, "worktree", "add", "-b", "feature/external", externalPath]);
+
+    await page.getByRole("button", { name: "폴더 새로고침" }).click();
+    const row = page.getByRole("button", { name: "feature/external worktree 선택" });
+    await expect(row).toBeVisible();
+    await row.click();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
+    await terminal.click();
+    await page.keyboard.type(shellCommand(
+      'Set-Content -Path external.txt -Value MCW_EXTERNAL; Write-Output MCW_EXTERNAL_DONE',
+      "echo MCW_EXTERNAL > external.txt; echo MCW_EXTERNAL_DONE",
+    ));
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_EXTERNAL_DONE");
+
+    await row.click({ button: "right" });
+    await page.getByRole("menu", { name: "feature/external worktree 작업" }).getByRole("menuitem", { name: "Worktree 제거" }).click();
+    await page.getByRole("dialog", { name: "Worktree 제거" }).getByRole("button", { name: "제거" }).click();
+    await page.getByRole("dialog", { name: "Worktree 강제 제거" }).getByRole("button", { name: "변경을 버리고 강제 제거" }).click();
+    await expect(row).toBeHidden();
+    await expect.poll(() => fs.stat(externalPath).then(() => true, () => false)).toBe(false);
+  });
+
   test("hides to the tray and restores saved tabs after a relaunch", async () => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);

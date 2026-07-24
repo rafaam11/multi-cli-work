@@ -25,3 +25,37 @@ export interface WorktreeRegistryV1 {
  * second, explicit "discard and force" confirmation instead of parsing error messages.
  */
 export type WorktreeRemovalResult = { removed: true } | { removed: false; reason: "dirty"; message: string };
+
+export type WorktreeAvailability = "available" | "missing";
+
+/** Runtime-only Git state. This deliberately does not change the v1 registry schema above. */
+export interface GitWorkspaceView {
+  workspaceKey: string;
+  kind: "main" | "worktree";
+  projectId: string;
+  worktreeId: string | null;
+  path: string;
+  branch: string | null;
+  head: string | null;
+  changedFileCount: number;
+  availability: WorktreeAvailability;
+  lockedReason: string | null;
+  prunableReason: string | null;
+}
+
+export interface WorktreeWorkspaceSnapshot {
+  workspaces: GitWorkspaceView[];
+  warnings: Record<string, string>;
+}
+
+export type WorktreeCreateRequest =
+  | { kind: "new"; branch: string; startPoint: string }
+  | { kind: "local"; branch: string }
+  | { kind: "remote"; remoteRef: string; localBranch: string };
+
+export interface WorktreeCreateOptions {
+  localBranches: string[];
+  remoteBranches: string[];
+  checkedOutBranches: string[];
+  defaultStartPoint: string;
+}

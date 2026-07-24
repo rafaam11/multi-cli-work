@@ -1,7 +1,7 @@
 /** One row the palette can jump to. `key` is what selection dispatches on (e.g. "session:<id>"). */
 export interface QuickOpenItem {
   key: string;
-  kind: "session" | "project" | "command";
+  kind: "session" | "project" | "workspace" | "command";
   label: string;
   /** Dimmed context: the folder a session belongs to, or a folder's path. */
   detail: string | null;

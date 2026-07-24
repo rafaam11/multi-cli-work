@@ -2,7 +2,7 @@ import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalStatus } from "@shared/terminal-types";
-import type { SharedWorktree } from "@shared/worktree-types";
+import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import {
   ChevronDown,
   ChevronRight,
@@ -36,6 +36,8 @@ interface ProjectSidebarProps {
   /** Sessions that started waiting while off screen — the sidebar's dot badges. */
   unread: Record<string, SessionAttention>;
   worktrees: SharedWorktree[];
+  workspaceViews: GitWorkspaceView[];
+  worktreeWarnings: Record<string, string>;
   toolSessions: TerminalSessionView[];
   selectedProjectId: string | null;
   selectedSessionId: string | null;
@@ -131,6 +133,8 @@ export function ProjectSidebar({
   agents,
   unread,
   worktrees,
+  workspaceViews,
+  worktreeWarnings,
   toolSessions,
   selectedProjectId,
   selectedSessionId,
@@ -166,6 +170,18 @@ export function ProjectSidebar({
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
   const [drag, setDrag] = useState<{ id: string; over: { id: string; position: DropPosition } | null } | null>(null);
+  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}") as { expandedWorkspaces?: string[] };
+      return new Set(value.expandedWorkspaces ?? []);
+    } catch { return new Set(); }
+  });
+  const toggleWorkspace = (key: string) => setExpandedWorkspaces((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    localStorage.setItem("multi-cli-work.sidebar.v1", JSON.stringify({ version: 1, expandedWorkspaces: [...next] }));
+    return next;
+  });
 
   const endDrag = () => setDrag(null);
 
@@ -377,6 +393,9 @@ export function ProjectSidebar({
                 .filter((session) => session.projectId === project.id)
                 .sort(byCreation);
               const projectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
+              const projectWorkspaceViews = workspaceViews.filter((workspace) => workspace.projectId === project.id);
+              const mainWorkspace = projectWorkspaceViews.find((workspace) => workspace.kind === "main") ?? null;
+              const isGitProject = projectWorkspaceViews.length > 0;
               const projectFileTabs = openFileTabs.filter(
                 (tab) => tab.target.kind === "project" && tab.target.id === project.id,
               );
@@ -473,17 +492,27 @@ export function ProjectSidebar({
                   ) : null}
                   {expanded ? (
                     <>
-                      <ul className="session-tree" role="group">
-                        {projectSessions
-                          .filter((session) => session.worktreeId === undefined)
-                          .map((session) => renderSession(session, projectSessions))}
+                      {!isGitProject ? <ul className="session-tree" role="group">
+                        {projectSessions.filter((session) => session.worktreeId === undefined).map((session) => renderSession(session, projectSessions))}
                         {projectFileTabs.map(renderFileTab)}
-                      </ul>
-                      {/* Third level: project > worktree > sessions. A project without worktrees
-                          keeps its flat two-level shape — no empty middle nodes. */}
-                      {projectWorktrees.length > 0 ? (
+                      </ul> : (
                         <ul className="worktree-tree" role="group" aria-label={`${name} worktree`}>
-                          {projectWorktrees.map((worktree) => {
+                          {mainWorkspace ? <li className="worktree-node main-workspace-node" key={mainWorkspace.workspaceKey}>
+                            <div className={`worktree-row two-line ${selectedProjectId === project.id && selectedWorktreeId === null ? "selected" : ""}`}>
+                              <button className="tree-toggle" type="button" onClick={() => toggleWorkspace(mainWorkspace.workspaceKey)} aria-label={`메인 ${expandedWorkspaces.has(mainWorkspace.workspaceKey) ? "펼치기" : "접기"}`}>
+                                {expandedWorkspaces.has(mainWorkspace.workspaceKey) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                              </button>
+                              <button className="workspace-select" type="button" onClick={() => onSelectProject(project.id)} title={mainWorkspace.path}>
+                                <GitBranch size={13} /><span className="workspace-copy"><span className="worktree-branch">메인 · {mainWorkspace.branch ?? `detached @ ${mainWorkspace.head?.slice(0, 7) ?? "unknown"}`}</span><span className="workspace-meta">{mainWorkspace.path} · 변경 {mainWorkspace.changedFileCount} · 세션 {projectSessions.filter((session) => session.worktreeId === undefined).length}</span></span>
+                              </button>
+                            </div>
+                            {(!expandedWorkspaces.has(mainWorkspace.workspaceKey) || (selectedProjectId === project.id && selectedWorktreeId === null)) ? <ul className="session-tree worktree-sessions" role="group">
+                              {projectSessions.filter((session) => session.worktreeId === undefined).map((session) => renderSession(session, projectSessions))}
+                              {projectFileTabs.map(renderFileTab)}
+                            </ul> : null}
+                          </li> : null}
+                          {projectWorktrees.sort((left, right) => left.branch.localeCompare(right.branch)).map((worktree) => {
+                            const view = projectWorkspaceViews.find((workspace) => workspace.worktreeId === worktree.id);
                             const worktreeSessions = projectSessions.filter(
                               (session) => session.worktreeId === worktree.id,
                             );
@@ -500,26 +529,23 @@ export function ProjectSidebar({
                             );
                             return (
                               <li className="worktree-node" key={worktree.id}>
-                                <button
-                                  className={`worktree-row ${selectedWorktreeId === worktree.id ? "selected" : ""}`}
-                                  type="button"
-                                  onClick={() => onSelectWorktree(worktree)}
-                                  onContextMenu={(event) => onWorktreeContextMenu(worktree, event)}
-                                  aria-label={`${worktree.branch} worktree 선택`}
-                                >
-                                  <GitBranch size={13} aria-hidden="true" />
-                                  <span className="worktree-branch" title={worktree.path}>
-                                    {worktree.branch}
-                                  </span>
-                                  {worktreeAttention ? (
+                                <div className={`worktree-row two-line ${selectedWorktreeId === worktree.id ? "selected" : ""}`} onContextMenu={(event) => onWorktreeContextMenu(worktree, event)}>
+                                  <button className="tree-toggle" type="button" onClick={() => toggleWorkspace(`worktree:${worktree.id}`)} aria-label={`${worktree.branch} ${expandedWorkspaces.has(`worktree:${worktree.id}`) ? "펼치기" : "접기"}`}>
+                                    {expandedWorkspaces.has(`worktree:${worktree.id}`) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                                  </button>
+                                  <button className="workspace-select" type="button" onClick={() => onSelectWorktree(worktree)} aria-label={`${worktree.branch} worktree 선택`} title={worktree.path}>
+                                    <GitBranch size={13} aria-hidden="true" />
+                                    <span className="workspace-copy"><span className="worktree-branch">{view?.branch ?? (view?.head ? `detached @ ${view.head.slice(0, 7)}` : worktree.branch)}{view?.lockedReason ? " · locked" : ""}{view?.availability === "missing" ? " · missing" : ""}{view?.prunableReason ? " · prunable" : ""}</span><span className="workspace-meta">{worktree.path} · 변경 {view?.changedFileCount ?? 0} · 세션 {worktreeSessions.length}</span></span>
+                                    {worktreeAttention ? (
                                     <span
                                       className={`unread-dot unread-${worktreeAttention}`}
                                       title="응답 대기"
                                       aria-hidden="true"
                                     />
-                                  ) : null}
-                                </button>
-                                {worktreeSessions.length > 0 || worktreeFileTabs.length > 0 ? (
+                                    ) : null}
+                                  </button>
+                                </div>
+                                {(!expandedWorkspaces.has(`worktree:${worktree.id}`) || selectedWorktreeId === worktree.id) && (worktreeSessions.length > 0 || worktreeFileTabs.length > 0) ? (
                                   <ul className="session-tree worktree-sessions" role="group">
                                     {worktreeSessions.map((session) => renderSession(session, projectSessions))}
                                     {worktreeFileTabs.map(renderFileTab)}
@@ -528,8 +554,9 @@ export function ProjectSidebar({
                               </li>
                             );
                           })}
+                          {worktreeWarnings[project.id] ? <li className="project-worktree-warning" role="status"><TriangleAlert size={13} />{worktreeWarnings[project.id]}</li> : null}
                         </ul>
-                      ) : null}
+                      )}
                     </>
                   ) : null}
                 </li>

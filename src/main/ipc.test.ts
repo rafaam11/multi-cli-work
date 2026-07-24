@@ -92,8 +92,19 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
   };
   const worktrees = {
     list: vi.fn(async () => [worktree]),
+    sync: vi.fn(async () => ({ workspaces: [], warnings: {} })),
     get: vi.fn(async (id: string) => (id === worktree.id ? worktree : null)),
+    creationOptions: vi.fn(async () => ({
+      localBranches: ["main"],
+      remoteBranches: [],
+      checkedOutBranches: ["main"],
+      defaultStartPoint: "main",
+    })),
+    previewPath: vi.fn(async () => "C:\\Work-wt\\feature"),
     create: vi.fn(async () => worktree),
+    unlock: vi.fn(async () => undefined),
+    cleanupStale: vi.fn(async () => ({ workspaces: [], warnings: {} })),
+    ownerForPath: vi.fn(async () => null),
     remove: vi.fn(async () => ({ removed: true as const })),
   };
   const workspaceFiles = {
@@ -170,6 +181,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     coordinator,
     project,
     worktree,
+    worktrees,
     restoreRegistryBackup,
     updater,
     projectActions,
@@ -230,7 +242,7 @@ describe("main IPC boundary", () => {
     const result = await handlers.get("projects:add-folder")!({});
 
     expect(projectService.registerManualFolder).toHaveBeenCalledWith("C:\\Work", path.basename("C:\\Work"));
-    expect(result).toEqual(project);
+    expect(result).toEqual({ project, worktreeId: null });
   });
 
   it("rejects renderer attempts to inject a terminal executable or cwd", async () => {
@@ -325,6 +337,27 @@ describe("main IPC boundary", () => {
 
     expect(coordinator.rename).toHaveBeenNthCalledWith(1, "session-1", "레지스트리 분리");
     expect(coordinator.rename).toHaveBeenNthCalledWith(2, "session-1", null);
+  });
+
+  it("validates every worktree creation variant with exact keys", async () => {
+    const { handlers, worktrees } = setup();
+    const create = handlers.get("worktrees:create")!;
+
+    await create({}, "project-1", { kind: "new", branch: "feature/a", startPoint: "main" });
+    await create({}, "project-1", { kind: "local", branch: "existing" });
+    await create({}, "project-1", { kind: "remote", remoteRef: "origin/topic", localBranch: "topic" });
+
+    expect(worktrees.create).toHaveBeenNthCalledWith(1, "project-1", { kind: "new", branch: "feature/a", startPoint: "main" });
+    expect(worktrees.create).toHaveBeenNthCalledWith(2, "project-1", { kind: "local", branch: "existing" });
+    expect(worktrees.create).toHaveBeenNthCalledWith(3, "project-1", { kind: "remote", remoteRef: "origin/topic", localBranch: "topic" });
+    await expect(async () => create({}, "project-1", { kind: "local", branch: "existing", startPoint: "HEAD" })).rejects.toThrow(/unknown fields/i);
+    await expect(async () => create({}, "project-1", { kind: "remote", remoteRef: "origin/topic" })).rejects.toThrow(/local branch/i);
+  });
+
+  it("synchronizes worktrees against the current project registry", async () => {
+    const { handlers, worktrees, project } = setup();
+    await handlers.get("worktrees:sync")!({});
+    expect(worktrees.sync).toHaveBeenCalledWith([project]);
   });
 
   it("validates refresh session ids and uses the side-effect-free coordinator attach", async () => {

@@ -1621,6 +1621,59 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
+.worktree-row.two-line {
+  padding: 2px 4px;
+}
+
+.workspace-select {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.workspace-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.workspace-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-worktree-warning {
+  display: flex;
+  gap: 5px;
+  padding: 5px 8px;
+  color: var(--amber);
+  font-size: 10px;
+}
+
+.worktree-create-dialog form,
+.worktree-create-dialog label {
+  display: flex;
+  gap: 8px;
+  flex-direction: column;
+}
+
+.worktree-create-dialog form { gap: 12px; }
+.worktree-create-dialog select { min-width: 0; }
+.worktree-mode-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.worktree-mode-tabs button[aria-selected="true"] { background: var(--surface-raised); color: var(--text); }
+.worktree-path-preview { overflow-wrap: anywhere; }
+
 .worktree-row:hover {
   background: var(--surface-hover);
 }

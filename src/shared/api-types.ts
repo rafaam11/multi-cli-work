@@ -3,7 +3,13 @@ import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-typ
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
-import type { SharedWorktree, WorktreeRemovalResult } from "./worktree-types";
+import type {
+  SharedWorktree,
+  WorktreeCreateOptions,
+  WorktreeCreateRequest,
+  WorktreeRemovalResult,
+  WorktreeWorkspaceSnapshot,
+} from "./worktree-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -184,6 +190,12 @@ export interface ProjectWorkspaceSnapshot extends ProjectRegistrySnapshot {
   missingRootProjectIds: string[];
 }
 
+export interface ProjectFolderAddResult {
+  project: SharedProject;
+  /** Set when the chosen folder is a linked worktree already owned by this project. */
+  worktreeId: string | null;
+}
+
 export type UpdaterStatus =
   | { state: "idle" }
   | { state: "checking" }
@@ -200,7 +212,7 @@ export interface MultiCliWorkApi {
   };
   projects: {
     list(): Promise<ProjectWorkspaceSnapshot>;
-    addFolder(): Promise<SharedProject | null>;
+    addFolder(): Promise<ProjectFolderAddResult | null>;
     update(projectId: string, patch: ProjectMetadataPatch): Promise<SharedProject>;
     /** Folder drag-to-sort. Ids not listed keep their relative position after the listed ones. */
     reorder(orderedIds: string[]): Promise<ProjectWorkspaceSnapshot>;
@@ -215,7 +227,12 @@ export interface MultiCliWorkApi {
   };
   worktrees: {
     list(): Promise<SharedWorktree[]>;
-    create(projectId: string, branch: string): Promise<SharedWorktree>;
+    sync(): Promise<WorktreeWorkspaceSnapshot>;
+    creationOptions(projectId: string): Promise<WorktreeCreateOptions>;
+    previewPath(projectId: string, branch: string): Promise<string>;
+    create(projectId: string, request: WorktreeCreateRequest): Promise<SharedWorktree>;
+    unlock(worktreeId: string): Promise<void>;
+    cleanupStale(projectId: string): Promise<WorktreeWorkspaceSnapshot>;
     /** `force` discards uncommitted changes; the renderer must have shown the second confirmation. */
     remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult>;
     reveal(worktreeId: string): Promise<void>;
