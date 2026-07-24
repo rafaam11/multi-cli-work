@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { countChangedFiles } from "./git-status";
@@ -21,7 +22,18 @@ export interface ParsedGitWorktree {
 
 export function normalizeWorkspacePath(input: string, platform: NodeJS.Platform = process.platform): string {
   const pathApi = platform === "win32" ? path.win32 : path.posix;
-  const normalized = pathApi.normalize(pathApi.resolve(input));
+  let resolved = pathApi.resolve(input);
+  // Git for Windows may expand an 8.3 temp-directory alias (RUNNER~1) to its long form in
+  // `worktree list`. Resolve existing native paths first so registry, project and Git paths share
+  // the same identity. Missing/prunable paths intentionally fall back to lexical normalization.
+  if (platform === process.platform) {
+    try {
+      resolved = fs.realpathSync.native(resolved);
+    } catch {
+      // The path can legitimately be missing while stale worktree metadata is still displayed.
+    }
+  }
+  const normalized = pathApi.normalize(resolved);
   return platform === "win32" ? normalized.toLocaleLowerCase("en-US") : normalized;
 }
 

@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { normalizeWorkspacePath, parseGitWorktreePorcelain } from "./git-worktree";
@@ -44,5 +45,14 @@ describe("parseGitWorktreePorcelain", () => {
       path.win32.resolve("C:/Repo/Feature").toLocaleLowerCase("en-US"),
     );
     expect(normalizeWorkspacePath("/Repo/Feature", "linux")).toBe(path.posix.resolve("/Repo/Feature"));
+  });
+
+  it("canonicalizes an existing native path before comparing it", () => {
+    const input = path.join(process.env.RUNNER_TEMP ?? process.cwd(), ".");
+    const canonical = fs.realpathSync.native(input);
+
+    expect(normalizeWorkspacePath(input)).toBe(
+      process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical,
+    );
   });
 });

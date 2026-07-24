@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import { readGitDiff } from "./git-diff";
-import { defaultWorktreePath } from "./git-worktree";
+import { defaultWorktreePath, normalizeWorkspacePath } from "./git-worktree";
 import { parseWorktreeRegistry, pruneMissingWorktrees, readWorktreeRegistry } from "./worktree-registry";
 import { WorktreeService } from "./worktree-service";
 
@@ -82,13 +82,17 @@ describe("worktree service against a real repo", () => {
     await git(repoRoot, "worktree", "add", "-b", "external", externalPath);
 
     const first = await worktrees.sync([project()]);
-    const discovered = first.workspaces.find((workspace) => workspace.path === externalPath);
+    const discovered = first.workspaces.find(
+      (workspace) => normalizeWorkspacePath(workspace.path) === normalizeWorkspacePath(externalPath),
+    );
     expect(discovered).toMatchObject({ kind: "worktree", branch: "external", availability: "available" });
 
     const second = await worktrees.sync([project()]);
-    expect(second.workspaces.find((workspace) => workspace.path === externalPath)?.worktreeId).toBe(
-      discovered?.worktreeId,
-    );
+    expect(
+      second.workspaces.find(
+        (workspace) => normalizeWorkspacePath(workspace.path) === normalizeWorkspacePath(externalPath),
+      )?.worktreeId,
+    ).toBe(discovered?.worktreeId);
     await expect(worktrees.ownerForPath(externalPath, [project()])).resolves.toEqual({
       projectId: "project-1",
       worktreeId: discovered?.worktreeId,
