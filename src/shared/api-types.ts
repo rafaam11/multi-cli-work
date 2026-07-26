@@ -1,4 +1,9 @@
 import type { AgentView } from "./agent-types";
+import type {
+  ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
+  PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
+  PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
+} from "./github-types";
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
@@ -274,6 +279,20 @@ export interface MultiCliWorkApi {
     pull(target: FileExplorerTarget): Promise<void>;
     /** HEAD-side file content for the diff pane; the working-tree side comes from workspaceFiles. */
     fileOriginal(target: FileExplorerTarget, relativePath: string): Promise<GitFileOriginal>;
+  };
+  github: {
+    remotes(projectId: string): Promise<GitHubRemote[]>;
+    status(projectId: string, remoteName: string): Promise<GitHubIntegrationStatus>;
+    authenticate(projectId: string, remoteName: string): Promise<TerminalSessionView>;
+    list(projectId: string, remoteName: string, query: PullRequestListQuery): Promise<PullRequestListPage>;
+    detail(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestDetail>;
+    diff(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestDiffFile[]>;
+    comment(projectId: string, remoteName: string, prNumber: number, body: string): Promise<void>;
+    reply(projectId: string, remoteName: string, prNumber: number, commentId: string, body: string): Promise<void>;
+    activeReviews(): Promise<ActivePullRequestReview[]>;
+    startReview(projectId: string, remoteName: string, prNumber: number, agent: PullRequestReviewAgent): Promise<PullRequestReviewStartResult>;
+    refillReview(reviewId: string): Promise<string>;
+    finishReview(reviewId: string, request: PullRequestReviewFinishRequest): Promise<PullRequestReviewFinishResult>;
   };
   gitGraph: {
     list(target: FileExplorerTarget, options: { offset: number; limit: number }): Promise<GitGraphPage>;

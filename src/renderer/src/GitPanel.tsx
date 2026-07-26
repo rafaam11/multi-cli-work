@@ -1,5 +1,6 @@
 import type { GitChangeEntry, GitPanelData } from "@shared/api-types";
 import type { FileExplorerTarget } from "@shared/file-explorer-types";
+import type { PullRequestListItem } from "@shared/github-types";
 import {
   ArrowDown,
   ArrowUp,
@@ -14,6 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PullRequestPanel } from "./PullRequestPanel";
 
 export interface GitWorktreeOption {
   /** null selects the project's main repository. */
@@ -30,6 +32,8 @@ export interface GitPanelProps {
   onSelectWorktreeOption(worktreeId: string | null): void;
   onOpenDiff(change: GitChangeEntry): void;
   onOpenGraph(): void;
+  projectId: string | null;
+  onOpenPullRequest(remoteName: string, item: PullRequestListItem): void;
 }
 
 /** How often the panel re-reads git while it is the visible tab. */
@@ -87,7 +91,10 @@ export function GitPanel({
   onSelectWorktreeOption,
   onOpenDiff,
   onOpenGraph,
+  projectId,
+  onOpenPullRequest,
 }: GitPanelProps) {
+  const [mode, setMode] = useState<"changes" | "pr">("changes");
   const [data, setData] = useState<GitPanelData | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -216,8 +223,22 @@ export function GitPanel({
     });
   };
 
+  if (!hidden && mode === "pr") return (
+    <div className="git-panel">
+      <div className="git-panel-tabs" role="tablist" aria-label="Git 패널 보기">
+        <button type="button" role="tab" aria-selected={false} onClick={() => setMode("changes")}>변경사항</button>
+        <button type="button" role="tab" aria-selected={true}>PR</button>
+      </div>
+      <PullRequestPanel hidden={false} projectId={projectId} onOpen={onOpenPullRequest}/>
+    </div>
+  );
+
   return (
     <div className="git-panel">
+      <div className="git-panel-tabs" role="tablist" aria-label="Git 패널 보기">
+        <button type="button" role="tab" aria-selected={true}>변경사항</button>
+        <button type="button" role="tab" aria-selected={false} onClick={() => setMode("pr")}>PR</button>
+      </div>
       <div className="section-heading">
         <span title={targetLabel ?? "Git"}>{targetLabel ?? "Git"}</span>
         <button

@@ -8,6 +8,7 @@ import type {
   TerminalSessionView,
 } from "@shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
+import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
@@ -36,6 +37,7 @@ import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 import { ProjectDetailPage } from "./ProjectDetailPage";
 import { ProjectSidebar } from "./ProjectSidebar";
+import { PullRequestDetailView } from "./PullRequestDetailView";
 import { QuickOpenPalette } from "./QuickOpenPalette";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { WorkspaceHeader, type SplitCandidate } from "./WorkspaceHeader";
@@ -46,7 +48,7 @@ import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 
-type ActiveView = "home" | "detail" | "terminal" | "file" | "git-diff" | "git-graph";
+type ActiveView = "home" | "detail" | "terminal" | "file" | "git-diff" | "git-graph" | "pull-request";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
@@ -170,6 +172,7 @@ export function App() {
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
   const [gitDiffFile, setGitDiffFile] = useState<GitDiffFile | null>(null);
+  const [selectedPullRequest, setSelectedPullRequest] = useState<{ projectId: string; remoteName: string; number: number } | null>(null);
   /** Where closing the diff pane returns to — whatever view was active when it opened. */
   const gitDiffReturnView = useRef<ActiveView>("detail");
   const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
@@ -185,6 +188,7 @@ export function App() {
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [unread, setUnread] = useState<Record<string, SessionAttention>>({});
   const [worktrees, setWorktrees] = useState<SharedWorktree[]>([]);
+  const [activeReviews, setActiveReviews] = useState<ActivePullRequestReview[]>([]);
   const [workspaceViews, setWorkspaceViews] = useState<GitWorkspaceView[]>([]);
   const [worktreeWarnings, setWorktreeWarnings] = useState<Record<string, string>>({});
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
@@ -279,7 +283,7 @@ export function App() {
       setLoadError(null);
       const forceHome = preservedSelection?.view === "home";
       try {
-        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList] =
+        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList] =
           await Promise.all([
             window.multiCliWork.projects.list(),
             window.multiCliWork.terminals.list(),
@@ -287,6 +291,7 @@ export function App() {
             window.multiCliWork.agents.list(),
             window.multiCliWork.terminals.state(),
             window.multiCliWork.worktrees.list(),
+            window.multiCliWork.github.activeReviews(),
           ]);
         // The project registry is the primary sidebar data. Publish it before optional selection
         // restoration and Git enrichment so either concern cannot blank the whole tree.
@@ -308,6 +313,7 @@ export function App() {
           prunableReason: null,
         })));
         setWorktrees(worktreeList);
+        setActiveReviews(reviewList);
         // Git discovery is project-scoped and must never hold the whole sidebar in a loading state.
         void window.multiCliWork.worktrees.sync().then(async (worktreeSnapshot) => {
           setWorkspaceViews(worktreeSnapshot.workspaces);
@@ -1204,6 +1210,34 @@ export function App() {
   const openGitGraph = () => {
     if (fileExplorerTarget) setActiveView("git-graph");
   };
+  const openPullRequest = (remoteName: string, item: PullRequestListItem) => {
+    if (!fileExplorerOwnerProject) return;
+    setSelectedProjectId(fileExplorerOwnerProject.id);
+    setSelectedPullRequest({ projectId: fileExplorerOwnerProject.id, remoteName, number: item.number });
+    setActiveView("pull-request");
+    persistSelection(fileExplorerOwnerProject.id, null);
+  };
+  const refreshReviewWorkspace = async (sessionId?: string) => {
+    const [nextSessions, nextWorktrees, nextViews, nextReviews] = await Promise.all([
+      window.multiCliWork.terminals.list(), window.multiCliWork.worktrees.list(), window.multiCliWork.worktrees.sync(), window.multiCliWork.github.activeReviews(),
+    ]);
+    setSessions(nextSessions); setWorktrees(nextWorktrees); setWorkspaceViews(nextViews.workspaces); setWorktreeWarnings(nextViews.warnings); setActiveReviews(nextReviews);
+    if (sessionId) { const session = nextSessions.find((item) => item.id === sessionId); if (session) selectSession(session); }
+  };
+  const finishActiveReview = async (review: ActivePullRequestReview, allowUnverifiedReview = false, discardChanges = false): Promise<void> => {
+    try {
+      const result = await window.multiCliWork.github.finishReview(review.id, { allowUnverifiedReview, discardChanges });
+      if (result.state === "review-unverified" || result.state === "verification-unavailable") {
+        if (window.confirm(`${result.message}\n그래도 정리하시겠습니까?`)) await finishActiveReview(review, true, discardChanges);
+        return;
+      }
+      if (result.state === "dirty") {
+        if (window.confirm(`${result.message}\n변경을 버리고 강제 제거하시겠습니까?`)) await finishActiveReview(review, true, true);
+        return;
+      }
+      await refreshReviewWorkspace();
+    } catch (error) { setActionError(errorMessage(error)); }
+  };
 
   // Everything but the primary can fill the second pane — including exited sessions, whose
   // read-only scrollback is exactly what a side-by-side comparison wants.
@@ -1243,6 +1277,7 @@ export function App() {
         agents={agents}
         unread={unread}
         worktrees={worktrees}
+        activeReviews={activeReviews}
         workspaceViews={workspaceViews}
         worktreeWarnings={worktreeWarnings}
         toolSessions={toolSessions}
@@ -1423,6 +1458,14 @@ export function App() {
             </Suspense>
           ) : activeView === "git-graph" && fileExplorerTarget ? (
             <GitGraphEmbed target={fileExplorerTarget} targetLabel={fileExplorerTargetLabel} />
+          ) : activeView === "pull-request" && selectedPullRequest ? (
+            <PullRequestDetailView
+              projectId={selectedPullRequest.projectId}
+              remoteName={selectedPullRequest.remoteName}
+              prNumber={selectedPullRequest.number}
+              onReviewOpened={(sessionId) => void refreshReviewWorkspace(sessionId)}
+              onWorkspaceChanged={() => void refreshReviewWorkspace()}
+            />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage
               key={selectedWorktree ? `${selectedProject.id}:${selectedWorktree.id}` : selectedProject.id}
@@ -1505,6 +1548,8 @@ export function App() {
         onSelectWorktreeOption={selectGitWorktreeOption}
         onOpenDiff={openGitDiff}
         onOpenGraph={openGitGraph}
+        projectId={fileExplorerOwnerProject?.id ?? null}
+        onOpenPullRequest={openPullRequest}
       />
 
       {contextMenu ? (
@@ -1550,6 +1595,11 @@ export function App() {
           onUnlock={() => void window.multiCliWork.worktrees.unlock(worktreeMenu.worktree.id).then(() => loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId, view: activeView })).catch((error) => setActionError(errorMessage(error)))}
           onCleanupStale={() => void window.multiCliWork.worktrees.cleanupStale(worktreeMenu.worktree.projectId).then((next) => { setWorkspaceViews(next.workspaces); setWorktreeWarnings(next.warnings); return window.multiCliWork.worktrees.list(); }).then(setWorktrees).catch((error) => setActionError(errorMessage(error)))}
           onRemove={() => requestWorktreeRemoval(worktreeMenu.worktree)}
+          pullRequestNumber={activeReviews.find((review) => review.worktreeId === worktreeMenu.worktree.id)?.pullRequestNumber}
+          onFinishReview={() => {
+            const review = activeReviews.find((item) => item.worktreeId === worktreeMenu.worktree.id);
+            if (review) void finishActiveReview(review);
+          }}
           onClose={() => setWorktreeMenu(null)}
         />
       ) : null}

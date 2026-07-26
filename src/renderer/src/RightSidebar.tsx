@@ -1,5 +1,6 @@
 import type { GitChangeEntry } from "@shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
+import type { PullRequestListItem } from "@shared/github-types";
 import { Files, GitBranch, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { ReactElement } from "react";
 import { FileExplorer } from "./FileExplorer";
@@ -20,6 +21,8 @@ export interface RightSidebarProps {
   onSelectWorktreeOption(worktreeId: string | null): void;
   onOpenDiff(change: GitChangeEntry): void;
   onOpenGraph(): void;
+  projectId: string | null;
+  onOpenPullRequest(remoteName: string, item: PullRequestListItem): void;
 }
 
 const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git" };
@@ -37,6 +40,8 @@ export function RightSidebar({
   onSelectWorktreeOption,
   onOpenDiff,
   onOpenGraph,
+  projectId,
+  onOpenPullRequest,
 }: RightSidebarProps) {
   const railTab = (tab: RightSidebarTab, icon: ReactElement) => (
     <button
@@ -111,6 +116,8 @@ export function RightSidebar({
           onSelectWorktreeOption={onSelectWorktreeOption}
           onOpenDiff={onOpenDiff}
           onOpenGraph={onOpenGraph}
+          projectId={projectId}
+          onOpenPullRequest={onOpenPullRequest}
         />
       </div>
     </aside>

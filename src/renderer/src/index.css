@@ -363,7 +363,7 @@ body.sidebar-resizing {
 
 .git-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -1620,6 +1620,35 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   text-align: left;
   cursor: pointer;
 }
+
+.git-panel-tabs, .pr-detail-tabs { display: flex; gap: 2px; padding: 7px 8px 0; border-bottom: 1px solid var(--line); }
+.git-panel-tabs button, .pr-detail-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 6px 9px; color: var(--muted); background: transparent; cursor: pointer; }
+.git-panel-tabs button[aria-selected="true"], .pr-detail-tabs button[aria-selected="true"] { color: var(--teal); border-bottom-color: var(--teal); }
+.pr-panel-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.pr-filter-row { display: flex; gap: 5px; padding: 8px; }
+.pr-filter-row select { min-width: 0; flex: 1 1 0; }
+.pr-search { display: flex; align-items: center; gap: 5px; margin: 0 8px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; }
+.pr-search input { min-width: 0; width: 100%; border: 0; background: transparent; color: var(--text); outline: none; }
+.pr-review-filter { padding: 6px 9px; font-size: 11px; color: var(--muted); }
+.pr-list { min-height: 0; overflow: auto; }
+.pr-row { display: flex; width: 100%; flex-direction: column; gap: 3px; padding: 9px; border: 0; border-bottom: 1px solid var(--line); text-align: left; color: var(--text); background: transparent; cursor: pointer; }
+.pr-row:hover { background: var(--surface-hover); }
+.pr-row-meta, .pr-row small { color: var(--muted); font-size: 10.5px; }
+.pr-more { margin: 8px; }
+
+.pr-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+.pr-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.pr-detail-header h2 { margin: 3px 0; font-size: 18px; }
+.pr-detail-header span, .pr-detail-header small { color: var(--muted); }
+.pr-detail-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.pr-detail-actions button, .pr-comment-form button, .pr-timeline-item form button { border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; color: var(--text); background: var(--surface); cursor: pointer; }
+.pr-detail-body { min-height: 0; overflow: auto; padding: 16px 20px 40px; }
+.pr-detail-empty { padding: 24px; color: var(--muted); }
+.pr-labels { display: flex; gap: 5px; }.pr-labels span { padding: 2px 7px; border-radius: 10px; background: color-mix(in srgb, var(--teal) 18%, transparent); font-size: 11px; }
+.pr-commit, .pr-check { padding: 8px 0; border-bottom: 1px solid var(--line); }.pr-check { display: flex; justify-content: space-between; }
+.pr-comment-form, .pr-timeline-item form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }.pr-comment-form textarea, .pr-timeline-item textarea { min-height: 70px; resize: vertical; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 8px; }
+.pr-timeline-item { margin-bottom: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; }.pr-timeline-item header { color: var(--muted); font-size: 11px; }
+.pr-diff-file { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }.pr-diff-file h3 { margin: 0; padding: 8px 10px; background: var(--surface); font-size: 12px; }.pr-diff-file pre { margin: 0; padding: 10px; overflow: auto; font-size: 11px; line-height: 1.45; }
 
 .worktree-row.two-line {
   padding: 2px 4px;

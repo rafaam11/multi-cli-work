@@ -19,6 +19,11 @@ import type {
   UpdaterStatus,
 } from "../shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
+import type {
+  ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
+  PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
+  PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
+} from "../shared/github-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type {
   SharedWorktree,
@@ -110,6 +115,21 @@ interface GitGateway {
   fileOriginal(rootPath: string, relativePath: string): Promise<GitFileOriginal>;
 }
 
+interface GitHubGateway {
+  remotes(projectId: string): Promise<GitHubRemote[]>;
+  status(projectId: string, remoteName: string): Promise<GitHubIntegrationStatus>;
+  authenticate(projectId: string, remoteName: string): Promise<unknown>;
+  list(projectId: string, remoteName: string, query: PullRequestListQuery): Promise<PullRequestListPage>;
+  detail(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestDetail>;
+  diff(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestDiffFile[]>;
+  comment(projectId: string, remoteName: string, prNumber: number, body: string): Promise<void>;
+  reply(projectId: string, remoteName: string, prNumber: number, commentId: string, body: string): Promise<void>;
+  activeReviews(): Promise<ActivePullRequestReview[]>;
+  startReview(projectId: string, remoteName: string, prNumber: number, agent: PullRequestReviewAgent): Promise<PullRequestReviewStartResult>;
+  refillReview(reviewId: string): Promise<string>;
+  finishReview(reviewId: string, request: PullRequestReviewFinishRequest): Promise<PullRequestReviewFinishResult>;
+}
+
 interface GitGraphGateway {
   list(rootPath: string, options: { offset: number; limit: number }): Promise<GitGraphPage>;
   commitDetails(rootPath: string, hash: string): Promise<GitCommitDetails>;
@@ -144,6 +164,7 @@ interface MainIpcDependencies {
   worktrees: WorktreeGateway;
   workspaceFiles: WorkspaceFilesGateway;
   git: GitGateway;
+  github: GitHubGateway;
   gitGraph: GitGraphGateway;
   htmlPreview: HtmlPreviewGateway;
   shell: ShellGateway;
@@ -312,6 +333,33 @@ function validateGitCommitRequest(value: unknown): GitCommitRequest {
   };
 }
 
+function positiveInteger(value: unknown, label: string): number {
+  const result = integer(value, label);
+  if (result < 1) throw new Error(`${label} must be positive`);
+  return result;
+}
+
+function validatePullRequestQuery(value: unknown): PullRequestListQuery {
+  const query = exactObject(value, ["state", "reviewRequested", "search", "cursor", "refresh"], "Pull request query");
+  if (!["open", "merged", "closed", "all"].includes(String(query.state))) throw new Error("Pull request state is invalid");
+  if (typeof query.reviewRequested !== "boolean" || typeof query.search !== "string") throw new Error("Pull request filters are invalid");
+  if (query.cursor !== undefined && (!Number.isInteger(query.cursor) || (query.cursor as number) < 0)) throw new Error("Pull request cursor is invalid");
+  if (query.refresh !== undefined && typeof query.refresh !== "boolean") throw new Error("Pull request refresh is invalid");
+  return {
+    state: query.state as PullRequestListQuery["state"], reviewRequested: query.reviewRequested, search: query.search,
+    ...(query.cursor !== undefined ? { cursor: query.cursor as number } : {}),
+    ...(query.refresh !== undefined ? { refresh: query.refresh } : {}),
+  };
+}
+
+function validateReviewFinishRequest(value: unknown): PullRequestReviewFinishRequest {
+  const request = exactObject(value, ["allowUnverifiedReview", "discardChanges"], "Review finish request");
+  if (typeof request.allowUnverifiedReview !== "boolean" || typeof request.discardChanges !== "boolean") {
+    throw new Error("Review finish flags must be boolean");
+  }
+  return { allowUnverifiedReview: request.allowUnverifiedReview, discardChanges: request.discardChanges };
+}
+
 function externalUrl(value: unknown): string {
   const raw = nonEmptyString(value, "URL");
   let url: URL;
@@ -439,9 +487,13 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("worktrees:cleanup-stale", (_event, projectId: unknown) =>
     dependencies.worktrees.cleanupStale(nonEmptyString(projectId, "Project id")),
   );
-  ipc.handle("worktrees:remove", (_event, worktreeId: unknown, force: unknown) => {
+  ipc.handle("worktrees:remove", async (_event, worktreeId: unknown, force: unknown) => {
     if (typeof force !== "boolean") throw new Error("Worktree remove force flag must be a boolean");
-    return dependencies.worktrees.remove(nonEmptyString(worktreeId, "Worktree id"), force);
+    const id = nonEmptyString(worktreeId, "Worktree id");
+    if ((await dependencies.github.activeReviews()).some((review) => review.worktreeId === id)) {
+      throw new Error("진행 중인 PR 리뷰 worktree는 '리뷰 완료' 흐름에서 정리하세요.");
+    }
+    return dependencies.worktrees.remove(id, force);
   });
   ipc.handle("worktrees:reveal", async (_event, worktreeId: unknown) =>
     dependencies.projectActions.reveal(await worktreePath(worktreeId)),
@@ -495,6 +547,31 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("git:file-original", async (_event, target: unknown, relativePath: unknown) =>
     dependencies.git.fileOriginal(await targetRoot(target), nonEmptyString(relativePath, "Relative path")),
   );
+  ipc.handle("github:remotes", (_event, projectId: unknown) =>
+    dependencies.github.remotes(nonEmptyString(projectId, "Project id")));
+  ipc.handle("github:status", (_event, projectId: unknown, remoteName: unknown) =>
+    dependencies.github.status(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name")));
+  ipc.handle("github:authenticate", (_event, projectId: unknown, remoteName: unknown) =>
+    dependencies.github.authenticate(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name")));
+  ipc.handle("github:list", (_event, projectId: unknown, remoteName: unknown, query: unknown) =>
+    dependencies.github.list(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), validatePullRequestQuery(query)));
+  ipc.handle("github:detail", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown) =>
+    dependencies.github.detail(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number")));
+  ipc.handle("github:diff", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown) =>
+    dependencies.github.diff(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number")));
+  ipc.handle("github:comment", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown, body: unknown) =>
+    dependencies.github.comment(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number"), nonEmptyString(body, "Comment body")));
+  ipc.handle("github:reply", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown, commentId: unknown, body: unknown) =>
+    dependencies.github.reply(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number"), nonEmptyString(commentId, "Comment id"), nonEmptyString(body, "Comment body")));
+  ipc.handle("github:active-reviews", () => dependencies.github.activeReviews());
+  ipc.handle("github:start-review", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown, agent: unknown) => {
+    if (agent !== "claude" && agent !== "codex") throw new Error("Review agent is invalid");
+    return dependencies.github.startReview(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number"), agent);
+  });
+  ipc.handle("github:refill-review", (_event, reviewId: unknown) =>
+    dependencies.github.refillReview(nonEmptyString(reviewId, "Review id")));
+  ipc.handle("github:finish-review", (_event, reviewId: unknown, request: unknown) =>
+    dependencies.github.finishReview(nonEmptyString(reviewId, "Review id"), validateReviewFinishRequest(request)));
   ipc.handle("git-graph:list", async (_event, target: unknown, options: unknown) =>
     dependencies.gitGraph.list(await targetRoot(target), validateGitGraphPageOptions(options)),
   );
@@ -576,9 +653,13 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     dependencies.coordinator.stop(nonEmptyString(sessionId, "Session id")),
   );
   ipc.handle("terminals:resume", (_event, input: unknown) => dependencies.coordinator.resume(validateResumeInput(input)));
-  ipc.handle("terminals:remove", (_event, sessionId: unknown) =>
-    dependencies.coordinator.remove(nonEmptyString(sessionId, "Session id")),
-  );
+  ipc.handle("terminals:remove", async (_event, sessionId: unknown) => {
+    const id = nonEmptyString(sessionId, "Session id");
+    if ((await dependencies.github.activeReviews()).some((review) => review.sessionId === id)) {
+      throw new Error("진행 중인 PR 리뷰 세션은 '리뷰 완료' 흐름에서 정리하세요.");
+    }
+    return dependencies.coordinator.remove(id);
+  });
   ipc.handle("terminals:rename", async (_event, sessionId: unknown, name: unknown) => {
     if (name !== null && typeof name !== "string") throw new Error("Session name must be a string or null");
     if (typeof name === "string" && name.length > 120) throw new Error("Session name is too long");

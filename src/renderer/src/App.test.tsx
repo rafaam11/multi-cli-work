@@ -277,6 +277,11 @@ function createApi(options?: {
       gitStatus: vi.fn().mockResolvedValue({ isRepo: true, branch: "feature", changedFileCount: 0 }),
       gitDiff: vi.fn().mockResolvedValue({ isRepo: true, diff: "", untracked: [], truncated: false }),
     },
+    github: {
+      remotes: vi.fn().mockResolvedValue([]), status: vi.fn(), authenticate: vi.fn(), list: vi.fn(),
+      detail: vi.fn(), diff: vi.fn(), comment: vi.fn(), reply: vi.fn(),
+      activeReviews: vi.fn().mockResolvedValue([]), startReview: vi.fn(), refillReview: vi.fn(), finishReview: vi.fn(),
+    },
     providers: {
       availability: vi.fn().mockResolvedValue({ vscode: true }),
     },

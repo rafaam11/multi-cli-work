@@ -3,6 +3,7 @@ import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } 
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalStatus } from "@shared/terminal-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
+import type { ActivePullRequestReview } from "@shared/github-types";
 import {
   ChevronDown,
   ChevronRight,
@@ -36,6 +37,7 @@ interface ProjectSidebarProps {
   /** Sessions that started waiting while off screen — the sidebar's dot badges. */
   unread: Record<string, SessionAttention>;
   worktrees: SharedWorktree[];
+  activeReviews: ActivePullRequestReview[];
   workspaceViews: GitWorkspaceView[];
   worktreeWarnings: Record<string, string>;
   toolSessions: TerminalSessionView[];
@@ -133,6 +135,7 @@ export function ProjectSidebar({
   agents,
   unread,
   worktrees,
+  activeReviews,
   workspaceViews,
   worktreeWarnings,
   toolSessions,
@@ -395,7 +398,9 @@ export function ProjectSidebar({
               const projectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
               const projectWorkspaceViews = workspaceViews.filter((workspace) => workspace.projectId === project.id);
               const mainWorkspace = projectWorkspaceViews.find((workspace) => workspace.kind === "main") ?? null;
-              const isGitProject = projectWorkspaceViews.length > 0;
+              // The main node only adds useful hierarchy when another worktree exists. With none,
+              // sessions and file tabs remain directly under the project row.
+              const isGitProject = projectWorktrees.length > 0;
               const projectFileTabs = openFileTabs.filter(
                 (tab) => tab.target.kind === "project" && tab.target.id === project.id,
               );
@@ -511,8 +516,16 @@ export function ProjectSidebar({
                               {projectFileTabs.map(renderFileTab)}
                             </ul> : null}
                           </li> : null}
-                          {projectWorktrees.sort((left, right) => left.branch.localeCompare(right.branch)).map((worktree) => {
+                          {projectWorktrees.sort((left, right) => {
+                            const leftReview = activeReviews.find((review) => review.worktreeId === left.id);
+                            const rightReview = activeReviews.find((review) => review.worktreeId === right.id);
+                            if (leftReview && rightReview) return leftReview.pullRequestNumber - rightReview.pullRequestNumber;
+                            if (leftReview) return 1;
+                            if (rightReview) return -1;
+                            return left.branch.localeCompare(right.branch);
+                          }).map((worktree) => {
                             const view = projectWorkspaceViews.find((workspace) => workspace.worktreeId === worktree.id);
+                            const pullRequestReview = activeReviews.find((review) => review.worktreeId === worktree.id);
                             const worktreeSessions = projectSessions.filter(
                               (session) => session.worktreeId === worktree.id,
                             );
@@ -535,7 +548,7 @@ export function ProjectSidebar({
                                   </button>
                                   <button className="workspace-select" type="button" onClick={() => onSelectWorktree(worktree)} aria-label={`${worktree.branch} worktree 선택`} title={worktree.path}>
                                     <GitBranch size={13} aria-hidden="true" />
-                                    <span className="workspace-copy"><span className="worktree-branch">{view?.branch ?? (view?.head ? `detached @ ${view.head.slice(0, 7)}` : worktree.branch)}{view?.lockedReason ? " · locked" : ""}{view?.availability === "missing" ? " · missing" : ""}{view?.prunableReason ? " · prunable" : ""}</span><span className="workspace-meta">{worktree.path} · 변경 {view?.changedFileCount ?? 0} · 세션 {worktreeSessions.length}</span></span>
+                                    <span className="workspace-copy"><span className="worktree-branch">{pullRequestReview ? `PR #${pullRequestReview.pullRequestNumber} · 임시` : view?.branch ?? (view?.head ? `detached @ ${view.head.slice(0, 7)}` : worktree.branch)}{view?.lockedReason ? " · locked" : ""}{view?.availability === "missing" ? " · missing" : ""}{view?.prunableReason ? " · prunable" : ""}</span><span className="workspace-meta">{worktree.path} · 변경 {view?.changedFileCount ?? 0} · 세션 {worktreeSessions.length}</span></span>
                                     {worktreeAttention ? (
                                     <span
                                       className={`unread-dot unread-${worktreeAttention}`}

@@ -1,4 +1,4 @@
-import { FileDiff, FolderOpen, RefreshCw, Trash2, Unlock } from "lucide-react";
+import { CheckCircle2, FileDiff, FolderOpen, RefreshCw, Trash2, Unlock } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 import { VSCodeIcon } from "./brand-icons";
 
@@ -17,6 +17,8 @@ export interface WorktreeContextMenuProps {
   onUnlock(): void;
   onCleanupStale(): void;
   onRemove(): void;
+  pullRequestNumber?: number;
+  onFinishReview?(): void;
   onClose(): void;
 }
 
@@ -35,6 +37,8 @@ export function WorktreeContextMenu({
   onUnlock,
   onCleanupStale,
   onRemove,
+  pullRequestNumber,
+  onFinishReview,
   onClose,
 }: WorktreeContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null);
@@ -90,10 +94,15 @@ export function WorktreeContextMenu({
       {locked ? <button type="button" role="menuitem" onClick={run(onUnlock)}><Unlock size={15} /><span>Worktree 잠금 해제</span></button> : null}
       {stale ? <button type="button" role="menuitem" onClick={run(onCleanupStale)}><Trash2 size={15} /><span>Stale 관리정보 정리</span></button> : null}
       <div className="context-menu-separator" role="separator" />
-      <button type="button" role="menuitem" className="danger-item" disabled={locked} onClick={run(onRemove)}>
-        <Trash2 size={15} />
-        <span>Worktree 제거</span>
-      </button>
+      {pullRequestNumber !== undefined && onFinishReview ? (
+        <button type="button" role="menuitem" className="danger-item" disabled={locked} onClick={run(onFinishReview)}>
+          <CheckCircle2 size={15} /><span>PR #{pullRequestNumber} 리뷰 완료 및 정리</span>
+        </button>
+      ) : (
+        <button type="button" role="menuitem" className="danger-item" disabled={locked} onClick={run(onRemove)}>
+          <Trash2 size={15} /><span>Worktree 제거</span>
+        </button>
+      )}
     </div>
   );
 }

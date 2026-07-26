@@ -17,6 +17,8 @@ import {
 import { handleControlCommand, type ControlCommandContext } from "./control/control-commands";
 import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
+import { GitHubService } from "./github/github-service";
+import { PullRequestReviewService } from "./github/review-service";
 import {
   checkoutGitBranch,
   commitGitFiles,
@@ -201,6 +203,32 @@ export async function createDesktopRuntime(
   if (controlServer) sessionEnvironment[CONTROL_ENDPOINT_ENV] = controlServer.endpoint;
   await coordinator.initialize();
 
+  const reviewRegistryPath = process.env.MULTI_CLI_WORK_PR_REVIEWS_PATH;
+  const reviewService = new PullRequestReviewService({
+    ...(reviewRegistryPath ? { registryPath: reviewRegistryPath } : {}),
+    ...(worktreeRegistryPath ? { worktreeRegistryPath } : {}),
+    getProject,
+    createSession: (input) => coordinator.create(input, { updateSelection: true }),
+    attachSession: (sessionId) => coordinator.attachForRenderer(sessionId),
+    writeSession: (sessionId, data) => coordinator.write(sessionId, data),
+    removeSession: (sessionId) => coordinator.remove(sessionId),
+    listSessions: () => coordinator.list(),
+    removeWorktree: (worktreeId, force) => worktrees.remove(worktreeId, force),
+    idFactory: () => crypto.randomUUID(),
+    now: () => new Date().toISOString(),
+  });
+  const github = new GitHubService({
+    getProject,
+    reviews: reviewService,
+    createAuthSession: async (projectId, host) => {
+      const kind = process.platform === "win32" ? "powershell" : "bash";
+      const session = await coordinator.create({ projectId, kind, cols: 120, rows: 36 });
+      await coordinator.attachForRenderer(session.id);
+      await coordinator.write(session.id, `gh auth login --hostname ${host}\r`);
+      return session;
+    },
+  });
+
   const statusWatcher = await startProviderStatusWatcher(claudeIntegration.statusDir, (event) => {
     coordinator.applyProviderStatus(event.sessionId, event.status);
   });
@@ -277,6 +305,7 @@ export async function createDesktopRuntime(
       pull: pullGitFastForward,
       fileOriginal: readGitFileOriginal,
     },
+    github,
     gitGraph: {
       list: listGitGraph,
       commitDetails: readGitCommitDetails,

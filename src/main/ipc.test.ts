@@ -147,6 +147,11 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     cherryPick: vi.fn(async () => undefined),
     revert: vi.fn(async () => undefined),
   };
+  const githubGateway = {
+    remotes: vi.fn(async () => []), status: vi.fn(), authenticate: vi.fn(), list: vi.fn(), detail: vi.fn(),
+    diff: vi.fn(), comment: vi.fn(), reply: vi.fn(), activeReviews: vi.fn(async () => []),
+    startReview: vi.fn(), refillReview: vi.fn(), finishReview: vi.fn(),
+  };
   const htmlPreviewGateway = {
     open: vi.fn(async () => undefined),
     setBounds: vi.fn(() => undefined),
@@ -161,6 +166,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     worktrees,
     workspaceFiles,
     git: gitGateway,
+    github: githubGateway,
     gitGraph: gitGraphGateway,
     htmlPreview: htmlPreviewGateway,
     shell: shellGateway,
