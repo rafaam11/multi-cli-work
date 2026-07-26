@@ -81,7 +81,9 @@ export interface GhRunner { (args: string[], options?: { cwd?: string; input?: s
 async function defaultRun(args: string[], options: { cwd?: string; input?: string } = {}) {
   try {
     return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn("gh", args, { cwd: options.cwd, windowsHide: true, shell: false, stdio: "pipe" });
+      const executable = process.env.MULTI_CLI_WORK_GH_EXECUTABLE ?? "gh";
+      const commandArgs = process.env.MULTI_CLI_WORK_GH_SCRIPT ? [process.env.MULTI_CLI_WORK_GH_SCRIPT, ...args] : args;
+      const child = spawn(executable, commandArgs, { cwd: options.cwd, windowsHide: true, shell: false, stdio: "pipe" });
       const stdout: Buffer[] = []; const stderr: Buffer[] = []; let size = 0;
       const timer = setTimeout(() => child.kill(), 30_000);
       child.stdout.on("data", (chunk: Buffer) => { size += chunk.length; if (size <= 16 * 1024 * 1024) stdout.push(chunk); });
@@ -148,7 +150,7 @@ export class GitHubClient {
       const item = record(value, "check"); return { name: String(item.name ?? item.context ?? "Check"), state: String(item.status ?? "UNKNOWN"), conclusion: item.conclusion ? String(item.conclusion) : null, detailsUrl: item.detailsUrl ? String(item.detailsUrl) : null };
     });
     const files: PullRequestFile[] = array(raw.files ?? [], "files").map((value) => { const item = record(value, "file"); return { path: String(item.path), additions: Number(item.additions ?? 0), deletions: Number(item.deletions ?? 0), changeType: String(item.changeType ?? "MODIFIED") }; });
-    return { ...base, body: String(raw.body ?? ""), authorDetail: author(raw.author), labels: array(raw.labels ?? [], "labels").map((v) => String(record(v, "label").name)), baseRefName: String(raw.baseRefName), headRefName: String(raw.headRefName), commits: array(raw.commits ?? [], "commits").map((v) => { const c = record(v, "commit"); return { oid: String(c.oid), message: String(c.messageHeadline ?? c.message ?? ""), committedAt: String(c.committedDate ?? c.committedAt ?? "") }; }), timeline: [...comments, ...reviews.map((review) => ({ kind: "review" as const, ...review })), ...inline].sort((a, b) => String("createdAt" in a ? a.createdAt : a.submittedAt).localeCompare(String("createdAt" in b ? b.createdAt : b.submittedAt))), files, checks };
+    return { ...base, body: String(raw.body ?? ""), authorDetail: author(raw.author), labels: array(raw.labels ?? [], "labels").map((v) => { const label = record(v, "label"); const color = String(label.color ?? ""); return { name: String(label.name), color: /^[0-9a-fA-F]{6}$/.test(color) ? color : "" }; }), baseRefName: String(raw.baseRefName), headRefName: String(raw.headRefName), commits: array(raw.commits ?? [], "commits").map((v) => { const c = record(v, "commit"); return { oid: String(c.oid), message: String(c.messageHeadline ?? c.message ?? ""), committedAt: String(c.committedDate ?? c.committedAt ?? "") }; }), timeline: [...comments, ...reviews.map((review) => ({ kind: "review" as const, ...review })), ...inline].sort((a, b) => String("createdAt" in a ? a.createdAt : a.submittedAt).localeCompare(String("createdAt" in b ? b.createdAt : b.submittedAt))), files, checks };
   }
 
   private parseInlineComments(json: string): PullRequestTimelineItem[] {
@@ -167,8 +169,14 @@ export class GitHubClient {
   async diff(remote: GitHubRemote, prNumber: number): Promise<PullRequestDiffFile[]> {
     const output = (await this.run(["pr", "diff", String(prNumber), "--repo", repo(remote), "--patch"])).stdout;
     const bounded = Buffer.from(output).subarray(0, MAX_DIFF_BYTES).toString("utf8");
-    const chunks = bounded.split(/(?=^diff --git )/m).filter(Boolean);
-    return chunks.map((patch, index) => ({ path: /^diff --git a\/.+ b\/(.+)$/m.exec(patch)?.[1] ?? `file-${index + 1}`, patch, truncated: Buffer.byteLength(output) > MAX_DIFF_BYTES && index === chunks.length - 1 }));
+    const chunks = bounded.split(/(?=^diff --git )/m).filter((patch) => patch.startsWith("diff --git "));
+    return chunks.map((patch, index) => {
+      const headerEnd = patch.indexOf("\n");
+      const header = headerEnd < 0 ? patch : patch.slice(0, headerEnd);
+      const quoted = / "b\/(.+)"$/.exec(header);
+      const plain = / b\/(.+)$/.exec(header);
+      return { path: quoted?.[1] ?? plain?.[1] ?? `file-${index + 1}`, patch, truncated: Buffer.byteLength(output) > MAX_DIFF_BYTES && index === chunks.length - 1 };
+    });
   }
 
   async addComment(remote: GitHubRemote, prNumber: number, body: string): Promise<void> {

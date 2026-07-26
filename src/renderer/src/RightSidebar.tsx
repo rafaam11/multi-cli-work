@@ -22,6 +22,7 @@ export interface RightSidebarProps {
   onOpenDiff(change: GitChangeEntry): void;
   onOpenGraph(): void;
   projectId: string | null;
+  selectedPullRequest?: { projectId: string; remoteName: string; prNumber: number } | null;
   onOpenPullRequest(remoteName: string, item: PullRequestListItem): void;
 }
 
@@ -41,6 +42,7 @@ export function RightSidebar({
   onOpenDiff,
   onOpenGraph,
   projectId,
+  selectedPullRequest,
   onOpenPullRequest,
 }: RightSidebarProps) {
   const railTab = (tab: RightSidebarTab, icon: ReactElement) => (
@@ -117,6 +119,7 @@ export function RightSidebar({
           onOpenDiff={onOpenDiff}
           onOpenGraph={onOpenGraph}
           projectId={projectId}
+          selectedPullRequest={selectedPullRequest}
           onOpenPullRequest={onOpenPullRequest}
         />
       </div>

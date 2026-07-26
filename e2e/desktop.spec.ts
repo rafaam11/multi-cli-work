@@ -20,16 +20,21 @@ let page: Page;
 
 async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
   const packagedExecutable = process.env.MULTI_CLI_WORK_E2E_EXECUTABLE;
+  const fakePath = `${path.join(tempRoot, "fake-bin")}${path.delimiter}${process.env.Path ?? process.env.PATH ?? ""}`;
+  const inheritedEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== "PATH"));
   const nextApp = await electron.launch({
     ...(packagedExecutable ? { executablePath: packagedExecutable, args: [] } : { args: [path.resolve("out/main/index.js")] }),
     env: {
-      ...process.env,
+      ...inheritedEnvironment,
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
       MULTI_CLI_WORK_USER_DATA: path.join(tempRoot, "user-data"),
       MULTI_CLI_WORK_REGISTRY_PATH: path.join(tempRoot, "registry", "projects.json"),
       MULTI_CLI_WORK_CODEX_SESSIONS_DIR: path.join(tempRoot, "codex-sessions"),
       MULTI_CLI_WORK_AGENTS_PATH: path.join(tempRoot, "registry", "agents.json"),
       MULTI_CLI_WORK_WORKTREES_PATH: path.join(tempRoot, "registry", "worktrees.json"),
+      MULTI_CLI_WORK_GH_EXECUTABLE: process.execPath,
+      MULTI_CLI_WORK_GH_SCRIPT: path.join(tempRoot, "fake-bin", "gh.js"),
+      [WINDOWS ? "Path" : "PATH"]: fakePath,
     },
   });
   return { app: nextApp, page: await nextApp.firstWindow() };
@@ -59,6 +64,22 @@ test.describe.serial("Multi CLI Work desktop", () => {
       ["-c", "user.email=e2e@example.com", "-c", "user.name=E2E", "commit", "-m", "init"],
       { cwd: projectRoot },
     );
+    await execFileAsync("git", ["remote", "add", "origin", "https://github.com/octo/sample.git"], { cwd: projectRoot });
+    const fakeBin = path.join(tempRoot, "fake-bin");
+    await fs.mkdir(fakeBin, { recursive: true });
+    const fakeGh = path.join(fakeBin, "gh.js");
+    await fs.writeFile(fakeGh, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const pr = (number, title, state = "OPEN") => ({ number, title, state, isDraft: false, author: { login: "octo" }, updatedAt: "${NOW}", reviewDecision: "APPROVED", statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }], url: "https://github.com/octo/sample/pull/" + number, headRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+if (args[0] === "--version" || (args[0] === "auth" && args[1] === "status")) process.stdout.write("ok\\n");
+else if (args[0] === "pr" && args[1] === "list") { const state = args[args.indexOf("--state") + 1]; process.stdout.write(JSON.stringify(state === "closed" ? [pr(2, "Closed PR", "CLOSED")] : [pr(1, "Open PR")])); }
+else if (args[0] === "pr" && args[1] === "view") process.stdout.write(JSON.stringify({ ...pr(1, "Open PR"), body: "E2E body", labels: [{ name: "e2e", color: "1d76db" }], baseRefName: "main", headRefName: "feature", commits: [{ oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", messageHeadline: "change", committedDate: "${NOW}" }], reviews: [], comments: [], files: [{ path: "src/app.ts", additions: 1, deletions: 1, changeType: "MODIFIED" }, { path: "README.md", additions: 1, deletions: 0, changeType: "ADDED" }] }));
+else if (args[0] === "pr" && args[1] === "diff") process.stdout.write("diff --git a/src/app.ts b/src/app.ts\\n--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1 +1 @@\\n-old\\n+new\\ndiff --git a/README.md b/README.md\\nnew file mode 100644\\n--- /dev/null\\n+++ b/README.md\\n@@ -0,0 +1 @@\\n+readme\\n");
+else if (args[0] === "api" && args.some((arg) => arg.includes("/comments"))) process.stdout.write("[]");
+else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); process.exitCode = 1; }
+`, "utf8");
+    if (WINDOWS) await fs.writeFile(path.join(fakeBin, "gh.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0gh.js" %*\r\n`, "utf8");
+    else { await fs.copyFile(fakeGh, path.join(fakeBin, "gh")); await fs.chmod(path.join(fakeBin, "gh"), 0o755); }
     await fs.writeFile(
       path.join(tempRoot, "registry", "projects.json"),
       `${JSON.stringify(
@@ -287,6 +308,25 @@ test.describe.serial("Multi CLI Work desktop", () => {
     await expect(page.locator(".native-graph-row").first()).toBeVisible();
     await expect(page.getByText(/VS Code|serve-web/)).toHaveCount(0);
     await execFileAsync("git", ["checkout", "main"], { cwd: projectRoot });
+  });
+
+  test("filters and opens a PR, selects a file, renders unified rows, and refreshes", async () => {
+    await page.getByRole("tab", { name: "Git" }).click();
+    await page.getByRole("tab", { name: "PR" }).click();
+    await expect(page.getByText("Open PR", { exact: true })).toBeVisible();
+    await page.getByLabel("PR 상태").selectOption("closed");
+    await expect(page.getByText("Closed PR", { exact: true })).toBeVisible();
+    await page.getByLabel("PR 상태").selectOption("open");
+    await page.getByText("Open PR", { exact: true }).click();
+    await expect(page.getByRole("region", { name: "PR #1 상세" })).toBeVisible();
+    await page.getByRole("tab", { name: /변경 파일/ }).click();
+    await page.getByRole("button", { name: /README\.md/ }).click();
+    await expect(page.locator(".pr-diff-line.add")).toContainText("readme");
+    await page.getByRole("button", { name: "src/app.ts" }).click();
+    await expect(page.locator(".pr-diff-line.add")).toContainText("new");
+    await expect(page.locator(".pr-diff-line.del")).toContainText("old");
+    await page.getByRole("region", { name: "PR #1 상세" }).getByRole("button", { name: "PR 새로고침" }).click();
+    await expect(page.locator(".pr-selected-file-header")).toContainText("src/app.ts");
   });
 
   test("shows the home dashboard from the logo and the project detail page from the folder", async () => {

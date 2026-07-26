@@ -33,6 +33,7 @@ export interface GitPanelProps {
   onOpenDiff(change: GitChangeEntry): void;
   onOpenGraph(): void;
   projectId: string | null;
+  selectedPullRequest?: { projectId: string; remoteName: string; prNumber: number } | null;
   onOpenPullRequest(remoteName: string, item: PullRequestListItem): void;
 }
 
@@ -92,6 +93,7 @@ export function GitPanel({
   onOpenDiff,
   onOpenGraph,
   projectId,
+  selectedPullRequest,
   onOpenPullRequest,
 }: GitPanelProps) {
   const [mode, setMode] = useState<"changes" | "pr">("changes");
@@ -229,7 +231,7 @@ export function GitPanel({
         <button type="button" role="tab" aria-selected={false} onClick={() => setMode("changes")}>변경사항</button>
         <button type="button" role="tab" aria-selected={true}>PR</button>
       </div>
-      <PullRequestPanel hidden={false} projectId={projectId} onOpen={onOpenPullRequest}/>
+      <PullRequestPanel hidden={false} projectId={projectId} selected={selectedPullRequest} onOpen={onOpenPullRequest}/>
     </div>
   );
 

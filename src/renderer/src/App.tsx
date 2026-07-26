@@ -1549,6 +1549,7 @@ export function App() {
         onOpenDiff={openGitDiff}
         onOpenGraph={openGitGraph}
         projectId={fileExplorerOwnerProject?.id ?? null}
+        selectedPullRequest={selectedPullRequest ? { projectId: selectedPullRequest.projectId, remoteName: selectedPullRequest.remoteName, prNumber: selectedPullRequest.number } : null}
         onOpenPullRequest={openPullRequest}
       />
 

@@ -94,10 +94,12 @@ export interface PullRequestCheck {
   detailsUrl: string | null;
 }
 
+export interface PullRequestLabel { name: string; color: string; }
+
 export interface PullRequestDetail extends PullRequestListItem {
   body: string;
   authorDetail: PullRequestAuthor;
-  labels: string[];
+  labels: PullRequestLabel[];
   baseRefName: string;
   headRefName: string;
   commits: Array<{ oid: string; message: string; committedAt: string }>;
