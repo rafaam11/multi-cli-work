@@ -197,12 +197,30 @@ describe("worktree service against a real repo", () => {
     await expect(worktrees.remove(created.id, false)).resolves.toEqual({ removed: true });
   });
 
+  it("removes stale registry entries without sessions during sync", async () => {
+    const { service: worktrees } = service();
+    const created = await worktrees.create("project-1", "feature-stale-sessionless");
+    await git(repoRoot, "worktree", "remove", created.path);
+
+    const snapshot = await worktrees.sync([project()]);
+
+    expect(snapshot.workspaces.some((workspace) => workspace.worktreeId === created.id)).toBe(false);
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeUndefined();
+  });
+
   it("keeps stale registry entries that still own sessions during explicit cleanup", async () => {
     const active = new Set<string>();
     const { service: worktrees } = service(undefined, (id) => active.has(id));
     const created = await worktrees.create("project-1", "feature-stale");
     active.add(created.id);
     await git(repoRoot, "worktree", "remove", created.path);
+
+    const snapshot = await worktrees.sync([project()]);
+    expect(snapshot.workspaces.find((workspace) => workspace.worktreeId === created.id)).toMatchObject({
+      availability: "missing",
+      prunableReason: "Git no longer reports this worktree",
+    });
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeDefined();
 
     await worktrees.cleanupStale("project-1");
     expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeDefined();

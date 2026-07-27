@@ -135,6 +135,11 @@ export class WorktreeService {
         }
         for (const entry of Object.values(entries)) {
           if (entry.projectId !== project.id || seen.has(normalizeWorkspacePath(entry.path))) continue;
+          if (!(await this.options.hasWorktreeSessions?.(entry.id))) {
+            delete entries[entry.id];
+            changed = true;
+            continue;
+          }
           workspaces.push({
             workspaceKey: `worktree:${entry.id}`,
             kind: "worktree",
