@@ -391,7 +391,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   });
 
   /**
-   * The Orca-style parallel loop end to end: an isolated worktree, a session running inside it,
+   * The parallel worktree loop end to end: an isolated worktree, a session running inside it,
    * one prompt fanned out to every live session, the diff of what happened, and a removal that
    * refuses to discard uncommitted work until forced explicitly.
    */

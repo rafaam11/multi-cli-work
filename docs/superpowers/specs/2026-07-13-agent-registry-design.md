@@ -1,10 +1,10 @@
-# 에이전트 레지스트리 설계 (Orca 도입 1단계)
+# 에이전트 레지스트리 설계
 
 ## 왜
 
-`stablyai/orca`(16.9k★)는 30개 넘는 CLI 에이전트를 붙인다. 그럴 수 있는 이유는 **provider가 코드가 아니라 데이터**이기 때문이다.
+확장 가능한 CLI 허브는 30개 넘는 에이전트를 붙일 수 있다. 그럴 수 있는 이유는 **provider가 코드가 아니라 데이터**이기 때문이다.
 
-우리는 앱 이름이 **multi-cli**인데 `TerminalKind = "powershell" | "claude" | "codex"` 유니온이 하드코딩돼 있었다. CLI 하나를 더 붙이려면 main·preload·renderer 전반에 분기를 추가해야 했다. Orca에서 가져오기로 한 나머지(worktree 병렬 세션, Quick Open, unread 배지, 터미널 분할)도 전부 이 위에 얹히므로, 여기를 먼저 풀지 않으면 하드코딩 위에 쌓았다가 나중에 재작업이 된다.
+우리는 앱 이름이 **multi-cli**인데 `TerminalKind = "powershell" | "claude" | "codex"` 유니온이 하드코딩돼 있었다. CLI 하나를 더 붙이려면 main·preload·renderer 전반에 분기를 추가해야 했다. 나머지 확장 기능(worktree 병렬 세션, Quick Open, unread 배지, 터미널 분할)도 전부 이 위에 얹히므로, 여기를 먼저 풀지 않으면 하드코딩 위에 쌓았다가 나중에 재작업이 된다.
 
 ## 무엇을
 

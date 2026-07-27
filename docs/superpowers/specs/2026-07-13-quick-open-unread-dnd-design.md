@@ -1,4 +1,4 @@
-# Quick Open · Unread 배지 · 파일 드래그&드롭 (Orca 도입 2단계)
+# Quick Open · Unread 배지 · 파일 드래그&드롭
 
 ## 왜
 
