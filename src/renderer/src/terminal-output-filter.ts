@@ -2,8 +2,8 @@ const SYNC_START = "\u001b[?2026h";
 const SYNC_END = "\u001b[?2026l";
 const CLEAR_SCREEN = "\u001b[2J";
 
-const STATE_SEQUENCES = [SYNC_START, SYNC_END] as const;
-const SYNC_SEQUENCES = [...STATE_SEQUENCES, CLEAR_SCREEN] as const;
+const ALL_SEQUENCES = [SYNC_START, SYNC_END, CLEAR_SCREEN] as const;
+const CONTROL_SEQUENCE_PATTERN = /\u001b\[\?2026[hl]|\u001b\[2J/g;
 
 interface TerminalOutputFilter {
   write(data: string): string;
@@ -13,7 +13,7 @@ function trailingPrefixLength(input: string, sequences: readonly string[]): numb
   const maximum = Math.min(input.length, Math.max(...sequences.map((sequence) => sequence.length - 1)));
   for (let length = maximum; length > 0; length -= 1) {
     const suffix = input.slice(-length);
-    if (sequences.some((sequence) => sequence.startsWith(suffix))) return length;
+    if (sequences.some((sequence) => sequence.length > suffix.length && sequence.startsWith(suffix))) return length;
   }
   return 0;
 }
@@ -34,44 +34,21 @@ export function createTerminalOutputFilter(): TerminalOutputFilter {
   return {
     write(data: string): string {
       const input = pending + data;
-      pending = "";
-      const output: string[] = [];
-      let cursor = 0;
+      const retainedLength = trailingPrefixLength(input, ALL_SEQUENCES);
+      const complete = input.slice(0, input.length - retainedLength);
+      pending = input.slice(input.length - retainedLength);
 
-      while (cursor < input.length) {
-        const sequences = inSyncBlock ? SYNC_SEQUENCES : STATE_SEQUENCES;
-        let nextIndex = -1;
-        let nextSequence = "";
-
-        for (const sequence of sequences) {
-          const index = input.indexOf(sequence, cursor);
-          if (index !== -1 && (nextIndex === -1 || index < nextIndex)) {
-            nextIndex = index;
-            nextSequence = sequence;
-          }
-        }
-
-        if (nextIndex === -1) {
-          const remainder = input.slice(cursor);
-          const retainedLength = trailingPrefixLength(remainder, sequences);
-          output.push(remainder.slice(0, remainder.length - retainedLength));
-          pending = remainder.slice(remainder.length - retainedLength);
-          break;
-        }
-
-        output.push(input.slice(cursor, nextIndex));
-        cursor = nextIndex + nextSequence.length;
-        if (nextSequence === SYNC_START) {
+      return complete.replace(CONTROL_SEQUENCE_PATTERN, (sequence) => {
+        if (sequence === SYNC_START) {
           inSyncBlock = true;
-          output.push(nextSequence);
-        } else if (nextSequence === SYNC_END) {
-          inSyncBlock = false;
-          output.push(nextSequence);
+          return sequence;
         }
-        // ED2 is deliberately omitted only while in a synchronized-output block.
-      }
-
-      return output.join("");
+        if (sequence === SYNC_END) {
+          inSyncBlock = false;
+          return sequence;
+        }
+        return inSyncBlock ? "" : sequence;
+      });
     },
   };
 }

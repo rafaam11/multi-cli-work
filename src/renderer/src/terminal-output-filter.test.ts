@@ -45,4 +45,13 @@ describe("terminal output filter", () => {
     expect(filter.write(CLEAR_SCREEN)).toBe(CLEAR_SCREEN);
     expect(filter.write(second)).toBe(`${SYNC_START}two${SYNC_END}`);
   });
+
+  it("processes a large replay with unmatched state sequences without blocking the renderer", () => {
+    const filter = createTerminalOutputFilter();
+    const replay = SYNC_END.repeat(50_000);
+    const startedAt = performance.now();
+
+    expect(filter.write(replay)).toBe(replay);
+    expect(performance.now() - startedAt).toBeLessThan(100);
+  });
 });
