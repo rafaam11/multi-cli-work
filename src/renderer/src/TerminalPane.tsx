@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
 import { useEffect, useRef, useState } from "react";
 import { droppedPathsAsPromptText } from "./drop-paths";
+import { createTerminalOutputFilter } from "./terminal-output-filter";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
@@ -60,6 +61,7 @@ export function TerminalPane({
     let replayAttached = false;
     let resizeTimer: number | undefined;
     const pendingOutput: Array<{ data: string; sequence: number }> = [];
+    const outputFilter = createTerminalOutputFilter();
     const terminal = new Terminal({
       allowTransparency: false,
       cursorBlink: false,
@@ -98,6 +100,10 @@ export function TerminalPane({
 
     const reportError = (error: unknown) => {
       if (!disposed) onErrorRef.current(getErrorMessage(error));
+    };
+    const writeOutput = (data: string) => {
+      const filtered = outputFilter.write(data);
+      if (filtered) terminal.write(filtered);
     };
     const finishRefresh = () => {
       if (!refreshing || refreshCompleted) return;
@@ -195,7 +201,7 @@ export function TerminalPane({
     host.addEventListener("drop", handleDrop);
     const unsubscribe = window.multiCliWork.terminals.onEvent((event) => {
       if (event.sessionId !== session.id || event.type !== "data") return;
-      if (replayAttached) terminal.write(event.data);
+      if (replayAttached) writeOutput(event.data);
       else pendingOutput.push({ data: event.data, sequence: event.sequence });
     });
     const resizeObserver = new ResizeObserver(scheduleResize);
@@ -207,10 +213,10 @@ export function TerminalPane({
     void attachment
       .then((attachment) => {
         if (disposed) return;
-        terminal.write(attachment.replay);
+        writeOutput(attachment.replay);
         replayAttached = true;
         for (const output of pendingOutput) {
-          if (output.sequence > attachment.sequence) terminal.write(output.data);
+          if (output.sequence > attachment.sequence) writeOutput(output.data);
         }
         pendingOutput.length = 0;
         onAttachedRef.current(attachment.session);

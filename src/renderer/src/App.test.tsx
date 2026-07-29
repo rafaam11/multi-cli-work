@@ -968,6 +968,39 @@ describe("folder workspace", () => {
     expect(terminal.write).toHaveBeenCalledWith("after attach\r\n");
   });
 
+  it("filters synchronized clear-screen commands from replay and live terminal output", async () => {
+    const harness = createApi({
+      sessions: [codexSession],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: codexSession.id },
+    });
+    const syncStart = "\u001b[?2026h";
+    const syncEnd = "\u001b[?2026l";
+    vi.mocked(harness.api.terminals.attach).mockResolvedValue({
+      session: codexSession,
+      replay: `${syncStart}\u001b[2Jreplay frame${syncEnd}`,
+      sequence: 1,
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "codex 터미널" });
+    const terminal = terminalHarness.instances.at(-1)!;
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith(`${syncStart}replay frame${syncEnd}`));
+
+    await act(async () => {
+      harness.emit({ type: "data", sessionId: codexSession.id, data: syncStart, sequence: 2 });
+      harness.emit({ type: "data", sessionId: codexSession.id, data: "\u001b[", sequence: 3 });
+      harness.emit({ type: "data", sessionId: codexSession.id, data: `2Jlive frame${syncEnd}`, sequence: 4 });
+      harness.emit({ type: "data", sessionId: codexSession.id, data: "\u001b[2J", sequence: 5 });
+    });
+
+    expect(terminal.write).toHaveBeenCalledWith(syncStart);
+    expect(terminal.write).toHaveBeenCalledWith(`live frame${syncEnd}`);
+    expect(terminal.write).toHaveBeenCalledWith("\u001b[2J");
+    expect(terminal.write).not.toHaveBeenCalledWith("\u001b[");
+    expect(terminal.write).not.toHaveBeenCalledWith(`2Jlive frame${syncEnd}`);
+  });
+
   it("maps both copy and paste shortcuts to the native clipboard without duplicate terminal input", async () => {
     const harness = createApi({ sessions: [powershellSession] });
     window.multiCliWork = harness.api;

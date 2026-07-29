@@ -186,6 +186,44 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
         if (event.type === "data") state.__multiCliWorkE2eOutput += event.data;
       });
     });
+
+    await terminal.click();
+    await page.keyboard.type(shellCommand(
+      "1..150 | ForEach-Object { 'MCW_SCROLL_' + $_ }",
+      "i=1; while [ $i -le 150 ]; do echo MCW_SCROLL_$i; i=$((i+1)); done",
+    ));
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_SCROLL_150");
+
+    await page.keyboard.type(shellCommand(
+      "Start-Sleep -Milliseconds 2000; [Console]::Write(([char]27).ToString() + '[?2026h' + ([char]27).ToString() + '[2JMCW_SYNC_FRAME' + ([char]27).ToString() + '[?2026l' + ([char]27).ToString() + ']9;MCW_SYNC_DONE' + ([char]7).ToString())",
+      "sleep 2; printf '\\e[?2026h\\e[2JMCW_SYNC_FRAME\\e[?2026l\\e]9;MCW_SYNC_DONE\\a'",
+    ));
+    await page.keyboard.press("Enter");
+    const scrollSlider = page.locator(".xterm-scrollable-element > .scrollbar.vertical > .slider");
+    const sliderBounds = await scrollSlider.boundingBox();
+    const viewportBounds = await page.locator(".xterm-scrollable-element").boundingBox();
+    if (!sliderBounds || !viewportBounds) throw new Error("Terminal scroll bar is not available");
+    await page.mouse.move(sliderBounds.x + sliderBounds.width / 2, sliderBounds.y + sliderBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sliderBounds.x + sliderBounds.width / 2, viewportBounds.y + 1);
+    await page.mouse.up();
+    const earlyScrollbackRow = page.locator(".xterm-rows > div").filter({ hasText: /^MCW_SCROLL_5$/ });
+    await expect(earlyScrollbackRow).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as typeof window & { __multiCliWorkE2eOutput?: string })
+              .__multiCliWorkE2eOutput,
+        ),
+      )
+      .toContain("\u001b]9;MCW_SYNC_DONE\u0007");
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    await expect(earlyScrollbackRow).toBeVisible();
+
     await terminal.click();
     await page.keyboard.type(shellCommand(
       "[Console]::Write(([char]27).ToString() + '[32mMCW_ANSI_GREEN' + ([char]27).ToString() + '[0m' + [Environment]::NewLine); [Console]::Write(([char]27).ToString() + ']9;MCW_OSC_SIGNAL' + ([char]7).ToString()); 1..250 | ForEach-Object { 'MCW_BURST_' + $_ }; exit 7",
