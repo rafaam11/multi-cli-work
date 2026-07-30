@@ -32,6 +32,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
       MULTI_CLI_WORK_CODEX_SESSIONS_DIR: path.join(tempRoot, "codex-sessions"),
       MULTI_CLI_WORK_AGENTS_PATH: path.join(tempRoot, "registry", "agents.json"),
       MULTI_CLI_WORK_WORKTREES_PATH: path.join(tempRoot, "registry", "worktrees.json"),
+      MULTI_CLI_WORK_PR_REVIEWS_PATH: path.join(tempRoot, "registry", "pr-reviews.json"),
       MULTI_CLI_WORK_GH_EXECUTABLE: process.execPath,
       MULTI_CLI_WORK_GH_SCRIPT: path.join(tempRoot, "fake-bin", "gh.js"),
       [WINDOWS ? "Path" : "PATH"]: fakePath,
@@ -143,7 +144,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
-  test("runs a real native PTY and remains framed at both supported window sizes", async () => {
+  test("@smoke runs a real native PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
@@ -348,7 +349,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await execFileAsync("git", ["checkout", "main"], { cwd: projectRoot });
   });
 
-  test("filters and opens a PR, selects a file, renders unified rows, and refreshes", async () => {
+  test("@smoke filters and opens a PR, selects a file, annotates a line, and refreshes", async () => {
     await page.getByRole("tab", { name: "Git" }).click();
     await page.getByRole("tab", { name: "PR" }).click();
     await expect(page.getByText("Open PR", { exact: true })).toBeVisible();
@@ -363,6 +364,11 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.getByRole("button", { name: "src/app.ts" }).click();
     await expect(page.locator(".pr-diff-line.add")).toContainText("new");
     await expect(page.locator(".pr-diff-line.del")).toContainText("old");
+    await page.getByRole("button", { name: "src/app.ts RIGHT 1줄 line note 추가" }).click();
+    await page.getByRole("textbox", { name: "Line note 본문" }).fill("rename this value");
+    await page.getByRole("button", { name: "Draft 저장" }).click();
+    await expect(page.getByRole("region", { name: "PR line notes" })).toContainText("Draft 1");
+    await expect(page.getByRole("button", { name: "Draft 전송" })).toBeDisabled();
     await page.getByRole("region", { name: "PR #1 상세" }).getByRole("button", { name: "PR 새로고침" }).click();
     await expect(page.locator(".pr-selected-file-header")).toContainText("src/app.ts");
   });
@@ -377,11 +383,23 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("button", { name: new RegExp(`${SHELL_LABEL}( \\d+)? 세션 보기`) }).first()).toBeVisible();
   });
 
+  test("@smoke toggles and immediately saves a Markdown task", async () => {
+    const readmePath = path.join(tempRoot, "sample-project", "readme.md");
+    await fs.writeFile(readmePath, "# Smoke checklist\n\n- [ ] verify Markdown\n", "utf8");
+    await page.locator(".file-explorer").getByRole("tab", { name: "파일", exact: true }).click();
+    await page.locator(".file-explorer").getByRole("button", { name: "readme.md", exact: true }).click();
+    const checkbox = page.getByRole("checkbox", { name: "작업 1" });
+    await expect(checkbox).not.toBeChecked();
+    await checkbox.click();
+    await expect(checkbox).toBeChecked();
+    await expect.poll(() => fs.readFile(readmePath, "utf8")).toContain("- [x] verify Markdown");
+  });
+
   /**
    * The whole point of the agent registry: a CLI the app ships no code for is launchable purely from
    * `agents.json`, and it stands next to the built-ins rather than behind them.
    */
-  test("runs an agent the user added in agents.json", async () => {
+  test("@smoke runs an agent the user added in agents.json", async () => {
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await expect(page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` })).toBeVisible();
 
@@ -433,7 +451,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
    * one prompt fanned out to every live session, the diff of what happened, and a removal that
    * refuses to discard uncommitted work until forced explicitly.
    */
-  test("runs a worktree session, fans out a prompt, and guards worktree removal", async () => {
+  test("@smoke runs a worktree session, fans out a prompt, and guards worktree removal", async () => {
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
     await page.getByRole("menu", { name: "Sample Project 작업" }).getByRole("menuitem", { name: "Worktree 만들기" }).click();
     const createDialog = page.getByRole("dialog", { name: "Worktree 만들기" });
@@ -531,12 +549,17 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect.poll(() => fs.stat(externalPath).then(() => true, () => false)).toBe(false);
   });
 
-  test("hides to the tray and restores saved tabs after a relaunch", async () => {
+  test("@smoke hides to the tray and restores saved tabs after a relaunch", async () => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.show());
     await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(true);
 
+    // Playwright's app.close() follows Electron's before-quit path. Stop the remaining live test
+    // agent first so the product's native destructive-quit confirmation does not block automation.
+    await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
+    await page.getByRole("button", { name: "세션 중지" }).click();
+    await expect(page.locator(".active-status")).toHaveText("종료됨");
     await app.close();
     ({ app, page } = await launchApp());
 

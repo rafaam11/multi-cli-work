@@ -2812,9 +2812,18 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .file-viewer-markdown h1,
 .file-viewer-markdown h2,
-.file-viewer-markdown h3 {
+.file-viewer-markdown h3,
+.file-viewer-markdown h4,
+.file-viewer-markdown h5,
+.file-viewer-markdown h6 {
   color: var(--text);
   line-height: 1.3;
+  scroll-margin-top: 16px;
+}
+
+.file-viewer-markdown .task-list-item > input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--teal);
 }
 
 .file-viewer-markdown a {

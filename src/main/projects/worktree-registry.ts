@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { SharedWorktree, WorktreeRegistryV1 } from "../../shared/worktree-types";
@@ -126,30 +125,4 @@ export async function replaceWorktreeEntries(
     updatedAt: now,
     worktrees,
   }));
-}
-
-/**
- * A worktree whose directory is gone (deleted by hand, or removed via git on the command line) has
- * nothing left for the app to offer, so its entry is dropped at startup rather than shown as a node
- * every action on which would fail.
- */
-export async function pruneMissingWorktrees(
-  now: string,
-  options: WorktreeRegistryOptions = {},
-): Promise<WorktreeRegistryV1> {
-  const registry = await readWorktreeRegistry(options);
-  const missing: string[] = [];
-  for (const worktree of Object.values(registry.worktrees)) {
-    const exists = await fs.stat(worktree.path).then(
-      (stats) => stats.isDirectory(),
-      () => false,
-    );
-    if (!exists) missing.push(worktree.id);
-  }
-  if (missing.length === 0) return registry;
-  return updateJsonStore(STORE, registryPathOf(options), (current) => {
-    const worktrees = { ...current.worktrees };
-    for (const id of missing) delete worktrees[id];
-    return { ...current, updatedAt: now, worktrees };
-  });
 }

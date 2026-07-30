@@ -178,6 +178,9 @@ export function App() {
   const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
   const [selectedFileTabId, setSelectedFileTabId] = useState<string | null>(null);
   const [fileTabCloseRequest, setFileTabCloseRequest] = useState<OpenFileTab | null>(null);
+  const fileWriteQueuesRef = useRef<Map<string, Promise<boolean>>>(new Map());
+  const pendingFileWriteCountsRef = useRef<Map<string, number>>(new Map());
+  const [pendingFileAnchor, setPendingFileAnchor] = useState<{ tabId: string; anchor: string } | null>(null);
   const [executableRequest, setExecutableRequest] = useState<{ target: FileExplorerTarget; entry: FileTreeEntry; error: string | null; running: boolean } | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -455,6 +458,21 @@ export function App() {
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, [activeView, selectedFileTab]);
+
+  useEffect(() => {
+    if (
+      !pendingFileAnchor ||
+      activeView !== "file" ||
+      selectedFileTab?.id !== pendingFileAnchor.tabId ||
+      selectedFileTab.loading ||
+      selectedFileTab.category !== "markdown"
+    ) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(pendingFileAnchor.anchor)?.scrollIntoView?.({ block: "start" });
+      setPendingFileAnchor((current) => (current === pendingFileAnchor ? null : current));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeView, pendingFileAnchor, selectedFileTab]);
 
   const beginSidebarResize = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -777,16 +795,16 @@ export function App() {
     await removeSessionById(session);
   };
 
-  const openFile = (target: FileExplorerTarget, targetLabel: string, entry: FileTreeEntry) => {
+  const openFile = (target: FileExplorerTarget, targetLabel: string, entry: FileTreeEntry): string => {
     if (entry.executable) {
       setExecutableRequest({ target, entry, error: null, running: false });
-      return;
+      return fileTabId(target, entry.relativePath);
     }
     const id = fileTabId(target, entry.relativePath);
     if (openFileTabs.some((tab) => tab.id === id)) {
       setSelectedFileTabId(id);
       setActiveView("file");
-      return;
+      return id;
     }
     const category = categorizeFile(entry.name, entry.extension);
     const tab: OpenFileTab = {
@@ -810,7 +828,7 @@ export function App() {
     setOpenFileTabs((current) => [...current, tab]);
     setSelectedFileTabId(id);
     setActiveView("file");
-    if (category === "unsupported") return;
+    if (category === "unsupported") return id;
     void window.multiCliWork.workspaceFiles
       .readFile(target, entry.relativePath)
       .then((result) => {
@@ -836,6 +854,22 @@ export function App() {
           ),
         );
       });
+    return id;
+  };
+
+  const openRelativeFile = (sourceTab: OpenFileTab, relativePath: string, anchor: string | null) => {
+    const name = relativePath.split("/").at(-1) ?? relativePath;
+    const dot = name.lastIndexOf(".");
+    const extension = dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLocaleLowerCase("en-US") : null;
+    const tabId = openFile(sourceTab.target, sourceTab.targetLabel, {
+      name,
+      relativePath,
+      kind: "file",
+      extension,
+      // A Markdown link may open a file, but it can never execute one.
+      executable: false,
+    });
+    if (anchor) setPendingFileAnchor({ tabId, anchor });
   };
 
   const forceOpenFileTab = (tabId: string) => {
@@ -857,30 +891,65 @@ export function App() {
     );
   };
 
-  const saveFileTab = async (tabId: string) => {
+  const saveFileTab = (tabId: string, contentOverride?: string): Promise<boolean> => {
     const tab = openFileTabs.find((candidate) => candidate.id === tabId);
-    if (!tab || tab.content === null || tab.truncated || tab.encoding !== "utf8" || !["markdown", "html", "text"].includes(tab.category)) return false;
+    const content = contentOverride ?? tab?.content;
+    if (!tab || content === null || content === undefined || tab.truncated || tab.encoding !== "utf8" || !["markdown", "html", "text"].includes(tab.category)) return Promise.resolve(false);
+    const pendingCount = (pendingFileWriteCountsRef.current.get(tabId) ?? 0) + 1;
+    pendingFileWriteCountsRef.current.set(tabId, pendingCount);
     setOpenFileTabs((current) =>
-      current.map((candidate) => (candidate.id === tabId ? { ...candidate, saving: true, saveError: null } : candidate)),
+      current.map((candidate) =>
+        candidate.id === tabId
+          ? {
+              ...candidate,
+              ...(contentOverride === undefined ? {} : { content, dirty: content !== candidate.originalContent }),
+              saving: true,
+              saveError: null,
+            }
+          : candidate,
+      ),
     );
-    try {
-      await window.multiCliWork.workspaceFiles.writeFile(tab.target, tab.relativePath, tab.content);
-      setOpenFileTabs((current) =>
-        current.map((candidate) =>
-          candidate.id === tabId
-            ? { ...candidate, originalContent: candidate.content, dirty: false, saving: false }
-            : candidate,
-        ),
-      );
-      return true;
-    } catch (error) {
-      setOpenFileTabs((current) =>
-        current.map((candidate) =>
-          candidate.id === tabId ? { ...candidate, saving: false, saveError: errorMessage(error) } : candidate,
-        ),
-      );
-      return false;
-    }
+    const previous = fileWriteQueuesRef.current.get(tabId) ?? Promise.resolve(true);
+    const write = previous.then(async () => {
+      let succeeded = false;
+      try {
+        await window.multiCliWork.workspaceFiles.writeFile(tab.target, tab.relativePath, content);
+        succeeded = true;
+        setOpenFileTabs((current) =>
+          current.map((candidate) =>
+            candidate.id === tabId
+              ? {
+                  ...candidate,
+                  originalContent: content,
+                  dirty: candidate.content !== content,
+                  saveError: null,
+                }
+              : candidate,
+          ),
+        );
+      } catch (error) {
+        setOpenFileTabs((current) =>
+          current.map((candidate) =>
+            candidate.id === tabId
+              ? { ...candidate, dirty: candidate.content !== candidate.originalContent, saveError: errorMessage(error) }
+              : candidate,
+          ),
+        );
+      } finally {
+        const remaining = Math.max(0, (pendingFileWriteCountsRef.current.get(tabId) ?? 1) - 1);
+        if (remaining === 0) pendingFileWriteCountsRef.current.delete(tabId);
+        else pendingFileWriteCountsRef.current.set(tabId, remaining);
+        setOpenFileTabs((current) =>
+          current.map((candidate) => (candidate.id === tabId ? { ...candidate, saving: remaining > 0 } : candidate)),
+        );
+      }
+      return succeeded;
+    });
+    fileWriteQueuesRef.current.set(tabId, write);
+    void write.finally(() => {
+      if (fileWriteQueuesRef.current.get(tabId) === write) fileWriteQueuesRef.current.delete(tabId);
+    });
+    return write;
   };
 
   const closeFileTabImmediately = (tabId: string) => {
@@ -1468,9 +1537,13 @@ export function App() {
             <FileViewerPane
               tab={selectedFileTab}
               onChangeContent={(content) => updateFileTabContent(selectedFileTab.id, content)}
+              onAutoSaveContent={(content) => void saveFileTab(selectedFileTab.id, content)}
               onSave={() => void saveFileTab(selectedFileTab.id)}
               onClose={() => requestCloseFileTab(selectedFileTab)}
               onForceOpen={() => forceOpenFileTab(selectedFileTab.id)}
+              onOpenRelativePath={(relativePath, anchor) =>
+                openRelativeFile(selectedFileTab, relativePath, anchor)
+              }
             />
           ) : activeView === "git-diff" && gitDiffFile ? (
             <Suspense fallback={<div className="git-diff-state">불러오는 중</div>}>

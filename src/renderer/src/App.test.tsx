@@ -2,6 +2,7 @@ import type { AgentView } from "@shared/agent-types";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AppStateSnapshot } from "@shared/app-state-types";
 import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
+import type { FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
@@ -1259,6 +1260,119 @@ describe("folder workspace", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "gemini 세션 열기" })).toBeInTheDocument();
+  });
+});
+
+describe("file viewer", () => {
+  const markdownEntry: FileTreeEntry = {
+    name: "README.md",
+    relativePath: "README.md",
+    kind: "file",
+    extension: "md",
+    executable: false,
+  };
+
+  it("serializes rapid Markdown task saves and keeps a failed optimistic change retryable", async () => {
+    const harness = createApi({ sessions: [] });
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
+      relativePath: "README.md",
+      encoding: "utf8",
+      content: "- [ ] first\n- [ ] second\n",
+      truncated: false,
+      sizeBytes: 27,
+    });
+    const writes: Array<{ content: string; resolve(): void; reject(error: Error): void }> = [];
+    vi.mocked(harness.api.workspaceFiles.writeFile).mockImplementation((_target, _path, content) =>
+      new Promise<void>((resolve, reject) => writes.push({ content, resolve, reject })),
+    );
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
+    const first = (await screen.findAllByRole("checkbox"))[0];
+    fireEvent.click(first);
+    await waitFor(() => expect(writes).toHaveLength(1));
+    fireEvent.click(screen.getAllByRole("checkbox")[1]);
+    expect(writes).toHaveLength(1);
+    expect(screen.getAllByRole<HTMLInputElement>("checkbox").every((box) => box.checked)).toBe(true);
+
+    await act(async () => writes[0].resolve());
+    await waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes.map((write) => write.content)).toEqual([
+      "- [x] first\n- [ ] second\n",
+      "- [x] first\n- [x] second\n",
+    ]);
+    await act(async () => writes[1].reject(new Error("disk full")));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
+    expect(screen.getAllByRole<HTMLInputElement>("checkbox").every((box) => box.checked)).toBe(true);
+    const retry = screen.getByRole("button", { name: "저장" });
+    expect(retry).toBeEnabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(writes).toHaveLength(3));
+    await act(async () => writes[2].resolve());
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+  });
+
+  it("opens normalized relative Markdown links in an existing file-tab flow", async () => {
+    const harness = createApi({ sessions: [] });
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockImplementation(async (_target, relativePath) => ({
+      relativePath,
+      encoding: "utf8",
+      content: relativePath === "README.md" ? "[Guide](docs/guide.md)" : "# Guide title",
+      truncated: false,
+      sizeBytes: 24,
+    }));
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Guide" }));
+    expect(await screen.findByRole("heading", { name: "Guide title" })).toBeInTheDocument();
+    expect(harness.api.workspaceFiles.readFile).toHaveBeenLastCalledWith(
+      { kind: "project", id: atlas.id },
+      "docs/guide.md",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "README.md 파일 열기" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Guide" }));
+    expect(harness.api.workspaceFiles.readFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("saves ordinary UTF-8 text with the shared dirty and saving states", async () => {
+    const harness = createApi({ sessions: [] });
+    const notes: FileTreeEntry = {
+      name: "notes.txt",
+      relativePath: "notes.txt",
+      kind: "file",
+      extension: "txt",
+      executable: false,
+    };
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([notes]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
+      relativePath: "notes.txt",
+      encoding: "utf8",
+      content: "old",
+      truncated: false,
+      sizeBytes: 3,
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "notes.txt" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "notes.txt 편집" }), { target: { value: "new" } });
+    const save = screen.getByRole("button", { name: "저장" });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(harness.api.workspaceFiles.writeFile).toHaveBeenCalledWith(
+      { kind: "project", id: atlas.id },
+      "notes.txt",
+      "new",
+    ));
+    await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).toBeDisabled());
   });
 });
 

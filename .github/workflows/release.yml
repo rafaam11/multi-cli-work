@@ -37,7 +37,7 @@ jobs:
           python-version: "3.11"
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - run: npm run test:e2e
       - run: npx electron-builder --win --publish never
       - uses: actions/upload-artifact@v4
         with:
@@ -56,12 +56,12 @@ jobs:
         with:
           node-version: 22.12.0
           cache: npm
-      - run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1
       - run: npm ci
       - name: Rebuild node-pty for the native Electron ABI
         run: npm run rebuild:native
       - run: npm test
-      - run: npm run build
+      - run: xvfb-run -a npm run test:e2e
       - name: Package Linux assets
         run: npx electron-builder --linux deb AppImage --x64 --publish never
       - uses: actions/upload-artifact@v4

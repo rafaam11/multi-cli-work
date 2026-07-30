@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/React-18-1c2230?logo=react&logoColor=61dafb" alt="React 18">
   <img src="https://img.shields.io/badge/TypeScript-5-1c2230?logo=typescript&logoColor=3178c6" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Ubuntu-1c2230" alt="Windows and Ubuntu">
-  <img src="https://img.shields.io/badge/version-1.6.0-4fb7a4" alt="version 1.6.0">
+  <img src="https://img.shields.io/github/v/release/rafaam11/multi-cli-work?label=version&color=4fb7a4" alt="latest release">
   <img src="https://img.shields.io/badge/local--only-no%20telemetry-3fb950" alt="local only">
 </p>
 
@@ -19,7 +19,7 @@
 - 창을 닫아도 **트레이에 상주**하며 세션은 계속 돈다. 앱을 재시작하면 폴더·탭·스크롤백이 복원된다.
 - 폴더 목록은 이 앱만의 것(`~/.multi-cli-work/projects.json`)이다. 열어둔 폴더만 남고, 저절로 늘어나지 않는다.
 
-터미널·창·스크롤백은 이 앱 안에만 있다. Windows 제어 CLI는 사용자 named pipe, Linux 제어 CLI는 임의의 `127.0.0.1` 포트와 실행별 bearer token을 사용한다. 외부 인터페이스에는 바인딩하지 않으며 업데이트 확인 외에 외부로 나가는 통신은 없다.
+터미널·창·스크롤백은 이 앱 안에만 있다. Windows 제어 CLI는 사용자 named pipe, Linux 제어 CLI는 임의의 `127.0.0.1` 포트와 실행별 bearer token을 사용하며 외부 인터페이스에는 바인딩하지 않는다. 외부 통신은 사용자가 실행한 GitHub PR 조회·댓글, `fetch`/`pull`/`push`, GitHub 링크 열기와 앱 업데이트 확인·다운로드에서 발생한다. 인증은 시스템 `git`/`gh` 설정이 맡는다.
 
 ## 미리보기
 
@@ -33,7 +33,7 @@
 
 ## 빠른 시작
 
-1. [Releases](https://github.com/rafaam11/multi-cli-work/releases)에서 Windows 또는 Ubuntu x64 자산을 받는다.
+1. [최신 릴리스](https://github.com/rafaam11/multi-cli-work/releases/latest)에서 Windows 또는 Ubuntu x64 자산을 받는다.
 2. Windows는 `Multi-CLI-Work-Setup-x.y.z.exe`를 실행한다. 서명되지 않은 빌드는 SmartScreen의 **추가 정보 → 실행**으로 진행한다.
 3. Ubuntu 22.04 x64는 `.deb` 설치를 권장한다: `sudo apt install ./Multi-CLI-Work-*-linux-x64.deb`. AppImage는 `chmod +x` 후 직접 실행하며 FUSE2가 필요 없다.
 
@@ -51,7 +51,7 @@
 - **프로젝트 상세 페이지** — 세션을 직접 누르지 않고 폴더를 클릭하면 진입. 그 폴더의 세션 카드 목록(없으면 세션 시작 버튼), 탐색기·VS Code·GitHub 바로가기, 진입 시 조회되는 git 브랜치·변경 파일 수(수동 새로고침 가능), 자동 저장되는 메모와 체크리스트를 모아 보여준다.
 - **폴더 트리** — 폴더 하나에 세션 여러 개를 중첩해 붙인다. **＋** 로 작업할 폴더를 열면 목록에 남고, 앱을 껐다 켜도 그대로다. 자동 발견은 하지 않는다 — **내가 연 폴더만** 보인다.
 - **폴더 우클릭 메뉴** — **파일 탐색기에서 열기** · **VS Code로 열기**(`code`) · **GitHub에서 열기**(`origin` 리모트를 브라우저로) · **이름 변경** · **목록에서 제거**. 제거는 UI 목록에서만 빼는 것이고 **디스크의 폴더는 건드리지 않는다**(세션이 남아 있으면 먼저 확인한다).
-- **세션 이름 = 하는 일** — Claude는 자기가 붙인 세션 제목(`ai-title`)을, Codex는 첫 프롬프트를 트랜스크립트에서 읽어 세션 이름으로 쓴다. 작업이 바뀌면 이름도 따라 바뀐다. 세션을 **우클릭 → 이름 변경** 하면 직접 붙인 이름이 우선하고, **제공자 제목 사용** 으로 되돌린다.
+- **세션 이름 = 하는 일** — Claude는 자기가 붙인 세션 제목(`ai-title`)을, Codex는 앱 전용 `SessionStart` hook이 알려 준 정확한 트랜스크립트의 첫 프롬프트를 세션 이름으로 쓴다. 작업이 바뀌면 이름도 따라 바뀐다. 세션을 **우클릭 → 이름 변경** 하면 직접 붙인 이름이 우선하고, **제공자 제목 사용** 으로 되돌린다.
 - **에이전트는 데이터다** — OS 기본 셸 · Claude Code · Codex는 코드에 박힌 특별한 존재가 아니라 **빌트인 정의**일 뿐이다. `~/.multi-cli-work/agents.json`에 같은 형식으로 적으면 Gemini CLI든 무엇이든 런처에 나란히 선다. 헤더의 🔧 **도구 → 에이전트 추가**를 누르면 예시가 담긴 파일이 편집기로 열리고, 저장하고 앱으로 돌아오면 목록이 갱신된다. 자세한 건 아래 [에이전트 추가](#에이전트-추가).
 - **세션 상태 7종** — `starting` · `working` · `awaiting-input` · `awaiting-approval` · `idle` · `exited` · `error`. Claude는 앱 전용 **훅 오버레이**, Codex는 **OSC 9 알림**, PowerShell/Bash는 프로세스 신호로 판정한다.
 - **권한 프롬프트 없이 실행** — Claude는 `--dangerously-skip-permissions`, Codex는 `--dangerously-bypass-approvals-and-sandbox` 로 항상 실행한다. 승인 대기로 멈추지 않는 대신 **에이전트가 확인 없이 파일을 고치고 명령을 돌린다** — 신뢰하는 저장소에서만 쓸 것.
@@ -61,6 +61,9 @@
 - **Git worktree 병렬 세션** — 폴더 우클릭 → **Worktree 만들기**로 브랜치를 저장소 옆 전용 폴더(`<repo>-wt/<브랜치>`)에 체크아웃하면, 사이드바가 **프로젝트 > worktree > 세션** 3단이 되고 그 안의 세션은 서로를 밟지 않는다. worktree 목록은 별도 파일(`worktrees.json`)이라 폴더 목록과 독립적이다. **제거는 두 겹으로 막혀 있다**: 커밋 안 된 변경이 있으면 git이 거부한 이유를 그대로 보여주고, "변경을 버리고 강제 제거"를 명시적으로 눌러야만 강제한다.
 - **프롬프트 팬아웃** — 프로젝트 상세의 **프롬프트 팬아웃**으로 같은 프롬프트를 여러 세션(worktree 포함)에 동시 전송한다. 대상을 체크박스로 고르고 버튼을 눌러야만 발사되며, 멀티라인은 bracketed paste로 감싸 중간 개행이 조기 실행되지 않는다.
 - **변경 보기 (읽기 전용 diff)** — worktree 우클릭 또는 프로젝트 상세에서 커밋 전 변경을 앱 안에서 본다. 추적되지 않는 파일은 별도 섹션. 병렬 에이전트가 만든 결과를 비교해 승자를 고르는 용도이며, 스테이징·머지는 하지 않는다.
+- **Git 작업** — 우측 Git 탭에서 변경 파일을 명시적으로 골라 commit하고, 현재 브랜치를 `fetch`·`pull`·`push`한다. 앱이 선택하지 않은 staged 파일은 건드리지 않는다.
+- **PR 리뷰와 비공개 line note** — GitHub PR의 Files 탭에서 줄별 Draft를 모아 현재 review agent PTY에 한 번에 보낸다. note는 로컬 review registry에만 저장되며 GitHub inline comment로 게시하지 않는다. PR head가 바뀌면 이전 note는 읽기 전용이다.
+- **문서 탭** — Markdown은 GFM 미리보기·정확한 task checkbox 자동 저장·문서 anchor·안전한 상대 파일 링크를 제공한다. 일반 UTF-8 텍스트와 HTML 소스도 저장 버튼과 실패 재시도를 공유한다.
 - **터미널 2분할** — 헤더의 분할 버튼으로 다른 세션(종료된 세션의 스크롤백 포함)을 오른쪽에 나란히 띄운다. 가운데를 드래그해 비율을 조절하고, 분할에 떠 있는 세션은 화면에 있는 것이므로 알림·배지를 만들지 않는다. 2분할까지만 — 에이전트 한 쌍을 비교하는 용도다.
 - **파일 드래그&드롭** — 탐색기에서 파일·이미지를 터미널에 끌어다 놓으면 따옴표 처리된 절대 경로가 입력줄에 붙는다. 스크린샷을 에이전트에게 보여줄 때 경로를 타이핑할 필요가 없다.
 - **트레이 상주 · 세션 영속성** — 창을 닫으면 트레이로 숨고 PTY는 살아 있다. **종료**는 "돌고 있는 세션을 끄겠냐"고 확인한 뒤에만 종료한다. 재시작하면 폴더·탭·**바운드 스크롤백**이 복원되고, **앱 종료로 중단된 세션은 처음 열람하는 순간 자동으로 재개**된다(`claude --resume` / `codex resume`) — 이전 기록과 새 출력 사이에는 날짜 구분선이 남는다. 열람할 때만 프로세스가 뜨는 **지연 재개**라 세션이 많아도 메모리를 아낀다. 스스로 종료했거나 크래시로 죽어 마지막 상태가 불확실한 세션은 자동 재개하지 않는다(수동 **재개** 버튼은 그대로).
@@ -114,7 +117,7 @@
 
 **재개** — `conversationId: "app-generated"`로 두고 `newSessionArgs`에 `{sessionId}`, `resumeArgs`에 `{conversationId}`를 넣으면 앱이 발급한 id로 대화를 이어붙인다. `"none"`이면 재개는 그냥 새로 띄우는 것이다.
 
-**빌트인 전용** — 브랜드 아이콘, 트랜스크립트에서 읽는 세션 제목, Claude 훅 오버레이(`claude-hook`), Codex의 대화 id 역추적(`provider-assigned`)은 빌트인만 가진다. 사용자 정의 에이전트가 이들을 요구하면 로드 시점에 거부하고 이유를 말한다.
+**빌트인 전용** — 브랜드 아이콘, 트랜스크립트에서 읽는 세션 제목, Claude 훅 오버레이(`claude-hook`), Codex `SessionStart` hook 상관관계(`provider-assigned`)는 빌트인만 가진다. 사용자 정의 에이전트가 이들을 요구하면 로드 시점에 거부하고 이유를 말한다.
 
 **파일이 깨졌을 때** — 앱은 죽지 않는다. 빌트인만 싣고 경고 배너에 이유가 뜬다. 세션은 자기가 쓰던 에이전트가 목록에서 사라져도 **목록에 남고 스크롤백도 읽힌다** — 다시 시작하는 것만 막힌다.
 
@@ -148,8 +151,11 @@
 | `~/.multi-cli-work/worktrees.json` | 앱이 만든 git worktree 목록 |
 | `userData/state.json` | 창·탭·선택·재개 상태 |
 | `userData/session-logs/` | 바운드 스크롤백 |
-| `userData/hooks/` · `claude-settings.json` | 앱 전용 Claude 훅 오버레이 |
+| `userData/hooks/` · `claude-settings.json` · `provider-hooks/` | 앱 전용 Claude/Codex 훅 파일 |
+| `~/.codex/multi-cli-work.config.toml` | 앱에서 시작한 Codex에만 적용되는 `SessionStart` profile |
 | `userData/provider-status/` | 세션 상태 파일(종료 시 자동 정리) |
+| `~/.multi-cli-work/pr-reviews.json` | 진행 중 PR review와 로컬 비공개 line note |
+| `userData/shutdown-recovery.json` | Windows session-end 뒤 다음 실행에서 복구할 최소 세션 목록 |
 | `userData/bin/` | jk 클라이언트(Windows `.ps1`/`.cmd`, Linux Python 실행 스크립트; 시작 시 재생성) |
 
 ## 개발
@@ -159,7 +165,7 @@
 ```bash
 git clone https://github.com/rafaam11/multi-cli-work.git
 cd multi-cli-work
-npm install
+npm ci
 npm run dev        # electron-vite dev (main/preload/renderer HMR + Electron 창)
 ```
 
@@ -170,13 +176,14 @@ npm run dev        # electron-vite dev (main/preload/renderer HMR + Electron 창
 | `npm run typecheck` | TypeScript 타입 검사(node + web 2패스) |
 | `npm run build` | typecheck + 프로덕션 번들(`out/`) |
 | `npm run test:e2e` | 빌드 후 Playwright로 **실제 ConPTY/Unix PTY 세션**을 Electron에서 구동 |
+| `npm run test:e2e:smoke` | PR용 Windows 핵심 경로 smoke 묶음 |
 | `npm run dist` / `npm run dist:win` | Windows NSIS 설치본 빌드 |
 | `npm run dist:linux` | Linux x64 DEB·AppImage 빌드 |
 | `npm run dist:linux:x64` | Linux x64 DEB·AppImage 빌드 |
 | `npm run rebuild:native` | `node-pty`를 현재 Electron ABI로 재빌드 |
 
-**요구사항** — Windows 10 1809 이상 또는 Ubuntu 22.04 x64. 개발에는 Node.js 22.12+가 필요하다. macOS, Ubuntu 20.04 이하, 기타 CPU 아키텍처, headless 환경은 v1.6.0 공식 범위가 아니다.
+**요구사항** — Windows 10 1809 이상 또는 Ubuntu 22.04 x64. 개발에는 Node.js 22.12+가 필요하다. macOS, Ubuntu 20.04 이하, 기타 CPU 아키텍처, headless 환경은 현재 공식 범위가 아니다.
 
-**릴리스** — `v*` 태그를 푸시하면 태그와 `package.json` 버전을 먼저 비교한 뒤 Windows 2022와 Ubuntu 22.04 x64 작업이 테스트·패키징한다. 결과는 한 작업이 모아 동일한 **draft 릴리스**에 올린다. 자세한 기준은 [`docs/release/v1.6.0.md`](docs/release/v1.6.0.md)다.
+**릴리스** — `v*` 태그를 푸시하면 태그와 `package.json` 버전을 먼저 비교한 뒤 Windows 2022와 Ubuntu 22.04 x64에서 전체 Electron E2E와 패키징을 수행한다. 결과는 한 작업이 모아 동일한 **draft 릴리스**에 올린다. 최신 변경은 [`docs/release/v1.9.0.md`](docs/release/v1.9.0.md)에서 확인한다.
 
 개발·설치·로컬 데이터 세부 문서: [`docs/development.md`](docs/development.md) · [`docs/installation.md`](docs/installation.md) · [`docs/local-data.md`](docs/local-data.md)

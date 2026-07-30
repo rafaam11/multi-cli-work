@@ -1,6 +1,6 @@
 {
   "name": "multi-cli-work",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "Project-oriented Windows and Linux workspace for Codex, Claude Code, PowerShell, and Bash sessions",
   "main": "out/main/index.js",
   "private": true,
@@ -20,6 +20,7 @@
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w node-pty",
     "test:e2e": "npm run build && playwright test",
+    "test:e2e:smoke": "npm run build && playwright test --grep @smoke",
     "dist": "npm run dist:win",
     "dist:win": "npm run build && electron-builder --win --publish never",
     "dist:linux": "npm run build && electron-builder --linux deb AppImage --x64 --publish never",
@@ -30,6 +31,7 @@
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "electron-updater": "6.8.9",
+    "github-slugger": "2.0.0",
     "lucide-react": "1.18.0",
     "monaco-editor": "0.55.1",
     "node-pty": "1.1.0",
@@ -37,7 +39,9 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "10.1.0",
-    "remark-gfm": "4.0.1"
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "unified": "11.0.5"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",

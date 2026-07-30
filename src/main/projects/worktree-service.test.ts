@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import { readGitDiff } from "./git-diff";
 import { defaultWorktreePath, normalizeWorkspacePath } from "./git-worktree";
-import { parseWorktreeRegistry, pruneMissingWorktrees, readWorktreeRegistry } from "./worktree-registry";
+import { parseWorktreeRegistry, readWorktreeRegistry } from "./worktree-registry";
 import { WorktreeService } from "./worktree-service";
 
 const execFileAsync = promisify(execFile);
@@ -230,16 +230,6 @@ describe("worktree service against a real repo", () => {
     expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeUndefined();
   });
 
-  it("prunes registry entries whose directory has disappeared", async () => {
-    const { service: worktrees } = service();
-    const kept = await worktrees.create("project-1", "feature-kept");
-    const doomed = await worktrees.create("project-1", "feature-doomed");
-    await fs.rm(doomed.path, { recursive: true, force: true });
-
-    const pruned = await pruneMissingWorktrees("2026-07-13T02:00:00.000Z", { registryPath });
-
-    expect(Object.keys(pruned.worktrees)).toEqual([kept.id]);
-  });
 });
 
 describe("readGitDiff", () => {
