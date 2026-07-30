@@ -227,12 +227,17 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     await terminal.click();
     await page.keyboard.type(shellCommand(
-      "[Console]::Write(([char]27).ToString() + '[32mMCW_ANSI_GREEN' + ([char]27).ToString() + '[0m' + [Environment]::NewLine); [Console]::Write(([char]27).ToString() + ']9;MCW_OSC_SIGNAL' + ([char]7).ToString()); 1..250 | ForEach-Object { 'MCW_BURST_' + $_ }; exit 7",
-      "printf '\\e[32mMCW_ANSI_GREEN\\e[0m'; echo; printf '\\e]9;MCW_OSC_SIGNAL\\a'; i=1; while [ $i -le 250 ]; do echo MCW_BURST_$i; i=$((i+1)); done; exit 7",
+      "[Console]::Write(([char]27).ToString() + '[32mMCW_ANSI_GREEN' + ([char]27).ToString() + '[0m' + [Environment]::NewLine)",
+      "printf '\\e[32mMCW_ANSI_GREEN\\e[0m'; echo",
     ));
     await page.keyboard.press("Enter");
-
     await expect(page.locator(".xterm-rows")).toContainText("MCW_ANSI_GREEN");
+
+    await page.keyboard.type(shellCommand(
+      "[Console]::Write(([char]27).ToString() + ']9;MCW_OSC_SIGNAL' + ([char]7).ToString()); 1..250 | ForEach-Object { 'MCW_BURST_' + $_ }; exit 7",
+      "printf '\\e]9;MCW_OSC_SIGNAL\\a'; i=1; while [ $i -le 250 ]; do echo MCW_BURST_$i; i=$((i+1)); done; exit 7",
+    ));
+    await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_BURST_250");
     await expect(page.locator(".active-status")).toHaveText("종료됨");
     await expect

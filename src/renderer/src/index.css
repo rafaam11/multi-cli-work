@@ -1991,6 +1991,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   grid-template-rows: 54px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--bg);
 }
 
@@ -2049,10 +2050,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 0 12px 0 16px;
   border-bottom: 1px solid var(--line);
   background: #191d1c;
+  container-type: inline-size;
 }
 
 .workspace-identity {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   align-items: center;
   gap: 9px;
@@ -2093,7 +2096,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .workspace-actions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 3px;
 }
@@ -2186,10 +2190,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
  */
 .launcher-row {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 4px;
   margin-left: 4px;
-  min-width: 0;
+  min-width: 31px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -3524,6 +3529,30 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
   .workspace-path {
     max-width: 30vw;
+  }
+}
+
+/* The usable header width is the centre grid column, not the window width. Resizable sidebars can
+   make that column compact while the viewport is still wide, so respond to the header itself. */
+@container (max-width: 620px) {
+  .workspace-header .active-status,
+  .workspace-header .workspace-path {
+    display: none;
+  }
+
+  .workspace-header .command-button span {
+    display: none;
+  }
+
+  .workspace-header .launcher-button {
+    width: 31px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .workspace-header .launcher-button span {
+    display: none;
   }
 }
 
