@@ -1,5 +1,5 @@
 import type { TerminalSessionView } from "../../shared/api-types";
-import type { GitHubIntegrationStatus, GitHubRemote, PullRequestDetail, PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult, ActivePullRequestReview } from "../../shared/github-types";
+import type { GitHubIntegrationStatus, GitHubRemote, PullRequestDetail, PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent, PullRequestReviewAnnotationInput, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult, ActivePullRequestReview } from "../../shared/github-types";
 import type { SharedProject } from "../../shared/project-types";
 import { GitHubClient } from "./github-client";
 import { listGitHubRemotes } from "./github-remote";
@@ -35,4 +35,8 @@ export class GitHubService {
   startReview(projectId: string, name: string, prNumber: number, agent: PullRequestReviewAgent): Promise<PullRequestReviewStartResult> { return this.options.reviews.start(projectId, name, prNumber, agent); }
   refillReview(reviewId: string) { return this.options.reviews.refill(reviewId); }
   finishReview(reviewId: string, request: PullRequestReviewFinishRequest): Promise<PullRequestReviewFinishResult> { return this.options.reviews.finish(reviewId, request); }
+  annotations(projectId: string, name: string, prNumber: number) { return this.options.reviews.listAnnotations(projectId, name, prNumber); }
+  upsertAnnotation(projectId: string, name: string, prNumber: number, input: PullRequestReviewAnnotationInput) { return this.options.reviews.upsertAnnotation(projectId, name, prNumber, input); }
+  deleteAnnotation(projectId: string, name: string, prNumber: number, annotationId: string) { return this.options.reviews.deleteAnnotation(projectId, name, prNumber, annotationId); }
+  sendDraftAnnotations(projectId: string, name: string, prNumber: number) { return this.options.reviews.sendDraftAnnotations(projectId, name, prNumber); }
 }

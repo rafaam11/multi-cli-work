@@ -22,7 +22,8 @@ import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "..
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
   PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
-  PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
+  PullRequestReviewAnnotation, PullRequestReviewAnnotationInput, PullRequestReviewAnnotationSendResult,
+  PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "../shared/github-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type {
@@ -128,6 +129,10 @@ interface GitHubGateway {
   startReview(projectId: string, remoteName: string, prNumber: number, agent: PullRequestReviewAgent): Promise<PullRequestReviewStartResult>;
   refillReview(reviewId: string): Promise<string>;
   finishReview(reviewId: string, request: PullRequestReviewFinishRequest): Promise<PullRequestReviewFinishResult>;
+  annotations(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestReviewAnnotationSnapshot>;
+  upsertAnnotation(projectId: string, remoteName: string, prNumber: number, input: PullRequestReviewAnnotationInput): Promise<PullRequestReviewAnnotation>;
+  deleteAnnotation(projectId: string, remoteName: string, prNumber: number, annotationId: string): Promise<void>;
+  sendDraftAnnotations(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestReviewAnnotationSendResult>;
 }
 
 interface GitGraphGateway {
@@ -360,6 +365,22 @@ function validateReviewFinishRequest(value: unknown): PullRequestReviewFinishReq
   return { allowUnverifiedReview: request.allowUnverifiedReview, discardChanges: request.discardChanges };
 }
 
+function validateReviewAnnotationInput(value: unknown): PullRequestReviewAnnotationInput {
+  const input = exactObject(value, ["id", "headSha", "path", "side", "line", "lineText", "body"], "Review annotation");
+  if (input.id !== undefined) nonEmptyString(input.id, "Annotation id");
+  if (input.side !== "LEFT" && input.side !== "RIGHT") throw new Error("Annotation side is invalid");
+  if (typeof input.lineText !== "string" || typeof input.body !== "string") throw new Error("Annotation text must be strings");
+  return {
+    ...(input.id !== undefined ? { id: input.id as string } : {}),
+    headSha: nonEmptyString(input.headSha, "Annotation head SHA"),
+    path: nonEmptyString(input.path, "Annotation path"),
+    side: input.side,
+    line: positiveInteger(input.line, "Annotation line"),
+    lineText: input.lineText,
+    body: input.body,
+  };
+}
+
 function externalUrl(value: unknown): string {
   const raw = nonEmptyString(value, "URL");
   let url: URL;
@@ -572,6 +593,14 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     dependencies.github.refillReview(nonEmptyString(reviewId, "Review id")));
   ipc.handle("github:finish-review", (_event, reviewId: unknown, request: unknown) =>
     dependencies.github.finishReview(nonEmptyString(reviewId, "Review id"), validateReviewFinishRequest(request)));
+  ipc.handle("github:annotations", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown) =>
+    dependencies.github.annotations(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number")));
+  ipc.handle("github:upsert-annotation", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown, input: unknown) =>
+    dependencies.github.upsertAnnotation(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number"), validateReviewAnnotationInput(input)));
+  ipc.handle("github:delete-annotation", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown, annotationId: unknown) =>
+    dependencies.github.deleteAnnotation(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number"), nonEmptyString(annotationId, "Annotation id")));
+  ipc.handle("github:send-draft-annotations", (_event, projectId: unknown, remoteName: unknown, prNumber: unknown) =>
+    dependencies.github.sendDraftAnnotations(nonEmptyString(projectId, "Project id"), nonEmptyString(remoteName, "Remote name"), positiveInteger(prNumber, "PR number")));
   ipc.handle("git-graph:list", async (_event, target: unknown, options: unknown) =>
     dependencies.gitGraph.list(await targetRoot(target), validateGitGraphPageOptions(options)),
   );

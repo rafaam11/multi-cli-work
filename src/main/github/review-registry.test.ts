@@ -2,12 +2,27 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readReviewRegistry, upsertReview } from "./review-registry";
+import { annotationSetKey, parseReviewRegistry, readReviewRegistry, upsertReview } from "./review-registry";
 
 const dirs: string[] = [];
 afterEach(async () => { for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true }); });
 
 describe("review registry", () => {
+  it("migrates v1 reviews to v2 with an empty annotation set", () => {
+    const review = { id: "r1", projectId: "p1", remoteName: "origin", pullRequestNumber: 7,
+      headSha: "a".repeat(40), worktreeId: "w1", sessionId: "s1", agent: "codex" as const,
+      promptDelivered: true, startedAt: "2026-07-24T00:00:00Z", updatedAt: "2026-07-24T00:00:00Z" };
+
+    const registry = parseReviewRegistry({
+      schemaVersion: 1,
+      updatedAt: "2026-07-24T00:00:00Z",
+      reviews: { r1: review },
+    });
+
+    expect(registry.schemaVersion).toBe(2);
+    expect(registry.annotationSets[annotationSetKey("p1", "origin", 7)].items).toEqual({});
+  });
+
   it("writes atomically and restores from backup", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "pr-review-registry-")); dirs.push(dir);
     const registryPath = path.join(dir, "pr-reviews.json");

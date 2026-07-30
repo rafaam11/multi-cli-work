@@ -78,6 +78,10 @@ const api: MultiCliWorkApi = {
     startReview: (projectId, remoteName, prNumber, agent) => ipcRenderer.invoke("github:start-review", projectId, remoteName, prNumber, agent),
     refillReview: (reviewId) => ipcRenderer.invoke("github:refill-review", reviewId),
     finishReview: (reviewId, request) => ipcRenderer.invoke("github:finish-review", reviewId, request),
+    annotations: (projectId, remoteName, prNumber) => ipcRenderer.invoke("github:annotations", projectId, remoteName, prNumber),
+    upsertAnnotation: (projectId, remoteName, prNumber, input) => ipcRenderer.invoke("github:upsert-annotation", projectId, remoteName, prNumber, input),
+    deleteAnnotation: (projectId, remoteName, prNumber, annotationId) => ipcRenderer.invoke("github:delete-annotation", projectId, remoteName, prNumber, annotationId),
+    sendDraftAnnotations: (projectId, remoteName, prNumber) => ipcRenderer.invoke("github:send-draft-annotations", projectId, remoteName, prNumber),
   },
   gitGraph: {
     list: (target, options) => ipcRenderer.invoke("git-graph:list", target, options),

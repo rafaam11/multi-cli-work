@@ -2,7 +2,8 @@ import type { AgentView } from "./agent-types";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
   PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
-  PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
+  PullRequestReviewAnnotation, PullRequestReviewAnnotationInput, PullRequestReviewAnnotationSendResult,
+  PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "./github-types";
 import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
@@ -293,6 +294,10 @@ export interface MultiCliWorkApi {
     startReview(projectId: string, remoteName: string, prNumber: number, agent: PullRequestReviewAgent): Promise<PullRequestReviewStartResult>;
     refillReview(reviewId: string): Promise<string>;
     finishReview(reviewId: string, request: PullRequestReviewFinishRequest): Promise<PullRequestReviewFinishResult>;
+    annotations(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestReviewAnnotationSnapshot>;
+    upsertAnnotation(projectId: string, remoteName: string, prNumber: number, input: PullRequestReviewAnnotationInput): Promise<PullRequestReviewAnnotation>;
+    deleteAnnotation(projectId: string, remoteName: string, prNumber: number, annotationId: string): Promise<void>;
+    sendDraftAnnotations(projectId: string, remoteName: string, prNumber: number): Promise<PullRequestReviewAnnotationSendResult>;
   };
   gitGraph: {
     list(target: FileExplorerTarget, options: { offset: number; limit: number }): Promise<GitGraphPage>;

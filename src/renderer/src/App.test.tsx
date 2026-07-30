@@ -282,6 +282,8 @@ function createApi(options?: {
       remotes: vi.fn().mockResolvedValue([]), status: vi.fn(), authenticate: vi.fn(), list: vi.fn(),
       detail: vi.fn(), diff: vi.fn(), comment: vi.fn(), reply: vi.fn(),
       activeReviews: vi.fn().mockResolvedValue([]), startReview: vi.fn(), refillReview: vi.fn(), finishReview: vi.fn(),
+      annotations: vi.fn().mockResolvedValue({ annotations: [] }), upsertAnnotation: vi.fn(),
+      deleteAnnotation: vi.fn(), sendDraftAnnotations: vi.fn(),
     },
     providers: {
       availability: vi.fn().mockResolvedValue({ vscode: true }),

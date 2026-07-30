@@ -150,7 +150,8 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
   const githubGateway = {
     remotes: vi.fn(async () => []), status: vi.fn(), authenticate: vi.fn(), list: vi.fn(), detail: vi.fn(),
     diff: vi.fn(), comment: vi.fn(), reply: vi.fn(), activeReviews: vi.fn(async () => []),
-    startReview: vi.fn(), refillReview: vi.fn(), finishReview: vi.fn(),
+    startReview: vi.fn(), refillReview: vi.fn(), finishReview: vi.fn(), annotations: vi.fn(),
+    upsertAnnotation: vi.fn(), deleteAnnotation: vi.fn(), sendDraftAnnotations: vi.fn(),
   };
   const htmlPreviewGateway = {
     open: vi.fn(async () => undefined),
@@ -194,6 +195,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     workspaceFiles,
     gitGateway,
     gitGraphGateway,
+    githubGateway,
     htmlPreviewGateway,
     shellGateway,
     clipboard,
@@ -240,6 +242,23 @@ describe("main IPC boundary", () => {
 
     await handlers.get("terminals:split")!({}, null);
     expect(coordinator.split).toHaveBeenCalledWith(null);
+  });
+
+  it("validates PR annotation shape before forwarding it to main services", async () => {
+    const { handlers, githubGateway } = setup();
+    const input = {
+      headSha: "a".repeat(40), path: "src/a.ts", side: "RIGHT", line: 12,
+      lineText: "const value = 1;", body: "이 부분을 고쳐 주세요",
+    };
+
+    await handlers.get("github:upsert-annotation")!({}, "project-1", "origin", 7, input);
+    expect(githubGateway.upsertAnnotation).toHaveBeenCalledWith("project-1", "origin", 7, input);
+    expect(() => handlers.get("github:upsert-annotation")!({}, "project-1", "origin", 7, { ...input, side: "MIDDLE" }))
+      .toThrow(/side/i);
+    expect(() => handlers.get("github:upsert-annotation")!({}, "project-1", "origin", 7, { ...input, line: 0 }))
+      .toThrow(/line/i);
+    expect(() => handlers.get("github:upsert-annotation")!({}, "project-1", "origin", 7, { ...input, executable: "pwsh" }))
+      .toThrow(/unknown fields/i);
   });
 
   it("uses the main-process folder chooser for manual project registration", async () => {

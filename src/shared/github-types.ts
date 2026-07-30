@@ -154,3 +154,53 @@ export interface PullRequestReviewRegistryV1 {
   updatedAt: string;
   reviews: Record<string, ActivePullRequestReview>;
 }
+
+export type PullRequestReviewAnnotationStatus = "draft" | "sent";
+export type PullRequestReviewAnnotationSide = "LEFT" | "RIGHT";
+
+export interface PullRequestReviewAnnotation {
+  id: string;
+  headSha: string;
+  path: string;
+  side: PullRequestReviewAnnotationSide;
+  line: number;
+  lineText: string;
+  body: string;
+  status: PullRequestReviewAnnotationStatus;
+  createdAt: string;
+  updatedAt: string;
+  sentAt: string | null;
+}
+
+export interface PullRequestReviewAnnotationSet {
+  projectId: string;
+  remoteName: string;
+  pullRequestNumber: number;
+  items: Record<string, PullRequestReviewAnnotation>;
+}
+
+export interface PullRequestReviewRegistryV2 {
+  schemaVersion: 2;
+  updatedAt: string;
+  reviews: Record<string, ActivePullRequestReview>;
+  annotationSets: Record<string, PullRequestReviewAnnotationSet>;
+}
+
+export interface PullRequestReviewAnnotationInput {
+  id?: string;
+  headSha: string;
+  path: string;
+  side: PullRequestReviewAnnotationSide;
+  line: number;
+  lineText: string;
+  body: string;
+}
+
+export interface PullRequestReviewAnnotationSnapshot {
+  annotations: PullRequestReviewAnnotation[];
+}
+
+export interface PullRequestReviewAnnotationSendResult {
+  sent: number;
+  annotations: PullRequestReviewAnnotation[];
+}
