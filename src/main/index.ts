@@ -6,6 +6,7 @@ import { checkForUpdates, initUpdater, quitAndInstall } from "./updater";
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
 import { taskbarBadgeSpec, trayTooltip } from "./window-badge";
 import type { AttentionSnapshot } from "./attention-policy";
+import { QuitCoordinator } from "./quit-coordinator";
 import {
   rendererTargetNavigationUrl,
   resolveRendererTarget,
@@ -15,11 +16,12 @@ import {
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let runtime: DesktopRuntime | null = null;
-let isQuitting = false;
 let shouldFocusWhenReady = false;
-let quitRequestInProgress = false;
 let trayUnavailable = false;
 let windowAttention: AttentionSnapshot = { window: "none", unread: {} };
+const quitCoordinator = new QuitCoordinator(async () => {
+  await runtime?.dispose();
+});
 
 if (process.env.MULTI_CLI_WORK_USER_DATA) {
   app.setPath("userData", path.resolve(process.env.MULTI_CLI_WORK_USER_DATA));
@@ -45,7 +47,7 @@ function createWindow(): BrowserWindow {
 
   window.once("ready-to-show", () => window.show());
   window.on("close", (event) => {
-    if (isQuitting) return;
+    if (quitCoordinator.isCommitted()) return;
     event.preventDefault();
     if (trayUnavailable) {
       void requestQuit();
@@ -56,6 +58,15 @@ function createWindow(): BrowserWindow {
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
   });
+  if (process.platform === "win32") {
+    window.on("session-end", () => {
+      try {
+        runtime?.writeRecoveryMarker();
+      } catch (error) {
+        console.error("Failed to write the shutdown recovery marker", error);
+      }
+    });
+  }
 
   const rendererTarget = resolveRendererTarget({
     isPackaged: app.isPackaged,
@@ -108,6 +119,13 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+function restoreMainWindow(): void {
+  showMainWindow();
+  void runtime?.markVisibleSessionsSeen().catch((error) =>
+    console.error("Failed to mark restored terminal sessions as seen", error),
+  );
+}
+
 async function confirmStoppingSessions(title: string, message: string, confirmLabel: string): Promise<boolean> {
   if (!runtime?.coordinator.hasActiveSessions()) return true;
   showMainWindow();
@@ -129,43 +147,29 @@ async function confirmStoppingSessions(title: string, message: string, confirmLa
 }
 
 async function requestQuit(): Promise<void> {
-  if (!runtime || isQuitting) return;
-  if (quitRequestInProgress) return;
-  quitRequestInProgress = true;
-  try {
-    const confirmed = await confirmStoppingSessions(
+  if (!runtime || quitCoordinator.isCommitted()) return;
+  await quitCoordinator.request({
+    confirm: () => confirmStoppingSessions(
       "멀티 터미널 작업기 종료",
       "종료하고 실행 중인 모든 세션을 중지할까요?",
       "종료",
-    );
-    if (!confirmed) return;
-    await runtime.dispose();
-    isQuitting = true;
-    app.quit();
-  } finally {
-    quitRequestInProgress = false;
-  }
+    ),
+    exit: () => app.quit(),
+  });
 }
 
 // The updater must not call quitAndInstall on its own: this app owns PTYs whose state is only
 // persisted by runtime.dispose(), so the restart goes through the same teardown as an explicit Quit.
 async function installUpdateAndQuit(): Promise<void> {
-  if (!runtime || isQuitting) return;
-  if (quitRequestInProgress) return;
-  quitRequestInProgress = true;
-  try {
-    const confirmed = await confirmStoppingSessions(
+  if (!runtime || quitCoordinator.isCommitted()) return;
+  await quitCoordinator.request({
+    confirm: () => confirmStoppingSessions(
       "업데이트 설치",
       "지금 재시작하여 업데이트를 설치할까요?",
       "재시작",
-    );
-    if (!confirmed) return;
-    await runtime.dispose();
-    isQuitting = true;
-    quitAndInstall();
-  } finally {
-    quitRequestInProgress = false;
-  }
+    ),
+    exit: quitAndInstall,
+  });
 }
 
 function createTray(): Tray {
@@ -178,21 +182,20 @@ function createTray(): Tray {
   nextTray.setToolTip(trayTooltip(windowAttention));
   nextTray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "멀티 터미널 작업기 표시", click: showMainWindow },
+      { label: "멀티 터미널 작업기 표시", click: restoreMainWindow },
       { label: "업데이트 확인", click: () => void checkForUpdates() },
       { type: "separator" },
       { label: "종료", click: () => void requestQuit() },
     ]),
   );
-  if (process.platform === "linux") nextTray.on("click", showMainWindow);
-  else nextTray.on("double-click", showMainWindow);
+  if (process.platform === "linux") nextTray.on("click", restoreMainWindow);
+  else nextTray.on("double-click", restoreMainWindow);
   return nextTray;
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
-  isQuitting = true;
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -200,7 +203,7 @@ if (!hasSingleInstanceLock) {
       shouldFocusWhenReady = true;
       return;
     }
-    showMainWindow();
+    restoreMainWindow();
   });
 
   void app.whenReady().then(async () => {
@@ -228,12 +231,14 @@ if (!hasSingleInstanceLock) {
     }
 
     app.on("activate", () => {
-      showMainWindow();
+      restoreMainWindow();
     });
   });
 
-  app.on("before-quit", () => {
-    isQuitting = true;
+  app.on("before-quit", (event) => {
+    if (!runtime || quitCoordinator.isCommitted()) return;
+    event.preventDefault();
+    void requestQuit();
   });
 
   app.on("window-all-closed", () => {

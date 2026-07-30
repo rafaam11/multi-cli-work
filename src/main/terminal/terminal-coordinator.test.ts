@@ -89,7 +89,7 @@ const project: SharedProject = {
 async function coordinator(
   root: string,
   worker = new FakeWorker(),
-  codexSessions?: {
+  _codexSessions?: {
     snapshot(cwd: string): Promise<ReadonlySet<string>>;
     waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null>;
   },
@@ -111,7 +111,6 @@ async function coordinator(
     env: { SYSTEMROOT: "C:\\Windows" },
     idFactory: () => "session-1",
     now: () => "2026-07-11T01:00:00.000Z",
-    codexSessions,
     appendLog,
     logFlushMs: 60_000,
     statusDir,
@@ -381,23 +380,18 @@ describe("TerminalCoordinator", () => {
     consoleError.mockRestore();
   });
 
-  it("correlates a new Codex transcript and persists its resumable conversation id", async () => {
+  it("accepts the exact Codex conversation and transcript path from SessionStart", async () => {
     const root = await tempRoot();
-    const codexSessions = {
-      snapshot: vi.fn(async () => new Set(["codex-existing"])),
-      waitForNew: vi.fn(async () => "codex-created"),
-    };
-    const { instance } = await coordinator(root, new FakeWorker(), codexSessions);
+    const { instance } = await coordinator(root);
 
     await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    instance.applyProviderStatus({
+      sessionId: "session-1", status: "working", event: "SessionStart",
+      at: "2026-07-11T01:00:00.000Z", providerConversationId: "codex-created",
+      transcriptPath: "C:\\Users\\me\\.codex\\sessions\\exact.jsonl",
+    });
     await instance.flush();
 
-    expect(codexSessions.snapshot).toHaveBeenCalledWith("C:\\Work");
-    expect(codexSessions.waitForNew).toHaveBeenCalledWith(
-      "C:\\Work",
-      new Set(["codex-existing"]),
-      expect.any(AbortSignal),
-    );
     expect(instance.list()[0].providerConversationId).toBe("codex-created");
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions["session-1"].providerConversationId).toBe("codex-created");
@@ -428,22 +422,19 @@ describe("TerminalCoordinator", () => {
     );
   });
 
-  it("resumes a correlated Codex conversation without claiming a new transcript", async () => {
+  it("resumes a hook-correlated Codex conversation without transcript guessing", async () => {
     const root = await tempRoot();
-    const initialTracker = {
-      snapshot: vi.fn(async () => new Set<string>()),
-      waitForNew: vi.fn(async () => "codex-existing"),
-    };
-    const first = await coordinator(root, new FakeWorker(), initialTracker);
+    const first = await coordinator(root);
     await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    first.instance.applyProviderStatus({
+      sessionId: "session-1", status: "working", event: "SessionStart",
+      at: "2026-07-11T01:00:00.000Z", providerConversationId: "codex-existing",
+      transcriptPath: "C:\\Users\\me\\.codex\\sessions\\exact.jsonl",
+    });
     await first.instance.flush();
 
-    const resumeTracker = {
-      snapshot: vi.fn(async () => new Set<string>()),
-      waitForNew: vi.fn(async () => "codex-unexpected"),
-    };
     const resumedWorker = new FakeWorker();
-    const resumed = await coordinator(root, resumedWorker, resumeTracker);
+    const resumed = await coordinator(root, resumedWorker);
 
     await resumed.instance.resume({ sessionId: "session-1", cols: 100, rows: 32 });
 
@@ -454,40 +445,37 @@ describe("TerminalCoordinator", () => {
         providerConversationId: "codex-existing",
       }),
     );
-    expect(resumeTracker.snapshot).not.toHaveBeenCalled();
-    expect(resumeTracker.waitForNew).not.toHaveBeenCalled();
   });
 
-  it("resumes an uncorrelated Codex session as a fresh conversation and re-correlates", async () => {
+  it("keeps an early Codex SessionStart event until worker creation registers the session", async () => {
     const root = await tempRoot();
-    // The first run never correlates: the transcript poll comes back empty before shutdown.
-    const neverCorrelated = {
-      snapshot: vi.fn(async () => new Set<string>()),
-      waitForNew: vi.fn(async () => null),
-    };
-    const first = await coordinator(root, new FakeWorker(), neverCorrelated);
+    const { instance } = await coordinator(root);
+    instance.applyProviderStatus({
+      sessionId: "session-1", status: "working", event: "SessionStart",
+      at: "2026-07-11T01:00:00.000Z", providerConversationId: "codex-early",
+      transcriptPath: "C:\\Users\\me\\.codex\\sessions\\early.jsonl",
+    });
+
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await instance.flush();
+
+    expect(instance.list()[0].providerConversationId).toBe("codex-early");
+  });
+
+  it("refuses to guess when a Codex SessionStart hook did not link a resume id", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
     await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
     await first.instance.flush();
     expect(first.instance.list()[0].providerConversationId).toBeNull();
 
-    const lateTracker = {
-      snapshot: vi.fn(async () => new Set<string>()),
-      waitForNew: vi.fn(async () => "codex-late"),
-    };
     const resumedWorker = new FakeWorker();
-    const resumed = await coordinator(root, resumedWorker, lateTracker);
+    const resumed = await coordinator(root, resumedWorker);
 
-    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
-    await resumed.instance.flush();
+    await expect(resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 }))
+      .rejects.toThrow("resume ID 연결 실패");
 
-    // No conversation id to resume, so it relaunches fresh instead of failing…
-    expect(resumedWorker.create).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "session-1", providerConversationId: null }),
-    );
-    expect(resumedWorker.create.mock.calls[0][0].args).not.toContain("resume");
-    // …and the new transcript is correlated like any fresh Codex session.
-    expect(lateTracker.snapshot).toHaveBeenCalledWith("C:\\Work");
-    expect(resumed.instance.list()[0].providerConversationId).toBe("codex-late");
+    expect(resumedWorker.create).not.toHaveBeenCalled();
   });
 
   it("exposes the persisted project and session selection after initialization", async () => {
@@ -801,6 +789,27 @@ describe("TerminalCoordinator", () => {
     consoleError.mockRestore();
   });
 
+  it("does not write resume separators until a lazy resume succeeds", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    first.worker.emit({ type: "data", sessionId: "session-1", data: "history\r\n", sequence: 1 });
+    await first.instance.flush();
+    await first.instance.shutdown();
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const brokenWorker = new FakeWorker();
+    brokenWorker.create.mockRejectedValue(new Error("spawn failed"));
+    const second = await coordinator(root, brokenWorker);
+
+    await second.instance.attachForRenderer("session-1");
+    await second.instance.attachForRenderer("session-1");
+
+    expect(brokenWorker.create).toHaveBeenCalledTimes(2);
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 5 * 1024 * 1024)).toBe("history\r\n");
+    consoleError.mockRestore();
+  });
+
   it("clears the shutdown marking once the session is resumed", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
@@ -814,27 +823,6 @@ describe("TerminalCoordinator", () => {
 
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions["session-1"].interruptedByShutdown).toBe(false);
-  });
-
-  it("aborts pending Codex correlation instead of delaying shutdown", async () => {
-    const root = await tempRoot();
-    let receivedSignal: AbortSignal | undefined;
-    const codexSessions = {
-      snapshot: vi.fn(async () => new Set<string>()),
-      waitForNew: vi.fn(
-        async (_cwd: string, _ids: ReadonlySet<string>, signal?: AbortSignal) =>
-          new Promise<null>((resolve) => {
-            receivedSignal = signal;
-            signal?.addEventListener("abort", () => resolve(null), { once: true });
-          }),
-      ),
-    };
-    const { instance } = await coordinator(root, new FakeWorker(), codexSessions);
-    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
-
-    await instance.shutdown();
-
-    expect(receivedSignal?.aborted).toBe(true);
   });
 
   it("marks and broadcasts active sessions as errors when the utility process exits", async () => {

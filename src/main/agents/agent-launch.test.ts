@@ -13,6 +13,7 @@ const context = {
   cwd: "C:\\Work Space\\Example",
   sessionId: "11111111-1111-4111-8111-111111111111",
   claudeSettingsPath: "C:\\Users\\me\\AppData\\Roaming\\Multi CLI Work\\claude-settings.json",
+  codexProfileName: "multi-cli-work",
   resumeConversationId: null,
 };
 
@@ -55,6 +56,8 @@ describe("built-in agent command lines", () => {
     expect(launch.executable).toBe(CODEX_EXE);
     expect(launch.providerConversationId).toBeNull();
     expect(launch.args).toEqual([
+      "--profile",
+      context.codexProfileName,
       "-C",
       context.cwd,
       "--dangerously-bypass-approvals-and-sandbox",
@@ -73,7 +76,7 @@ describe("built-in agent command lines", () => {
       resumeConversationId: "codex-existing",
     });
 
-    expect(launch.args.slice(0, 4)).toEqual(["resume", "codex-existing", "-C", context.cwd]);
+    expect(launch.args.slice(0, 6)).toEqual(["--profile", context.codexProfileName, "resume", "codex-existing", "-C", context.cwd]);
     expect(launch.providerConversationId).toBe("codex-existing");
   });
 
@@ -108,7 +111,7 @@ function userAgent(overrides: Partial<AgentDefinition>): AgentDefinition {
 describe("argument placeholders", () => {
   it("rejects an unknown placeholder rather than passing it through as text", () => {
     // A typo must not reach the PTY as a literal word on the command line.
-    expect(() => substituteAgentArg("{sessionid}", { cwd: "C:\\w", sessionId: "s", conversationId: null, claudeSettings: "c" })).toThrow(
+    expect(() => substituteAgentArg("{sessionid}", { cwd: "C:\\w", sessionId: "s", conversationId: null, claudeSettings: "c", codexProfile: "p" })).toThrow(
       AgentLaunchError,
     );
   });
@@ -127,7 +130,7 @@ describe("argument placeholders", () => {
 
   it("reports every placeholder a definition uses, so it can be checked before it is stored", () => {
     expect(agentArgTokens(BUILTIN_AGENTS.claude).sort()).toEqual(["claudeSettings", "conversationId", "sessionId"]);
-    expect(agentArgTokens(BUILTIN_AGENTS.codex)).toEqual(["conversationId", "cwd"]);
+    expect(agentArgTokens(BUILTIN_AGENTS.codex)).toEqual(["codexProfile", "conversationId", "cwd"]);
     expect(agentArgTokens(BUILTIN_AGENTS.powershell)).toEqual([]);
   });
 });

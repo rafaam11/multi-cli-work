@@ -5,6 +5,7 @@ export interface AgentLaunchContext {
   /** The id the app minted for this session. Also Claude's conversation id. */
   sessionId: string;
   claudeSettingsPath: string;
+  codexProfileName: string;
   /** Non-null only when an existing conversation is being resumed. */
   resumeConversationId: string | null;
 }
@@ -75,6 +76,7 @@ export function buildAgentLaunch(
     sessionId: context.sessionId,
     conversationId: context.resumeConversationId,
     claudeSettings: context.claudeSettingsPath,
+    codexProfile: context.codexProfileName,
   };
   const template = [...(resuming ? definition.resumeArgs : definition.newSessionArgs), ...definition.args];
   return {

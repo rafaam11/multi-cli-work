@@ -322,6 +322,10 @@ export interface MultiCliWorkApi {
     state(): Promise<Record<string, SessionAttention>>;
     onEvent(listener: (unread: Record<string, SessionAttention>) => void): () => void;
   };
+  navigation: {
+    /** Selects and reveals the session that originated an operating-system notification. */
+    onSessionRequested(listener: (sessionId: string) => void): () => void;
+  };
   terminals: {
     list(): Promise<TerminalSessionView[]>;
     state(): Promise<AppStateSnapshot>;

@@ -54,6 +54,7 @@ interface ReviewServiceOptions {
 export class PullRequestReviewService {
   private readonly registryOptions: ReviewRegistryOptions;
   private readonly client: GitHubClient;
+  private readonly pendingStarts = new Map<string, Promise<PullRequestReviewStartResult>>();
   constructor(private readonly options: ReviewServiceOptions) {
     this.registryOptions = options.registryPath ? { registryPath: options.registryPath } : {};
     this.client = options.client ?? new GitHubClient();
@@ -73,6 +74,18 @@ export class PullRequestReviewService {
   }
 
   async start(projectId: string, remoteName: string, prNumber: number, agent: PullRequestReviewAgent): Promise<PullRequestReviewStartResult> {
+    const key = JSON.stringify([projectId, remoteName, prNumber]);
+    const existing = this.pendingStarts.get(key);
+    if (existing) return existing;
+    const pending = this.startOnce(projectId, remoteName, prNumber, agent);
+    this.pendingStarts.set(key, pending);
+    void pending.finally(() => {
+      if (this.pendingStarts.get(key) === pending) this.pendingStarts.delete(key);
+    }).catch(() => undefined);
+    return pending;
+  }
+
+  private async startOnce(projectId: string, remoteName: string, prNumber: number, agent: PullRequestReviewAgent): Promise<PullRequestReviewStartResult> {
     const existing = (await this.list()).find((review) => review.projectId === projectId && review.remoteName === remoteName && review.pullRequestNumber === prNumber);
     if (existing) {
       const worktree = await this.requireWorktree(existing.worktreeId);

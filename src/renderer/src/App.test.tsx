@@ -211,6 +211,7 @@ function createApi(options?: {
 }) {
   const listeners = new Set<(event: TerminalEvent) => void>();
   const attentionListeners = new Set<(unread: Record<string, "input" | "approval">) => void>();
+  const navigationListeners = new Set<(sessionId: string) => void>();
   const projects = options?.projects ?? [atlas];
   const sessions = options?.sessions ?? [powershellSession, claudeSession];
   const snapshot = {
@@ -345,6 +346,12 @@ function createApi(options?: {
         return () => attentionListeners.delete(listener);
       }),
     },
+    navigation: {
+      onSessionRequested: vi.fn((listener) => {
+        navigationListeners.add(listener);
+        return () => navigationListeners.delete(listener);
+      }),
+    },
     terminals: {
       list: vi.fn().mockResolvedValue(sessions),
       state: vi.fn().mockResolvedValue(appState),
@@ -414,6 +421,9 @@ function createApi(options?: {
     },
     emitAttention(unread: Record<string, "input" | "approval">) {
       for (const listener of attentionListeners) listener(unread);
+    },
+    requestSession(sessionId: string) {
+      for (const listener of navigationListeners) listener(sessionId);
     },
   };
 }
@@ -1310,6 +1320,20 @@ describe("unread badges", () => {
 
     expect(screen.getByRole("button", { name: "Claude Code 세션 열기" })).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "응답 대기 세션 있음" })).not.toBeInTheDocument();
+  });
+});
+
+describe("notification navigation", () => {
+  it("selects and reveals the session requested by main", async () => {
+    const harness = createApi({ sessions: [powershellSession, claudeSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Claude Code 세션 열기" });
+
+    act(() => harness.requestSession(claudeSession.id));
+
+    await waitFor(() => expect(harness.api.terminals.select).toHaveBeenLastCalledWith(atlas.id, claudeSession.id));
+    expect(document.querySelector(".session-row.selected")).toHaveAttribute("aria-label", "Claude Code 세션 열기");
   });
 });
 

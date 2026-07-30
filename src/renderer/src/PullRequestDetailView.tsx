@@ -38,6 +38,7 @@ export function PullRequestDetailView({ projectId, remoteName, prNumber, onRevie
   const [diffError, setDiffError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewStarting, setReviewStarting] = useState(false);
   const [draft, setDraft] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<string,string>>({});
   const [posting, setPosting] = useState<Set<string>>(new Set());
@@ -90,6 +91,10 @@ export function PullRequestDetailView({ projectId, remoteName, prNumber, onRevie
 
   useEffect(() => { if (tab === "files" && !diff && !diffLoading) void loadDiff(false); }, [tab, diff, diffLoading, loadDiff]);
   useEffect(() => {
+    document.querySelectorAll<HTMLButtonElement>(".pr-review-actions button")
+      .forEach((button) => { button.disabled = reviewStarting; });
+  }, [reviewStarting]);
+  useEffect(() => {
     if (tab !== "files") return;
     const clamp = () => setSidebarWidth((width) => clampDiffSidebarWidth(width, splitRef.current?.clientWidth || 1000));
     clamp();
@@ -100,7 +105,7 @@ export function PullRequestDetailView({ projectId, remoteName, prNumber, onRevie
   }, [tab]);
 
   const refresh = async () => { await Promise.all([loadDetail(true), loadDiff(true)]); };
-  const startReview = async (agent: "claude" | "codex") => { setReviewError(null); try { const result = await window.multiCliWork.github.startReview(projectId, remoteName, prNumber, agent); setActiveReview(result.review); setReviewPrompt(result.prompt); onWorkspaceChanged(); onReviewOpened(result.session.id); } catch (cause) { setReviewError(message(cause)); } };
+  const startReview = async (agent: "claude" | "codex") => { if (reviewStarting) return; setReviewStarting(true); setReviewError(null); try { const result = await window.multiCliWork.github.startReview(projectId, remoteName, prNumber, agent); setActiveReview(result.review); setReviewPrompt(result.prompt); onWorkspaceChanged(); onReviewOpened(result.session.id); } catch (cause) { setReviewError(message(cause)); } finally { setReviewStarting(false); } };
   const finish = async (allowUnverifiedReview = false, discardChanges = false): Promise<void> => { if (!activeReview) return; try { const result = await window.multiCliWork.github.finishReview(activeReview.id, { allowUnverifiedReview, discardChanges }); if (result.state === "review-unverified" || result.state === "verification-unavailable") { if (window.confirm(`${result.message}\n그래도 정리하시겠습니까?`)) await finish(true, discardChanges); return; } if (result.state === "dirty") { if (window.confirm(`${result.message}\n변경을 버리고 강제 제거하시겠습니까?`)) await finish(true, true); return; } setActiveReview(null); onWorkspaceChanged(); } catch (cause) { setReviewError(message(cause)); } };
 
   const parsedFiles = useMemo(() => (diff ?? []).map((file) => parseDiffFile(file.path, file.patch, file.truncated)), [diff]);

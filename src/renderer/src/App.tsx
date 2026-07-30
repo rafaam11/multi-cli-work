@@ -567,6 +567,26 @@ export function App() {
     persistSelection(session.projectId, session.id);
   };
 
+  useEffect(
+    () =>
+      window.multiCliWork.navigation.onSessionRequested((sessionId) => {
+        const session = sessionsRef.current.find((candidate) => candidate.id === sessionId);
+        if (!session) return;
+        setSelectedProjectId(session.projectId);
+        setSelectedSessionId(session.id);
+        setSelectedWorktreeId(session.worktreeId ?? null);
+        setActiveView("terminal");
+        setActionError(null);
+        setSplitSessionId((current) => {
+          if (current !== session.id) return current;
+          void window.multiCliWork.terminals.split(null).catch((error) => setActionError(errorMessage(error)));
+          return null;
+        });
+        persistSelection(session.projectId, session.id);
+      }),
+    [persistSelection],
+  );
+
   /** A worktree behaves like a sub-folder: selecting it opens the detail page scoped to it. */
   const selectWorktree = (worktree: SharedWorktree) => {
     try { localStorage.setItem("multi-cli-work.last-workspace.v1", `worktree:${worktree.id}`); } catch { /* unavailable storage */ }

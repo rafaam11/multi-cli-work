@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { TitleSource } from "../../shared/agent-types";
@@ -10,6 +11,8 @@ export interface SessionTitleSource {
   titleSource: TitleSource;
   cwd: string;
   providerConversationId: string | null;
+  /** Exact path supplied by the provider hook. Required for Codex to avoid guessing ownership. */
+  transcriptPath?: string;
 }
 
 export interface SessionTitleOptions {
@@ -69,61 +72,115 @@ export function parseCodexTitle(transcript: string): string | null {
   return null;
 }
 
-async function readIfPresent(filePath: string): Promise<string | null> {
-  try {
-    return await fs.readFile(filePath, "utf8");
-  } catch {
-    return null;
-  }
+interface SessionTitleIo {
+  stat(filePath: string): Promise<Stats>;
+  readdir(directory: string): Promise<Dirent[]>;
+  read(filePath: string, start: number, length: number): Promise<Buffer>;
 }
 
-async function findClaudeTranscript(directory: string, cwd: string, conversationId: string): Promise<string | null> {
+const defaultIo: SessionTitleIo = {
+  stat: (filePath) => fs.stat(filePath),
+  readdir: (directory) => fs.readdir(directory, { withFileTypes: true }),
+  async read(filePath, start, length) {
+    const handle = await fs.open(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, start);
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  },
+};
+
+async function exists(io: SessionTitleIo, filePath: string): Promise<boolean> {
+  return io.stat(filePath).then((value) => value.isFile(), () => false);
+}
+
+async function findClaudeTranscript(io: SessionTitleIo, directory: string, cwd: string, conversationId: string): Promise<string | null> {
   const derived = path.join(directory, claudeProjectSlug(cwd), `${conversationId}.jsonl`);
-  if (await readIfPresent(derived).then((content) => content !== null)) return derived;
+  if (await exists(io, derived)) return derived;
   // The slug rule belongs to Claude, not to us, so a rule change should cost a directory walk
   // rather than the whole feature.
-  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  const entries = await io.readdir(directory).catch(() => []);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const candidate = path.join(directory, entry.name, `${conversationId}.jsonl`);
-    if (await readIfPresent(candidate).then((content) => content !== null)) return candidate;
+    if (await exists(io, candidate)) return candidate;
   }
   return null;
 }
 
-/** Codex file names end with the conversation id, so no transcript needs opening to find one. */
-async function findCodexTranscript(directory: string, conversationId: string): Promise<string | null> {
-  const suffix = `-${conversationId}.jsonl`;
-  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      const found = await findCodexTranscript(entryPath, conversationId);
-      if (found) return found;
-    } else if (entry.isFile() && entry.name.endsWith(suffix)) {
-      return entryPath;
+interface TranscriptReadState {
+  offset: number;
+  mtimeMs: number;
+  tail: string;
+  title: string | null;
+  resolved: boolean;
+}
+
+export class SessionTitleReader {
+  private readonly transcriptPaths = new Map<string, string>();
+  private readonly reads = new Map<string, TranscriptReadState>();
+
+  constructor(private readonly io: SessionTitleIo = defaultIo) {}
+
+  async read(session: SessionTitleSource, options: SessionTitleOptions = {}): Promise<string | null> {
+    if (session.titleSource === "none" || !session.providerConversationId) return null;
+    const baseDirectory = session.titleSource === "claude-transcript"
+      ? options.claudeProjectsDirectory ?? path.join(os.homedir(), ".claude", "projects")
+      : options.codexSessionsDirectory ?? path.join(os.homedir(), ".codex", "sessions");
+    const sourceKey = JSON.stringify([
+      session.titleSource, baseDirectory, session.cwd, session.providerConversationId,
+    ]);
+    let transcript = session.transcriptPath && path.isAbsolute(session.transcriptPath)
+      ? path.normalize(session.transcriptPath)
+      : this.transcriptPaths.get(sourceKey);
+    if (!transcript) {
+      // Codex ownership is established by SessionStart. A recursive filename match can claim an
+      // unrelated CLI launched concurrently, so an absent hook path is deliberately not guessed.
+      if (session.titleSource === "codex-transcript") return null;
+      transcript = await findClaudeTranscript(this.io, baseDirectory, session.cwd, session.providerConversationId) ?? undefined;
+      if (!transcript) return null;
+      this.transcriptPaths.set(sourceKey, transcript);
+    } else {
+      this.transcriptPaths.set(sourceKey, transcript);
     }
+
+    const previous = this.reads.get(transcript);
+    if (session.titleSource === "codex-transcript" && previous?.resolved) return previous.title;
+    let stat: Stats;
+    try {
+      stat = await this.io.stat(transcript);
+    } catch {
+      return previous?.title ?? null;
+    }
+    const unchanged = previous && previous.offset === stat.size && previous.mtimeMs === stat.mtimeMs;
+    if (unchanged) return previous.title;
+    const appendOnly = previous && stat.size >= previous.offset && stat.mtimeMs >= previous.mtimeMs;
+    const start = appendOnly ? previous.offset : 0;
+    const chunk = await this.io.read(transcript, start, Math.max(0, stat.size - start));
+    const combined = `${appendOnly ? previous.tail : ""}${chunk.toString("utf8")}`;
+    const finalNewline = Math.max(combined.lastIndexOf("\n"), combined.lastIndexOf("\r"));
+    const complete = finalNewline >= 0 ? combined.slice(0, finalNewline + 1) : "";
+    const tail = finalNewline >= 0 ? combined.slice(finalNewline + 1) : combined;
+    const parsed = session.titleSource === "claude-transcript"
+      ? parseClaudeTitle(complete)
+      : parseCodexTitle(complete);
+    const title = parsed ?? (appendOnly ? previous.title : null);
+    this.reads.set(transcript, {
+      offset: stat.size,
+      mtimeMs: stat.mtimeMs,
+      tail,
+      title,
+      resolved: session.titleSource === "codex-transcript" && title !== null,
+    });
+    return title;
   }
-  return null;
 }
 
-export async function readSessionTitle(
-  session: SessionTitleSource,
-  options: SessionTitleOptions = {},
-): Promise<string | null> {
-  if (session.titleSource === "none" || !session.providerConversationId) return null;
+const defaultReader = new SessionTitleReader();
 
-  if (session.titleSource === "claude-transcript") {
-    const directory = options.claudeProjectsDirectory ?? path.join(os.homedir(), ".claude", "projects");
-    const transcript = await findClaudeTranscript(directory, session.cwd, session.providerConversationId);
-    if (!transcript) return null;
-    const content = await readIfPresent(transcript);
-    return content === null ? null : parseClaudeTitle(content);
-  }
-
-  const directory = options.codexSessionsDirectory ?? path.join(os.homedir(), ".codex", "sessions");
-  const transcript = await findCodexTranscript(directory, session.providerConversationId);
-  if (!transcript) return null;
-  const content = await readIfPresent(transcript);
-  return content === null ? null : parseCodexTitle(content);
+export function readSessionTitle(session: SessionTitleSource, options: SessionTitleOptions = {}): Promise<string | null> {
+  return defaultReader.read(session, options);
 }

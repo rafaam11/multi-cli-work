@@ -9,6 +9,7 @@ import {
   parseClaudeTitle,
   parseCodexTitle,
   readSessionTitle,
+  SessionTitleReader,
 } from "./session-title";
 
 const roots: string[] = [];
@@ -123,7 +124,7 @@ describe("readSessionTitle", () => {
     ).resolves.toBe("찾았다");
   });
 
-  it("finds a Codex transcript by the conversation id embedded in its file name", async () => {
+  it("reads Codex only from the exact transcript path supplied by its hook", async () => {
     const root = await tempRoot();
     const directory = path.join(root, "2026", "07", "12");
     await fs.mkdir(directory, { recursive: true });
@@ -135,7 +136,7 @@ describe("readSessionTitle", () => {
 
     await expect(
       readSessionTitle(
-        { titleSource: "codex-transcript", cwd: "C:\\Work", providerConversationId: "conversation-2" },
+        { titleSource: "codex-transcript", cwd: "C:\\Work", providerConversationId: "conversation-2", transcriptPath: path.join(directory, "rollout-2026-07-12T17-34-35-conversation-2.jsonl") },
         { codexSessionsDirectory: root },
       ),
     ).resolves.toBe("첫 프롬프트");
@@ -156,5 +157,67 @@ describe("readSessionTitle", () => {
         { claudeProjectsDirectory: root },
       ),
     ).resolves.toBeNull();
+  });
+});
+
+describe("SessionTitleReader caching", () => {
+  it("caches transcript discovery and reads only the appended Claude bytes", async () => {
+    const root = await tempRoot();
+    const cwd = "C:\\Work\\Cached";
+    const directory = path.join(root, claudeProjectSlug(cwd));
+    const transcript = path.join(directory, "conversation-cache.jsonl");
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(transcript, jsonl([{ type: "ai-title", aiTitle: "첫 제목" }]));
+    const reads: Array<{ start: number; length: number }> = [];
+    let directoryReads = 0;
+    const reader = new SessionTitleReader({
+      stat: (filePath) => fs.stat(filePath),
+      readdir: async (filePath) => { directoryReads += 1; return fs.readdir(filePath, { withFileTypes: true }); },
+      read: async (filePath, start, length) => {
+        reads.push({ start, length });
+        const handle = await fs.open(filePath, "r");
+        try {
+          const buffer = Buffer.alloc(length);
+          const { bytesRead } = await handle.read(buffer, 0, length, start);
+          return buffer.subarray(0, bytesRead);
+        } finally { await handle.close(); }
+      },
+    });
+    const source = { titleSource: "claude-transcript" as const, cwd, providerConversationId: "conversation-cache" };
+
+    await expect(reader.read(source, { claudeProjectsDirectory: root })).resolves.toBe("첫 제목");
+    const firstSize = (await fs.stat(transcript)).size;
+    await fs.appendFile(transcript, jsonl([{ type: "ai-title", aiTitle: "바뀐 제목" }]));
+    await expect(reader.read(source, { claudeProjectsDirectory: root })).resolves.toBe("바뀐 제목");
+
+    expect(directoryReads).toBe(0);
+    expect(reads).toEqual([
+      { start: 0, length: firstSize },
+      { start: firstSize, length: (await fs.stat(transcript)).size - firstSize },
+    ]);
+  });
+
+  it("uses an exact Codex hook path and performs no more I/O after finding the first title", async () => {
+    const root = await tempRoot();
+    const transcript = path.join(root, "exact.jsonl");
+    await fs.writeFile(transcript, jsonl([{ type: "event_msg", payload: { type: "user_message", message: "정확한 제목" } }]));
+    let stats = 0;
+    let reads = 0;
+    const reader = new SessionTitleReader({
+      stat: async (filePath) => { stats += 1; return fs.stat(filePath); },
+      readdir: async () => { throw new Error("Codex transcript must not be guessed"); },
+      read: async (filePath, start, length) => {
+        reads += 1;
+        const content = await fs.readFile(filePath);
+        return content.subarray(start, start + length);
+      },
+    });
+    const source = { titleSource: "codex-transcript" as const, cwd: root, providerConversationId: "id", transcriptPath: transcript };
+
+    await expect(reader.read(source)).resolves.toBe("정확한 제목");
+    await expect(reader.read(source)).resolves.toBe("정확한 제목");
+
+    expect(stats).toBe(1);
+    expect(reads).toBe(1);
   });
 });

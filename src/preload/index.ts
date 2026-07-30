@@ -106,6 +106,14 @@ const api: MultiCliWorkApi = {
       return () => ipcRenderer.removeListener("attention:event", handler);
     },
   },
+  navigation: {
+    onSessionRequested(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, request: { sessionId: string }) =>
+        listener(request.sessionId);
+      ipcRenderer.on("navigation:session-requested", handler);
+      return () => ipcRenderer.removeListener("navigation:session-requested", handler);
+    },
+  },
   providers: {
     availability: () => ipcRenderer.invoke("providers:availability"),
   },

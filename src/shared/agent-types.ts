@@ -88,7 +88,7 @@ export interface AgentDefinition {
  * Placeholders an agent's arguments may contain. Anything else in braces is rejected when the
  * definition is loaded, so a typo in `agents.json` surfaces as an error instead of reaching a PTY.
  */
-export const AGENT_ARG_TOKENS = ["cwd", "sessionId", "conversationId", "claudeSettings"] as const;
+export const AGENT_ARG_TOKENS = ["cwd", "sessionId", "conversationId", "claudeSettings", "codexProfile"] as const;
 export type AgentArgToken = (typeof AGENT_ARG_TOKENS)[number];
 
 export interface AgentRegistryV1 {

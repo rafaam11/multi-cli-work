@@ -34,6 +34,24 @@ describe("provider status events", () => {
     });
   });
 
+  it("accepts exact provider ownership metadata from SessionStart", () => {
+    expect(parseProviderStatusEvent({
+      sessionId: "session-1",
+      status: "working",
+      event: "SessionStart",
+      at: "2026-07-30T00:00:00.000Z",
+      providerConversationId: "conversation-1",
+      transcriptPath: "C:\\Users\\me\\.codex\\sessions\\exact.jsonl",
+    })).toMatchObject({
+      providerConversationId: "conversation-1",
+      transcriptPath: "C:\\Users\\me\\.codex\\sessions\\exact.jsonl",
+    });
+    expect(() => parseProviderStatusEvent({
+      sessionId: "session-1", status: "working", event: "SessionStart", at: "2026-07-30T00:00:00.000Z",
+      providerConversationId: "",
+    })).toThrow(/conversation/i);
+  });
+
   it("rejects unsafe session ids and unknown states", () => {
     expect(() =>
       parseProviderStatusEvent({ sessionId: "../escape", status: "working", event: "Stop", at: "2026-07-11T00:00:00Z" }),

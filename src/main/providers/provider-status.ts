@@ -18,6 +18,8 @@ export interface ProviderStatusEvent {
   status: TerminalStatus;
   event: string;
   at: string;
+  providerConversationId?: string;
+  transcriptPath?: string;
 }
 
 export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
@@ -33,11 +35,19 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
   if (typeof record.at !== "string" || !Number.isFinite(Date.parse(record.at))) {
     throw new Error("Provider status timestamp is invalid");
   }
+  if (record.providerConversationId !== undefined && (typeof record.providerConversationId !== "string" || record.providerConversationId.length === 0)) {
+    throw new Error("Provider status conversation id is invalid");
+  }
+  if (record.transcriptPath !== undefined && (typeof record.transcriptPath !== "string" || record.transcriptPath.length === 0)) {
+    throw new Error("Provider status transcript path is invalid");
+  }
   return {
     sessionId: record.sessionId,
     status: record.status as TerminalStatus,
     event: record.event,
     at: record.at,
+    ...(typeof record.providerConversationId === "string" ? { providerConversationId: record.providerConversationId } : {}),
+    ...(typeof record.transcriptPath === "string" ? { transcriptPath: record.transcriptPath } : {}),
   };
 }
 

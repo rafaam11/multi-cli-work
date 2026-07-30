@@ -21,6 +21,7 @@ import type {
 import { buildAgentLaunch } from "../agents/agent-launch";
 import { agentExecutable, buildToolLaunch, type ProviderExecutables } from "../providers/provider-launch";
 import { cleanupProviderStatusFiles, deleteProviderStatusFile } from "../providers/provider-status";
+import type { ProviderStatusEvent } from "../providers/provider-status";
 import {
   appendSessionLog,
   deleteSessionLog,
@@ -58,6 +59,7 @@ interface TerminalCoordinatorOptions {
   logDir: string;
   statusDir?: string;
   claudeSettingsPath: string;
+  codexProfileName?: string;
   getProject(projectId: string): Promise<SharedProject | null>;
   /** Null when the worktree was removed (from the app or by hand). Absent in tests without worktrees. */
   getWorktree?(worktreeId: string): Promise<SharedWorktree | null>;
@@ -68,12 +70,8 @@ interface TerminalCoordinatorOptions {
   env: Record<string, string>;
   idFactory(): string;
   now(): string;
-  codexSessions?: {
-    snapshot(cwd: string): Promise<ReadonlySet<string>>;
-    waitForNew(cwd: string, knownIds: ReadonlySet<string>, signal?: AbortSignal): Promise<string | null>;
-  };
   /** Reads what the provider currently calls this session. Absent in tests that do not need titles. */
-  readTitle?(session: TerminalSessionView, agent: AgentDefinition): Promise<string | null>;
+  readTitle?(session: TerminalSessionView, agent: AgentDefinition, transcriptPath?: string): Promise<string | null>;
   titlePollMs?: number;
   appendLog?: typeof appendSessionLog;
   logFlushMs?: number;
@@ -117,7 +115,8 @@ export class TerminalCoordinator {
   private readonly logWrites = new Map<string, Promise<void>>();
   private readonly removedSessionIds = new Set<string>();
   private readonly pendingResumes = new Map<string, Promise<string | null>>();
-  private readonly codexCorrelationAbort = new AbortController();
+  private readonly transcriptPaths = new Map<string, string>();
+  private readonly pendingProviderStarts = new Map<string, ProviderStatusEvent>();
   private eventChain: Promise<void> = Promise.resolve();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -189,13 +188,16 @@ export class TerminalCoordinator {
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
-    // An agent that owns no conversation (a plain shell) resumes by relaunching. An app-generated
-    // id (Claude) exists from the first launch, so its absence is a broken record and an error. A
-    // provider-assigned id (Codex) is missing whenever the transcript was never correlated — that
-    // session relaunches as a fresh conversation and launch() correlates the new transcript.
+    // An agent that owns no conversation (a plain shell) resumes by relaunching. Every agent with
+    // a conversation must have an exact id; silently starting a new Codex conversation here would
+    // hide a rejected/unsupported SessionStart hook and attach the tab to the wrong history.
     const agent = this.requireAgent(saved.kind);
-    if (agent.conversationId === "app-generated" && !saved.providerConversationId) {
-      throw new Error(`${saved.kind} session does not have a resumable conversation id`);
+    if (agent.conversationId !== "none" && !saved.providerConversationId) {
+      throw new Error(
+        agent.conversationId === "provider-assigned"
+          ? "Codex resume ID 연결 실패: SessionStart hook을 /hooks에서 허용한 뒤 새 세션을 시작하세요."
+          : `${saved.kind} session does not have a resumable conversation id`,
+      );
     }
     // Folder sessions re-read the project so a relinked folder resumes at its new root; a worktree
     // session re-reads its worktree the same way — and refuses if the worktree is gone, because
@@ -270,21 +272,23 @@ export class TerminalCoordinator {
     if (pending) return pending;
     const attempt = (async () => {
       try {
-        const appendLog = this.options.appendLog ?? appendSessionLog;
-        await appendLog(
-          this.options.logDir,
-          sessionId,
-          resumeSeparatorText(this.options.now()),
-          MAX_LOG_BYTES,
-          LOG_TRIM_SLACK_BYTES,
-        );
-        // Read before the new PTY's first output can reach the log, so nothing replays twice.
+        // Snapshot the old scrollback before the replacement PTY can emit output. The separator is
+        // committed only after create() succeeds, so failed retries leave the durable log intact.
         const replay = await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES);
         await this.resume(
           { sessionId, cols: AUTO_RESUME_COLS, rows: AUTO_RESUME_ROWS },
           { updateSelection: false },
         );
-        return replay;
+        const appendLog = this.options.appendLog ?? appendSessionLog;
+        const separator = resumeSeparatorText(this.options.now());
+        await appendLog(
+          this.options.logDir,
+          sessionId,
+          separator,
+          MAX_LOG_BYTES,
+          LOG_TRIM_SLACK_BYTES,
+        );
+        return replay + separator;
       } catch (error) {
         // The marking stays, so the next attach — or the manual resume button — can retry.
         this.reportAsyncError("Lazy auto-resume failed", error);
@@ -347,6 +351,7 @@ export class TerminalCoordinator {
     if (!view) return;
     this.removedSessionIds.add(sessionId);
     this.views.delete(sessionId);
+    this.pendingProviderStarts.delete(sessionId);
     this.dropPendingLog(sessionId);
     if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
     await this.logWrites.get(sessionId)?.catch(() => undefined);
@@ -423,19 +428,50 @@ export class TerminalCoordinator {
     return () => this.subscribers.delete(listener);
   }
 
-  /** Status written by an agent's own hook. Only a hook-driven agent has one to write. */
-  applyProviderStatus(sessionId: string, status: TerminalStatus): void {
-    const view = this.views.get(sessionId);
+  /** Structured provider hook event. The two-argument form remains for older callers/tests. */
+  applyProviderStatus(event: ProviderStatusEvent): void;
+  applyProviderStatus(sessionId: string, status: TerminalStatus): void;
+  applyProviderStatus(eventOrSessionId: ProviderStatusEvent | string, legacyStatus?: TerminalStatus): void {
+    const event: ProviderStatusEvent = typeof eventOrSessionId === "string"
+      ? { sessionId: eventOrSessionId, status: legacyStatus!, event: "legacy", at: this.options.now() }
+      : eventOrSessionId;
+    const view = this.views.get(event.sessionId);
+    if (!view && typeof eventOrSessionId !== "string" && event.event === "SessionStart" && event.providerConversationId) {
+      this.pendingProviderStarts.set(event.sessionId, event);
+      return;
+    }
+    const agent = view ? this.options.getAgent(view.kind) : null;
+    const ownsCodexSession = agent?.conversationId === "provider-assigned" && event.event === "SessionStart";
     if (
-      !view ||
-      this.options.getAgent(view.kind)?.statusAdapter !== "claude-hook" ||
-      view.pid === null ||
-      status === "exited" ||
-      status === "error" ||
-      view.status === "exited" ||
-      view.status === "error"
+      !view || !agent || (!ownsCodexSession && agent.statusAdapter !== "claude-hook") || view.pid === null ||
+      event.status === "exited" || event.status === "error" || view.status === "exited" || view.status === "error"
     ) return;
-    this.enqueueEvent(() => this.handleWorkerEvent({ type: "status", sessionId, status }));
+    this.enqueueEvent(async () => {
+      const current = this.views.get(event.sessionId);
+      if (!current || current.pid === null || current.status === "exited" || current.status === "error") return;
+      let metadataChanged = false;
+      if (ownsCodexSession && event.providerConversationId) {
+        if (current.providerConversationId && current.providerConversationId !== event.providerConversationId) {
+          this.reportAsyncError("Codex SessionStart id did not match the resumed conversation", new Error(event.providerConversationId));
+          return;
+        }
+        if (!current.providerConversationId) {
+          current.providerConversationId = event.providerConversationId;
+          metadataChanged = true;
+        }
+        if (event.transcriptPath && this.transcriptPaths.get(current.id) !== event.transcriptPath) {
+          this.transcriptPaths.set(current.id, event.transcriptPath);
+          metadataChanged = true;
+        }
+      }
+      const statusChanged = current.status !== event.status;
+      if (!metadataChanged && !statusChanged) return;
+      if (statusChanged) current.status = event.status;
+      current.updatedAt = this.options.now();
+      await this.persistView(current);
+      if (metadataChanged) this.publish({ type: "created", sessionId: current.id, session: { ...current } });
+      if (statusChanged) this.publish({ type: "status", sessionId: current.id, status: event.status });
+    });
   }
 
   async flush(includeBackgroundTasks = true): Promise<void> {
@@ -451,7 +487,6 @@ export class TerminalCoordinator {
   }
 
   async shutdown(): Promise<void> {
-    this.codexCorrelationAbort.abort();
     this.stopTitlePolling();
     const active = this.list().filter(
       (session) => session.pid !== null && session.status !== "exited" && session.status !== "error",
@@ -484,12 +519,6 @@ export class TerminalCoordinator {
     updateSelection?: boolean;
   }): Promise<TerminalSessionView> {
     const agent = this.requireAgent(input.kind);
-    // Codex mints its own conversation id, so the transcripts that already exist have to be noted
-    // before it starts — whatever appears afterwards is this session's.
-    const knownCodexIds =
-      agent.conversationId === "provider-assigned" && !input.resumeConversationId && this.options.codexSessions
-        ? await this.options.codexSessions.snapshot(input.cwd).catch(() => new Set<string>())
-        : null;
     const executables = await this.options.getExecutables();
     const command = input.tool
       ? buildToolLaunch(input.tool, executables)
@@ -497,6 +526,7 @@ export class TerminalCoordinator {
           cwd: input.cwd,
           sessionId: input.sessionId,
           claudeSettingsPath: this.options.claudeSettingsPath,
+          codexProfileName: this.options.codexProfileName ?? "multi-cli-work",
           resumeConversationId: input.resumeConversationId,
         });
     const session = await this.options.worker.create({
@@ -530,10 +560,12 @@ export class TerminalCoordinator {
         ? state
         : { ...state, selectedProjectId: view.projectId, selectedSessionId: view.id },
     );
-    if (knownCodexIds && this.options.codexSessions) {
-      this.correlateCodexConversation(view.id, view.cwd, knownCodexIds);
-    }
     this.publish({ type: "created", sessionId: view.id, session: { ...view } });
+    const pendingProviderStart = this.pendingProviderStarts.get(view.id);
+    if (pendingProviderStart) {
+      this.pendingProviderStarts.delete(view.id);
+      this.applyProviderStatus(pendingProviderStart);
+    }
     this.startTitlePolling();
     return { ...view };
   }
@@ -582,6 +614,7 @@ export class TerminalCoordinator {
     return this.list().flatMap((session) => {
       const agent = this.options.getAgent(session.kind);
       if (!agent || agent.titleSource === "none") return [];
+      if (agent.titleSource === "codex-transcript" && session.title !== null) return [];
       if (session.pid === null || session.status === "exited" || session.status === "error") return [];
       return [{ session, agent }];
     });
@@ -598,7 +631,7 @@ export class TerminalCoordinator {
     for (const { session: candidate, agent } of candidates) {
       let title: string | null;
       try {
-        title = await readTitle(candidate, agent);
+        title = await readTitle(candidate, agent, this.transcriptPaths.get(candidate.id));
       } catch (error) {
         this.reportAsyncError("Session title read failed", error);
         continue;
@@ -622,27 +655,6 @@ export class TerminalCoordinator {
     view.updatedAt = this.options.now();
     await this.persistView(view);
     return { ...view };
-  }
-
-  private correlateCodexConversation(sessionId: string, cwd: string, knownIds: ReadonlySet<string>): void {
-    const tracker = this.options.codexSessions;
-    if (!tracker) return;
-    const task = tracker
-      .waitForNew(cwd, knownIds, this.codexCorrelationAbort.signal)
-      .then(async (conversationId) => {
-        if (!conversationId) return;
-        const view = this.views.get(sessionId);
-        if (!view || this.options.getAgent(view.kind)?.conversationId !== "provider-assigned") return;
-        if (view.providerConversationId) return;
-        view.providerConversationId = conversationId;
-        view.updatedAt = this.options.now();
-        await this.persistView(view);
-      })
-      .catch((error) => {
-        console.error("Codex session correlation failed", error);
-      });
-    this.backgroundTasks.add(task);
-    void task.finally(() => this.backgroundTasks.delete(task));
   }
 
   private async persistView(view: TerminalSessionView, transform: (state: AppStateV1) => AppStateV1 = (state) => state) {
