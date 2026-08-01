@@ -62,6 +62,9 @@ export function TerminalPane({
     let resizeTimer: number | undefined;
     const pendingOutput: Array<{ data: string; sequence: number }> = [];
     const outputFilter = createTerminalOutputFilter();
+    const reportError = (error: unknown) => {
+      if (!disposed) onErrorRef.current(getErrorMessage(error));
+    };
     const terminal = new Terminal({
       allowTransparency: false,
       cursorBlink: false,
@@ -69,6 +72,15 @@ export function TerminalPane({
       fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
       fontSize: 13,
       lineHeight: 1.25,
+      // Without a handler, xterm confirms the click and then calls window.open(), which
+      // secureBrowserWindow() denies, so the link never opens. Hand the URL to the OS browser
+      // through the main process instead. allowNonHttpProtocols stays off, so only http(s) links
+      // are linkified at all, and the main process validates the scheme again.
+      linkHandler: {
+        activate: (_event, uri) => {
+          void window.multiCliWork.shell.openExternal(uri).catch(reportError);
+        },
+      },
       scrollback: 10_000,
       theme: {
         background: "#161918",
@@ -98,9 +110,6 @@ export function TerminalPane({
     terminal.loadAddon(fitAddon);
     terminal.open(host);
 
-    const reportError = (error: unknown) => {
-      if (!disposed) onErrorRef.current(getErrorMessage(error));
-    };
     const writeOutput = (data: string) => {
       const filtered = outputFilter.write(data);
       if (filtered) terminal.write(filtered);
@@ -206,6 +215,14 @@ export function TerminalPane({
     });
     const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(host);
+
+    // The replay is the PTY's own output, stored at the width the PTY wrote it. A terminal still on
+    // xterm's 80x24 default re-wraps every one of those lines — padded ones fold into blank lines —
+    // and the later fit cannot fully undo it. Size this terminal, and the PTY, before asking for it.
+    // The replay is the PTY's own output, stored at the width the PTY wrote it. A terminal still on
+    // xterm's 80x24 default re-wraps every one of those lines — padded ones fold into blank lines —
+    // and the later fit cannot fully undo it. Size this terminal, and the PTY, before asking for it.
+    resize();
 
     const attachment = refreshing
       ? window.multiCliWork.terminals.refresh(session.id)
