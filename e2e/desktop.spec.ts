@@ -608,6 +608,74 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.locator(".split-secondary")).toBeHidden();
   });
 
+  /**
+   * Leaving the terminal view unmounts the pane, so coming back builds a fresh xterm and replays the
+   * PTY's stored scrollback into it. That replay was produced at the PTY's own width, so a terminal
+   * still on xterm's 80x24 default re-wraps every line of it — lines padded toward the right edge,
+   * which is what a full-screen CLI like Codex draws, fold into extra blank lines. The scrollback
+   * has to survive the round trip unchanged.
+   */
+  test("@smoke keeps terminal scrollback intact after leaving the session and coming back", async () => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
+    await expect(terminal).toBeVisible();
+    await terminal.click();
+
+    // Absolute column addressing (CHA) is what a full-screen CLI uses to draw at a fixed position.
+    // A terminal narrower than the target column clamps it, so replaying this into a terminal still
+    // on xterm's 80x24 default puts the text somewhere else entirely — and unlike a plain re-wrap,
+    // no later reflow can move it back. The marker is split in the source so the echoed command
+    // line does not contain it.
+    await page.keyboard.type(
+      shellCommand(
+        `[Console]::Write([char]27 + "[90G" + ("MCW" + "COL") + [char]10)`,
+        `printf '\\033[90G%s%s\\n' MCW COL`,
+      ),
+    );
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows").first()).toContainText("MCWCOL");
+
+    const markerColumn = () =>
+      page
+        .locator(".xterm-rows")
+        .first()
+        .evaluate((element) => {
+          const row = Array.from(element.children)
+            .map((element) => (element.textContent ?? "").replace(/ /g, " "))
+            .find((text) => text.includes("MCWCOL"));
+          return row === undefined ? -1 : row.indexOf("MCWCOL");
+        });
+
+    // Column 90, one-based, is index 89 — as long as the terminal really is that wide.
+    await expect.poll(markerColumn).toBe(89);
+
+    await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
+    await expect(page.getByRole("region", { name: "홈 대시보드" })).toBeVisible();
+    await expect(terminal).toBeHidden();
+
+    await page
+      .getByRole("button", { name: new RegExp(`^${SHELL_LABEL}( \\d+)? 세션 열기$`) })
+      .last()
+      .click();
+    await expect(terminal).toBeVisible();
+    await expect(page.locator(".xterm-rows").first()).toContainText("MCWCOL");
+
+    // Not expect.poll: the point is that the replay lands correctly the first time. A late reflow
+    // can repair a plain re-wrap seconds later, but it never moves absolutely-addressed text back,
+    // and waiting for it would hide the regression this test exists for.
+    expect(await markerColumn()).toBe(89);
+
+    // Leave no live PTY behind: app.close() follows the before-quit path, where the product's
+    // native destructive-quit confirmation would block the afterAll hook.
+    await terminal.click();
+    await page.keyboard.type("exit");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".active-status")).toHaveText("종료됨");
+    await page.getByRole("button", { name: "세션 제거" }).click();
+  });
+
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
     const projectRoot = path.join(tempRoot, "sample-project");
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
