@@ -1,7 +1,9 @@
 // @vitest-environment node
 
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildClaudeSettings,
@@ -9,6 +11,8 @@ import {
   CLAUDE_STATUS_HOOK_PYTHON,
   ensureClaudeIntegration,
 } from "./claude-integration";
+
+const execFileAsync = promisify(execFile);
 
 const roots: string[] = [];
 
@@ -79,6 +83,46 @@ describe("Claude app-owned integration", () => {
     expect(CLAUDE_STATUS_HOOK).toContain('"StopFailure" { "awaiting-input"; break }');
     expect(CLAUDE_STATUS_HOOK).not.toContain('"StopFailure" { "error"; break }');
   });
+
+  it("hands the work-project brief to Claude on SessionStart in both hook scripts", () => {
+    for (const script of [CLAUDE_STATUS_HOOK, CLAUDE_STATUS_HOOK_PYTHON]) {
+      expect(script).toContain("MULTI_CLI_WORK_PROJECT_BRIEF");
+      expect(script).toContain("additionalContext");
+      expect(script).toContain("SessionStart");
+    }
+  });
+
+  it("emits additionalContext JSON on stdout when the hook runs a SessionStart with a brief", async () => {
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-hook-"));
+    roots.push(root);
+    const integration = await ensureClaudeIntegration(root, process.platform);
+    const briefPath = path.join(root, "brief.md");
+    await fs.writeFile(briefPath, "# 업무 프로젝트: 테스트\n- 노션: https://notion.so/x\n", "utf8");
+    const statusDir = path.join(root, "status");
+
+    const command = process.platform === "win32" ? "powershell.exe" : "python3";
+    const args =
+      process.platform === "win32"
+        ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", integration.hookPath]
+        : [integration.hookPath];
+    const child = execFileAsync(command, args, {
+      env: {
+        ...process.env,
+        MULTI_CLI_WORK_SESSION_ID: "session-brief-test",
+        MULTI_CLI_WORK_STATUS_DIR: statusDir,
+        MULTI_CLI_WORK_PROJECT_BRIEF: briefPath,
+      },
+    });
+    child.child.stdin?.end(JSON.stringify({ hook_event_name: "SessionStart" }));
+    const { stdout } = await child;
+
+    const output = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    expect(output.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(output.hookSpecificOutput.additionalContext).toContain("업무 프로젝트: 테스트");
+    // The status file write must keep working alongside the context output.
+    const status = JSON.parse(await fs.readFile(path.join(statusDir, "session-brief-test.json"), "utf8"));
+    expect(status).toMatchObject({ sessionId: "session-brief-test", status: "idle", event: "SessionStart" });
+  }, 20_000);
 
   it("writes an executable Python hook on Linux", async () => {
     const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-linux-"));

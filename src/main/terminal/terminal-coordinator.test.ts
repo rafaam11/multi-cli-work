@@ -146,6 +146,75 @@ describe("TerminalCoordinator", () => {
     expect(stored.state.sessions["session-1"].providerConversationId).toBe("session-1");
   });
 
+  it("forwards the work-project brief path in the session environment when the folder has one", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const getWorkProjectBrief = vi.fn(async (projectId: string) =>
+      projectId === project.id ? path.join(root, "project-briefs", "wp-1.md") : null,
+    );
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async (id) => (id === project.id ? project : null),
+      getWorkProjectBrief,
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: "code.cmd",
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: { SYSTEMROOT: "C:\\Windows" },
+      idFactory: () => "session-1",
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 90, rows: 30 });
+
+    expect(getWorkProjectBrief).toHaveBeenCalledWith(project.id);
+    expect(worker.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({
+          MULTI_CLI_WORK_PROJECT_BRIEF: path.join(root, "project-briefs", "wp-1.md"),
+        }),
+      }),
+    );
+  });
+
+  it("launches without the brief variable when the folder is 미분류 or the brief fails", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const instance = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async (id) => (id === project.id ? project : null),
+      getWorkProjectBrief: async () => {
+        throw new Error("registry unreadable");
+      },
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: "code.cmd",
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: { SYSTEMROOT: "C:\\Windows" },
+      idFactory: () => "session-1",
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 90, rows: 30 });
+
+    const spec = worker.create.mock.calls[0][0];
+    expect(spec.env).not.toHaveProperty("MULTI_CLI_WORK_PROJECT_BRIEF");
+  });
+
   it("runs a maintenance session in the home directory with no folder attached", async () => {
     const root = await tempRoot();
     const getProject = vi.fn(async () => project);

@@ -4,6 +4,7 @@ import type { AppStateSnapshot } from "@shared/app-state-types";
 import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
 import type { FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
+import type { WorkProjectRegistryV1 } from "@shared/work-project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -243,6 +244,12 @@ function createApi(options?: {
     },
   };
 
+  const emptyWorkProjectRegistry: WorkProjectRegistryV1 = {
+    schemaVersion: 1,
+    updatedAt: "2026-07-11T04:00:00.000Z",
+    teamsSyncRoot: null,
+    workProjects: {},
+  };
   const api: MultiCliWorkApi = {
     platform: "win32",
     projects: {
@@ -258,6 +265,18 @@ function createApi(options?: {
       openOnGitHub: vi.fn().mockResolvedValue(undefined),
       gitStatus: vi.fn().mockResolvedValue({ isRepo: true, branch: "main", changedFileCount: 0 }),
       gitDiff: vi.fn().mockResolvedValue({ isRepo: true, diff: "", untracked: [], truncated: false }),
+    },
+    workProjects: {
+      list: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      create: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      update: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      remove: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      addMember: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      removeMember: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      reorder: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      addMemberFolder: vi.fn().mockResolvedValue(null),
+      chooseTeamsSyncRoot: vi.fn().mockResolvedValue(null),
+      clearTeamsSyncRoot: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
     },
     worktrees: {
       list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
@@ -519,7 +538,7 @@ describe("folder workspace", () => {
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
     expect(harness.api.projects.list).toHaveBeenCalledOnce();
 
-    const refreshButton = screen.getByRole("button", { name: "폴더 새로고침" });
+    const refreshButton = screen.getByRole("button", { name: "목록 새로고침" });
     fireEvent.click(refreshButton);
     expect(refreshButton).toBeDisabled();
 
@@ -548,7 +567,7 @@ describe("folder workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dashboard 폴더 선택" }));
     fireEvent.click(await screen.findByRole("button", { name: "PowerShell 세션 열기" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "폴더 새로고침" }));
+    fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
     await waitFor(() => expect(harness.api.projects.list).toHaveBeenCalledTimes(2));
 
     expect(screen.getByRole("button", { name: "Dashboard 폴더 선택" }).closest(".project-row")).toHaveClass(
@@ -567,7 +586,7 @@ describe("folder workspace", () => {
     expect(screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")).toHaveClass("selected");
 
     vi.mocked(harness.api.projects.list).mockResolvedValueOnce(registry([dashboard]));
-    fireEvent.click(screen.getByRole("button", { name: "폴더 새로고침" }));
+    fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
 
     await waitFor(() => expect(harness.api.projects.list).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("button", { name: "Atlas 폴더 선택" })).not.toBeInTheDocument();
@@ -876,7 +895,7 @@ describe("folder workspace", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    await screen.findByText("아직 폴더가 없습니다");
+    await screen.findByText("아직 프로젝트가 없습니다");
     fireEvent.click(screen.getByRole("button", { name: "도구" }));
 
     // Codex is absent in this harness, so its update must not be offered.
@@ -1186,7 +1205,7 @@ describe("folder workspace", () => {
     window.multiCliWork = emptyHarness.api;
     const view = render(<App />);
 
-    expect(await screen.findByText("아직 폴더가 없습니다")).toBeInTheDocument();
+    expect(await screen.findByText("아직 프로젝트가 없습니다")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Registry backup is in use.");
 
     view.unmount();

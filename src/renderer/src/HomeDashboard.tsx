@@ -2,7 +2,8 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
-import { Clock, Info, Wrench } from "lucide-react";
+import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
+import { Briefcase, Clock, Info, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, agentAccentClass } from "./brand-icons";
 import {
@@ -63,24 +64,38 @@ function quickLaunchProjects(projects: SharedProject[], sessions: TerminalSessio
     .slice(0, QUICK_LAUNCH_LIMIT);
 }
 
+const ACTIVE_SESSION_STATUSES = new Set<TerminalStatus>([
+  "starting",
+  "working",
+  "awaiting-input",
+  "awaiting-approval",
+  "idle",
+]);
+
 interface HomeDashboardProps {
   projects: SharedProject[];
+  workProjects: WorkProject[];
+  projectMembership: Record<string, { workProjectId: string; role: WorkProjectRole }>;
   sessions: TerminalSessionView[];
   agents: AgentView[];
   activityLog: ActivityEntry[];
   pendingAction: boolean;
   onSelectSession(session: TerminalSessionView): void;
+  onSelectWorkProject(workProjectId: string): void;
   onStartSession(project: SharedProject, kind: TerminalKind): void;
   onStartTool(tool: ToolCommand): void;
 }
 
 export function HomeDashboard({
   projects,
+  workProjects,
+  projectMembership,
   sessions,
   agents,
   activityLog,
   pendingAction,
   onSelectSession,
+  onSelectWorkProject,
   onStartSession,
   onStartTool,
 }: HomeDashboardProps) {
@@ -103,6 +118,46 @@ export function HomeDashboard({
   return (
     <section className="home-dashboard" aria-label="홈 대시보드">
       <div className="home-grid">
+        {workProjects.length > 0 ? (
+          <section className="home-card home-card-work-projects" aria-label="업무 프로젝트">
+            <h2>프로젝트</h2>
+            <ul className="work-project-card-list">
+              {workProjects.map((workProject) => {
+                const memberIds = new Set(
+                  projects
+                    .filter((project) => projectMembership[project.id]?.workProjectId === workProject.id)
+                    .map((project) => project.id),
+                );
+                const activeSessionCount = sessions.filter(
+                  (session) =>
+                    session.projectId !== null &&
+                    memberIds.has(session.projectId) &&
+                    ACTIVE_SESSION_STATUSES.has(session.status),
+                ).length;
+                return (
+                  <li key={workProject.id}>
+                    <button
+                      type="button"
+                      className="work-project-card"
+                      onClick={() => onSelectWorkProject(workProject.id)}
+                      aria-label={`${workProject.name} 프로젝트 열기`}
+                    >
+                      <Briefcase size={14} aria-hidden="true" />
+                      <span className="work-project-card-copy">
+                        <span className="work-project-card-name">{workProject.name}</span>
+                        <span className="work-project-card-meta">
+                          {workProject.category}
+                          {workProject.status ? ` · ${workProject.status}` : ""} · 폴더 {memberIds.size}개 · 활성 세션{" "}
+                          {activeSessionCount}개
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
         <section className="home-card home-card-monitor" aria-label="세션 모니터">
           <h2>세션 모니터</h2>
           {monitored.length === 0 ? (

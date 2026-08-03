@@ -26,6 +26,7 @@ import type {
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "../shared/github-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
+import type { WorkProjectRegistryV1, WorkProjectRole } from "../shared/work-project-types";
 import type {
   SharedWorktree,
   WorktreeCreateOptions,
@@ -35,6 +36,7 @@ import type {
 } from "../shared/worktree-types";
 import type { ToolCommand } from "../shared/terminal-types";
 import type { ProjectMetadataUpdate } from "./projects/project-service";
+import type { WorkProjectMetadataUpdate } from "./projects/work-project-service";
 
 export interface IpcRegistrar {
   handle(channel: string, listener: (event: unknown, ...args: any[]) => unknown): void;
@@ -47,6 +49,17 @@ interface ProjectServiceGateway {
   reorderProjects(orderedIds: readonly string[]): Promise<ProjectRegistryV1>;
   removeProject(projectId: string): Promise<ProjectRegistryV1>;
   relinkProject(projectId: string, rootPath: string): Promise<ProjectRegistryV1>;
+}
+
+interface WorkProjectServiceGateway {
+  createWorkProject(input: { name: string; category?: string }): Promise<WorkProjectRegistryV1>;
+  updateWorkProjectMetadata(workProjectId: string, update: WorkProjectMetadataUpdate): Promise<WorkProjectRegistryV1>;
+  removeWorkProject(workProjectId: string): Promise<WorkProjectRegistryV1>;
+  addMember(workProjectId: string, projectId: string, role: WorkProjectRole): Promise<WorkProjectRegistryV1>;
+  removeMember(workProjectId: string, projectId: string): Promise<WorkProjectRegistryV1>;
+  removeProjectReferences(projectId: string): Promise<WorkProjectRegistryV1>;
+  reorderWorkProjects(orderedIds: readonly string[]): Promise<WorkProjectRegistryV1>;
+  setTeamsSyncRoot(rootPath: string | null): Promise<WorkProjectRegistryV1>;
 }
 
 interface TerminalCoordinatorGateway {
@@ -163,6 +176,8 @@ interface ClipboardGateway {
 
 interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
+  workProjectService: WorkProjectServiceGateway;
+  readWorkProjectRegistry(): Promise<WorkProjectRegistryV1>;
   coordinator: TerminalCoordinatorGateway;
   updater: UpdaterGateway;
   projectActions: ProjectActionsGateway;
@@ -177,7 +192,7 @@ interface MainIpcDependencies {
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
-  chooseDirectory(): Promise<string | null>;
+  chooseDirectory(defaultPath?: string): Promise<string | null>;
   getAvailability(): Promise<ProviderAvailability>;
   listAgents(): Promise<AgentsSnapshot>;
   editAgents(): Promise<void>;
@@ -261,6 +276,20 @@ function validateProjectPatch(value: unknown): ProjectMetadataPatch {
     "Project metadata patch",
   );
   return patch as ProjectMetadataPatch;
+}
+
+function validateWorkProjectPatch(value: unknown): WorkProjectMetadataUpdate {
+  const patch = exactObject(
+    value,
+    ["name", "category", "status", "memo", "notionUrl", "order"],
+    "Work project patch",
+  );
+  return patch as WorkProjectMetadataUpdate;
+}
+
+function memberRole(value: unknown): WorkProjectRole {
+  if (value !== "repo" && value !== "docs") throw new Error("Member role must be 'repo' or 'docs'");
+  return value;
 }
 
 function validateFileExplorerTarget(value: unknown): FileExplorerTarget {
@@ -448,6 +477,9 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     // any surviving PTY with no UI left to reach it.
     await dependencies.coordinator.removeProjectSessions(id);
     await dependencies.projectService.removeProject(id);
+    // Work projects last: a dangling member is harmless (ignored on read) while a half-removed
+    // project is not, so the ordering favors the registry that owns the folder.
+    await dependencies.workProjectService.removeProjectReferences(id);
     return workspaceSnapshot();
   });
   ipc.handle("projects:restore-backup", async () => {
@@ -475,6 +507,72 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("projects:git-diff", async (_event, projectId: unknown) =>
     dependencies.projectActions.gitDiff(await projectRoot(nonEmptyString(projectId, "Project id"))),
   );
+
+  ipc.handle("work-projects:list", () => dependencies.readWorkProjectRegistry());
+  ipc.handle("work-projects:create", async (_event, input: unknown) => {
+    const parsed = exactObject(input, ["name", "category"], "Work project create input");
+    return dependencies.workProjectService.createWorkProject({
+      name: nonEmptyString(parsed.name, "Work project name"),
+      ...(parsed.category !== undefined ? { category: nonEmptyString(parsed.category, "Work project category") } : {}),
+    });
+  });
+  ipc.handle("work-projects:update", async (_event, workProjectId: unknown, patch: unknown) =>
+    dependencies.workProjectService.updateWorkProjectMetadata(
+      nonEmptyString(workProjectId, "Work project id"),
+      validateWorkProjectPatch(patch),
+    ),
+  );
+  ipc.handle("work-projects:remove", async (_event, workProjectId: unknown) =>
+    dependencies.workProjectService.removeWorkProject(nonEmptyString(workProjectId, "Work project id")),
+  );
+  ipc.handle("work-projects:add-member", async (_event, workProjectId: unknown, projectId: unknown, role: unknown) =>
+    dependencies.workProjectService.addMember(
+      nonEmptyString(workProjectId, "Work project id"),
+      nonEmptyString(projectId, "Project id"),
+      memberRole(role),
+    ),
+  );
+  ipc.handle("work-projects:remove-member", async (_event, workProjectId: unknown, projectId: unknown) =>
+    dependencies.workProjectService.removeMember(
+      nonEmptyString(workProjectId, "Work project id"),
+      nonEmptyString(projectId, "Project id"),
+    ),
+  );
+  ipc.handle("work-projects:reorder", async (_event, orderedIds: unknown) => {
+    if (!Array.isArray(orderedIds)) throw new Error("Work project order must be an array of ids");
+    return dependencies.workProjectService.reorderWorkProjects(
+      orderedIds.map((id) => nonEmptyString(id, "Work project id")),
+    );
+  });
+  // One step for "add a repo/Teams folder to this work project": dialog → register → membership.
+  // The docs picker starts at the Teams sync root so the user lands in the right OneDrive tree.
+  ipc.handle("work-projects:add-member-folder", async (_event, workProjectId: unknown, role: unknown) => {
+    const id = nonEmptyString(workProjectId, "Work project id");
+    const memberRoleValue = memberRole(role);
+    const teamsRoot = (await dependencies.readWorkProjectRegistry()).teamsSyncRoot;
+    const rootPath = await dependencies.chooseDirectory(
+      memberRoleValue === "docs" && teamsRoot ? teamsRoot : undefined,
+    );
+    if (!rootPath) return null;
+    // Same guard as projects:add-folder — a linked worktree directory belongs to its project and
+    // must not be registered as a second folder entry.
+    const current = await dependencies.readRegistry();
+    const owner = await dependencies.worktrees.ownerForPath(rootPath, Object.values(current.registry.projects));
+    const project = owner
+      ? selectedProject(current.registry, owner.projectId)
+      : projectForPath(
+          await dependencies.projectService.registerManualFolder(rootPath, path.basename(rootPath)),
+          rootPath,
+        );
+    const workProjects = await dependencies.workProjectService.addMember(id, project.id, memberRoleValue);
+    return { project, workProjects };
+  });
+  ipc.handle("work-projects:choose-teams-root", async () => {
+    const rootPath = await dependencies.chooseDirectory();
+    if (!rootPath) return null;
+    return dependencies.workProjectService.setTeamsSyncRoot(rootPath);
+  });
+  ipc.handle("work-projects:clear-teams-root", () => dependencies.workProjectService.setTeamsSyncRoot(null));
 
   const worktreePath = async (worktreeId: unknown) => {
     const id = nonEmptyString(worktreeId, "Worktree id");

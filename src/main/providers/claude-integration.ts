@@ -76,6 +76,22 @@ try {
   [IO.File]::WriteAllText($temp, ($payload | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
   Move-Item -LiteralPath $temp -Destination $target -Force
 } catch { }
+
+# On SessionStart, hand the work-project brief to Claude as additional context. The app sets
+# MULTI_CLI_WORK_PROJECT_BRIEF only for sessions whose folder belongs to a work project; any
+# failure here degrades to a session without context, never to a failed hook (exit stays 0).
+if ($eventName -eq "SessionStart") {
+  $briefPath = $env:MULTI_CLI_WORK_PROJECT_BRIEF
+  if (-not [string]::IsNullOrWhiteSpace($briefPath)) {
+    try {
+      $brief = [IO.File]::ReadAllText($briefPath, [Text.UTF8Encoding]::new($false))
+      if (-not [string]::IsNullOrWhiteSpace($brief)) {
+        $hookOutput = @{ hookSpecificOutput = @{ hookEventName = "SessionStart"; additionalContext = $brief } }
+        [Console]::Out.Write(($hookOutput | ConvertTo-Json -Compress -Depth 4))
+      }
+    } catch { }
+  }
+}
 exit 0
 `;
 
@@ -105,6 +121,16 @@ try:
     with os.fdopen(fd, "w", encoding="utf-8") as output: json.dump(payload, output, separators=(",", ":"))
     os.replace(temporary, target)
 except Exception: pass
+# On SessionStart, hand the work-project brief to Claude as additional context. Failures degrade
+# to a session without context, never to a failed hook.
+if event == "SessionStart":
+    brief_path = os.environ.get("MULTI_CLI_WORK_PROJECT_BRIEF", "")
+    if brief_path:
+        try:
+            with open(brief_path, "r", encoding="utf-8") as brief_file: brief = brief_file.read()
+            if brief.strip():
+                json.dump(dict(hookSpecificOutput=dict(hookEventName="SessionStart", additionalContext=brief)), sys.stdout)
+        except Exception: pass
 `;
 
 async function replaceFile(filePath: string, content: string): Promise<void> {

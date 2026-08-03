@@ -1,4 +1,4 @@
-import { FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
+import { Briefcase, FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
 import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 import { useEffect, useRef, type CSSProperties } from "react";
 
@@ -7,6 +7,9 @@ export interface ProjectContextMenuProps {
   x: number;
   y: number;
   vscodeAvailable: boolean;
+  /** Every work project the folder could move to; `current` marks where it already belongs. */
+  workProjectOptions: Array<{ id: string; name: string; current: boolean }>;
+  onMoveToWorkProject(workProjectId: string | null): void;
   onReveal(): void;
   onOpenInEditor(): void;
   onOpenOnGitHub(): void;
@@ -21,6 +24,8 @@ export function ProjectContextMenu({
   x,
   y,
   vscodeAvailable,
+  workProjectOptions,
+  onMoveToWorkProject,
   onReveal,
   onOpenInEditor,
   onOpenOnGitHub,
@@ -77,6 +82,30 @@ export function ProjectContextMenu({
         <GitHubIcon size={15} />
         <span>GitHub에서 열기</span>
       </button>
+      {workProjectOptions.length > 0 ? (
+        <>
+          <div className="context-menu-separator" role="separator" />
+          <div className="context-menu-label">프로젝트로 이동</div>
+          {workProjectOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="menuitem"
+              disabled={option.current}
+              onClick={run(() => onMoveToWorkProject(option.id))}
+            >
+              <Briefcase size={15} />
+              <span>{option.name}{option.current ? " (현재)" : ""}</span>
+            </button>
+          ))}
+          {workProjectOptions.some((option) => option.current) ? (
+            <button type="button" role="menuitem" onClick={run(() => onMoveToWorkProject(null))}>
+              <Briefcase size={15} />
+              <span>미분류로 이동</span>
+            </button>
+          ) : null}
+        </>
+      ) : null}
       <div className="context-menu-separator" role="separator" />
       <button type="button" role="menuitem" onClick={run(onCreateWorktree)}>
         <GitBranchPlus size={15} />

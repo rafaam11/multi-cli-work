@@ -64,6 +64,12 @@ interface TerminalCoordinatorOptions {
   /** Null when the worktree was removed (from the app or by hand). Absent in tests without worktrees. */
   getWorktree?(worktreeId: string): Promise<SharedWorktree | null>;
   getExecutables(): Promise<ProviderExecutables>;
+  /**
+   * Path of the work-project brief for a folder's owning 업무 프로젝트, or null when the folder is
+   * 미분류. Written fresh per launch by the provider; the coordinator only forwards the path via
+   * the MULTI_CLI_WORK_PROJECT_BRIEF env variable. Absent in tests without work projects.
+   */
+  getWorkProjectBrief?(projectId: string): Promise<string | null>;
   /** Null when a session names an agent the user has since removed from `agents.json`. */
   getAgent(agentId: AgentId): AgentDefinition | null;
   toolSessionCwd(): string;
@@ -529,6 +535,11 @@ export class TerminalCoordinator {
           codexProfileName: this.options.codexProfileName ?? "multi-cli-work",
           resumeConversationId: input.resumeConversationId,
         });
+    // A brief failure must never block the launch itself — the session just starts without context.
+    const briefPath =
+      input.projectId !== null && this.options.getWorkProjectBrief
+        ? await this.options.getWorkProjectBrief(input.projectId).catch(() => null)
+        : null;
     const session = await this.options.worker.create({
       sessionId: input.sessionId,
       projectId: input.projectId,
@@ -538,7 +549,11 @@ export class TerminalCoordinator {
       cwd: input.cwd,
       executable: command.executable,
       args: command.args,
-      env: { ...this.options.env, MULTI_CLI_WORK_SESSION_ID: input.sessionId },
+      env: {
+        ...this.options.env,
+        MULTI_CLI_WORK_SESSION_ID: input.sessionId,
+        ...(briefPath ? { MULTI_CLI_WORK_PROJECT_BRIEF: briefPath } : {}),
+      },
       cols: input.cols,
       rows: input.rows,
       createdAt: input.createdAt,

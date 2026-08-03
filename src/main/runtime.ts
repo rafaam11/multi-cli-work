@@ -43,6 +43,9 @@ import { HtmlPreviewController } from "./providers/html-preview-controller";
 import { HtmlPreviewView } from "./providers/html-preview-view";
 import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
+import { WorkProjectService } from "./projects/work-project-service";
+import { readWorkProjectRegistry } from "./projects/work-project-registry";
+import { writeWorkProjectBrief, type WorkProjectBriefMember } from "./projects/work-project-brief";
 import {
   listWorkspaceDirectory,
   readWorkspaceFile,
@@ -108,6 +111,11 @@ export async function createDesktopRuntime(
   const controlToken = crypto.randomUUID();
   const providerEnvironment = await discoverSessionEnvironment(stringEnvironment());
   const projectService = new ProjectService({ registryPath });
+  // Like MULTI_CLI_WORK_REGISTRY_PATH: only overridden so tests can point at a fixture.
+  const workProjectRegistryPath = process.env.MULTI_CLI_WORK_WORK_PROJECTS_PATH;
+  const workProjectService = new WorkProjectService({
+    ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
+  });
   const agentRegistryPath = process.env.MULTI_CLI_WORK_AGENTS_PATH;
   const agentOptions = { ...(agentRegistryPath ? { registryPath: agentRegistryPath } : {}), platform: process.platform };
 
@@ -175,6 +183,21 @@ export async function createDesktopRuntime(
     getProject,
     getWorktree: (worktreeId) => worktrees.get(worktreeId),
     getExecutables,
+    // Resolves the folder's owning 업무 프로젝트 and writes its brief fresh for this launch.
+    getWorkProjectBrief: async (projectId) => {
+      const workProjectRegistry = await readWorkProjectRegistry({
+        ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
+      });
+      const workProject = Object.values(workProjectRegistry.workProjects).find((candidate) =>
+        candidate.members.some((member) => member.projectId === projectId),
+      );
+      if (!workProject) return null;
+      const { registry } = await readProjectRegistry({ registryPath });
+      const members = workProject.members
+        .map((member) => ({ project: registry.projects[member.projectId] ?? null, role: member.role }))
+        .filter((member): member is WorkProjectBriefMember => member.project !== null);
+      return writeWorkProjectBrief(path.join(userData, "project-briefs"), workProject, members);
+    },
     getAgent: (agentId) => agentMap.get(agentId) ?? null,
     toolSessionCwd: () => os.homedir(),
     codexProfileName: codexIntegration.profileName,
@@ -298,6 +321,11 @@ export async function createDesktopRuntime(
 
   registerMainIpc(ipcMain, {
     projectService,
+    workProjectService,
+    readWorkProjectRegistry: () =>
+      readWorkProjectRegistry({
+        ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
+      }),
     coordinator,
     worktrees: {
       list: () => worktrees.list(),
@@ -376,11 +404,13 @@ export async function createDesktopRuntime(
     async restoreRegistryBackup() {
       await restoreProjectRegistryFromBackup({ registryPath });
     },
-    async chooseDirectory() {
+    async chooseDirectory(defaultPath?: string) {
       const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-      const result = window
-        ? await dialog.showOpenDialog(window, { properties: ["openDirectory", "createDirectory"] })
-        : await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+      const options: Electron.OpenDialogOptions = {
+        properties: ["openDirectory", "createDirectory"],
+        ...(defaultPath ? { defaultPath } : {}),
+      };
+      const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
       return result.canceled ? null : result.filePaths[0] ?? null;
     },
     async getAvailability() {

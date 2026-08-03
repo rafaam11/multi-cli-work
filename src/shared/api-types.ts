@@ -9,6 +9,7 @@ import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-typ
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
+import type { WorkProjectRegistryV1, WorkProjectRole } from "./work-project-types";
 import type {
   SharedWorktree,
   WorktreeCreateOptions,
@@ -24,6 +25,21 @@ export interface ProjectMetadataPatch {
   tracks?: ProjectTrack[];
   hidden?: boolean;
   order?: number | null;
+}
+
+export interface WorkProjectMetadataPatch {
+  name?: string;
+  category?: string;
+  status?: ProjectStatus | null;
+  memo?: string;
+  notionUrl?: string | null;
+  order?: number | null;
+}
+
+/** Registering a member folder touches both registries, so both come back in one round trip. */
+export interface WorkProjectMemberFolderAddResult {
+  project: SharedProject;
+  workProjects: WorkProjectRegistryV1;
 }
 
 export interface GitStatusResult {
@@ -230,6 +246,25 @@ export interface MultiCliWorkApi {
     openOnGitHub(projectId: string): Promise<void>;
     gitStatus(projectId: string): Promise<GitStatusResult>;
     gitDiff(projectId: string): Promise<GitDiffResult>;
+  };
+  workProjects: {
+    list(): Promise<WorkProjectRegistryV1>;
+    create(input: { name: string; category?: string }): Promise<WorkProjectRegistryV1>;
+    update(workProjectId: string, patch: WorkProjectMetadataPatch): Promise<WorkProjectRegistryV1>;
+    remove(workProjectId: string): Promise<WorkProjectRegistryV1>;
+    /** Moves the folder here when it is already a member of another work project. */
+    addMember(workProjectId: string, projectId: string, role: WorkProjectRole): Promise<WorkProjectRegistryV1>;
+    removeMember(workProjectId: string, projectId: string): Promise<WorkProjectRegistryV1>;
+    /** Work project drag-to-sort; unlisted ids keep their relative position after the listed ones. */
+    reorder(orderedIds: string[]): Promise<WorkProjectRegistryV1>;
+    /**
+     * Opens the folder dialog (at the Teams sync root for "docs"), registers the folder as a
+     * project and adds it as a member in one step. Null when the user cancels the dialog.
+     */
+    addMemberFolder(workProjectId: string, role: WorkProjectRole): Promise<WorkProjectMemberFolderAddResult | null>;
+    /** Opens the folder dialog and stores the choice; `clear` resets it. Null when cancelled. */
+    chooseTeamsSyncRoot(): Promise<WorkProjectRegistryV1 | null>;
+    clearTeamsSyncRoot(): Promise<WorkProjectRegistryV1>;
   };
   worktrees: {
     list(): Promise<SharedWorktree[]>;

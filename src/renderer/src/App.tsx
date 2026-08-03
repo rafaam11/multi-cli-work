@@ -10,6 +10,7 @@ import type {
 import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
 import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
+import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, TriangleAlert } from "lucide-react";
@@ -40,6 +41,7 @@ import { ProjectSidebar } from "./ProjectSidebar";
 import { PullRequestDetailView } from "./PullRequestDetailView";
 import { QuickOpenPalette } from "./QuickOpenPalette";
 import { SessionContextMenu } from "./SessionContextMenu";
+import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
 import { WorkspaceHeader, type SplitCandidate } from "./WorkspaceHeader";
 import { WorkspaceSplit } from "./WorkspaceSplit";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
@@ -48,7 +50,7 @@ import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 
-type ActiveView = "home" | "detail" | "terminal" | "file" | "git-diff" | "git-graph" | "pull-request";
+type ActiveView = "home" | "detail" | "work-project" | "terminal" | "file" | "git-diff" | "git-graph" | "pull-request";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
@@ -160,6 +162,14 @@ export function App() {
       return new Set(stored.collapsed ?? []);
     } catch { return new Set(); }
   });
+  const [workProjectRegistry, setWorkProjectRegistry] = useState<WorkProjectRegistryV1 | null>(null);
+  const [selectedWorkProjectId, setSelectedWorkProjectId] = useState<string | null>(null);
+  const [collapsedWorkProjectIds, setCollapsedWorkProjectIds] = useState<Set<string>>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("multi-cli-work.work-projects.v1") ?? "{}") as { collapsed?: string[] };
+      return new Set(stored.collapsed ?? []);
+    } catch { return new Set(); }
+  });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -212,10 +222,42 @@ export function App() {
     );
   }, [snapshot]);
 
+  const workProjects = useMemo(() => {
+    if (!workProjectRegistry) return [];
+    return Object.values(workProjectRegistry.workProjects).sort(
+      (left, right) =>
+        (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER) ||
+        left.name.localeCompare(right.name),
+    );
+  }, [workProjectRegistry]);
+
+  /** projectId → owning work project and role; folders absent from the map are 미분류. */
+  const projectMembership = useMemo(() => {
+    const map: Record<string, { workProjectId: string; role: WorkProjectRole }> = {};
+    for (const workProject of workProjects) {
+      for (const member of workProject.members) {
+        map[member.projectId] = { workProjectId: workProject.id, role: member.role };
+      }
+    }
+    return map;
+  }, [workProjects]);
+
+  const expandedWorkProjects = useMemo(
+    () => new Set(workProjects.filter((workProject) => !collapsedWorkProjectIds.has(workProject.id)).map((workProject) => workProject.id)),
+    [workProjects, collapsedWorkProjectIds],
+  );
+
   const folderSessions = useMemo(() => sessions.filter((session) => session.projectId !== null), [sessions]);
   const toolSessions = useMemo(() => sessions.filter((session) => session.projectId === null), [sessions]);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
+  const selectedWorkProject = workProjects.find((workProject) => workProject.id === selectedWorkProjectId) ?? null;
+  const selectedWorkProjectMembers = useMemo(() => {
+    if (!selectedWorkProject) return [];
+    return projects
+      .filter((project) => projectMembership[project.id]?.workProjectId === selectedWorkProject.id)
+      .map((project) => ({ project, role: projectMembership[project.id].role }));
+  }, [projects, projectMembership, selectedWorkProject]);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const selectedWorktree = worktrees.find((worktree) => worktree.id === selectedWorktreeId) ?? null;
   const selectedFileTab = openFileTabs.find((tab) => tab.id === selectedFileTabId) ?? null;
@@ -286,7 +328,7 @@ export function App() {
       setLoadError(null);
       const forceHome = preservedSelection?.view === "home";
       try {
-        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList] =
+        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList, workProjectList] =
           await Promise.all([
             window.multiCliWork.projects.list(),
             window.multiCliWork.terminals.list(),
@@ -295,10 +337,12 @@ export function App() {
             window.multiCliWork.terminals.state(),
             window.multiCliWork.worktrees.list(),
             window.multiCliWork.github.activeReviews(),
+            window.multiCliWork.workProjects.list(),
           ]);
         // The project registry is the primary sidebar data. Publish it before optional selection
         // restoration and Git enrichment so either concern cannot blank the whole tree.
         setSnapshot(registrySnapshot);
+        setWorkProjectRegistry(workProjectList);
         setSessions(terminalSessions);
         setAvailability(providers);
         setLoading(false);
@@ -629,6 +673,82 @@ export function App() {
       try { localStorage.setItem("multi-cli-work.projects.v1", JSON.stringify({ version: 1, collapsed: [...collapsed] })); } catch { /* unavailable storage */ }
       return next;
     });
+  };
+
+  const toggleWorkProject = (workProjectId: string) => {
+    setCollapsedWorkProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(workProjectId)) next.delete(workProjectId);
+      else next.add(workProjectId);
+      try {
+        localStorage.setItem("multi-cli-work.work-projects.v1", JSON.stringify({ version: 1, collapsed: [...next] }));
+      } catch { /* unavailable storage */ }
+      return next;
+    });
+  };
+
+  const selectWorkProject = (workProjectId: string) => {
+    setSelectedWorkProjectId(workProjectId);
+    setActiveView("work-project");
+    setActionError(null);
+  };
+
+  const createWorkProject = async () => {
+    setActionError(null);
+    try {
+      const before = new Set(Object.keys(workProjectRegistry?.workProjects ?? {}));
+      const registry = await window.multiCliWork.workProjects.create({ name: "새 프로젝트" });
+      setWorkProjectRegistry(registry);
+      const created = Object.values(registry.workProjects).find((workProject) => !before.has(workProject.id));
+      if (created) selectWorkProject(created.id);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
+  const moveProjectToWorkProject = async (projectId: string, workProjectId: string | null) => {
+    setActionError(null);
+    try {
+      const current = projectMembership[projectId];
+      if (workProjectId === null) {
+        if (!current) return;
+        setWorkProjectRegistry(await window.multiCliWork.workProjects.removeMember(current.workProjectId, projectId));
+        return;
+      }
+      setWorkProjectRegistry(
+        await window.multiCliWork.workProjects.addMember(workProjectId, projectId, current?.role ?? "repo"),
+      );
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
+  const removeWorkProject = async (workProjectId: string) => {
+    setActionError(null);
+    try {
+      setWorkProjectRegistry(await window.multiCliWork.workProjects.remove(workProjectId));
+      setSelectedWorkProjectId((current) => (current === workProjectId ? null : current));
+      setActiveView((current) => (current === "work-project" ? "home" : current));
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
+  /** Registering a member folder touches both registries; merge both results into state. */
+  const handleMemberFolderAdded = (result: { project: SharedProject; workProjects: WorkProjectRegistryV1 }) => {
+    setWorkProjectRegistry(result.workProjects);
+    setSnapshot((current) =>
+      current
+        ? {
+            ...current,
+            registry: {
+              ...current.registry,
+              projects: { ...current.registry.projects, [result.project.id]: result.project },
+            },
+          }
+        : current,
+    );
+    setExpandedProjects((current) => new Set(current).add(result.project.id));
   };
 
   const addProject = async () => {
@@ -1362,6 +1482,14 @@ export function App() {
         onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
         snapshot={snapshot}
         projects={projects}
+        workProjects={workProjects}
+        projectMembership={projectMembership}
+        expandedWorkProjects={expandedWorkProjects}
+        selectedWorkProjectId={activeView === "work-project" ? selectedWorkProjectId : null}
+        onToggleWorkProject={toggleWorkProject}
+        onSelectWorkProject={selectWorkProject}
+        onCreateWorkProject={() => void createWorkProject()}
+        onMoveProjectToWorkProject={(projectId, workProjectId) => void moveProjectToWorkProject(projectId, workProjectId)}
         sessions={folderSessions}
         agents={agents}
         unread={unread}
@@ -1559,6 +1687,28 @@ export function App() {
               onReviewOpened={(sessionId) => void refreshReviewWorkspace(sessionId)}
               onWorkspaceChanged={() => void refreshReviewWorkspace()}
             />
+          ) : activeView === "work-project" && selectedWorkProject ? (
+            <WorkProjectDetailPage
+              key={selectedWorkProject.id}
+              workProject={selectedWorkProject}
+              members={selectedWorkProjectMembers}
+              teamsSyncRoot={workProjectRegistry?.teamsSyncRoot ?? null}
+              sessions={folderSessions.filter((session) =>
+                selectedWorkProjectMembers.some((member) => member.project.id === session.projectId),
+              )}
+              agents={agents}
+              onSelectSession={selectSession}
+              onSelectProject={selectProject}
+              onRegistryChanged={setWorkProjectRegistry}
+              onMemberFolderAdded={handleMemberFolderAdded}
+              onRemoveWorkProject={() => {
+                if (window.confirm(`"${selectedWorkProject.name}" 프로젝트를 삭제할까요? 폴더와 세션은 남습니다.`)) {
+                  void removeWorkProject(selectedWorkProject.id);
+                }
+              }}
+              onOpenNotion={(url) => void window.multiCliWork.shell.openExternal(url).catch((error) => setActionError(errorMessage(error)))}
+              onRevealProject={(projectId) => void runProjectAction(() => window.multiCliWork.projects.reveal(projectId))}
+            />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage
               key={selectedWorktree ? `${selectedProject.id}:${selectedWorktree.id}` : selectedProject.id}
@@ -1598,11 +1748,14 @@ export function App() {
           ) : (
             <HomeDashboard
               projects={projects}
+              workProjects={workProjects}
+              projectMembership={projectMembership}
               sessions={sessions}
               agents={agents}
               activityLog={activityLog}
               pendingAction={pendingAction}
               onSelectSession={selectSession}
+              onSelectWorkProject={selectWorkProject}
               onStartSession={(project, kind) => void startSession(project, kind)}
               onStartTool={(tool) => void startTool(tool)}
             />
@@ -1652,6 +1805,12 @@ export function App() {
           x={contextMenu.x}
           y={contextMenu.y}
           vscodeAvailable={availability.vscode}
+          workProjectOptions={workProjects.map((workProject) => ({
+            id: workProject.id,
+            name: workProject.name,
+            current: projectMembership[contextMenu.project.id]?.workProjectId === workProject.id,
+          }))}
+          onMoveToWorkProject={(workProjectId) => void moveProjectToWorkProject(contextMenu.project.id, workProjectId)}
           onReveal={() => void runProjectAction(() => window.multiCliWork.projects.reveal(contextMenu.project.id))}
           onOpenInEditor={() =>
             void runProjectAction(() => window.multiCliWork.projects.openInEditor(contextMenu.project.id))

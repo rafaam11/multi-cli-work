@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { MultiCliWorkApi, TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
@@ -106,11 +107,14 @@ function installUpdatesApi(initial: UpdaterStatus = { state: "idle" }) {
 function baseProps() {
   return {
     projects: [atlas, dashboard],
+    workProjects: [] as WorkProject[],
+    projectMembership: {} as Record<string, { workProjectId: string; role: WorkProjectRole }>,
     sessions: [] as TerminalSessionView[],
     agents,
     activityLog: [] as ActivityEntry[],
     pendingAction: false,
     onSelectSession: vi.fn(),
+    onSelectWorkProject: vi.fn(),
     onStartSession: vi.fn(),
     onStartTool: vi.fn(),
   };

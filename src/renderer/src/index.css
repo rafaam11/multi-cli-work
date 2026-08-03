@@ -1158,6 +1158,74 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin-top: 2px;
 }
 
+/* Work project groups: one collapsible section per 업무 프로젝트, folders indented beneath. */
+.work-project-node + .work-project-node {
+  margin-top: 6px;
+}
+
+.work-project-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  min-height: 40px;
+  border-radius: 5px;
+}
+
+.work-project-row:hover,
+.work-project-row.selected {
+  background: var(--surface-hover);
+}
+
+.work-project-row.selected {
+  box-shadow: inset 2px 0 0 var(--teal);
+}
+
+.work-project-select {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 0;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.work-project-select > svg {
+  flex: 0 0 auto;
+  color: var(--teal);
+}
+
+.work-project-row.unassigned-row {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 28px;
+  align-items: center;
+}
+
+.unassigned-label {
+  padding: 0 8px;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.project-group {
+  margin: 0;
+  padding: 0 0 0 10px;
+  list-style: none;
+}
+
+.work-project-empty {
+  margin: 2px 0 2px 10px;
+  padding: 6px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+  color: var(--quiet);
+  font-size: 12px;
+}
+
 .project-row {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto;
@@ -2279,6 +2347,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--line);
 }
 
+.context-menu-label {
+  padding: 4px 10px 2px;
+  color: var(--quiet);
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 50;
@@ -2903,6 +2979,64 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   grid-column: 1 / -1;
 }
 
+.home-card-work-projects {
+  grid-column: 1 / -1;
+}
+
+.work-project-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-project-card {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.work-project-card:hover {
+  background: var(--surface-hover);
+}
+
+.work-project-card > svg {
+  flex: 0 0 auto;
+  color: var(--teal);
+}
+
+.work-project-card-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.work-project-card-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-project-card-meta {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .home-card h2 {
   margin: 0 0 10px;
   color: var(--muted);
@@ -3405,6 +3539,155 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-family: inherit;
   font-size: 11px;
   resize: vertical;
+}
+
+/* 업무 프로젝트 상세: 개요 폼과 구성 폴더 목록 */
+.work-project-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.work-project-form > label {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.work-project-form input,
+.work-project-form select {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.work-project-notion-row {
+  display: flex;
+  gap: 6px;
+}
+
+.work-project-notion-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.work-project-notion-row button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.work-project-notion-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.work-project-members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.work-project-members > li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.member-open {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.member-open:hover {
+  background: var(--surface-hover);
+}
+
+.member-open > svg {
+  flex: 0 0 auto;
+  color: var(--teal);
+}
+
+.member-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.member-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.member-role {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.member-path {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-project-teams-root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.work-project-teams-root > span {
+  overflow: hidden;
+  max-width: 260px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-project-teams-root button {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
 }
 
 .detail-tracks {

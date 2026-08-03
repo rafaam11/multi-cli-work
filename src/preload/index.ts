@@ -22,6 +22,21 @@ const api: MultiCliWorkApi = {
     gitStatus: (projectId) => ipcRenderer.invoke("projects:git-status", projectId),
     gitDiff: (projectId) => ipcRenderer.invoke("projects:git-diff", projectId),
   },
+  workProjects: {
+    list: () => ipcRenderer.invoke("work-projects:list"),
+    create: (input) => ipcRenderer.invoke("work-projects:create", input),
+    update: (workProjectId, patch) => ipcRenderer.invoke("work-projects:update", workProjectId, patch),
+    remove: (workProjectId) => ipcRenderer.invoke("work-projects:remove", workProjectId),
+    addMember: (workProjectId, projectId, role) =>
+      ipcRenderer.invoke("work-projects:add-member", workProjectId, projectId, role),
+    removeMember: (workProjectId, projectId) =>
+      ipcRenderer.invoke("work-projects:remove-member", workProjectId, projectId),
+    reorder: (orderedIds) => ipcRenderer.invoke("work-projects:reorder", orderedIds),
+    addMemberFolder: (workProjectId, role) =>
+      ipcRenderer.invoke("work-projects:add-member-folder", workProjectId, role),
+    chooseTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:choose-teams-root"),
+    clearTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:clear-teams-root"),
+  },
   worktrees: {
     list: () => ipcRenderer.invoke("worktrees:list"),
     sync: () => ipcRenderer.invoke("worktrees:sync"),

@@ -2,9 +2,12 @@ import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalStatus } from "@shared/terminal-types";
+import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import {
+  BookOpen,
+  Briefcase,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -32,6 +35,16 @@ import { findAgent, projectName, sessionLabel, statusLabels } from "./session-la
 interface ProjectSidebarProps {
   snapshot: ProjectWorkspaceSnapshot | null;
   projects: SharedProject[];
+  /** Work projects in display order; folders whose id is absent from every membership are 미분류. */
+  workProjects: WorkProject[];
+  projectMembership: Record<string, { workProjectId: string; role: WorkProjectRole }>;
+  expandedWorkProjects: Set<string>;
+  selectedWorkProjectId: string | null;
+  onToggleWorkProject(workProjectId: string): void;
+  onSelectWorkProject(workProjectId: string): void;
+  onCreateWorkProject(): void;
+  /** Null moves the folder back to 미분류. Also the drop action for cross-group drags. */
+  onMoveProjectToWorkProject(projectId: string, workProjectId: string | null): void;
   sessions: TerminalSessionView[];
   agents: AgentView[];
   /** Sessions that started waiting while off screen — the sidebar's dot badges. */
@@ -131,6 +144,14 @@ function SessionNameInput({
 export function ProjectSidebar({
   snapshot,
   projects,
+  workProjects,
+  projectMembership,
+  expandedWorkProjects,
+  selectedWorkProjectId,
+  onToggleWorkProject,
+  onSelectWorkProject,
+  onCreateWorkProject,
+  onMoveProjectToWorkProject,
   sessions,
   agents,
   unread,
@@ -190,16 +211,38 @@ export function ProjectSidebar({
 
   const dropOn = (targetId: string, position: DropPosition) => {
     if (!drag) return;
+    const dragId = drag.id;
+    endDrag();
+    // Dropping on a folder of another group moves the membership; reordering stays within a group.
+    const groupOf = (id: string) => projectMembership[id]?.workProjectId ?? null;
+    if (groupOf(dragId) !== groupOf(targetId)) {
+      onMoveProjectToWorkProject(dragId, groupOf(targetId));
+      return;
+    }
     const ordered = reorderIds(
       projects.map((project) => project.id),
-      drag.id,
+      dragId,
       targetId,
       position,
     );
-    endDrag();
     // A drag that put the folder back where it started is not worth a registry write.
     if (ordered.some((id, index) => id !== projects[index]?.id)) onReorderProjects(ordered);
   };
+
+  // Sidebar sections: one per work project plus a trailing 미분류 bucket. With no work projects at
+  // all, the single unlabeled section keeps the tree exactly as it was before grouping existed.
+  const treeSections = useMemo(() => {
+    const sections = workProjects.map((workProject) => ({
+      key: workProject.id,
+      workProject: workProject as WorkProject | null,
+      projects: projects.filter((project) => projectMembership[project.id]?.workProjectId === workProject.id),
+    }));
+    const unassigned = projects.filter((project) => !projectMembership[project.id]);
+    if (unassigned.length > 0 || sections.length === 0) {
+      sections.push({ key: "unassigned", workProject: null, projects: unassigned });
+    }
+    return sections;
+  }, [workProjects, projects, projectMembership]);
 
   const allSessions = useMemo(() => [...sessions, ...toolSessions], [sessions, toolSessions]);
   const railSessions = useMemo(
@@ -335,18 +378,28 @@ export function ProjectSidebar({
           <ul role="list">{railSessions.map(renderRailSession)}</ul>
         </div>
       ) : (
-      <nav className="project-navigation" aria-label="폴더">
+      <nav className="project-navigation" aria-label="프로젝트">
         <div className="section-heading">
-          <span>폴더</span>
+          <span>프로젝트</span>
           <button
             className="icon-button"
             type="button"
             onClick={onReload}
             disabled={loading}
-            aria-label="폴더 새로고침"
-            title="폴더 새로고침"
+            aria-label="목록 새로고침"
+            title="목록 새로고침"
           >
             <RefreshCw size={16} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onCreateWorkProject}
+            disabled={readOnly}
+            aria-label="프로젝트 만들기"
+            title="프로젝트 만들기"
+          >
+            <Briefcase size={16} />
           </button>
           <button
             className="icon-button"
@@ -373,10 +426,10 @@ export function ProjectSidebar({
               재시도
             </button>
           </div>
-        ) : projects.length === 0 ? (
+        ) : projects.length === 0 && workProjects.length === 0 ? (
           <div className="sidebar-empty">
             <FolderPlus size={18} aria-hidden="true" />
-            <span>아직 폴더가 없습니다</span>
+            <span>아직 프로젝트가 없습니다</span>
           </div>
         ) : (
           <ul
@@ -388,7 +441,84 @@ export function ProjectSidebar({
               setDrag((current) => (current?.over ? { ...current, over: null } : current));
             }}
           >
-            {projects.map((project) => {
+            {treeSections.map((section) => {
+              const workProject = section.workProject;
+              const sectionExpanded = workProject ? expandedWorkProjects.has(workProject.id) : true;
+              return (
+                <li
+                  className={`work-project-node ${workProject ? "" : "unassigned-node"}`}
+                  key={section.key}
+                  role="treeitem"
+                  aria-expanded={sectionExpanded}
+                >
+                  {workProject ? (
+                    <div
+                      className={`work-project-row ${selectedWorkProjectId === workProject.id ? "selected" : ""}`}
+                      onDragOver={(event) => {
+                        // A folder dragged onto the group header moves into that group.
+                        if (!drag || projectMembership[drag.id]?.workProjectId === workProject.id) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        if (!drag) return;
+                        event.preventDefault();
+                        const dragId = drag.id;
+                        endDrag();
+                        onMoveProjectToWorkProject(dragId, workProject.id);
+                      }}
+                    >
+                      <button
+                        className="tree-toggle"
+                        type="button"
+                        onClick={() => onToggleWorkProject(workProject.id)}
+                        aria-label={`${workProject.name} ${sectionExpanded ? "접기" : "펼치기"}`}
+                        title={`${workProject.name} ${sectionExpanded ? "접기" : "펼치기"}`}
+                      >
+                        {sectionExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                      <button
+                        className="work-project-select"
+                        type="button"
+                        onClick={() => onSelectWorkProject(workProject.id)}
+                        aria-label={`${workProject.name} 프로젝트 열기`}
+                      >
+                        <Briefcase size={15} />
+                        <span className="project-copy">
+                          <span className="project-name">{workProject.name}</span>
+                          <span className="project-path">
+                            {workProject.category} · 폴더 {section.projects.length}개
+                          </span>
+                        </span>
+                      </button>
+                    </div>
+                  ) : workProjects.length > 0 ? (
+                    <div
+                      className="work-project-row unassigned-row"
+                      onDragOver={(event) => {
+                        if (!drag || !projectMembership[drag.id]) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        if (!drag) return;
+                        event.preventDefault();
+                        const dragId = drag.id;
+                        endDrag();
+                        onMoveProjectToWorkProject(dragId, null);
+                      }}
+                    >
+                      <span className="unassigned-label">미분류</span>
+                    </div>
+                  ) : null}
+                  {sectionExpanded ? (
+                    section.projects.length === 0 && workProject ? (
+                      <ul className="project-group" role="group" aria-label={workProject.name}>
+                        <li className="work-project-empty">폴더 없음 — 상세 페이지에서 추가</li>
+                      </ul>
+                    ) : (
+            <ul className="project-group" role="group" aria-label={workProject?.name ?? "미분류"}>
+            {section.projects.map((project) => {
               const name = projectName(project);
               const expanded = expandedProjects.has(project.id);
               const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
@@ -470,6 +600,8 @@ export function ProjectSidebar({
                     >
                       {rootMissing ? (
                         <FolderX size={15} aria-label="폴더 없음" />
+                      ) : projectMembership[project.id]?.role === "docs" ? (
+                        <BookOpen size={15} aria-label="문서 폴더" />
                       ) : expanded ? (
                         <FolderOpen size={15} />
                       ) : (
@@ -571,6 +703,12 @@ export function ProjectSidebar({
                         </ul>
                       )}
                     </>
+                  ) : null}
+                </li>
+              );
+            })}
+            </ul>
+                    )
                   ) : null}
                 </li>
               );

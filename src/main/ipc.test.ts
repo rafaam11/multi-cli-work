@@ -67,6 +67,25 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
       },
     })),
   };
+  const workProjectRegistry = {
+    schemaVersion: 1 as const,
+    updatedAt: project.updatedAt,
+    teamsSyncRoot: "C:\\Users\\PC\\Teams",
+    workProjects: {},
+  };
+  const workProjectService = {
+    createWorkProject: vi.fn(async () => workProjectRegistry),
+    updateWorkProjectMetadata: vi.fn(async () => workProjectRegistry),
+    removeWorkProject: vi.fn(async () => workProjectRegistry),
+    addMember: vi.fn(async () => workProjectRegistry),
+    removeMember: vi.fn(async () => workProjectRegistry),
+    removeProjectReferences: vi.fn(async () => {
+      calls.push("removeProjectReferences");
+      return workProjectRegistry;
+    }),
+    reorderWorkProjects: vi.fn(async () => workProjectRegistry),
+    setTeamsSyncRoot: vi.fn(async () => workProjectRegistry),
+  };
   const restoreRegistryBackup = vi.fn(async () => undefined);
   const updater = {
     status: vi.fn(() => ({ state: "downloaded" as const, version: "1.1.0" })),
@@ -159,8 +178,11 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     reload: vi.fn(() => undefined),
     close: vi.fn(() => undefined),
   };
+  const chooseDirectory = vi.fn(async (_defaultPath?: string): Promise<string | null> => "C:\\Work");
   registerMainIpc(ipc, {
     projectService,
+    workProjectService,
+    readWorkProjectRegistry: vi.fn(async () => workProjectRegistry),
     coordinator,
     updater,
     projectActions,
@@ -175,7 +197,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     appVersion: vi.fn(() => "1.0.0"),
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,
-    chooseDirectory: vi.fn(async () => "C:\\Work"),
+    chooseDirectory,
     getAvailability: vi.fn(async () => ({ vscode: true })),
     listAgents: vi.fn(async () => ({ agents: [] })),
     editAgents: vi.fn(async () => undefined),
@@ -185,6 +207,8 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
   return {
     handlers,
     projectService,
+    workProjectService,
+    workProjectRegistry,
     coordinator,
     project,
     worktree,
@@ -199,6 +223,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     htmlPreviewGateway,
     shellGateway,
     clipboard,
+    chooseDirectory,
     calls,
     onSessionSelected: options.onSessionSelected,
   };
@@ -322,8 +347,58 @@ describe("main IPC boundary", () => {
 
     expect(coordinator.removeProjectSessions).toHaveBeenCalledWith(project.id);
     expect(projectService.removeProject).toHaveBeenCalledWith(project.id);
-    expect(calls).toEqual(["removeProjectSessions", "removeProject"]);
+    expect(calls).toEqual(["removeProjectSessions", "removeProject", "removeProjectReferences"]);
     expect(snapshot).toMatchObject({ missingRootProjectIds: [project.id] });
+  });
+
+  it("delegates work project operations to the work project service", async () => {
+    const { handlers, workProjectService, workProjectRegistry } = setup();
+
+    await expect(handlers.get("work-projects:list")!({})).resolves.toEqual(workProjectRegistry);
+    await handlers.get("work-projects:create")!({}, { name: "과제", category: "정부지원과제" });
+    expect(workProjectService.createWorkProject).toHaveBeenCalledWith({ name: "과제", category: "정부지원과제" });
+    await handlers.get("work-projects:update")!({}, "wp-1", { memo: "메모" });
+    expect(workProjectService.updateWorkProjectMetadata).toHaveBeenCalledWith("wp-1", { memo: "메모" });
+    await handlers.get("work-projects:remove")!({}, "wp-1");
+    expect(workProjectService.removeWorkProject).toHaveBeenCalledWith("wp-1");
+    await handlers.get("work-projects:add-member")!({}, "wp-1", "project-1", "repo");
+    expect(workProjectService.addMember).toHaveBeenCalledWith("wp-1", "project-1", "repo");
+    await handlers.get("work-projects:remove-member")!({}, "wp-1", "project-1");
+    expect(workProjectService.removeMember).toHaveBeenCalledWith("wp-1", "project-1");
+    await handlers.get("work-projects:reorder")!({}, ["wp-1"]);
+    expect(workProjectService.reorderWorkProjects).toHaveBeenCalledWith(["wp-1"]);
+
+    await expect(handlers.get("work-projects:create")!({}, { name: "" })).rejects.toThrow(/name/i);
+    await expect(handlers.get("work-projects:update")!({}, "wp-1", { teamsPath: "C:\\x" })).rejects.toThrow(/unknown fields/);
+    await expect(handlers.get("work-projects:add-member")!({}, "wp-1", "project-1", "teams")).rejects.toThrow(/role/i);
+  });
+
+  it("registers a member folder through the dialog, docs picker starting at the teams root", async () => {
+    const { handlers, workProjectService, projectService, project, chooseDirectory } = setup();
+
+    const result = await handlers.get("work-projects:add-member-folder")!({}, "wp-1", "docs");
+
+    expect(chooseDirectory).toHaveBeenCalledWith("C:\\Users\\PC\\Teams");
+    expect(projectService.registerManualFolder).toHaveBeenCalledWith("C:\\Work", path.basename("C:\\Work"));
+    expect(workProjectService.addMember).toHaveBeenCalledWith("wp-1", project.id, "docs");
+    expect(result).toMatchObject({ project });
+
+    chooseDirectory.mockResolvedValueOnce(null);
+    await expect(handlers.get("work-projects:add-member-folder")!({}, "wp-1", "repo")).resolves.toBeNull();
+  });
+
+  it("stores and clears the teams sync root through the main-process dialog", async () => {
+    const { handlers, workProjectService, chooseDirectory } = setup();
+
+    await handlers.get("work-projects:choose-teams-root")!({});
+    expect(chooseDirectory).toHaveBeenCalledWith();
+    expect(workProjectService.setTeamsSyncRoot).toHaveBeenCalledWith("C:\\Work");
+
+    await handlers.get("work-projects:clear-teams-root")!({});
+    expect(workProjectService.setTeamsSyncRoot).toHaveBeenCalledWith(null);
+
+    chooseDirectory.mockResolvedValueOnce(null);
+    await expect(handlers.get("work-projects:choose-teams-root")!({})).resolves.toBeNull();
   });
 
   it("leaves the folder registered when its sessions cannot be torn down", async () => {
