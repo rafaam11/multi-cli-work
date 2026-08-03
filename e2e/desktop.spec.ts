@@ -532,7 +532,8 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const externalPath = path.join(tempRoot, "external worktree");
     await execFileAsync("git", ["-C", projectRoot, "worktree", "add", "-b", "feature/external", externalPath]);
 
-    await page.getByRole("button", { name: "목록 새로고침" }).click();
+    // exact: the right sidebar's "파일 목록 새로고침" also matches the substring.
+    await page.getByRole("button", { name: "목록 새로고침", exact: true }).click();
     const row = page.getByRole("button", { name: "feature/external worktree 선택" });
     await expect(row).toBeVisible();
     await row.click();
