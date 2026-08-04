@@ -51,8 +51,11 @@ const WORK_PROJECT: WorkProject = {
 
 describe("renderWorkProjectBrief", () => {
   it("lists notion url, teams docs folder and repos with local paths", () => {
+    // Built with the platform's own separators: the display-name fallback goes through
+    // path.basename, and a hard-coded Windows path never splits on the Linux CI runner.
+    const agvControlPath = path.join("D:", "Project", "agv-control");
     const brief = renderWorkProjectBrief(WORK_PROJECT, [
-      { project: project("1", "D:\\Project\\agv-control"), role: "repo" },
+      { project: project("1", agvControlPath), role: "repo" },
       { project: project("2", "C:\\Users\\PC\\노바테크\\수행프로젝트\\스마트팩토리", "스마트팩토리 문서"), role: "docs" },
       { project: project("3", "D:\\Project\\fleet-server", "fleet-server"), role: "repo" },
     ]);
@@ -62,7 +65,7 @@ describe("renderWorkProjectBrief", () => {
     expect(brief).toContain("- 상태: 진행중");
     expect(brief).toContain("- 노션(프로젝트 관리): https://notion.so/smart-factory");
     expect(brief).toContain("- 스마트팩토리 문서: C:\\Users\\PC\\노바테크\\수행프로젝트\\스마트팩토리");
-    expect(brief).toContain("- agv-control: D:\\Project\\agv-control");
+    expect(brief).toContain(`- agv-control: ${agvControlPath}`);
     expect(brief).toContain("- fleet-server: D:\\Project\\fleet-server");
     expect(brief).toContain("## 메모");
     // Docs section precedes repos so the official-document location leads.
