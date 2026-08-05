@@ -3005,7 +3005,17 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .terminal-host {
   position: absolute;
   inset: 0;
-  padding: 10px 8px 7px 12px;
+}
+
+/*
+ * The gap around the terminal is an inset on this box, never padding on .terminal-host. FitAddon
+ * measures the border box of xterm's parent and subtracts only the padding declared on .xterm
+ * itself, so padding on the parent hands xterm rows it cannot actually show — .terminal-surface
+ * clips them, and the bottom line (Claude Code's mode hint) renders sliced in half.
+ */
+.terminal-frame {
+  position: absolute;
+  inset: 10px 8px 7px 12px;
 }
 
 .terminal-host .xterm,

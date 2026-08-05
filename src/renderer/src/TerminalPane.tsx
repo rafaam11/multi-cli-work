@@ -50,6 +50,7 @@ export function TerminalPane({
   onTerminalFocused,
 }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(session);
   const shiftEnterRef = useRef(shiftEnterBytes);
   const onAttachedRef = useRef(onAttached);
@@ -72,7 +73,8 @@ export function TerminalPane({
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host) return;
+    const frame = frameRef.current;
+    if (!host || !frame) return;
     const refreshing = refreshRequest !== lastRefreshRequestRef.current;
     lastRefreshRequestRef.current = refreshRequest;
     setAttaching(true);
@@ -129,7 +131,10 @@ export function TerminalPane({
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    terminal.open(host);
+    // Opened in the inset frame, not the host: FitAddon sizes the grid from this parent's border
+    // box, so the parent has to be exactly the area xterm is allowed to paint. The host stays
+    // full-bleed and keeps owning the drag-and-drop and focus listeners below.
+    terminal.open(frame);
 
     const writeOutput = (data: string) => {
       const filtered = outputFilter.write(data);
@@ -255,7 +260,7 @@ export function TerminalPane({
       else pendingOutput.push({ data: event.data, sequence: event.sequence });
     });
     const resizeObserver = new ResizeObserver(scheduleResize);
-    resizeObserver.observe(host);
+    resizeObserver.observe(frame);
 
     // The replay is the PTY's own output, stored at the width the PTY wrote it. A terminal still on
     // xterm's 80x24 default re-wraps every one of those lines — padded ones fold into blank lines —
@@ -312,7 +317,9 @@ export function TerminalPane({
 
   return (
     <section className="terminal-surface" aria-label={`${session.kind} 터미널`}>
-      <div className="terminal-host" ref={hostRef} />
+      <div className="terminal-host" ref={hostRef}>
+        <div className="terminal-frame" ref={frameRef} />
+      </div>
       {attaching ? <span className="terminal-progress">세션 연결 중</span> : null}
     </section>
   );
