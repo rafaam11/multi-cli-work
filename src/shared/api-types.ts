@@ -9,7 +9,7 @@ import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-typ
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
-import type { WorkProjectRegistryV1, WorkProjectRole } from "./work-project-types";
+import type { WorkProjectNotionLink, WorkProjectRegistryV1, WorkProjectRole } from "./work-project-types";
 import type {
   SharedWorktree,
   WorktreeCreateOptions,
@@ -32,7 +32,7 @@ export interface WorkProjectMetadataPatch {
   category?: string;
   status?: ProjectStatus | null;
   memo?: string;
-  notionUrl?: string | null;
+  notionLinks?: WorkProjectNotionLink[];
   order?: number | null;
 }
 

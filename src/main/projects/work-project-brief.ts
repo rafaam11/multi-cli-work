@@ -27,7 +27,7 @@ export function renderWorkProjectBrief(workProject: WorkProject, members: WorkPr
     "",
     `- 구분: ${workProject.category}`,
     ...(workProject.status ? [`- 상태: ${workProject.status}`] : []),
-    ...(workProject.notionUrl ? [`- 노션(프로젝트 관리): ${workProject.notionUrl}`] : []),
+    ...workProject.notionLinks.map((link) => `- 노션(${link.label}): ${link.url}`),
   ];
   if (docs.length > 0) {
     lines.push("", "## 팀즈 문서 폴더 (공식 문서: 계획서·보고서·발표자료)");

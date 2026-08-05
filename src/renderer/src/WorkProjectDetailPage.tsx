@@ -1,9 +1,14 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, WorkProjectMemberFolderAddResult, WorkProjectMetadataPatch } from "@shared/api-types";
 import type { ProjectStatus, SharedProject } from "@shared/project-types";
-import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
+import type {
+  WorkProject,
+  WorkProjectNotionLink,
+  WorkProjectRegistryV1,
+  WorkProjectRole,
+} from "@shared/work-project-types";
 import { WORK_PROJECT_CATEGORIES } from "@shared/work-project-types";
-import { BookOpen, ExternalLink, Folder, FolderOpen, FolderPlus, Trash2 } from "lucide-react";
+import { BookOpen, ExternalLink, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 
@@ -46,7 +51,7 @@ export function WorkProjectDetailPage({
 }: WorkProjectDetailPageProps) {
   const [name, setName] = useState(workProject.name);
   const [category, setCategory] = useState(workProject.category);
-  const [notionUrl, setNotionUrl] = useState(workProject.notionUrl ?? "");
+  const [notionLinks, setNotionLinks] = useState<WorkProjectNotionLink[]>(workProject.notionLinks);
   const [memo, setMemo] = useState(workProject.memo);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -55,7 +60,7 @@ export function WorkProjectDetailPage({
     // Only resync on a genuine work project switch (same reasoning as ProjectDetailPage).
     setName(workProject.name);
     setCategory(workProject.category);
-    setNotionUrl(workProject.notionUrl ?? "");
+    setNotionLinks(workProject.notionLinks);
     setMemo(workProject.memo);
   }, [workProject.id]);
 
@@ -66,6 +71,23 @@ export function WorkProjectDetailPage({
     } catch (error) {
       setSaveError(errorMessage(error));
     }
+  };
+
+  /** What the service will actually store — draft rows without a URL do not count as a change. */
+  const normalizedLinks = (links: WorkProjectNotionLink[]) =>
+    JSON.stringify(
+      links
+        .map((link) => ({ label: link.label.trim() || "노션", url: link.url.trim() }))
+        .filter((link) => link.url.length > 0),
+    );
+
+  const commitNotionLinks = (links: WorkProjectNotionLink[]) => {
+    setNotionLinks(links);
+    if (normalizedLinks(links) !== normalizedLinks(workProject.notionLinks)) void save({ notionLinks: links });
+  };
+
+  const updateNotionLink = (index: number, patch: Partial<WorkProjectNotionLink>) => {
+    setNotionLinks((current) => current.map((link, at) => (at === index ? { ...link, ...patch } : link)));
   };
 
   const addMemberFolder = async (role: WorkProjectRole) => {
@@ -158,28 +180,55 @@ export function WorkProjectDetailPage({
                 </option>
               ))}
             </select>
-            <label htmlFor={`wp-notion-${workProject.id}`}>노션 URL</label>
-            <div className="work-project-notion-row">
-              <input
-                id={`wp-notion-${workProject.id}`}
-                type="text"
-                value={notionUrl}
-                placeholder="https://notion.so/…"
-                onChange={(event) => setNotionUrl(event.target.value)}
-                onBlur={() => {
-                  const trimmed = notionUrl.trim();
-                  if (trimmed !== (workProject.notionUrl ?? "")) void save({ notionUrl: trimmed === "" ? null : trimmed });
-                }}
-              />
+            <label id={`wp-notion-${workProject.id}`}>노션 페이지</label>
+            <div className="work-project-notion-list" role="group" aria-labelledby={`wp-notion-${workProject.id}`}>
+              {notionLinks.map((link, index) => (
+                <div className="work-project-notion-row" key={index}>
+                  <input
+                    className="notion-label-input"
+                    type="text"
+                    value={link.label}
+                    placeholder={index === 0 ? "채널" : `${index}차년도`}
+                    aria-label={`노션 링크 ${index + 1} 라벨`}
+                    onChange={(event) => updateNotionLink(index, { label: event.target.value })}
+                    onBlur={() => commitNotionLinks(notionLinks)}
+                  />
+                  <input
+                    type="text"
+                    value={link.url}
+                    placeholder="https://notion.so/…"
+                    aria-label={`노션 링크 ${index + 1} URL`}
+                    onChange={(event) => updateNotionLink(index, { url: event.target.value })}
+                    onBlur={() => commitNotionLinks(notionLinks)}
+                  />
+                  <button
+                    type="button"
+                    className="icon-button"
+                    disabled={link.url.trim().length === 0}
+                    title={link.url.trim() ? "노션에서 열기" : "URL을 먼저 입력하세요"}
+                    aria-label={`노션 링크 ${index + 1} 열기`}
+                    onClick={() => onOpenNotion(link.url.trim())}
+                  >
+                    <ExternalLink size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`노션 링크 ${index + 1} 삭제`}
+                    title="링크 삭제"
+                    onClick={() => commitNotionLinks(notionLinks.filter((_, at) => at !== index))}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
               <button
                 type="button"
-                disabled={!workProject.notionUrl}
-                title={workProject.notionUrl ? "노션에서 열기" : "노션 URL을 먼저 입력하세요"}
-                aria-label="노션에서 열기"
-                onClick={() => workProject.notionUrl && onOpenNotion(workProject.notionUrl)}
+                className="work-project-notion-add"
+                onClick={() => setNotionLinks((current) => [...current, { label: "", url: "" }])}
               >
-                <ExternalLink size={14} />
-                <span>노션 열기</span>
+                <Plus size={13} />
+                <span>링크 추가</span>
               </button>
             </div>
             <label htmlFor={`wp-memo-${workProject.id}`}>메모</label>

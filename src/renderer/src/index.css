@@ -3567,8 +3567,15 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: 11px;
 }
 
+.work-project-notion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
 .work-project-notion-row {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -3577,23 +3584,27 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   min-width: 0;
 }
 
-.work-project-notion-row button {
+.work-project-notion-row .notion-label-input {
+  flex: 0 0 96px;
+}
+
+.work-project-notion-add {
   display: inline-flex;
-  flex: 0 0 auto;
+  width: max-content;
   align-items: center;
   gap: 5px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
+  padding: 4px 10px;
+  border: 1px dashed var(--line);
   border-radius: 5px;
-  color: var(--text);
-  background: var(--surface-raised);
+  color: var(--muted);
+  background: transparent;
   font-size: 11px;
   cursor: pointer;
 }
 
-.work-project-notion-row button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.work-project-notion-add:hover {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 .work-project-members {

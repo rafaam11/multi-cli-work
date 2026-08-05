@@ -359,6 +359,9 @@ describe("main IPC boundary", () => {
     expect(workProjectService.createWorkProject).toHaveBeenCalledWith({ name: "과제", category: "정부지원과제" });
     await handlers.get("work-projects:update")!({}, "wp-1", { memo: "메모" });
     expect(workProjectService.updateWorkProjectMetadata).toHaveBeenCalledWith("wp-1", { memo: "메모" });
+    const notionLinks = [{ label: "채널", url: "https://notion.so/x" }];
+    await handlers.get("work-projects:update")!({}, "wp-1", { notionLinks });
+    expect(workProjectService.updateWorkProjectMetadata).toHaveBeenCalledWith("wp-1", { notionLinks });
     await handlers.get("work-projects:remove")!({}, "wp-1");
     expect(workProjectService.removeWorkProject).toHaveBeenCalledWith("wp-1");
     await handlers.get("work-projects:add-member")!({}, "wp-1", "project-1", "repo");
@@ -370,6 +373,8 @@ describe("main IPC boundary", () => {
 
     await expect(handlers.get("work-projects:create")!({}, { name: "" })).rejects.toThrow(/name/i);
     await expect(handlers.get("work-projects:update")!({}, "wp-1", { teamsPath: "C:\\x" })).rejects.toThrow(/unknown fields/);
+    // The single-url shape retired in favor of notionLinks must not silently pass through.
+    await expect(handlers.get("work-projects:update")!({}, "wp-1", { notionUrl: "https://x" })).rejects.toThrow(/unknown fields/);
     await expect(handlers.get("work-projects:add-member")!({}, "wp-1", "project-1", "teams")).rejects.toThrow(/role/i);
   });
 

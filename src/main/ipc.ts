@@ -281,7 +281,7 @@ function validateProjectPatch(value: unknown): ProjectMetadataPatch {
 function validateWorkProjectPatch(value: unknown): WorkProjectMetadataUpdate {
   const patch = exactObject(
     value,
-    ["name", "category", "status", "memo", "notionUrl", "order"],
+    ["name", "category", "status", "memo", "notionLinks", "order"],
     "Work project patch",
   );
   return patch as WorkProjectMetadataUpdate;

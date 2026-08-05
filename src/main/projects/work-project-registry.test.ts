@@ -39,7 +39,7 @@ function sampleRegistry(): WorkProjectRegistryV1 {
         category: "정부지원과제",
         status: "진행중",
         memo: "",
-        notionUrl: "https://notion.so/example",
+        notionLinks: [{ label: "채널", url: "https://notion.so/example" }],
         members: [
           { projectId: PROJECT_IDS.repo, role: "repo" },
           { projectId: PROJECT_IDS.docs, role: "docs" },
@@ -91,7 +91,7 @@ describe("parseWorkProjectRegistry", () => {
     expect(() => parseWorkProjectRegistry(registry)).toThrow(/both claim project/);
   });
 
-  it("rejects invalid role, status, notionUrl and order values", () => {
+  it("rejects invalid role, status, notionLinks and order values", () => {
     const withMember = (role: string) => {
       const registry = sampleRegistry();
       registry.workProjects[WORK_PROJECT_IDS.first].members = [{ projectId: PROJECT_IDS.repo, role: role as never }];
@@ -101,12 +101,46 @@ describe("parseWorkProjectRegistry", () => {
     const badStatus = sampleRegistry();
     badStatus.workProjects[WORK_PROJECT_IDS.first].status = "완성" as never;
     expect(() => parseWorkProjectRegistry(badStatus)).toThrow(/status is invalid/);
-    const badUrl = sampleRegistry();
-    badUrl.workProjects[WORK_PROJECT_IDS.first].notionUrl = "";
-    expect(() => parseWorkProjectRegistry(badUrl)).toThrow(/notionUrl/);
+    const withLinks = (links: unknown) => {
+      const registry = sampleRegistry();
+      registry.workProjects[WORK_PROJECT_IDS.first].notionLinks = links as never;
+      return registry;
+    };
+    expect(() => parseWorkProjectRegistry(withLinks([{ label: "", url: "https://x" }]))).toThrow(/label/);
+    expect(() => parseWorkProjectRegistry(withLinks([{ label: "채널" }]))).toThrow(/url/);
+    expect(() => parseWorkProjectRegistry(withLinks([{ label: "채널", url: "https://x", kind: "channel" }]))).toThrow(
+      /unknown fields: kind/,
+    );
     const badOrder = sampleRegistry();
     badOrder.workProjects[WORK_PROJECT_IDS.first].order = -1;
     expect(() => parseWorkProjectRegistry(badOrder)).toThrow(/order/);
+  });
+
+  it("promotes a legacy notionUrl to a single labeled link and drops the old key on write", async () => {
+    const registry = sampleRegistry() as unknown as Record<string, Record<string, Record<string, unknown>>>;
+    const legacy = registry.workProjects[WORK_PROJECT_IDS.first];
+    delete legacy.notionLinks;
+    legacy.notionUrl = "https://notion.so/legacy";
+
+    const parsed = parseWorkProjectRegistry(registry);
+    expect(parsed.workProjects[WORK_PROJECT_IDS.first].notionLinks).toEqual([
+      { label: "노션", url: "https://notion.so/legacy" },
+    ]);
+    expect(parsed.workProjects[WORK_PROJECT_IDS.first]).not.toHaveProperty("notionUrl");
+
+    // A legacy file heals itself on the first write: only notionLinks reaches disk.
+    const workspace = await tempWorkspace("wp-legacy");
+    const registryPath = path.join(workspace, "work-projects.json");
+    await updateWorkProjectRegistry(() => parsed, { registryPath });
+    const raw = await fs.readFile(registryPath, "utf8");
+    expect(raw).toContain("notionLinks");
+    expect(raw).not.toContain("notionUrl");
+
+    // notionLinks wins when a hand-edited file carries both keys.
+    legacy.notionLinks = [{ label: "채널", url: "https://notion.so/channel" }];
+    expect(parseWorkProjectRegistry(registry).workProjects[WORK_PROJECT_IDS.first].notionLinks).toEqual([
+      { label: "채널", url: "https://notion.so/channel" },
+    ]);
   });
 
   it("rejects a key that does not match the work project id", () => {

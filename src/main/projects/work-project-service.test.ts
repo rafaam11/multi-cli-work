@@ -46,14 +46,14 @@ describe("WorkProjectService", () => {
       category: "기타",
       status: null,
       memo: "",
-      notionUrl: null,
+      notionLinks: [],
       members: [],
       order: null,
     });
     await expect(service(registryPath).createWorkProject({ name: "  " })).rejects.toThrow(WorkProjectServiceError);
   });
 
-  it("updates metadata, normalizing an empty notion url to null and rejecting unknown fields", async () => {
+  it("updates metadata, normalizing notion link rows and rejecting unknown fields", async () => {
     const registryPath = await tempRegistryPath("wps-update");
     const workProjectService = service(registryPath);
     await workProjectService.createWorkProject({ name: "과제", category: "정부지원과제" });
@@ -61,19 +61,29 @@ describe("WorkProjectService", () => {
     const updated = await workProjectService.updateWorkProjectMetadata(IDS.first, {
       status: "진행중",
       memo: "메모",
-      notionUrl: "  https://notion.so/x  ",
+      notionLinks: [
+        { label: "  채널  ", url: "  https://notion.so/channel  " },
+        { label: "", url: "https://notion.so/unlabeled" },
+        { label: "빈 URL 초안", url: "   " },
+      ],
     });
     expect(updated.workProjects[IDS.first]).toMatchObject({
       status: "진행중",
       memo: "메모",
-      notionUrl: "https://notion.so/x",
+      notionLinks: [
+        { label: "채널", url: "https://notion.so/channel" },
+        { label: "노션", url: "https://notion.so/unlabeled" },
+      ],
     });
 
-    const cleared = await workProjectService.updateWorkProjectMetadata(IDS.first, { notionUrl: "   " });
-    expect(cleared.workProjects[IDS.first].notionUrl).toBeNull();
+    const cleared = await workProjectService.updateWorkProjectMetadata(IDS.first, { notionLinks: [] });
+    expect(cleared.workProjects[IDS.first].notionLinks).toEqual([]);
 
     await expect(
       workProjectService.updateWorkProjectMetadata(IDS.first, { teamsPath: "C:\\x" } as never),
+    ).rejects.toThrow(/unknown fields/);
+    await expect(
+      workProjectService.updateWorkProjectMetadata(IDS.first, { notionUrl: "https://x" } as never),
     ).rejects.toThrow(/unknown fields/);
     await expect(workProjectService.updateWorkProjectMetadata(IDS.second, { memo: "x" })).rejects.toThrow(/not found/);
   });

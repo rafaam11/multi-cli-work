@@ -42,7 +42,10 @@ const WORK_PROJECT: WorkProject = {
   category: "정부지원과제",
   status: "진행중",
   memo: "1차년도 결과보고서 준비 중",
-  notionUrl: "https://notion.so/smart-factory",
+  notionLinks: [
+    { label: "채널", url: "https://notion.so/smart-factory" },
+    { label: "2차년도", url: "https://notion.so/smart-factory-y2" },
+  ],
   members: [],
   order: null,
   createdAt: "2026-08-01T00:00:00.000Z",
@@ -63,7 +66,8 @@ describe("renderWorkProjectBrief", () => {
     expect(brief).toContain("# 업무 프로젝트: 스마트팩토리 과제");
     expect(brief).toContain("- 구분: 정부지원과제");
     expect(brief).toContain("- 상태: 진행중");
-    expect(brief).toContain("- 노션(프로젝트 관리): https://notion.so/smart-factory");
+    expect(brief).toContain("- 노션(채널): https://notion.so/smart-factory");
+    expect(brief).toContain("- 노션(2차년도): https://notion.so/smart-factory-y2");
     expect(brief).toContain("- 스마트팩토리 문서: C:\\Users\\PC\\노바테크\\수행프로젝트\\스마트팩토리");
     expect(brief).toContain(`- agv-control: ${agvControlPath}`);
     expect(brief).toContain("- fleet-server: D:\\Project\\fleet-server");
@@ -74,11 +78,11 @@ describe("renderWorkProjectBrief", () => {
 
   it("omits empty sections instead of rendering placeholders", () => {
     const brief = renderWorkProjectBrief(
-      { ...WORK_PROJECT, status: null, notionUrl: null, memo: "" },
+      { ...WORK_PROJECT, status: null, notionLinks: [], memo: "" },
       [{ project: project("1", "D:\\Project\\agv-control"), role: "repo" }],
     );
     expect(brief).not.toContain("- 상태:");
-    expect(brief).not.toContain("- 노션(프로젝트 관리):");
+    expect(brief).not.toContain("- 노션(");
     expect(brief).not.toContain("팀즈 문서 폴더");
     expect(brief).not.toContain("## 메모");
   });

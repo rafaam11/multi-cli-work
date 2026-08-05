@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { ProjectStatus } from "../../shared/project-types";
 import type {
   WorkProject,
+  WorkProjectNotionLink,
   WorkProjectRegistryV1,
   WorkProjectRole,
 } from "../../shared/work-project-types";
 import { updateWorkProjectRegistry } from "./work-project-registry";
 
-const METADATA_KEYS = ["name", "category", "status", "memo", "notionUrl", "order"] as const;
+const METADATA_KEYS = ["name", "category", "status", "memo", "notionLinks", "order"] as const;
 
 type RegistryUpdater = typeof updateWorkProjectRegistry;
 
@@ -16,7 +17,7 @@ export interface WorkProjectMetadataUpdate {
   category?: string;
   status?: ProjectStatus | null;
   memo?: string;
-  notionUrl?: string | null;
+  notionLinks?: WorkProjectNotionLink[];
   order?: number | null;
 }
 
@@ -48,11 +49,17 @@ function validateMetadataUpdate(update: unknown): asserts update is WorkProjectM
   }
 }
 
-/** The registry stores `null` for "no Notion page"; the UI hands over whatever is in the text field. */
-function normalizeNotionUrl(notionUrl: string | null | undefined): string | null | undefined {
-  if (notionUrl === undefined || notionUrl === null) return notionUrl;
-  const trimmed = notionUrl.trim();
-  return trimmed.length === 0 ? null : trimmed;
+/**
+ * The UI hands over its rows as-is, drafts included: trim each row, drop the ones without a URL,
+ * and give unlabeled rows the plain "노션" label the registry requires.
+ */
+function normalizeNotionLinks(links: WorkProjectNotionLink[] | undefined): WorkProjectNotionLink[] | undefined {
+  if (links === undefined) return undefined;
+  if (!Array.isArray(links)) throw new WorkProjectServiceError("Work project notionLinks must be an array");
+  return links
+    .map((link) => ({ label: String(link?.label ?? "").trim(), url: String(link?.url ?? "").trim() }))
+    .filter((link) => link.url.length > 0)
+    .map((link) => ({ label: link.label.length === 0 ? "노션" : link.label, url: link.url }));
 }
 
 export class WorkProjectService {
@@ -77,7 +84,7 @@ export class WorkProjectService {
       category: category.trim(),
       status: null,
       memo: "",
-      notionUrl: null,
+      notionLinks: [],
       members: [],
       order: null,
       createdAt: now,
@@ -101,7 +108,7 @@ export class WorkProjectService {
       const next = { ...workProject, updatedAt: now };
       for (const key of METADATA_KEYS) {
         if (Object.prototype.hasOwnProperty.call(update, key) && update[key] !== undefined) {
-          Object.assign(next, { [key]: key === "notionUrl" ? normalizeNotionUrl(update.notionUrl) : update[key] });
+          Object.assign(next, { [key]: key === "notionLinks" ? normalizeNotionLinks(update.notionLinks) : update[key] });
         }
       }
       return {
