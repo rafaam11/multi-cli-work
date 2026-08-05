@@ -1390,7 +1390,7 @@ describe("work project categories", () => {
     expect(folder.querySelector("svg")).toBeInTheDocument();
   });
 
-  it("spells the 구분 out in a chip, so the colour never carries the meaning alone", async () => {
+  it("leaves the 구분 to the colour in the sidebar, spelling it out on the home card instead", async () => {
     const harness = createApi({
       projects: [],
       sessions: [],
@@ -1399,9 +1399,12 @@ describe("work project categories", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    const group = await groupOf("사내 제품");
+    const group = (await groupOf("사내 제품")) as HTMLElement;
     expect(group).toHaveClass("category-product");
-    expect(within(group as HTMLElement).getByText("상품개발")).toHaveClass("category-chip");
+    // groupOf scopes to the sidebar nav, so the home card's chip cannot satisfy this.
+    expect(within(group).queryByText("상품개발")).not.toBeInTheDocument();
+    // The word itself still exists on screen — just not in the sidebar.
+    expect(screen.getByText("상품개발")).toHaveClass("category-chip");
   });
 
   it("reads a legacy or custom 구분 as 기타 rather than dropping the colour", async () => {

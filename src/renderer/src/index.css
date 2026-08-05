@@ -26,9 +26,9 @@
   /*
    * 업무 프로젝트 구분. Deliberately separate tokens rather than reusing --red/--green/--blue:
    * those carry state (--red is a missing folder or an error), and a category tinted with them
-   * would read as "something is wrong here". Each value clears 4.5:1 against --sidebar both as
-   * plain text and over the 12% wash .category-chip puts behind it; --quiet was too dim for the
-   * grey (3.7:1), hence its own value.
+   * would read as "something is wrong here". Each value clears 4.5:1 as the sidebar's icon and
+   * rail against --sidebar, and as chip text over the 12% wash .category-chip puts behind it on
+   * --surface; --quiet was too dim for the grey (3.7:1), hence its own value.
    */
   --category-government: #e07a72;
   --category-outsourcing: #6fc08a;
@@ -54,8 +54,9 @@
 }
 
 /*
- * The category label wherever it appears (sidebar group, home card, detail form). It always spells
- * the category out, so the colour only speeds up scanning — it never carries meaning on its own.
+ * The category label wherever it appears (home card, detail form). It always spells the category
+ * out, so those screens never leave the colour carrying the meaning on its own. The sidebar
+ * deliberately opts out — see .work-project-select.
  */
 .category-chip {
   flex: 0 0 auto;
@@ -1474,7 +1475,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .work-project-row {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);
-  min-height: 40px;
+  min-height: 28px;
+  align-items: center;
   border-radius: 5px;
 }
 
@@ -1502,30 +1504,19 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
+/*
+ * The group row is the name and this icon, nothing else — the 구분 was spelled out beside it until
+ * the text read as noise in a column this narrow. The colour here and on the rail is what tells the
+ * categories apart now; the chip that spells it out lives on the home card and the detail form.
+ */
 .work-project-select > svg {
   flex: 0 0 auto;
   color: var(--category-accent, var(--teal));
 }
 
-/*
- * Deliberately not .project-path: that class is a filesystem path and a narrow window hides it
- * (see the max-width: 680px block at the end of this file). This line carries the 구분 label, the
- * text that keeps the colour from being the only signal, so it has to survive every width.
- */
-.work-project-meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  color: var(--quiet);
-  font-size: 9px;
-}
-
+/* No toggle button on this row, so the name takes the full width. */
 .work-project-row.unassigned-row {
   grid-template-columns: minmax(0, 1fr);
-  min-height: 28px;
-  align-items: center;
 }
 
 .unassigned-label {

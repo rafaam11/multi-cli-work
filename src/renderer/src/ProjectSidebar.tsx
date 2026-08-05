@@ -494,12 +494,10 @@ export function ProjectSidebar({
                         aria-label={`${workProject.name} 프로젝트 열기`}
                       >
                         <Briefcase size={15} />
+                        {/* Name only — the 구분 reads from the icon and rail colour, and the folder
+                            count is one expand away. The chip and counts moved out for quiet. */}
                         <span className="project-copy">
                           <span className="project-name">{workProject.name}</span>
-                          <span className="work-project-meta">
-                            <span className="category-chip">{workProject.category}</span>
-                            <span className="meta-counts">폴더 {section.projects.length}개</span>
-                          </span>
                         </span>
                       </button>
                     </div>
