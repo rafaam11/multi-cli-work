@@ -22,6 +22,7 @@
   --brand-powershell: #5391fe;
   --brand-vscode: #007acc;
   --brand-claude: #d97757;
+  --brand-teams: #6264a7;
   /*
    * 업무 프로젝트 구분. Deliberately separate tokens rather than reusing --red/--green/--blue:
    * those carry state (--red is a missing folder or an error), and a category tinted with them
@@ -84,6 +85,26 @@
 
 .brand-icon-claude {
   color: var(--brand-claude);
+}
+
+.brand-icon-teams {
+  color: var(--brand-teams);
+}
+
+/*
+ * A folder row tints every child svg at once (--amber in the sidebar, --teal in the member list) so
+ * the folder glyphs read as one family. A brand mark has to escape that tint, and these win on
+ * specificity: Teams keeps its purple, while GitHub — a black/white mark that disappears against
+ * this background once given its own colour — follows the row's own text instead.
+ */
+.project-select > svg.brand-icon-teams,
+.member-open > svg.brand-icon-teams {
+  color: var(--brand-teams);
+}
+
+.project-select > svg.brand-icon-github,
+.member-open > svg.brand-icon-github {
+  color: inherit;
 }
 
 * {

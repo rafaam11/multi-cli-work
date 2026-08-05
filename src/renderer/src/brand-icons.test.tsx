@@ -1,6 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ClaudeCodeIcon, CodexIcon, GitHubIcon, PowerShellIcon, VSCodeIcon } from "./brand-icons";
+import { ClaudeCodeIcon, CodexIcon, GitHubIcon, PowerShellIcon, TeamsIcon, VSCodeIcon } from "./brand-icons";
 
 afterEach(cleanup);
 
@@ -8,6 +8,7 @@ const icons = [
   { name: "PowerShell", Icon: PowerShellIcon },
   { name: "VS Code", Icon: VSCodeIcon },
   { name: "GitHub", Icon: GitHubIcon },
+  { name: "Teams", Icon: TeamsIcon },
   { name: "Claude Code", Icon: ClaudeCodeIcon },
   { name: "Codex", Icon: CodexIcon },
 ];

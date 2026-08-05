@@ -1352,6 +1352,44 @@ describe("work project categories", () => {
     expect(await groupOf("A사 관제")).toHaveClass("category-outsourcing");
   });
 
+  it("marks a member folder with the brand of what it holds — Teams for 문서, GitHub for 레포", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [],
+      workProjects: [
+        workProject("wp-grant", "스마트팩토리 과제", "정부지원과제", {
+          members: [
+            { projectId: atlas.id, role: "repo" },
+            { projectId: dashboard.id, role: "docs" },
+          ],
+        }),
+      ],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const group = (await groupOf("스마트팩토리 과제")) as HTMLElement;
+    const folder = (name: string) => within(group).getByRole("button", { name: `${name} 폴더 선택` });
+
+    expect(folder("Atlas").querySelector(".brand-icon-github")).toBeInTheDocument();
+    expect(folder("Dashboard").querySelector(".brand-icon-teams")).toBeInTheDocument();
+  });
+
+  it("leaves a 미분류 folder on the plain folder icon, having no role to brand it with", async () => {
+    const harness = createApi({
+      projects: [atlas],
+      sessions: [],
+      workProjects: [workProject("wp-grant", "스마트팩토리 과제", "정부지원과제")],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const folder = await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    expect(folder.querySelector(".brand-icon-github")).not.toBeInTheDocument();
+    expect(folder.querySelector(".brand-icon-teams")).not.toBeInTheDocument();
+    expect(folder.querySelector("svg")).toBeInTheDocument();
+  });
+
   it("spells the 구분 out in a chip, so the colour never carries the meaning alone", async () => {
     const harness = createApi({
       projects: [],

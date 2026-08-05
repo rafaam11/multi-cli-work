@@ -9,8 +9,9 @@ import type {
   WorkProjectRole,
 } from "@shared/work-project-types";
 import { WORK_PROJECT_CATEGORIES } from "@shared/work-project-types";
-import { BookOpen, ExternalLink, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from "lucide-react";
+import { BookOpen, ExternalLink, FolderOpen, FolderPlus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { GitHubIcon, TeamsIcon } from "./brand-icons";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 import { categoryAccentClass } from "./work-project-accent";
 
@@ -372,7 +373,11 @@ export function WorkProjectDetailPage({
                     onClick={() => onSelectProject(project.id)}
                     aria-label={`${projectName(project)} 폴더 열기`}
                   >
-                    {role === "docs" ? <BookOpen size={14} /> : <Folder size={14} />}
+                    {role === "docs" ? (
+                      <TeamsIcon size={14} className="brand-icon-teams" />
+                    ) : (
+                      <GitHubIcon size={14} className="brand-icon-github" />
+                    )}
                     <span className="member-copy">
                       <span className="member-name">
                         {projectName(project)}

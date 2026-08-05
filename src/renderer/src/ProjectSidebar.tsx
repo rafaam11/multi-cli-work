@@ -6,7 +6,6 @@ import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import {
-  BookOpen,
   Briefcase,
   ChevronDown,
   ChevronRight,
@@ -29,7 +28,7 @@ import type { OpenFileTab } from "./file-tabs";
 import { reorderIds, type DropPosition } from "./project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
-import { AgentIcon } from "./brand-icons";
+import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
 import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
 
@@ -613,7 +612,9 @@ export function ProjectSidebar({
                       {rootMissing ? (
                         <FolderX size={15} aria-label="폴더 없음" />
                       ) : projectMembership[project.id]?.role === "docs" ? (
-                        <BookOpen size={15} aria-label="문서 폴더" />
+                        <TeamsIcon size={15} className="brand-icon-teams" />
+                      ) : projectMembership[project.id]?.role === "repo" ? (
+                        <GitHubIcon size={15} className="brand-icon-github" />
                       ) : expanded ? (
                         <FolderOpen size={15} />
                       ) : (
