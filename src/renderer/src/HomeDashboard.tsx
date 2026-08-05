@@ -17,6 +17,7 @@ import {
   toolDetails,
   updaterStatusLabel,
 } from "./session-labels";
+import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
 
 export interface ActivityEntry {
   id: string;
@@ -138,7 +139,13 @@ export function HomeDashboard({
                   <li key={workProject.id}>
                     <button
                       type="button"
-                      className="work-project-card"
+                      className={[
+                        "work-project-card",
+                        categoryAccentClass(workProject.category),
+                        isWorkProjectDormant(workProject.status) ? "dormant" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                       onClick={() => onSelectWorkProject(workProject.id)}
                       aria-label={`${workProject.name} 프로젝트 열기`}
                     >
@@ -146,9 +153,11 @@ export function HomeDashboard({
                       <span className="work-project-card-copy">
                         <span className="work-project-card-name">{workProject.name}</span>
                         <span className="work-project-card-meta">
-                          {workProject.category}
-                          {workProject.status ? ` · ${workProject.status}` : ""} · 폴더 {memberIds.size}개 · 활성 세션{" "}
-                          {activeSessionCount}개
+                          <span className="category-chip">{workProject.category}</span>
+                          <span className="meta-counts">
+                            {workProject.status ? `${workProject.status} · ` : ""}폴더 {memberIds.size}개 · 활성 세션{" "}
+                            {activeSessionCount}개
+                          </span>
                         </span>
                       </span>
                     </button>

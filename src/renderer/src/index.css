@@ -22,6 +22,56 @@
   --brand-powershell: #5391fe;
   --brand-vscode: #007acc;
   --brand-claude: #d97757;
+  /*
+   * 업무 프로젝트 구분. Deliberately separate tokens rather than reusing --red/--green/--blue:
+   * those carry state (--red is a missing folder or an error), and a category tinted with them
+   * would read as "something is wrong here". Each value clears 4.5:1 against --sidebar both as
+   * plain text and over the 12% wash .category-chip puts behind it; --quiet was too dim for the
+   * grey (3.7:1), hence its own value.
+   */
+  --category-government: #e07a72;
+  --category-outsourcing: #6fc08a;
+  --category-product: #6aa6e0;
+  --category-etc: #9aa49f;
+}
+
+/* One place maps a category to its colour — see work-project-accent.ts for the class it picks. */
+.category-government {
+  --category-accent: var(--category-government);
+}
+
+.category-outsourcing {
+  --category-accent: var(--category-outsourcing);
+}
+
+.category-product {
+  --category-accent: var(--category-product);
+}
+
+.category-etc {
+  --category-accent: var(--category-etc);
+}
+
+/*
+ * The category label wherever it appears (sidebar group, home card, detail form). It always spells
+ * the category out, so the colour only speeds up scanning — it never carries meaning on its own.
+ */
+.category-chip {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--category-accent, var(--muted));
+  background: color-mix(in srgb, var(--category-accent, var(--muted)) 12%, transparent);
+  font-size: 9px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* Only the counts beside a chip truncate — the 구분 itself always stays whole. */
+.meta-counts {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-icon-powershell {
@@ -1376,6 +1426,30 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin-top: 6px;
 }
 
+/* The rail sits on the node, not the header row, so it runs the full height of the group and ties
+   the indented folders to the 구분 they belong to even while the header scrolls past. */
+.work-project-node.categorized {
+  padding-left: 6px;
+  border-left: 2px solid color-mix(in srgb, var(--category-accent) 55%, transparent);
+  border-radius: 0 5px 5px 0;
+}
+
+/* 미분류 shares 기타's grey, so the two are told apart by line style rather than by colour. */
+.work-project-node.unassigned-node.categorized {
+  --category-accent: var(--quiet);
+  border-left-style: dotted;
+}
+
+/* Finished work stays reachable but stops competing with live work for attention. */
+.work-project-node.dormant {
+  opacity: 0.55;
+}
+
+.work-project-node.dormant:hover,
+.work-project-node.dormant:focus-within {
+  opacity: 1;
+}
+
 .work-project-row {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);
@@ -1383,13 +1457,15 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
 }
 
-.work-project-row:hover,
-.work-project-row.selected {
-  background: var(--surface-hover);
+.work-project-row:hover {
+  background: color-mix(in srgb, var(--category-accent, transparent) 8%, var(--surface-hover));
 }
 
+/* Selection cannot use an inset left bar any more — that is where the group rail already is, and
+   the two would read as one doubled line. A denser wash plus a ring instead. */
 .work-project-row.selected {
-  box-shadow: inset 2px 0 0 var(--teal);
+  background: color-mix(in srgb, var(--category-accent, transparent) 16%, var(--surface-hover));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--category-accent, transparent) 45%, var(--line-strong));
 }
 
 .work-project-select {
@@ -1407,7 +1483,22 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .work-project-select > svg {
   flex: 0 0 auto;
-  color: var(--teal);
+  color: var(--category-accent, var(--teal));
+}
+
+/*
+ * Deliberately not .project-path: that class is a filesystem path and a narrow window hides it
+ * (see the max-width: 680px block at the end of this file). This line carries the 구분 label, the
+ * text that keeps the colour from being the only signal, so it has to survive every width.
+ */
+.work-project-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: var(--quiet);
+  font-size: 9px;
 }
 
 .work-project-row.unassigned-row {
@@ -3219,13 +3310,26 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
+/* The cards sit in a grid, so a left edge in the category colour is enough to group them by eye. */
+.work-project-card {
+  border-left: 3px solid var(--category-accent, var(--line));
+}
+
 .work-project-card:hover {
-  background: var(--surface-hover);
+  background: color-mix(in srgb, var(--category-accent, transparent) 10%, var(--surface-hover));
+}
+
+.work-project-card.dormant {
+  opacity: 0.6;
+}
+
+.work-project-card.dormant:hover {
+  opacity: 1;
 }
 
 .work-project-card > svg {
   flex: 0 0 auto;
-  color: var(--teal);
+  color: var(--category-accent, var(--teal));
 }
 
 .work-project-card-copy {
@@ -3243,12 +3347,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .work-project-card-meta {
-  overflow: hidden;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
   color: var(--quiet);
   font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+
 
 .home-card h2 {
   margin: 0 0 10px;
@@ -3767,6 +3873,23 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+/* Where the colour↔구분 mapping is learnable: the chip beside the select updates as it changes.
+   Colouring the <option>s themselves is not an option — platforms render that inconsistently. */
+.work-project-category-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-project-category-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.work-project-detail .detail-card-notes {
+  border-left: 3px solid var(--category-accent, transparent);
 }
 
 .work-project-form input,

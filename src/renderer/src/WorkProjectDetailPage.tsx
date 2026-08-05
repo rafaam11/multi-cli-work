@@ -11,6 +11,7 @@ import { WORK_PROJECT_CATEGORIES } from "@shared/work-project-types";
 import { BookOpen, ExternalLink, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
+import { categoryAccentClass } from "./work-project-accent";
 
 const STATUS_OPTIONS: Array<ProjectStatus | ""> = ["", "진행중", "보류", "완료", "보관"];
 
@@ -128,8 +129,13 @@ export function WorkProjectDetailPage({
     : [category, ...WORK_PROJECT_CATEGORIES];
   const docsMembers = members.filter((member) => member.role === "docs");
 
+  // The accent tracks the local `category` state, not the saved one, so the chip and the card edge
+  // follow the select the moment it changes rather than only after the write lands.
   return (
-    <section className="project-detail work-project-detail" aria-label="업무 프로젝트 상세">
+    <section
+      className={`project-detail work-project-detail ${categoryAccentClass(category)}`}
+      aria-label="업무 프로젝트 상세"
+    >
       <div className="detail-grid">
         <section className="detail-card detail-card-notes" aria-label="프로젝트 개요">
           <h2>프로젝트 개요</h2>
@@ -152,20 +158,23 @@ export function WorkProjectDetailPage({
               }}
             />
             <label htmlFor={`wp-category-${workProject.id}`}>구분</label>
-            <select
-              id={`wp-category-${workProject.id}`}
-              value={category}
-              onChange={(event) => {
-                setCategory(event.target.value);
-                void save({ category: event.target.value });
-              }}
-            >
-              {categoryOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            <div className="work-project-category-row">
+              <select
+                id={`wp-category-${workProject.id}`}
+                value={category}
+                onChange={(event) => {
+                  setCategory(event.target.value);
+                  void save({ category: event.target.value });
+                }}
+              >
+                {categoryOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              <span className="category-chip">{category}</span>
+            </div>
             <label htmlFor={`wp-status-${workProject.id}`}>상태</label>
             <select
               id={`wp-status-${workProject.id}`}

@@ -4,7 +4,7 @@ import type { AppStateSnapshot } from "@shared/app-state-types";
 import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView, WindowChromeState } from "@shared/api-types";
 import type { FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
-import type { WorkProjectRegistryV1 } from "@shared/work-project-types";
+import type { WorkProject, WorkProjectRegistryV1 } from "@shared/work-project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -213,6 +213,7 @@ function createApi(options?: {
   source?: ProjectWorkspaceSnapshot["source"];
   writable?: boolean;
   missingRootProjectIds?: string[];
+  workProjects?: WorkProject[];
   selection?: Pick<AppStateSnapshot["state"], "selectedProjectId" | "selectedSessionId">;
 }) {
   const listeners = new Set<(event: TerminalEvent) => void>();
@@ -249,11 +250,13 @@ function createApi(options?: {
     },
   };
 
-  const emptyWorkProjectRegistry: WorkProjectRegistryV1 = {
+  const workProjectRegistry: WorkProjectRegistryV1 = {
     schemaVersion: 1,
     updatedAt: "2026-07-11T04:00:00.000Z",
     teamsSyncRoot: null,
-    workProjects: {},
+    workProjects: Object.fromEntries(
+      (options?.workProjects ?? []).map((workProject) => [workProject.id, workProject]),
+    ),
   };
   const api: MultiCliWorkApi = {
     platform: "win32",
@@ -272,16 +275,16 @@ function createApi(options?: {
       gitDiff: vi.fn().mockResolvedValue({ isRepo: true, diff: "", untracked: [], truncated: false }),
     },
     workProjects: {
-      list: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
-      create: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
-      update: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
-      remove: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
-      addMember: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
-      removeMember: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
-      reorder: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      list: vi.fn().mockResolvedValue(workProjectRegistry),
+      create: vi.fn().mockResolvedValue(workProjectRegistry),
+      update: vi.fn().mockResolvedValue(workProjectRegistry),
+      remove: vi.fn().mockResolvedValue(workProjectRegistry),
+      addMember: vi.fn().mockResolvedValue(workProjectRegistry),
+      removeMember: vi.fn().mockResolvedValue(workProjectRegistry),
+      reorder: vi.fn().mockResolvedValue(workProjectRegistry),
       addMemberFolder: vi.fn().mockResolvedValue(null),
       chooseTeamsSyncRoot: vi.fn().mockResolvedValue(null),
-      clearTeamsSyncRoot: vi.fn().mockResolvedValue(emptyWorkProjectRegistry),
+      clearTeamsSyncRoot: vi.fn().mockResolvedValue(workProjectRegistry),
     },
     worktrees: {
       list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
@@ -1299,6 +1302,125 @@ describe("folder workspace", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "gemini 세션 열기" })).toBeInTheDocument();
+  });
+});
+
+describe("work project categories", () => {
+  const workProject = (id: string, name: string, category: string, extra?: Partial<WorkProject>): WorkProject => ({
+    id,
+    name,
+    category,
+    status: "진행중",
+    memo: "",
+    notionLinks: [],
+    members: [],
+    order: 0,
+    createdAt: "2026-07-11T00:00:00.000Z",
+    updatedAt: "2026-07-11T00:00:00.000Z",
+    ...extra,
+  });
+
+  // The home dashboard cards carry the same aria-label, so every lookup is scoped to the sidebar.
+  const groupOf = async (name: string) => {
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    return (await within(nav).findByRole("button", { name: `${name} 프로젝트 열기` })).closest(
+      ".work-project-node",
+    )!;
+  };
+
+  it("gives each 구분 its own accent class, and the rail covers the folders inside", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [],
+      workProjects: [
+        workProject("wp-grant", "스마트팩토리 과제", "정부지원과제", {
+          members: [{ projectId: atlas.id, role: "repo" }],
+        }),
+        workProject("wp-vendor", "A사 관제", "외주개발", { order: 1 }),
+      ],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const grant = await groupOf("스마트팩토리 과제");
+    expect(grant).toHaveClass("category-government", "categorized");
+    // The folder sits inside the group node, so the rail on that node runs past it.
+    expect(grant.querySelector(".project-row")).toBeInTheDocument();
+    expect(await groupOf("A사 관제")).toHaveClass("category-outsourcing");
+  });
+
+  it("spells the 구분 out in a chip, so the colour never carries the meaning alone", async () => {
+    const harness = createApi({
+      projects: [],
+      sessions: [],
+      workProjects: [workProject("wp-product", "사내 제품", "상품개발")],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const group = await groupOf("사내 제품");
+    expect(group).toHaveClass("category-product");
+    expect(within(group as HTMLElement).getByText("상품개발")).toHaveClass("category-chip");
+  });
+
+  it("reads a legacy or custom 구분 as 기타 rather than dropping the colour", async () => {
+    const harness = createApi({
+      projects: [],
+      sessions: [],
+      workProjects: [workProject("wp-legacy", "사내연구 과제", "사내연구")],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    expect(await groupOf("사내연구 과제")).toHaveClass("category-etc");
+  });
+
+  it("dims a 완료 group so live work stays in front", async () => {
+    const harness = createApi({
+      projects: [],
+      sessions: [],
+      workProjects: [
+        workProject("wp-done", "종료된 과제", "정부지원과제", { status: "완료" }),
+        workProject("wp-live", "진행 과제", "정부지원과제", { order: 1 }),
+      ],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    expect(await groupOf("종료된 과제")).toHaveClass("dormant");
+    expect(await groupOf("진행 과제")).not.toHaveClass("dormant");
+  });
+
+  it("gives the home dashboard card the same accent as the sidebar group", async () => {
+    const harness = createApi({
+      projects: [],
+      sessions: [],
+      workProjects: [
+        workProject("wp-vendor", "A사 관제", "외주개발"),
+        workProject("wp-done", "종료된 과제", "기타", { status: "보관", order: 1 }),
+      ],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const home = within(await screen.findByRole("region", { name: "업무 프로젝트" }));
+    const card = (await home.findByRole("button", { name: "A사 관제 프로젝트 열기" })).closest(
+      ".work-project-card",
+    )!;
+    expect(card).toHaveClass("category-outsourcing");
+    expect(card).not.toHaveClass("dormant");
+    expect(
+      home.getByRole("button", { name: "종료된 과제 프로젝트 열기" }).closest(".work-project-card"),
+    ).toHaveClass("category-etc", "dormant");
+  });
+
+  it("leaves the tree unrailed when no work project exists at all", async () => {
+    const harness = createApi({ projects: [atlas], sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const node = (await screen.findByRole("button", { name: "Atlas 폴더 선택" })).closest(".work-project-node")!;
+    expect(node).not.toHaveClass("categorized");
   });
 });
 

@@ -31,6 +31,7 @@ import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon } from "./brand-icons";
 import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
+import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
 
 interface ProjectSidebarProps {
   snapshot: ProjectWorkspaceSnapshot | null;
@@ -444,9 +445,19 @@ export function ProjectSidebar({
             {treeSections.map((section) => {
               const workProject = section.workProject;
               const sectionExpanded = workProject ? expandedWorkProjects.has(workProject.id) : true;
+              // With no work projects at all the single unassigned section has no header either,
+              // so it takes no rail — the tree stays exactly as it was before grouping existed.
+              const railed = workProject !== null || workProjects.length > 0;
               return (
                 <li
-                  className={`work-project-node ${workProject ? "" : "unassigned-node"}`}
+                  className={[
+                    "work-project-node",
+                    workProject ? categoryAccentClass(workProject.category) : "unassigned-node",
+                    railed ? "categorized" : "",
+                    workProject && isWorkProjectDormant(workProject.status) ? "dormant" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                   key={section.key}
                   role="treeitem"
                   aria-expanded={sectionExpanded}
@@ -486,8 +497,9 @@ export function ProjectSidebar({
                         <Briefcase size={15} />
                         <span className="project-copy">
                           <span className="project-name">{workProject.name}</span>
-                          <span className="project-path">
-                            {workProject.category} · 폴더 {section.projects.length}개
+                          <span className="work-project-meta">
+                            <span className="category-chip">{workProject.category}</span>
+                            <span className="meta-counts">폴더 {section.projects.length}개</span>
                           </span>
                         </span>
                       </button>
