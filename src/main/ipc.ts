@@ -17,6 +17,8 @@ import type {
   ResumeTerminalInput,
   SessionAttention,
   UpdaterStatus,
+  WindowChromeState,
+  WindowZoomAction,
 } from "../shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type {
@@ -174,6 +176,23 @@ interface ClipboardGateway {
   writeText(text: string): void;
 }
 
+/**
+ * The renderer draws the title bar, so everything the native caption used to do has to come back
+ * through here. `close` keeps the app's own close semantics (hide to tray); `quit` is the menu's
+ * 종료, which goes through the session-stop confirmation instead.
+ */
+interface WindowControlsGateway {
+  minimize(): void;
+  toggleMaximize(): void;
+  close(): void;
+  state(): WindowChromeState;
+  toggleFullScreen(): void;
+  toggleDevTools(): void;
+  reload(): void;
+  zoom(action: WindowZoomAction): void;
+  quit(): Promise<void>;
+}
+
 interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
   workProjectService: WorkProjectServiceGateway;
@@ -189,6 +208,7 @@ interface MainIpcDependencies {
   htmlPreview: HtmlPreviewGateway;
   shell: ShellGateway;
   clipboard: ClipboardGateway;
+  windowControls: WindowControlsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
@@ -201,6 +221,7 @@ interface MainIpcDependencies {
 }
 
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
+const WINDOW_ZOOM_ACTIONS: readonly WindowZoomAction[] = ["in", "out", "reset"];
 const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -281,7 +302,7 @@ function validateProjectPatch(value: unknown): ProjectMetadataPatch {
 function validateWorkProjectPatch(value: unknown): WorkProjectMetadataUpdate {
   const patch = exactObject(
     value,
-    ["name", "category", "status", "memo", "notionLinks", "order"],
+    ["name", "category", "status", "memo", "notionLinks", "localFolders", "order"],
     "Work project patch",
   );
   return patch as WorkProjectMetadataUpdate;
@@ -567,6 +588,21 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     const workProjects = await dependencies.workProjectService.addMember(id, project.id, memberRoleValue);
     return { project, workProjects };
   });
+  // Picks a reference folder without touching either registry: the renderer drops the path into its
+  // row and commits it through work-projects:update, so local folders keep a single write path.
+  ipc.handle("work-projects:choose-local-folder", () => dependencies.chooseDirectory());
+  // The renderer names a folder the work project already stores; it never hands over a free path.
+  // Same reasoning as projects:reveal resolving a project id rather than accepting a root path.
+  ipc.handle("work-projects:reveal-local-folder", async (_event, workProjectId: unknown, folderPath: unknown) => {
+    const id = nonEmptyString(workProjectId, "Work project id");
+    const target = nonEmptyString(folderPath, "Local folder path");
+    const workProject = (await dependencies.readWorkProjectRegistry()).workProjects[id];
+    if (!workProject) throw new Error(`Work project ${id} was not found`);
+    if (!workProject.localFolders.some((folder) => folder.path === target)) {
+      throw new Error(`Local folder is not registered on work project ${id}`);
+    }
+    return dependencies.projectActions.reveal(target);
+  });
   ipc.handle("work-projects:choose-teams-root", async () => {
     const rootPath = await dependencies.chooseDirectory();
     if (!rootPath) return null;
@@ -806,6 +842,18 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     dependencies.onSessionSelected?.(sessionId);
     return snapshot;
   });
+  ipc.handle("window:minimize", () => dependencies.windowControls.minimize());
+  ipc.handle("window:toggle-maximize", () => dependencies.windowControls.toggleMaximize());
+  ipc.handle("window:close", () => dependencies.windowControls.close());
+  ipc.handle("window:state", () => dependencies.windowControls.state());
+  ipc.handle("window:toggle-full-screen", () => dependencies.windowControls.toggleFullScreen());
+  ipc.handle("window:toggle-dev-tools", () => dependencies.windowControls.toggleDevTools());
+  ipc.handle("window:reload", () => dependencies.windowControls.reload());
+  ipc.handle("window:zoom", (_event, action: unknown) => {
+    if (!WINDOW_ZOOM_ACTIONS.includes(action as WindowZoomAction)) throw new Error("Zoom action is invalid");
+    dependencies.windowControls.zoom(action as WindowZoomAction);
+  });
+  ipc.handle("app:quit", () => dependencies.windowControls.quit());
   ipc.handle("app:version", () => dependencies.appVersion());
   ipc.handle("updater:status", () => dependencies.updater.status());
   ipc.handle("updater:check", () => dependencies.updater.check());

@@ -178,6 +178,17 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     reload: vi.fn(() => undefined),
     close: vi.fn(() => undefined),
   };
+  const windowControls = {
+    minimize: vi.fn(),
+    toggleMaximize: vi.fn(),
+    close: vi.fn(),
+    state: vi.fn(() => ({ maximized: true, fullScreen: false })),
+    toggleFullScreen: vi.fn(),
+    toggleDevTools: vi.fn(),
+    reload: vi.fn(),
+    zoom: vi.fn(),
+    quit: vi.fn(async () => undefined),
+  };
   const chooseDirectory = vi.fn(async (_defaultPath?: string): Promise<string | null> => "C:\\Work");
   registerMainIpc(ipc, {
     projectService,
@@ -194,6 +205,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     htmlPreview: htmlPreviewGateway,
     shell: shellGateway,
     clipboard,
+    windowControls,
     appVersion: vi.fn(() => "1.0.0"),
     readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
     restoreRegistryBackup,
@@ -223,6 +235,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     htmlPreviewGateway,
     shellGateway,
     clipboard,
+    windowControls,
     chooseDirectory,
     calls,
     onSessionSelected: options.onSessionSelected,
@@ -239,6 +252,31 @@ describe("main IPC boundary", () => {
 
     expect(clipboard.readText).toHaveBeenCalledOnce();
     expect(clipboard.writeText).toHaveBeenCalledWith("selected output");
+  });
+
+  it("delegates the custom title bar's window actions, rejecting an unknown zoom action", async () => {
+    const { handlers, windowControls } = setup();
+
+    await handlers.get("window:minimize")!({});
+    await handlers.get("window:toggle-maximize")!({});
+    await handlers.get("window:close")!({});
+    await handlers.get("window:toggle-full-screen")!({});
+    await handlers.get("window:toggle-dev-tools")!({});
+    await handlers.get("window:reload")!({});
+    await handlers.get("window:zoom")!({}, "in");
+    await handlers.get("app:quit")!({});
+
+    expect(handlers.get("window:state")!({})).toEqual({ maximized: true, fullScreen: false });
+    expect(() => handlers.get("window:zoom")!({}, "fit")).toThrow(/zoom action/i);
+
+    expect(windowControls.minimize).toHaveBeenCalledOnce();
+    expect(windowControls.toggleMaximize).toHaveBeenCalledOnce();
+    expect(windowControls.close).toHaveBeenCalledOnce();
+    expect(windowControls.toggleFullScreen).toHaveBeenCalledOnce();
+    expect(windowControls.toggleDevTools).toHaveBeenCalledOnce();
+    expect(windowControls.reload).toHaveBeenCalledOnce();
+    expect(windowControls.zoom).toHaveBeenCalledExactlyOnceWith("in");
+    expect(windowControls.quit).toHaveBeenCalledOnce();
   });
 
   it("marks a selected terminal seen after persisting selection", async () => {

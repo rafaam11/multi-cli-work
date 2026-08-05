@@ -41,6 +41,9 @@ import { ProjectSidebar } from "./ProjectSidebar";
 import { PullRequestDetailView } from "./PullRequestDetailView";
 import { QuickOpenPalette } from "./QuickOpenPalette";
 import { SessionContextMenu } from "./SessionContextMenu";
+import type { TerminalCommands } from "./TerminalPane";
+import { TitleBar } from "./TitleBar";
+import { buildTitleBarMenus, NEW_SESSION_PREFIX } from "./title-bar-menu";
 import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
 import { WorkspaceHeader, type SplitCandidate } from "./WorkspaceHeader";
 import { WorkspaceSplit } from "./WorkspaceSplit";
@@ -212,6 +215,10 @@ export function App() {
   const [fanOutVisible, setFanOutVisible] = useState(false);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   const [splitSessionId, setSplitSessionId] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState("");
+  /** Which terminal the 편집 menu acts on — a split has two, and only focus tells them apart. */
+  const [lastFocusedTerminalId, setLastFocusedTerminalId] = useState<string | null>(null);
+  const terminalCommands = useRef(new Map<string, TerminalCommands>());
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -435,6 +442,11 @@ export function App() {
     void loadWorkspace();
   }, [loadWorkspace]);
 
+  // Only the 도움말 menu shows it, and it never changes while the app runs.
+  useEffect(() => {
+    void window.multiCliWork.updates.appVersion().then(setAppVersion).catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     const handleWindowResize = () => {
       setSidebarWidth((current) => clampSidebarWidth(current));
@@ -483,6 +495,29 @@ export function App() {
       event.preventDefault();
       event.stopPropagation();
       setQuickOpenVisible((visible) => !visible);
+    };
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, []);
+
+  // Electron's default menu is gone, and its accelerators went with it. These are the few worth
+  // keeping, on the same capture-phase listener as Ctrl+P and for the same reason. Ctrl+R is
+  // deliberately absent: reloading the renderer by mistyping is far worse than one extra menu trip.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const controls = window.multiCliWork.window;
+      const run = (action: () => void) => {
+        event.preventDefault();
+        event.stopPropagation();
+        action();
+      };
+      if (event.key === "F11") return run(() => void controls.toggleFullScreen());
+      if (event.key === "F12") return run(() => void controls.toggleDevTools());
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      // Shift matters only for the glyph: Ctrl+Shift+= is how "+" is typed on a US layout.
+      if (event.key === "=" || event.key === "+") return run(() => void controls.zoom("in"));
+      if (event.key === "-" || event.key === "_") return run(() => void controls.zoom("out"));
+      if (event.key === "0") return run(() => void controls.zoom("reset"));
     };
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
@@ -860,6 +895,16 @@ export function App() {
       setPendingAction(false);
     }
   };
+
+  /** Panes publish their xterm handles here as they mount, and withdraw them as they go. */
+  const registerTerminalCommands = useCallback((sessionId: string, commands: TerminalCommands | null) => {
+    if (commands) {
+      terminalCommands.current.set(sessionId, commands);
+      return;
+    }
+    terminalCommands.current.delete(sessionId);
+    setLastFocusedTerminalId((current) => (current === sessionId ? null : current));
+  }, []);
 
   const finishSessionRefresh = (sessionId: string) => {
     setRefreshingSessionIds((current) => {
@@ -1467,7 +1512,132 @@ export function App() {
       }));
   }, [selectedSession, sessions, projects, agents]);
 
+  // Terminals only exist while the terminal view is up, so anything else empties the 편집 menu.
+  // Before either pane has been clicked, the primary one is the obvious stand-in for "the terminal".
+  const editTargetId =
+    activeView === "terminal" ? (lastFocusedTerminalId ?? selectedSession?.id ?? null) : null;
+  const canSaveFile = Boolean(
+    activeView === "file" &&
+      selectedFileTab &&
+      ["markdown", "html", "text"].includes(selectedFileTab.category) &&
+      !selectedFileTab.truncated &&
+      selectedFileTab.encoding === "utf8",
+  );
+
+  const titleBarMenus = useMemo(
+    () =>
+      buildTitleBarMenus({
+        agents,
+        appVersion,
+        project: headerProject ? { missing: selectedProjectMissing } : null,
+        readOnly: Boolean(snapshot && !snapshot.writable),
+        pendingAction,
+        session: headerSession
+          ? {
+              status: headerSession.status,
+              tool: headerSession.tool !== null,
+              refreshing: refreshingSessionIds.has(headerSession.id),
+            }
+          : null,
+        splitCandidateCount: splitCandidates.length,
+        splitActive: Boolean(splitSession),
+        terminalFocused: editTargetId !== null,
+        canSaveFile,
+        sidebarCollapsed,
+        rightSidebarCollapsed,
+      }),
+    [
+      agents,
+      appVersion,
+      headerProject,
+      selectedProjectMissing,
+      snapshot,
+      pendingAction,
+      headerSession,
+      refreshingSessionIds,
+      splitCandidates.length,
+      splitSession,
+      editTargetId,
+      canSaveFile,
+      sidebarCollapsed,
+      rightSidebarCollapsed,
+    ],
+  );
+
+  // Same rule the window frame and the taskbar badge use: an approval outranks a plain input wait.
+  const titleBarAttention: SessionAttention | null = useMemo(() => {
+    const waits = Object.values(unread);
+    return waits.includes("approval") ? "approval" : waits.length > 0 ? "input" : null;
+  }, [unread]);
+
+  const titleBarWorkProjectName =
+    activeView === "work-project"
+      ? (selectedWorkProject?.name ?? null)
+      : headerProject
+        ? (workProjects.find((workProject) => workProject.id === projectMembership[headerProject.id]?.workProjectId)
+            ?.name ?? null)
+        : null;
+
+  const handleMenuAction = (id: string) => {
+    if (id.startsWith(NEW_SESSION_PREFIX) && selectedProject) {
+      void startSession(selectedProject, id.slice(NEW_SESSION_PREFIX.length), selectedWorktree?.id);
+      return;
+    }
+    const terminal = editTargetId ? (terminalCommands.current.get(editTargetId) ?? null) : null;
+    switch (id) {
+      case "file.add-folder": void addProject(); break;
+      case "file.add-work-project": void createWorkProject(); break;
+      case "file.save": if (selectedFileTab) void saveFileTab(selectedFileTab.id); break;
+      case "file.relink": void relinkProject(); break;
+      // Not window.close(): ✕ hides to the tray, 종료 goes through the session-stop confirmation.
+      case "file.quit": void window.multiCliWork.window.quit(); break;
+      case "edit.copy": terminal?.copySelection(); break;
+      case "edit.paste": terminal?.paste(); break;
+      case "edit.select-all": terminal?.selectAll(); break;
+      case "edit.clear": terminal?.clear(); break;
+      case "view.toggle-sidebar": setSidebarCollapsed((value) => !value); break;
+      case "view.toggle-right-sidebar": setRightSidebarCollapsed((value) => !value); break;
+      case "view.quick-open": setQuickOpenVisible((visible) => !visible); break;
+      case "view.zoom-in": void window.multiCliWork.window.zoom("in"); break;
+      case "view.zoom-out": void window.multiCliWork.window.zoom("out"); break;
+      case "view.zoom-reset": void window.multiCliWork.window.zoom("reset"); break;
+      case "view.full-screen": void window.multiCliWork.window.toggleFullScreen(); break;
+      case "view.reload": void window.multiCliWork.window.reload(); break;
+      case "view.dev-tools": void window.multiCliWork.window.toggleDevTools(); break;
+      case "session.resume": void resumeSession(); break;
+      case "session.refresh": if (headerSession) void refreshSession(headerSession.id); break;
+      case "session.stop": void stopSession(); break;
+      // The header's trash button removes at once; a menu is easier to hit by accident, so this
+      // takes the sidebar's confirm-first path instead.
+      case "session.remove":
+        if (selectedSession) setSessionRemoval({ session: selectedSession, label: selectedSessionLabel ?? "" });
+        break;
+      // The header asks which session fills the second pane. A menu item has no room for that, so
+      // it takes the candidate the dropdown lists first — the most recently active one.
+      case "session.split":
+        applySplit(splitSession ? null : (splitCandidates[0]?.sessionId ?? null));
+        break;
+      case "tools.claude-update": void startTool("claude-update"); break;
+      case "tools.codex-update": void startTool("codex-update"); break;
+      case "tools.edit-agents": void editAgents(); break;
+      case "help.check-updates":
+        void window.multiCliWork.updates.check().catch((error) => setActionError(errorMessage(error)));
+        break;
+      case "help.release-notes": void window.multiCliWork.updates.openReleases(); break;
+      case "help.repository": void window.multiCliWork.updates.openRepository(); break;
+    }
+  };
+
   return (
+    <div className="app-frame">
+      <TitleBar
+        menus={titleBarMenus}
+        onAction={handleMenuAction}
+        workProjectName={titleBarWorkProjectName}
+        folderName={activeView === "work-project" ? null : headerProject ? projectName(headerProject) : null}
+        attention={titleBarAttention}
+        onQuickOpen={() => setQuickOpenVisible((visible) => !visible)}
+      />
     <div
       className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${rightSidebarCollapsed ? "right-sidebar-collapsed" : ""}`}
       style={
@@ -1653,6 +1823,8 @@ export function App() {
               onRefreshComplete={finishSessionRefresh}
               onError={(message) => setActionError(message)}
               onCloseSplit={() => applySplit(null)}
+              onRegisterCommands={registerTerminalCommands}
+              onTerminalFocused={setLastFocusedTerminalId}
             />
           ) : activeView === "file" && selectedFileTab && selectedFileTab.category === "html" ? (
             <HtmlView
@@ -1708,6 +1880,11 @@ export function App() {
               }}
               onOpenNotion={(url) => void window.multiCliWork.shell.openExternal(url).catch((error) => setActionError(errorMessage(error)))}
               onRevealProject={(projectId) => void runProjectAction(() => window.multiCliWork.projects.reveal(projectId))}
+              onRevealLocalFolder={(folderPath) =>
+                void runProjectAction(() =>
+                  window.multiCliWork.workProjects.revealLocalFolder(selectedWorkProject.id, folderPath),
+                )
+              }
             />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage
@@ -2063,6 +2240,7 @@ export function App() {
           </div>
         </div>
       ) : null}
+    </div>
     </div>
   );
 }

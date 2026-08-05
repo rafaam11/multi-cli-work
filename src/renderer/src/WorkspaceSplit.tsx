@@ -3,7 +3,7 @@ import { SHIFT_ENTER_BYTES } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import { X } from "lucide-react";
 import { useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
-import { TerminalPane } from "./TerminalPane";
+import { TerminalPane, type TerminalCommands } from "./TerminalPane";
 
 interface WorkspaceSplitProps {
   session: TerminalSessionView;
@@ -16,6 +16,8 @@ interface WorkspaceSplitProps {
   onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
   onCloseSplit(): void;
+  onRegisterCommands(sessionId: string, commands: TerminalCommands | null): void;
+  onTerminalFocused(sessionId: string): void;
 }
 
 /**
@@ -33,6 +35,8 @@ export function WorkspaceSplit({
   onRefreshComplete,
   onError,
   onCloseSplit,
+  onRegisterCommands,
+  onTerminalFocused,
 }: WorkspaceSplitProps) {
   const shiftEnterBytes = (pane: TerminalSessionView): string | null =>
     SHIFT_ENTER_BYTES[agents.find((agent) => agent.id === pane.kind)?.shiftEnter ?? "enter"];
@@ -64,6 +68,8 @@ export function WorkspaceSplit({
         onAttached={onAttached}
         onRefreshComplete={onRefreshComplete}
         onError={onError}
+        onRegisterCommands={onRegisterCommands}
+        onTerminalFocused={onTerminalFocused}
       />;
   }
 
@@ -78,6 +84,8 @@ export function WorkspaceSplit({
         onAttached={onAttached}
         onRefreshComplete={onRefreshComplete}
         onError={onError}
+        onRegisterCommands={onRegisterCommands}
+        onTerminalFocused={onTerminalFocused}
       />
       </div>
       <div
@@ -104,6 +112,8 @@ export function WorkspaceSplit({
           onAttached={onAttached}
           onRefreshComplete={onRefreshComplete}
           onError={onError}
+          onRegisterCommands={onRegisterCommands}
+          onTerminalFocused={onTerminalFocused}
         />
       </div>
     </div>

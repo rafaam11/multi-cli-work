@@ -63,6 +63,219 @@ button:focus-visible {
 }
 
 /*
+ * The window has no native caption of its own (see window-chrome.ts), so the frame is one 35px
+ * title bar over the existing shell.
+ */
+.app-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.app-frame > .app-shell {
+  /* Not height:100% — inside the column flex that would resolve against the whole window and
+     push the shell out from under the title bar. */
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/*
+ * Everything in the bar is draggable except the things you click; each of those opts out with
+ * `-webkit-app-region: no-drag`. The menus keep their natural width and the window buttons theirs,
+ * so the command centre is the only part that gives ground as the window narrows.
+ */
+.title-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  flex: 0 0 auto;
+  height: 35px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: var(--sidebar);
+  color: var(--text);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.title-bar-menus {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding-left: 10px;
+}
+
+.title-bar-icon {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 10px;
+  color: var(--blue);
+}
+
+.title-bar-menu-anchor {
+  position: relative;
+  display: flex;
+  height: 100%;
+  align-items: center;
+}
+
+.title-bar-menu-button {
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-menu-button:hover,
+.title-bar-menu-button.open {
+  background: var(--surface-hover);
+}
+
+/* The dropdowns are .provider-menu, which hangs off the right edge of a header icon button. A menu
+   bar's drops from the left edge of its label instead, and is only as wide as its longest item. */
+.provider-menu.title-bar-dropdown {
+  top: 100%;
+  right: auto;
+  left: 0;
+  width: max-content;
+  min-width: 200px;
+  max-width: 340px;
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-submenu-anchor {
+  position: relative;
+}
+
+.provider-menu.title-bar-submenu {
+  top: -6px;
+  right: auto;
+  left: 100%;
+  width: max-content;
+  min-width: 168px;
+  max-width: 300px;
+}
+
+.provider-menu.title-bar-dropdown button,
+.provider-menu.title-bar-submenu button {
+  /* .provider-menu's own three columns start with a 17px icon slot these items have no icon for. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 28px;
+  gap: 18px;
+  font-size: 12px;
+}
+
+.title-bar-item-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.title-bar-shortcut {
+  color: var(--quiet);
+  font-size: 10.5px;
+}
+
+.title-bar-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.title-bar-command-centre {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.command-centre {
+  display: flex;
+  min-width: 0;
+  max-width: 460px;
+  height: 22px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 11.5px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.command-centre:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.command-centre-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The window title carries the same mark for the taskbar; this one is for whoever is already
+   looking at the app, but at a different session. */
+.command-centre-attention {
+  flex: 0 0 auto;
+  min-width: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
+.command-centre-attention.attention-approval {
+  color: var(--red);
+}
+
+.command-centre-attention.attention-input {
+  color: var(--amber);
+}
+
+.window-controls {
+  display: flex;
+  height: 100%;
+  align-items: stretch;
+  justify-self: end;
+}
+
+.window-controls button {
+  display: inline-flex;
+  width: 46px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.window-controls .window-close:hover {
+  color: #fff;
+  background: var(--red);
+}
+
+/*
  * Five explicit columns, and every direct child below is pinned to one with grid-column rather
  * than left to auto-placement. Auto-placement re-numbers remaining children whenever an earlier
  * one drops out of flow (e.g. display:none) — that bit the resizer once already (see
@@ -3567,28 +3780,34 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: 11px;
 }
 
-.work-project-notion-list {
+/* 노션 링크 목록과 참고 로컬 폴더 목록은 같은 행 레이아웃을 공유한다 — 라벨 칸 + 값 칸 + 아이콘들. */
+.work-project-notion-list,
+.work-project-local-list {
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 
-.work-project-notion-row {
+.work-project-notion-row,
+.work-project-local-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.work-project-notion-row input {
+.work-project-notion-row input,
+.work-project-local-row input {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.work-project-notion-row .notion-label-input {
+.work-project-notion-row .notion-label-input,
+.work-project-local-row .link-label-input {
   flex: 0 0 96px;
 }
 
-.work-project-notion-add {
+.work-project-notion-add,
+.work-project-local-add {
   display: inline-flex;
   width: max-content;
   align-items: center;
@@ -3602,7 +3821,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
-.work-project-notion-add:hover {
+.work-project-notion-add:hover,
+.work-project-local-add:hover {
   color: var(--text);
   background: var(--surface-hover);
 }

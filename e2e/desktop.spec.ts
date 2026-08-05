@@ -389,6 +389,48 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("button", { name: new RegExp(`${SHELL_LABEL}( \\d+)? 세션 보기`) }).first()).toBeVisible();
   });
 
+  /**
+   * The window has no OS title bar and no native menu any more, so this bar is the only way to reach
+   * what they used to offer. It has to be there, sit flush at the top, and actually drive the app.
+   */
+  test("@smoke drives the app from its own title bar instead of the native menu", async () => {
+    expect(await app.evaluate(({ Menu }) => Menu.getApplicationMenu() === null)).toBe(true);
+
+    const titleBar = page.locator(".title-bar");
+    const geometry = await titleBar.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, height: Math.round(rect.height) };
+    });
+    expect(geometry).toEqual({ top: 0, height: 35 });
+    for (const label of ["파일", "편집", "보기", "세션", "도구", "도움말"]) {
+      await expect(titleBar.getByRole("menuitem", { name: label })).toBeVisible();
+    }
+    for (const label of ["최소화", "최대화", "닫기"]) {
+      await expect(titleBar.getByRole("button", { name: label })).toBeVisible();
+    }
+
+    // Folding the sidebar is the least invasive item that proves a menu click reaches the app.
+    await titleBar.getByRole("menuitem", { name: "보기" }).click();
+    await page.getByRole("menu", { name: "보기" }).getByRole("menuitem", { name: "왼쪽 사이드바 접기" }).click();
+    await expect(page.locator(".app-shell.sidebar-collapsed")).toBeVisible();
+    await titleBar.getByRole("menuitem", { name: "보기" }).click();
+    await page.getByRole("menu", { name: "보기" }).getByRole("menuitem", { name: "왼쪽 사이드바 펼치기" }).click();
+    await expect(page.locator(".app-shell.sidebar-collapsed")).toBeHidden();
+
+    await titleBar.getByRole("menuitem", { name: "도움말" }).click();
+    await expect(page.getByRole("menu", { name: "도움말" })).toBeVisible();
+    await attachScreenshot("title-bar");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu", { name: "도움말" })).toBeHidden();
+
+    const commandCentre = titleBar.getByRole("button", { name: "빠른 열기" });
+    await expect(commandCentre).toContainText("Sample Project");
+    await commandCentre.click();
+    await expect(page.getByRole("dialog", { name: "빠른 열기" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "빠른 열기" })).toBeHidden();
+  });
+
   test("@smoke toggles and immediately saves a Markdown task", async () => {
     const readmePath = path.join(tempRoot, "sample-project", "readme.md");
     await fs.writeFile(readmePath, "# Smoke checklist\n\n- [ ] verify Markdown\n", "utf8");

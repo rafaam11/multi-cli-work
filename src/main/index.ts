@@ -6,7 +6,9 @@ import { checkForUpdates, initUpdater, quitAndInstall } from "./updater";
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
 import { taskbarBadgeSpec, trayTooltip } from "./window-badge";
 import type { AttentionSnapshot } from "./attention-policy";
+import type { WindowChromeState } from "../shared/api-types";
 import { QuitCoordinator } from "./quit-coordinator";
+import { windowChromeOptions } from "./window-chrome";
 import {
   rendererTargetNavigationUrl,
   resolveRendererTarget,
@@ -37,6 +39,7 @@ function createWindow(): BrowserWindow {
     backgroundColor: "#161918",
     title: APP_WINDOW_TITLE,
     icon: nativeImage.createFromDataURL(trayIconDataUrl(32)),
+    ...windowChromeOptions(process.platform),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       sandbox: true,
@@ -46,6 +49,20 @@ function createWindow(): BrowserWindow {
   });
 
   window.once("ready-to-show", () => window.show());
+  // The renderer draws the maximize/restore glyph itself, so it has to hear about every state
+  // change — including the ones it did not ask for (double-click on the drag region, Win+Up, a
+  // window manager tiling the app).
+  const publishChromeState = () => {
+    if (window.isDestroyed()) return;
+    window.webContents.send("window:state", {
+      maximized: window.isMaximized(),
+      fullScreen: window.isFullScreen(),
+    } satisfies WindowChromeState);
+  };
+  window.on("maximize", publishChromeState);
+  window.on("unmaximize", publishChromeState);
+  window.on("enter-full-screen", publishChromeState);
+  window.on("leave-full-screen", publishChromeState);
   window.on("close", (event) => {
     if (quitCoordinator.isCommitted()) return;
     event.preventDefault();
@@ -207,8 +224,15 @@ if (!hasSingleInstanceLock) {
   });
 
   void app.whenReady().then(async () => {
+    // The renderer draws its own menu bar; Electron's default one would only stack a second,
+    // English row on top of it. The tray still builds a menu of its own.
+    Menu.setApplicationMenu(null);
     try {
-      runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit, updateWindowAttention);
+      runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit, updateWindowAttention, {
+        // Lazy: the runtime is constructed before the window exists (the next line).
+        getMainWindow: () => mainWindow,
+        requestQuit,
+      });
       mainWindow = createWindow();
       try {
         tray = createTray();

@@ -3,8 +3,9 @@ import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { CircleStop, Columns2, FolderOpen, MonitorDot, Plus, RefreshCw, RotateCcw, Trash2, Wrench } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
+import { useDismissable } from "./use-dismissable";
 import {
   TOOL_AGENT_ID,
   agentLabel,
@@ -44,18 +45,6 @@ interface WorkspaceHeaderProps {
   onStopSession(): void;
   onRemoveSession(): void;
   onRelinkProject(): void;
-}
-
-function useDismissable(onDismiss: () => void) {
-  const anchor = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!anchor.current?.contains(event.target as Node)) onDismiss();
-    };
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, [onDismiss]);
-  return anchor;
 }
 
 export function WorkspaceHeader({

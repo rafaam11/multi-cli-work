@@ -1,7 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AppStateSnapshot } from "@shared/app-state-types";
-import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView } from "@shared/api-types";
+import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView, WindowChromeState } from "@shared/api-types";
 import type { FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProjectRegistryV1 } from "@shared/work-project-types";
@@ -17,6 +17,8 @@ const terminalHarness = vi.hoisted(() => ({
     options: { cursorBlink?: boolean; cursorStyle?: string };
     write: ReturnType<typeof vi.fn>;
     paste: ReturnType<typeof vi.fn>;
+    selectAll: ReturnType<typeof vi.fn>;
+    clear: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
     emitInput(data: string): void;
     emitKey(event: Partial<KeyboardEvent>): boolean;
@@ -32,6 +34,8 @@ vi.mock("@xterm/xterm", () => ({
     rows = 28;
     write = vi.fn();
     paste = vi.fn();
+    selectAll = vi.fn();
+    clear = vi.fn();
     selection = "";
     readonly options: { cursorBlink?: boolean; cursorStyle?: string };
     private readonly inputListeners = new Set<(data: string) => void>();
@@ -214,6 +218,7 @@ function createApi(options?: {
   const listeners = new Set<(event: TerminalEvent) => void>();
   const attentionListeners = new Set<(unread: Record<string, "input" | "approval">) => void>();
   const navigationListeners = new Set<(sessionId: string) => void>();
+  const windowStateListeners = new Set<(state: WindowChromeState) => void>();
   const projects = options?.projects ?? [atlas];
   const sessions = options?.sessions ?? [powershellSession, claudeSession];
   const snapshot = {
@@ -372,6 +377,21 @@ function createApi(options?: {
       onSessionRequested: vi.fn((listener) => {
         navigationListeners.add(listener);
         return () => navigationListeners.delete(listener);
+      }),
+    },
+    window: {
+      minimize: vi.fn().mockResolvedValue(undefined),
+      toggleMaximize: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      state: vi.fn().mockResolvedValue({ maximized: false, fullScreen: false }),
+      toggleFullScreen: vi.fn().mockResolvedValue(undefined),
+      toggleDevTools: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn().mockResolvedValue(undefined),
+      zoom: vi.fn().mockResolvedValue(undefined),
+      quit: vi.fn().mockResolvedValue(undefined),
+      onStateChange: vi.fn((listener) => {
+        windowStateListeners.add(listener);
+        return () => windowStateListeners.delete(listener);
       }),
     },
     terminals: {
@@ -1760,6 +1780,135 @@ describe("file drop", () => {
 
     const terminal = terminalHarness.instances.at(-1)!;
     expect(terminal.paste).not.toHaveBeenCalled();
+  });
+});
+
+describe("title bar", () => {
+  const openMenu = (label: string) => {
+    // A real press begins with mousedown, and that is what dismisses a menu left open elsewhere —
+    // without it the click below would toggle the already-open menu shut instead.
+    fireEvent.mouseDown(document.body);
+    fireEvent.click(screen.getByRole("menuitem", { name: label }));
+    return screen.findByRole("menu", { name: label });
+  };
+  const terminalHost = (name: string) =>
+    screen.getByRole("region", { name }).querySelector(".terminal-host")!;
+
+  it("sends 편집 menu commands to the terminal that last took the keyboard", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    fireEvent.click(screen.getByRole("button", { name: "화면 분할" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Claude Code" }));
+    await screen.findByRole("region", { name: "claude 터미널" });
+    // Splitting remounts the primary pane, so the two live xterms are the last two created.
+    const [primary, secondary] = terminalHarness.instances.slice(-2);
+    secondary.selection = "claude output";
+
+    fireEvent.focusIn(terminalHost("claude 터미널"));
+    fireEvent.click(within(await openMenu("편집")).getByRole("menuitem", { name: /복사/ }));
+    await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith("claude output"));
+
+    // Nothing about the split changed — only which pane holds the keyboard.
+    fireEvent.focusIn(terminalHost("powershell 터미널"));
+    fireEvent.click(within(await openMenu("편집")).getByRole("menuitem", { name: /모두 선택/ }));
+    expect(primary.selectAll).toHaveBeenCalledOnce();
+    expect(secondary.selectAll).not.toHaveBeenCalled();
+
+    fireEvent.click(within(await openMenu("편집")).getByRole("menuitem", { name: "터미널 지우기" }));
+    expect(primary.clear).toHaveBeenCalledOnce();
+  });
+
+  it("greys the 편집 menu out once no terminal is on screen", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    expect(within(await openMenu("편집")).getByRole("menuitem", { name: /복사/ })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "홈 대시보드 열기" }));
+    expect(within(await openMenu("편집")).getByRole("menuitem", { name: /복사/ })).toBeDisabled();
+  });
+
+  it("quits through the app rather than the tray, and folds the sidebar from 보기", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    fireEvent.click(within(await openMenu("파일")).getByRole("menuitem", { name: "종료" }));
+    expect(harness.api.window.quit).toHaveBeenCalledOnce();
+    // ✕ hides to the tray; 종료 must not take that path.
+    expect(harness.api.window.close).not.toHaveBeenCalled();
+
+    const shell = document.querySelector(".app-shell")!;
+    expect(shell).not.toHaveClass("sidebar-collapsed");
+    fireEvent.click(within(await openMenu("보기")).getByRole("menuitem", { name: "왼쪽 사이드바 접기" }));
+    expect(shell).toHaveClass("sidebar-collapsed");
+    fireEvent.click(within(await openMenu("보기")).getByRole("menuitem", { name: "왼쪽 사이드바 펼치기" }));
+    expect(shell).not.toHaveClass("sidebar-collapsed");
+  });
+
+  it("launches a session from the 세션 submenu and names the running version in 도움말", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "powershell 터미널" });
+
+    fireEvent.click(within(await openMenu("세션")).getByRole("menuitem", { name: /새 세션/ }));
+    const submenu = await screen.findByRole("menu", { name: "새 세션" });
+    expect(within(submenu).getByRole("menuitem", { name: "Codex" })).toBeDisabled();
+    fireEvent.click(within(submenu).getByRole("menuitem", { name: "Claude Code" }));
+
+    await waitFor(() =>
+      expect(harness.api.terminals.create).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: atlas.id, kind: "claude" }),
+      ),
+    );
+
+    expect(within(await openMenu("도움말")).getByRole("menuitem", { name: "버전 v1.0.0" })).toBeDisabled();
+  });
+
+  it("names the open folder in the command centre, opens quick open, and marks a waiting session", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "powershell 터미널" });
+
+    const commandCentre = screen.getByRole("button", { name: "빠른 열기" });
+    expect(commandCentre).toHaveTextContent("Atlas");
+    fireEvent.click(commandCentre);
+    expect(await screen.findByRole("dialog", { name: "빠른 열기" })).toBeInTheDocument();
+
+    await act(async () => {
+      harness.emitAttention({ [claudeSession.id]: "approval" });
+    });
+    expect(screen.getByRole("status", { name: "승인을 기다리는 세션이 있습니다" })).toHaveTextContent("!");
+  });
+
+  it("keeps the accelerators the native menu used to own", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    fireEvent.keyDown(window, { key: "F11" });
+    fireEvent.keyDown(window, { key: "F12" });
+    fireEvent.keyDown(window, { key: "=", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: "-", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "0", ctrlKey: true });
+
+    expect(harness.api.window.toggleFullScreen).toHaveBeenCalledOnce();
+    expect(harness.api.window.toggleDevTools).toHaveBeenCalledOnce();
+    expect(harness.api.window.zoom).toHaveBeenNthCalledWith(1, "in");
+    expect(harness.api.window.zoom).toHaveBeenNthCalledWith(2, "out");
+    expect(harness.api.window.zoom).toHaveBeenNthCalledWith(3, "reset");
+    // Ctrl+R stays off the keyboard: a mistyped reload would drop every attached terminal.
+    fireEvent.keyDown(window, { key: "r", ctrlKey: true });
+    expect(harness.api.window.reload).not.toHaveBeenCalled();
   });
 });
 

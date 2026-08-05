@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { MultiCliWorkApi, SessionAttention, UpdaterStatus } from "../shared/api-types";
+import type { MultiCliWorkApi, SessionAttention, UpdaterStatus, WindowChromeState } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
 
 const api: MultiCliWorkApi = {
@@ -34,6 +34,9 @@ const api: MultiCliWorkApi = {
     reorder: (orderedIds) => ipcRenderer.invoke("work-projects:reorder", orderedIds),
     addMemberFolder: (workProjectId, role) =>
       ipcRenderer.invoke("work-projects:add-member-folder", workProjectId, role),
+    chooseLocalFolder: () => ipcRenderer.invoke("work-projects:choose-local-folder"),
+    revealLocalFolder: (workProjectId, folderPath) =>
+      ipcRenderer.invoke("work-projects:reveal-local-folder", workProjectId, folderPath),
     chooseTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:choose-teams-root"),
     clearTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:clear-teams-root"),
   },
@@ -123,6 +126,22 @@ const api: MultiCliWorkApi = {
         listener(unread);
       ipcRenderer.on("attention:event", handler);
       return () => ipcRenderer.removeListener("attention:event", handler);
+    },
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    toggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+    state: () => ipcRenderer.invoke("window:state"),
+    toggleFullScreen: () => ipcRenderer.invoke("window:toggle-full-screen"),
+    toggleDevTools: () => ipcRenderer.invoke("window:toggle-dev-tools"),
+    reload: () => ipcRenderer.invoke("window:reload"),
+    zoom: (action) => ipcRenderer.invoke("window:zoom", action),
+    quit: () => ipcRenderer.invoke("app:quit"),
+    onStateChange(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, state: WindowChromeState) => listener(state);
+      ipcRenderer.on("window:state", handler);
+      return () => ipcRenderer.removeListener("window:state", handler);
     },
   },
   navigation: {

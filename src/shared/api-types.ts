@@ -9,7 +9,12 @@ import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-typ
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
-import type { WorkProjectNotionLink, WorkProjectRegistryV1, WorkProjectRole } from "./work-project-types";
+import type {
+  WorkProjectLocalFolder,
+  WorkProjectNotionLink,
+  WorkProjectRegistryV1,
+  WorkProjectRole,
+} from "./work-project-types";
 import type {
   SharedWorktree,
   WorktreeCreateOptions,
@@ -33,6 +38,7 @@ export interface WorkProjectMetadataPatch {
   status?: ProjectStatus | null;
   memo?: string;
   notionLinks?: WorkProjectNotionLink[];
+  localFolders?: WorkProjectLocalFolder[];
   order?: number | null;
 }
 
@@ -165,6 +171,15 @@ export interface ProviderAvailability {
 /** What an off-screen session turned out to be waiting for. The key of every unread badge. */
 export type SessionAttention = "input" | "approval";
 
+/** The native window state the custom title bar has to mirror, since it draws the buttons itself. */
+export interface WindowChromeState {
+  maximized: boolean;
+  fullScreen: boolean;
+}
+
+/** Renderer-driven zoom, applied to the whole window rather than a single element. */
+export type WindowZoomAction = "in" | "out" | "reset";
+
 /**
  * Every agent the app knows, in launcher order, each already told whether its executable is on PATH.
  * This replaces the renderer's old hard-coded provider table.
@@ -262,6 +277,13 @@ export interface MultiCliWorkApi {
      * project and adds it as a member in one step. Null when the user cancels the dialog.
      */
     addMemberFolder(workProjectId: string, role: WorkProjectRole): Promise<WorkProjectMemberFolderAddResult | null>;
+    /**
+     * Opens the folder dialog for a 참고 로컬 폴더 row and returns the chosen path without storing
+     * it — the row is saved through `update` like any other metadata. Null when cancelled.
+     */
+    chooseLocalFolder(): Promise<string | null>;
+    /** Opens a stored local folder in the file explorer; rejects a path the work project lacks. */
+    revealLocalFolder(workProjectId: string, folderPath: string): Promise<void>;
     /** Opens the folder dialog and stores the choice; `clear` resets it. Null when cancelled. */
     chooseTeamsSyncRoot(): Promise<WorkProjectRegistryV1 | null>;
     clearTeamsSyncRoot(): Promise<WorkProjectRegistryV1>;
@@ -365,6 +387,23 @@ export interface MultiCliWorkApi {
   navigation: {
     /** Selects and reveals the session that originated an operating-system notification. */
     onSessionRequested(listener: (sessionId: string) => void): () => void;
+  };
+  /** The native window actions the app's own title bar has to perform on the user's behalf. */
+  window: {
+    minimize(): Promise<void>;
+    /** Maximizes or restores, whichever the current state calls for. */
+    toggleMaximize(): Promise<void>;
+    /** Keeps the app's close semantics — the window hides to the tray rather than quitting. */
+    close(): Promise<void>;
+    state(): Promise<WindowChromeState>;
+    toggleFullScreen(): Promise<void>;
+    toggleDevTools(): Promise<void>;
+    reload(): Promise<void>;
+    zoom(action: WindowZoomAction): Promise<void>;
+    /** 파일▸종료: asks to stop every running session first. */
+    quit(): Promise<void>;
+    /** Fires for state the renderer did not cause — double-click drag, Win+Up, a tiling WM. */
+    onStateChange(listener: (state: WindowChromeState) => void): () => void;
   };
   terminals: {
     list(): Promise<TerminalSessionView[]>;

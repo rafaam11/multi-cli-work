@@ -6,6 +6,17 @@ import { droppedPathsAsPromptText } from "./drop-paths";
 import { createTerminalOutputFilter } from "./terminal-output-filter";
 import "@xterm/xterm/css/xterm.css";
 
+/**
+ * What the title bar's 편집 menu can do to a live terminal. The pane owns the xterm instance, so the
+ * menu cannot reach into it directly — it gets these handles instead.
+ */
+export interface TerminalCommands {
+  copySelection(): void;
+  paste(): void;
+  selectAll(): void;
+  clear(): void;
+}
+
 interface TerminalPaneProps {
   session: TerminalSessionView;
   /** Bytes to send instead of a plain Enter when Shift is held. Null keeps xterm's own handling. */
@@ -14,6 +25,10 @@ interface TerminalPaneProps {
   onAttached(session: TerminalSessionView): void;
   onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
+  /** Publishes this pane's command handles; called with null once the terminal is gone. */
+  onRegisterCommands?(sessionId: string, commands: TerminalCommands | null): void;
+  /** In a split there is no "active pane" — the last terminal to take the keyboard is the target. */
+  onTerminalFocused?(sessionId: string): void;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -31,6 +46,8 @@ export function TerminalPane({
   onAttached,
   onRefreshComplete,
   onError,
+  onRegisterCommands,
+  onTerminalFocused,
 }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(session);
@@ -38,6 +55,8 @@ export function TerminalPane({
   const onAttachedRef = useRef(onAttached);
   const onRefreshCompleteRef = useRef(onRefreshComplete);
   const onErrorRef = useRef(onError);
+  const onRegisterCommandsRef = useRef(onRegisterCommands);
+  const onTerminalFocusedRef = useRef(onTerminalFocused);
   const lastRefreshRequestRef = useRef(refreshRequest);
   const scheduleResizeRef = useRef<() => void>(() => undefined);
   const [attaching, setAttaching] = useState(true);
@@ -48,6 +67,8 @@ export function TerminalPane({
   onAttachedRef.current = onAttached;
   onRefreshCompleteRef.current = onRefreshComplete;
   onErrorRef.current = onError;
+  onRegisterCommandsRef.current = onRegisterCommands;
+  onTerminalFocusedRef.current = onTerminalFocused;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -120,6 +141,25 @@ export function TerminalPane({
       onRefreshCompleteRef.current(session.id);
     };
 
+    // The keyboard shortcuts and the 편집 menu run the very same two functions, so a change to
+    // either path can never leave the other behaving differently.
+    const copySelection = () => {
+      const selection = terminal.getSelection();
+      if (!selection) return;
+      void window.multiCliWork.clipboard.writeText(selection).catch(reportError);
+    };
+    const pasteFromClipboard = () => {
+      if (isReadOnly(sessionRef.current)) return;
+      void window.multiCliWork.clipboard
+        .readText()
+        .then((text) => {
+          if (!disposed && text && !isReadOnly(sessionRef.current)) {
+            terminal.paste(text);
+          }
+        })
+        .catch(reportError);
+    };
+
     terminal.attachCustomKeyEventHandler((event) => {
       // Shift+Enter reaches xterm as a plain Enter, so a CLI that wants a newline there never sees
       // one. Agents that name a substitute get it written straight to the PTY instead.
@@ -137,8 +177,7 @@ export function TerminalPane({
       if (key !== "KeyC" && key !== "KeyV") return true;
       if (event.type !== "keydown") return false;
       if (key === "KeyC") {
-        const selection = terminal.getSelection();
-        if (!selection) {
+        if (!terminal.getSelection()) {
           // Plain Ctrl+C is the terminal interrupt. Ctrl+Shift+C is still consumed as the
           // explicit copy shortcut, even if there is nothing to copy.
           if (!event.shiftKey) return true;
@@ -146,21 +185,19 @@ export function TerminalPane({
           return false;
         }
         event.preventDefault();
-        void window.multiCliWork.clipboard.writeText(selection).catch(reportError);
-      } else if (!isReadOnly(sessionRef.current)) {
-        event.preventDefault();
-        void window.multiCliWork.clipboard
-          .readText()
-          .then((text) => {
-            if (!disposed && text && !isReadOnly(sessionRef.current)) {
-              terminal.paste(text);
-            }
-          })
-          .catch(reportError);
+        copySelection();
       } else {
         event.preventDefault();
+        pasteFromClipboard();
       }
       return false;
+    });
+
+    onRegisterCommandsRef.current?.(session.id, {
+      copySelection,
+      paste: pasteFromClipboard,
+      selectAll: () => terminal.selectAll(),
+      clear: () => terminal.clear(),
     });
 
     const resize = () => {
@@ -206,8 +243,12 @@ export function TerminalPane({
       terminal.paste(text);
       terminal.focus();
     };
+    // xterm keeps the keyboard on a hidden textarea inside the host, so its focus is the only
+    // reliable signal that this pane — rather than the other half of a split — is the live one.
+    const handleFocusIn = () => onTerminalFocusedRef.current?.(session.id);
     host.addEventListener("dragover", handleDragOver);
     host.addEventListener("drop", handleDrop);
+    host.addEventListener("focusin", handleFocusIn);
     const unsubscribe = window.multiCliWork.terminals.onEvent((event) => {
       if (event.sessionId !== session.id || event.type !== "data") return;
       if (replayAttached) writeOutput(event.data);
@@ -254,6 +295,8 @@ export function TerminalPane({
       resizeObserver.disconnect();
       host.removeEventListener("dragover", handleDragOver);
       host.removeEventListener("drop", handleDrop);
+      host.removeEventListener("focusin", handleFocusIn);
+      onRegisterCommandsRef.current?.(session.id, null);
       unsubscribe();
       inputDisposable.dispose();
       fitAddon.dispose();

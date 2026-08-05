@@ -87,10 +87,23 @@ export interface DesktopRuntime {
   dispose(): Promise<void>;
 }
 
+/** What the custom title bar needs from the app shell, which only `index.ts` owns. */
+export interface DesktopWindowHost {
+  /** Lazy, because the runtime is built before the window exists. */
+  getMainWindow(): BrowserWindow | null;
+  /** 파일▸종료: the confirm-then-tear-down path, not a bare `app.quit()`. */
+  requestQuit(): Promise<void>;
+}
+
+/** Chrome's own zoom steps, so Ctrl+= feels the way it does in a browser or VS Code. */
+const ZOOM_STEP = 0.5;
+const ZOOM_LIMIT = 3;
+
 export async function createDesktopRuntime(
   showMainWindow: () => void,
   installUpdate: () => Promise<void>,
   applyAttention: (attention: AttentionSnapshot) => void = () => undefined,
+  host: DesktopWindowHost,
 ): Promise<DesktopRuntime> {
   const userData = app.getPath("userData");
   const statePath = path.join(userData, "state.json");
@@ -399,6 +412,36 @@ export async function createDesktopRuntime(
       openExternal: (url) => shell.openExternal(url),
     },
     clipboard,
+    windowControls: {
+      minimize: () => host.getMainWindow()?.minimize(),
+      toggleMaximize: () => {
+        const window = host.getMainWindow();
+        if (!window) return;
+        if (window.isMaximized()) window.unmaximize();
+        else window.maximize();
+      },
+      // ✕ keeps the app's existing meaning: the window's own close handler hides it to the tray.
+      close: () => host.getMainWindow()?.close(),
+      state: () => {
+        const window = host.getMainWindow();
+        return { maximized: window?.isMaximized() ?? false, fullScreen: window?.isFullScreen() ?? false };
+      },
+      toggleFullScreen: () => {
+        const window = host.getMainWindow();
+        if (!window) return;
+        window.setFullScreen(!window.isFullScreen());
+      },
+      toggleDevTools: () => host.getMainWindow()?.webContents.toggleDevTools(),
+      reload: () => host.getMainWindow()?.webContents.reload(),
+      // The renderer is sandboxed and cannot set its own zoom, so the menu routes it here.
+      zoom: (action) => {
+        const contents = host.getMainWindow()?.webContents;
+        if (!contents) return;
+        const next = action === "reset" ? 0 : contents.getZoomLevel() + (action === "in" ? ZOOM_STEP : -ZOOM_STEP);
+        contents.setZoomLevel(Math.min(ZOOM_LIMIT, Math.max(-ZOOM_LIMIT, next)));
+      },
+      quit: () => host.requestQuit(),
+    },
     appVersion: () => app.getVersion(),
     readRegistry: () => readProjectRegistry({ registryPath }),
     async restoreRegistryBackup() {
