@@ -1880,11 +1880,6 @@ export function App() {
               }}
               onOpenNotion={(url) => void window.multiCliWork.shell.openExternal(url).catch((error) => setActionError(errorMessage(error)))}
               onRevealProject={(projectId) => void runProjectAction(() => window.multiCliWork.projects.reveal(projectId))}
-              onRevealLocalFolder={(folderPath) =>
-                void runProjectAction(() =>
-                  window.multiCliWork.workProjects.revealLocalFolder(selectedWorkProject.id, folderPath),
-                )
-              }
             />
           ) : activeView === "detail" && selectedProject ? (
             <ProjectDetailPage

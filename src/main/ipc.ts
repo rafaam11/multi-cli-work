@@ -302,7 +302,7 @@ function validateProjectPatch(value: unknown): ProjectMetadataPatch {
 function validateWorkProjectPatch(value: unknown): WorkProjectMetadataUpdate {
   const patch = exactObject(
     value,
-    ["name", "category", "status", "memo", "notionLinks", "localFolders", "order"],
+    ["name", "category", "status", "memo", "notionLinks", "order"],
     "Work project patch",
   );
   return patch as WorkProjectMetadataUpdate;
@@ -587,21 +587,6 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
         );
     const workProjects = await dependencies.workProjectService.addMember(id, project.id, memberRoleValue);
     return { project, workProjects };
-  });
-  // Picks a reference folder without touching either registry: the renderer drops the path into its
-  // row and commits it through work-projects:update, so local folders keep a single write path.
-  ipc.handle("work-projects:choose-local-folder", () => dependencies.chooseDirectory());
-  // The renderer names a folder the work project already stores; it never hands over a free path.
-  // Same reasoning as projects:reveal resolving a project id rather than accepting a root path.
-  ipc.handle("work-projects:reveal-local-folder", async (_event, workProjectId: unknown, folderPath: unknown) => {
-    const id = nonEmptyString(workProjectId, "Work project id");
-    const target = nonEmptyString(folderPath, "Local folder path");
-    const workProject = (await dependencies.readWorkProjectRegistry()).workProjects[id];
-    if (!workProject) throw new Error(`Work project ${id} was not found`);
-    if (!workProject.localFolders.some((folder) => folder.path === target)) {
-      throw new Error(`Local folder is not registered on work project ${id}`);
-    }
-    return dependencies.projectActions.reveal(target);
   });
   ipc.handle("work-projects:choose-teams-root", async () => {
     const rootPath = await dependencies.chooseDirectory();

@@ -34,9 +34,6 @@ const api: MultiCliWorkApi = {
     reorder: (orderedIds) => ipcRenderer.invoke("work-projects:reorder", orderedIds),
     addMemberFolder: (workProjectId, role) =>
       ipcRenderer.invoke("work-projects:add-member-folder", workProjectId, role),
-    chooseLocalFolder: () => ipcRenderer.invoke("work-projects:choose-local-folder"),
-    revealLocalFolder: (workProjectId, folderPath) =>
-      ipcRenderer.invoke("work-projects:reveal-local-folder", workProjectId, folderPath),
     chooseTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:choose-teams-root"),
     clearTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:clear-teams-root"),
   },
