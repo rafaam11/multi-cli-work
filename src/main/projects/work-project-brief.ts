@@ -15,9 +15,10 @@ function memberLine(member: WorkProjectBriefMember): string {
 
 /**
  * The markdown handed to a CLI session as project context. Everything the agent needs to move
- * between the three tools: where the Teams documents live, which Notion page tracks the project,
- * and which repos (with local paths) belong to it. Absolute paths are intentional — the brief is
- * personal to this machine (see the v1 sharing decision in the design doc).
+ * between the tools: where the Teams documents live, which Notion page tracks the project, which
+ * repos (with local paths) belong to it, and which folders on this machine it merely refers to.
+ * Absolute paths are intentional — the brief is personal to this machine (see the v1 sharing
+ * decision in the design doc).
  */
 export function renderWorkProjectBrief(workProject: WorkProject, members: WorkProjectBriefMember[]): string {
   const repos = members.filter((member) => member.role === "repo");
@@ -37,6 +38,10 @@ export function renderWorkProjectBrief(workProject: WorkProject, members: WorkPr
     lines.push("", "## 개발 레포 (로컬 경로)");
     lines.push(...repos.map(memberLine));
   }
+  if (workProject.localFolders.length > 0) {
+    lines.push("", "## 참고 로컬 폴더 (이 PC 기준, 읽기 참조용)");
+    lines.push(...workProject.localFolders.map((folder) => `- ${folder.label}: ${folder.path}`));
+  }
   if (workProject.memo.trim().length > 0) {
     lines.push("", "## 메모", workProject.memo.trim());
   }
@@ -44,6 +49,9 @@ export function renderWorkProjectBrief(workProject: WorkProject, members: WorkPr
     "",
     "이 세션은 위 업무 프로젝트에 소속된 작업 공간에서 실행 중이다. 문서 작업은 팀즈 폴더,",
     "진행 관리는 노션, 코드는 위 레포 경로를 기준으로 한다.",
+    ...(workProject.localFolders.length > 0
+      ? ["참고 로컬 폴더는 읽기 참조용이며 산출물을 그곳에 쓰지 않는다."]
+      : []),
     "",
   );
   return lines.join("\n");

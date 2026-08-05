@@ -47,6 +47,7 @@ describe("WorkProjectService", () => {
       status: null,
       memo: "",
       notionLinks: [],
+      localFolders: [],
       members: [],
       order: null,
     });
@@ -86,6 +87,30 @@ describe("WorkProjectService", () => {
       workProjectService.updateWorkProjectMetadata(IDS.first, { notionUrl: "https://x" } as never),
     ).rejects.toThrow(/unknown fields/);
     await expect(workProjectService.updateWorkProjectMetadata(IDS.second, { memo: "x" })).rejects.toThrow(/not found/);
+  });
+
+  it("normalizes local folder rows, defaulting the label to the folder's own name", async () => {
+    const registryPath = await tempRegistryPath("wps-folders");
+    const workProjectService = service(registryPath);
+    await workProjectService.createWorkProject({ name: "과제" });
+
+    // Built with the platform's own separators so basename resolves on the Linux CI runner too.
+    const drawings = path.join("D:", "Work", "참고자료", "도면");
+    const deliverables = path.join("D:", "Work", "산출물");
+    const updated = await workProjectService.updateWorkProjectMetadata(IDS.first, {
+      localFolders: [
+        { label: "  설계도면  ", path: `  ${drawings}  ` },
+        { label: "", path: deliverables },
+        { label: "빈 경로 초안", path: "   " },
+      ],
+    });
+    expect(updated.workProjects[IDS.first].localFolders).toEqual([
+      { label: "설계도면", path: drawings },
+      { label: "산출물", path: deliverables },
+    ]);
+
+    const cleared = await workProjectService.updateWorkProjectMetadata(IDS.first, { localFolders: [] });
+    expect(cleared.workProjects[IDS.first].localFolders).toEqual([]);
   });
 
   it("moves a folder between work projects on addMember instead of failing", async () => {

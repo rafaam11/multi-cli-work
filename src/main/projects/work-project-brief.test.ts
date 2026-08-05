@@ -46,6 +46,7 @@ const WORK_PROJECT: WorkProject = {
     { label: "채널", url: "https://notion.so/smart-factory" },
     { label: "2차년도", url: "https://notion.so/smart-factory-y2" },
   ],
+  localFolders: [],
   members: [],
   order: null,
   createdAt: "2026-08-01T00:00:00.000Z",
@@ -76,6 +77,18 @@ describe("renderWorkProjectBrief", () => {
     expect(brief.indexOf("팀즈 문서 폴더")).toBeLessThan(brief.indexOf("개발 레포"));
   });
 
+  it("lists reference-only local folders and marks them read-only", () => {
+    const drawingsPath = path.join("D:", "Work", "참고자료", "도면");
+    const brief = renderWorkProjectBrief(
+      { ...WORK_PROJECT, localFolders: [{ label: "설계도면", path: drawingsPath }] },
+      [{ project: project("1", path.join("D:", "Project", "agv-control")), role: "repo" }],
+    );
+
+    expect(brief).toContain("## 참고 로컬 폴더 (이 PC 기준, 읽기 참조용)");
+    expect(brief).toContain(`- 설계도면: ${drawingsPath}`);
+    expect(brief).toContain("참고 로컬 폴더는 읽기 참조용이며 산출물을 그곳에 쓰지 않는다.");
+  });
+
   it("omits empty sections instead of rendering placeholders", () => {
     const brief = renderWorkProjectBrief(
       { ...WORK_PROJECT, status: null, notionLinks: [], memo: "" },
@@ -84,6 +97,7 @@ describe("renderWorkProjectBrief", () => {
     expect(brief).not.toContain("- 상태:");
     expect(brief).not.toContain("- 노션(");
     expect(brief).not.toContain("팀즈 문서 폴더");
+    expect(brief).not.toContain("참고 로컬 폴더");
     expect(brief).not.toContain("## 메모");
   });
 });

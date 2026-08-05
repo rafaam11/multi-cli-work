@@ -10,6 +10,7 @@ import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
 import type {
+  WorkProjectLocalFolder,
   WorkProjectNotionLink,
   WorkProjectRegistryV1,
   WorkProjectRole,
@@ -37,6 +38,7 @@ export interface WorkProjectMetadataPatch {
   status?: ProjectStatus | null;
   memo?: string;
   notionLinks?: WorkProjectNotionLink[];
+  localFolders?: WorkProjectLocalFolder[];
   order?: number | null;
 }
 
@@ -275,6 +277,13 @@ export interface MultiCliWorkApi {
      * project and adds it as a member in one step. Null when the user cancels the dialog.
      */
     addMemberFolder(workProjectId: string, role: WorkProjectRole): Promise<WorkProjectMemberFolderAddResult | null>;
+    /**
+     * Opens the folder dialog for a 참고 로컬 폴더 row and returns the chosen path without storing
+     * it — the row is saved through `update` like any other metadata. Null when cancelled.
+     */
+    chooseLocalFolder(): Promise<string | null>;
+    /** Opens a stored local folder in the file explorer; rejects a path the work project lacks. */
+    revealLocalFolder(workProjectId: string, folderPath: string): Promise<void>;
     /** Opens the folder dialog and stores the choice; `clear` resets it. Null when cancelled. */
     chooseTeamsSyncRoot(): Promise<WorkProjectRegistryV1 | null>;
     clearTeamsSyncRoot(): Promise<WorkProjectRegistryV1>;

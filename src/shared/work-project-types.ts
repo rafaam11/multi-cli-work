@@ -30,6 +30,17 @@ export interface WorkProjectNotionLink {
   url: string;
 }
 
+/**
+ * A folder on this machine the work project refers to but does not own — the reference material
+ * each person keeps locally, a shared-drive mount, a folder of downloaded deliverables. Unlike a
+ * member it is not registered in `projects.json`: it never appears in the sidebar and cannot host a
+ * session. It exists to be opened in the file explorer and to be named in the session brief.
+ */
+export interface WorkProjectLocalFolder {
+  label: string;
+  path: string;
+}
+
 export interface WorkProject {
   id: string;
   name: string;
@@ -37,6 +48,7 @@ export interface WorkProject {
   status: ProjectStatus | null;
   memo: string;
   notionLinks: WorkProjectNotionLink[];
+  localFolders: WorkProjectLocalFolder[];
   /** Single source of truth for membership. A folder belongs to at most one work project. */
   members: WorkProjectMember[];
   order: number | null;

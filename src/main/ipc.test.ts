@@ -444,6 +444,31 @@ describe("main IPC boundary", () => {
     await expect(handlers.get("work-projects:choose-teams-root")!({})).resolves.toBeNull();
   });
 
+  it("picks a reference folder without storing it and reveals only registered ones", async () => {
+    const { handlers, workProjectService, workProjectRegistry, projectActions, chooseDirectory } = setup();
+    const localFolders = [{ label: "자료", path: "D:\\Work\\자료" }];
+
+    // The dialog handler stores nothing: the row rides in on the ordinary metadata patch.
+    await handlers.get("work-projects:update")!({}, "wp-1", { localFolders });
+    expect(workProjectService.updateWorkProjectMetadata).toHaveBeenCalledWith("wp-1", { localFolders });
+    await expect(handlers.get("work-projects:choose-local-folder")!({})).resolves.toBe("C:\\Work");
+    chooseDirectory.mockResolvedValueOnce(null);
+    await expect(handlers.get("work-projects:choose-local-folder")!({})).resolves.toBeNull();
+
+    Object.assign(workProjectRegistry.workProjects, { "wp-1": { localFolders } });
+    await handlers.get("work-projects:reveal-local-folder")!({}, "wp-1", "D:\\Work\\자료");
+    expect(projectActions.reveal).toHaveBeenCalledWith("D:\\Work\\자료");
+
+    // A path the renderer made up never reaches the shell, and neither does an unknown work project.
+    await expect(
+      handlers.get("work-projects:reveal-local-folder")!({}, "wp-1", "C:\\Windows\\System32"),
+    ).rejects.toThrow(/not registered/);
+    await expect(
+      handlers.get("work-projects:reveal-local-folder")!({}, "wp-2", "D:\\Work\\자료"),
+    ).rejects.toThrow(/not found/);
+    expect(projectActions.reveal).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves the folder registered when its sessions cannot be torn down", async () => {
     const { handlers, coordinator, projectService, project } = setup();
     coordinator.removeProjectSessions.mockRejectedValueOnce(new Error("pty is stuck"));

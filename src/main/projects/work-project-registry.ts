@@ -3,6 +3,7 @@ import path from "node:path";
 import type { ProjectStatus } from "../../shared/project-types";
 import type {
   WorkProject,
+  WorkProjectLocalFolder,
   WorkProjectMember,
   WorkProjectNotionLink,
   WorkProjectRegistryV1,
@@ -29,6 +30,7 @@ const WORK_PROJECT_KEYS = [
   "memo",
   "notionUrl",
   "notionLinks",
+  "localFolders",
   "members",
   "order",
   "createdAt",
@@ -36,6 +38,7 @@ const WORK_PROJECT_KEYS = [
 ] as const;
 const MEMBER_KEYS = ["projectId", "role"] as const;
 const NOTION_LINK_KEYS = ["label", "url"] as const;
+const LOCAL_FOLDER_KEYS = ["label", "path"] as const;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export class WorkProjectRegistryError extends Error {
@@ -100,6 +103,22 @@ function parseNotionLinks(value: unknown, legacyUrl: unknown, key: string): Work
   });
 }
 
+/** Absent in files written before local folders existed, which simply had none. */
+function parseLocalFolders(value: unknown, key: string): WorkProjectLocalFolder[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new WorkProjectRegistryError(`work project ${key}.localFolders must be an array`);
+  return value.map((folder, index) => {
+    if (!isRecord(folder)) {
+      throw new WorkProjectRegistryError(`work project ${key}.localFolders[${index}] must be an object`);
+    }
+    assertExactKeys(folder, LOCAL_FOLDER_KEYS, `work project ${key}.localFolders[${index}]`);
+    return {
+      label: requiredString(folder.label, `work project ${key}.localFolders[${index}].label`),
+      path: requiredString(folder.path, `work project ${key}.localFolders[${index}].path`),
+    };
+  });
+}
+
 function parseMembers(value: unknown, key: string): WorkProjectMember[] {
   if (!Array.isArray(value)) throw new WorkProjectRegistryError(`work project ${key}.members must be an array`);
   const members = value.map((member, index) => {
@@ -140,6 +159,7 @@ function parseWorkProject(value: unknown, key: string): WorkProject {
     status: value.status as ProjectStatus | null,
     memo: plainString(value.memo, `work project ${key}.memo`),
     notionLinks: parseNotionLinks(value.notionLinks, value.notionUrl, key),
+    localFolders: parseLocalFolders(value.localFolders, key),
     members: parseMembers(value.members, key),
     order: value.order as number | null,
     createdAt: isoString(value.createdAt, `work project ${key}.createdAt`),

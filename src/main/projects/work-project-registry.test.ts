@@ -40,6 +40,7 @@ function sampleRegistry(): WorkProjectRegistryV1 {
         status: "진행중",
         memo: "",
         notionLinks: [{ label: "채널", url: "https://notion.so/example" }],
+        localFolders: [{ label: "자료", path: "D:\\Work\\자료" }],
         members: [
           { projectId: PROJECT_IDS.repo, role: "repo" },
           { projectId: PROJECT_IDS.docs, role: "docs" },
@@ -141,6 +142,29 @@ describe("parseWorkProjectRegistry", () => {
     expect(parseWorkProjectRegistry(registry).workProjects[WORK_PROJECT_IDS.first].notionLinks).toEqual([
       { label: "채널", url: "https://notion.so/channel" },
     ]);
+  });
+
+  it("reads local folders, defaulting to an empty list, and rejects malformed rows", () => {
+    expect(parseWorkProjectRegistry(sampleRegistry()).workProjects[WORK_PROJECT_IDS.first].localFolders).toEqual([
+      { label: "자료", path: "D:\\Work\\자료" },
+    ]);
+
+    // Files written before local folders existed simply have no key, and had none.
+    const legacy = sampleRegistry() as unknown as Record<string, Record<string, Record<string, unknown>>>;
+    delete legacy.workProjects[WORK_PROJECT_IDS.first].localFolders;
+    expect(parseWorkProjectRegistry(legacy).workProjects[WORK_PROJECT_IDS.first].localFolders).toEqual([]);
+
+    const withFolders = (folders: unknown) => {
+      const registry = sampleRegistry();
+      registry.workProjects[WORK_PROJECT_IDS.first].localFolders = folders as never;
+      return registry;
+    };
+    expect(() => parseWorkProjectRegistry(withFolders("D:\\Work"))).toThrow(/localFolders must be an array/);
+    expect(() => parseWorkProjectRegistry(withFolders([{ label: "자료", path: "" }]))).toThrow(/path/);
+    expect(() => parseWorkProjectRegistry(withFolders([{ path: "D:\\Work" }]))).toThrow(/label/);
+    expect(() => parseWorkProjectRegistry(withFolders([{ label: "자료", path: "D:\\Work", kind: "ref" }]))).toThrow(
+      /unknown fields: kind/,
+    );
   });
 
   it("rejects a key that does not match the work project id", () => {

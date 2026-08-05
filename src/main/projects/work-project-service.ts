@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { ProjectStatus } from "../../shared/project-types";
 import type {
   WorkProject,
+  WorkProjectLocalFolder,
   WorkProjectNotionLink,
   WorkProjectRegistryV1,
   WorkProjectRole,
 } from "../../shared/work-project-types";
 import { updateWorkProjectRegistry } from "./work-project-registry";
 
-const METADATA_KEYS = ["name", "category", "status", "memo", "notionLinks", "order"] as const;
+const METADATA_KEYS = ["name", "category", "status", "memo", "notionLinks", "localFolders", "order"] as const;
 
 type RegistryUpdater = typeof updateWorkProjectRegistry;
 
@@ -18,6 +20,7 @@ export interface WorkProjectMetadataUpdate {
   status?: ProjectStatus | null;
   memo?: string;
   notionLinks?: WorkProjectNotionLink[];
+  localFolders?: WorkProjectLocalFolder[];
   order?: number | null;
 }
 
@@ -62,6 +65,24 @@ function normalizeNotionLinks(links: WorkProjectNotionLink[] | undefined): WorkP
     .map((link) => ({ label: link.label.length === 0 ? "노션" : link.label, url: link.url }));
 }
 
+/**
+ * Same draft-row handling as the Notion links, with the folder's own name as the default label —
+ * more useful than a fixed word, and the only thing the user would type there anyway. The path is
+ * stored as given: it is a path on this machine, and whether it exists is the file explorer's
+ * answer to give, not the registry's.
+ */
+function normalizeLocalFolders(folders: WorkProjectLocalFolder[] | undefined): WorkProjectLocalFolder[] | undefined {
+  if (folders === undefined) return undefined;
+  if (!Array.isArray(folders)) throw new WorkProjectServiceError("Work project localFolders must be an array");
+  return folders
+    .map((folder) => ({ label: String(folder?.label ?? "").trim(), path: String(folder?.path ?? "").trim() }))
+    .filter((folder) => folder.path.length > 0)
+    .map((folder) => ({
+      label: folder.label.length === 0 ? path.basename(folder.path) || folder.path : folder.label,
+      path: folder.path,
+    }));
+}
+
 export class WorkProjectService {
   private readonly options: WorkProjectServiceOptions;
 
@@ -85,6 +106,7 @@ export class WorkProjectService {
       status: null,
       memo: "",
       notionLinks: [],
+      localFolders: [],
       members: [],
       order: null,
       createdAt: now,
@@ -106,9 +128,14 @@ export class WorkProjectService {
     return this.updateRegistry((registry) => {
       const workProject = this.require(registry, workProjectId);
       const next = { ...workProject, updatedAt: now };
+      const value = (key: (typeof METADATA_KEYS)[number]): unknown => {
+        if (key === "notionLinks") return normalizeNotionLinks(update.notionLinks);
+        if (key === "localFolders") return normalizeLocalFolders(update.localFolders);
+        return update[key];
+      };
       for (const key of METADATA_KEYS) {
         if (Object.prototype.hasOwnProperty.call(update, key) && update[key] !== undefined) {
-          Object.assign(next, { [key]: key === "notionLinks" ? normalizeNotionLinks(update.notionLinks) : update[key] });
+          Object.assign(next, { [key]: value(key) });
         }
       }
       return {

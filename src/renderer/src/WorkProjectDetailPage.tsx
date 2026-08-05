@@ -3,6 +3,7 @@ import type { TerminalSessionView, WorkProjectMemberFolderAddResult, WorkProject
 import type { ProjectStatus, SharedProject } from "@shared/project-types";
 import type {
   WorkProject,
+  WorkProjectLocalFolder,
   WorkProjectNotionLink,
   WorkProjectRegistryV1,
   WorkProjectRole,
@@ -34,6 +35,7 @@ interface WorkProjectDetailPageProps {
   onRemoveWorkProject(): void;
   onOpenNotion(url: string): void;
   onRevealProject(projectId: string): void;
+  onRevealLocalFolder(folderPath: string): void;
 }
 
 export function WorkProjectDetailPage({
@@ -49,10 +51,12 @@ export function WorkProjectDetailPage({
   onRemoveWorkProject,
   onOpenNotion,
   onRevealProject,
+  onRevealLocalFolder,
 }: WorkProjectDetailPageProps) {
   const [name, setName] = useState(workProject.name);
   const [category, setCategory] = useState(workProject.category);
   const [notionLinks, setNotionLinks] = useState<WorkProjectNotionLink[]>(workProject.notionLinks);
+  const [localFolders, setLocalFolders] = useState<WorkProjectLocalFolder[]>(workProject.localFolders);
   const [memo, setMemo] = useState(workProject.memo);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -62,6 +66,7 @@ export function WorkProjectDetailPage({
     setName(workProject.name);
     setCategory(workProject.category);
     setNotionLinks(workProject.notionLinks);
+    setLocalFolders(workProject.localFolders);
     setMemo(workProject.memo);
   }, [workProject.id]);
 
@@ -89,6 +94,43 @@ export function WorkProjectDetailPage({
 
   const updateNotionLink = (index: number, patch: Partial<WorkProjectNotionLink>) => {
     setNotionLinks((current) => current.map((link, at) => (at === index ? { ...link, ...patch } : link)));
+  };
+
+  /** Mirrors the service's default label — the folder's own name — so an untouched row reads as unchanged. */
+  const folderLabel = (folder: WorkProjectLocalFolder) => {
+    const folderPath = folder.path.trim();
+    return folder.label.trim() || folderPath.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || folderPath;
+  };
+
+  const normalizedFolders = (folders: WorkProjectLocalFolder[]) =>
+    JSON.stringify(
+      folders
+        .filter((folder) => folder.path.trim().length > 0)
+        .map((folder) => ({ label: folderLabel(folder), path: folder.path.trim() })),
+    );
+
+  const commitLocalFolders = (folders: WorkProjectLocalFolder[]) => {
+    setLocalFolders(folders);
+    if (normalizedFolders(folders) !== normalizedFolders(workProject.localFolders)) {
+      void save({ localFolders: folders });
+    }
+  };
+
+  const updateLocalFolder = (index: number, patch: Partial<WorkProjectLocalFolder>) => {
+    setLocalFolders((current) => current.map((folder, at) => (at === index ? { ...folder, ...patch } : folder)));
+  };
+
+  // The dialog steals focus, so the row's blur cannot be relied on to save the picked path.
+  const chooseLocalFolder = async (index: number) => {
+    setSaveError(null);
+    try {
+      const picked = await window.multiCliWork.workProjects.chooseLocalFolder();
+      if (picked) {
+        commitLocalFolders(localFolders.map((folder, at) => (at === index ? { ...folder, path: picked } : folder)));
+      }
+    } catch (error) {
+      setSaveError(errorMessage(error));
+    }
   };
 
   const addMemberFolder = async (role: WorkProjectRole) => {
@@ -238,6 +280,66 @@ export function WorkProjectDetailPage({
               >
                 <Plus size={13} />
                 <span>링크 추가</span>
+              </button>
+            </div>
+            <label id={`wp-folders-${workProject.id}`}>참고 로컬 폴더</label>
+            <div className="work-project-local-list" role="group" aria-labelledby={`wp-folders-${workProject.id}`}>
+              {localFolders.map((folder, index) => (
+                <div className="work-project-local-row" key={index}>
+                  <input
+                    className="link-label-input"
+                    type="text"
+                    value={folder.label}
+                    placeholder="자료 폴더"
+                    aria-label={`참고 폴더 ${index + 1} 라벨`}
+                    onChange={(event) => updateLocalFolder(index, { label: event.target.value })}
+                    onBlur={() => commitLocalFolders(localFolders)}
+                  />
+                  <input
+                    type="text"
+                    value={folder.path}
+                    placeholder="D:\Work\참고자료"
+                    aria-label={`참고 폴더 ${index + 1} 경로`}
+                    onChange={(event) => updateLocalFolder(index, { path: event.target.value })}
+                    onBlur={() => commitLocalFolders(localFolders)}
+                  />
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="폴더 선택"
+                    aria-label={`참고 폴더 ${index + 1} 선택`}
+                    onClick={() => void chooseLocalFolder(index)}
+                  >
+                    <FolderPlus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    disabled={folder.path.trim().length === 0}
+                    title={folder.path.trim() ? "파일 탐색기에서 열기" : "경로를 먼저 입력하세요"}
+                    aria-label={`참고 폴더 ${index + 1} 열기`}
+                    onClick={() => onRevealLocalFolder(folder.path.trim())}
+                  >
+                    <FolderOpen size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`참고 폴더 ${index + 1} 삭제`}
+                    title="폴더 삭제"
+                    onClick={() => commitLocalFolders(localFolders.filter((_, at) => at !== index))}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="work-project-local-add"
+                onClick={() => setLocalFolders((current) => [...current, { label: "", path: "" }])}
+              >
+                <Plus size={13} />
+                <span>폴더 추가</span>
               </button>
             </div>
             <label htmlFor={`wp-memo-${workProject.id}`}>메모</label>
