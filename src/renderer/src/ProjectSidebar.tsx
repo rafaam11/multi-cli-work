@@ -7,8 +7,12 @@ import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import {
   Briefcase,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Circle,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -21,6 +25,7 @@ import {
   TriangleAlert,
   Wrench,
   X,
+  Zap,
 } from "lucide-react";
 import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { FileIcon } from "./file-icons";
@@ -31,6 +36,7 @@ import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
 import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
+import { folderStatusClass, isFolderDone } from "./folder-status";
 
 interface ProjectSidebarProps {
   snapshot: ProjectWorkspaceSnapshot | null;
@@ -69,6 +75,12 @@ interface ProjectSidebarProps {
   onSelectProject(projectId: string): void;
   onSelectSession(session: TerminalSessionView): void;
   onToggleProject(projectId: string): void;
+  /** The 폴더 layer's only status control — 작업중 ↔ 완료, never derived from the sessions below it. */
+  onToggleProjectStatus(project: SharedProject): void;
+  onExpandAll(): void;
+  onCollapseAll(): void;
+  /** One-shot tidy: leaves 작업중 folders open and closes the rest. Not a mode that stays on. */
+  onExpandWorking(): void;
   onReorderProjects(orderedIds: string[]): void;
   onProjectContextMenu(project: SharedProject, event: ReactMouseEvent): void;
   onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
@@ -175,6 +187,10 @@ export function ProjectSidebar({
   onSelectProject,
   onSelectSession,
   onToggleProject,
+  onToggleProjectStatus,
+  onExpandAll,
+  onCollapseAll,
+  onExpandWorking,
   onReorderProjects,
   onProjectContextMenu,
   onSessionContextMenu,
@@ -413,6 +429,23 @@ export function ProjectSidebar({
           </button>
         </div>
 
+        {/* Bulk expansion, on its own row rather than crowding the heading's four icons. Reaches the
+            work project and 폴더 layers only — worktree expansion is the user's own arrangement. */}
+        <div className="tree-controls">
+          <button type="button" onClick={onExpandAll} title="모든 프로젝트와 폴더 펼치기">
+            <ChevronsUpDown size={13} />
+            <span>모두</span>
+          </button>
+          <button type="button" onClick={onCollapseAll} title="모든 프로젝트와 폴더 접기">
+            <ChevronsDownUp size={13} />
+            <span>접기</span>
+          </button>
+          <button type="button" onClick={onExpandWorking} title="작업중인 폴더만 펼치고 나머지는 접기">
+            <Zap size={13} />
+            <span>작업중</span>
+          </button>
+        </div>
+
         {loading ? (
           <div className="sidebar-state">
             <RefreshCw className="spin" size={15} />
@@ -555,6 +588,7 @@ export function ProjectSidebar({
                   <div
                     className={[
                       "project-row",
+                      folderStatusClass(project.status),
                       selectedProjectId === project.id ? "selected" : "",
                       rootMissing ? "missing" : "",
                       drag?.id === project.id ? "dragging" : "",
@@ -606,6 +640,7 @@ export function ProjectSidebar({
                       type="button"
                       onClick={() => onSelectProject(project.id)}
                       aria-label={`${name} 폴더 선택`}
+                      title={project.rootPath}
                     >
                       {rootMissing ? (
                         <FolderX size={15} aria-label="폴더 없음" />
@@ -618,11 +653,11 @@ export function ProjectSidebar({
                       ) : (
                         <Folder size={15} />
                       )}
+                      {/* The dot sits inside .project-copy so it stays beside the name however
+                          short the name is, rather than drifting to the far edge of the row. */}
                       <span className="project-copy">
+                        <span className="folder-status-dot" aria-hidden="true" />
                         <span className="project-name">{name}</span>
-                        <span className="project-path" title={project.rootPath}>
-                          {project.rootPath}
-                        </span>
                       </span>
                       {projectAttention ? (
                         <span
@@ -633,6 +668,21 @@ export function ProjectSidebar({
                         />
                       ) : null}
                       {rootMissing ? <span className="project-status missing-status">없음</span> : null}
+                    </button>
+                    {/* A sibling of .project-select, not a child — a button inside a button is the
+                        invalid nesting `.brand-block` and the file tab rows both had to avoid. */}
+                    <button
+                      className="folder-status-toggle"
+                      type="button"
+                      onClick={() => onToggleProjectStatus(project)}
+                      aria-label={
+                        isFolderDone(project.status)
+                          ? `${name} 작업중으로 되돌리기`
+                          : `${name} 작업 완료로 표시`
+                      }
+                      title={isFolderDone(project.status) ? "작업중으로 되돌리기" : "작업 완료로 표시"}
+                    >
+                      {isFolderDone(project.status) ? <CheckCircle2 size={14} /> : <Circle size={14} />}
                     </button>
                   </div>
                   {editingProjectId === project.id ? (
@@ -651,7 +701,7 @@ export function ProjectSidebar({
                                 {expandedWorkspaces.has(mainWorkspace.workspaceKey) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                               </button>
                               <button className="workspace-select" type="button" onClick={() => onSelectProject(project.id)} title={mainWorkspace.path}>
-                                <GitBranch size={13} /><span className="workspace-copy"><span className="worktree-branch">메인 · {mainWorkspace.branch ?? `detached @ ${mainWorkspace.head?.slice(0, 7) ?? "unknown"}`}</span><span className="workspace-meta">{mainWorkspace.path} · 변경 {mainWorkspace.changedFileCount} · 세션 {projectSessions.filter((session) => session.worktreeId === undefined).length}</span></span>
+                                <GitBranch size={13} /><span className="workspace-copy"><span className="worktree-branch">메인 · {mainWorkspace.branch ?? `detached @ ${mainWorkspace.head?.slice(0, 7) ?? "unknown"}`}</span><span className="workspace-meta">변경 {mainWorkspace.changedFileCount} · 세션 {projectSessions.filter((session) => session.worktreeId === undefined).length}</span></span>
                               </button>
                             </div>
                             {(!expandedWorkspaces.has(mainWorkspace.workspaceKey) || (selectedProjectId === project.id && selectedWorktreeId === null)) ? <ul className="session-tree worktree-sessions" role="group">
@@ -691,7 +741,7 @@ export function ProjectSidebar({
                                   </button>
                                   <button className="workspace-select" type="button" onClick={() => onSelectWorktree(worktree)} aria-label={`${worktree.branch} worktree 선택`} title={worktree.path}>
                                     <GitBranch size={13} aria-hidden="true" />
-                                    <span className="workspace-copy"><span className="worktree-branch">{pullRequestReview ? `PR #${pullRequestReview.pullRequestNumber} · 임시` : view?.branch ?? (view?.head ? `detached @ ${view.head.slice(0, 7)}` : worktree.branch)}{view?.lockedReason ? " · locked" : ""}{view?.availability === "missing" ? " · missing" : ""}{view?.prunableReason ? " · prunable" : ""}</span><span className="workspace-meta">{worktree.path} · 변경 {view?.changedFileCount ?? 0} · 세션 {worktreeSessions.length}</span></span>
+                                    <span className="workspace-copy"><span className="worktree-branch">{pullRequestReview ? `PR #${pullRequestReview.pullRequestNumber} · 임시` : view?.branch ?? (view?.head ? `detached @ ${view.head.slice(0, 7)}` : worktree.branch)}{view?.lockedReason ? " · locked" : ""}{view?.availability === "missing" ? " · missing" : ""}{view?.prunableReason ? " · prunable" : ""}</span><span className="workspace-meta">변경 {view?.changedFileCount ?? 0} · 세션 {worktreeSessions.length}</span></span>
                                     {worktreeAttention ? (
                                     <span
                                       className={`unread-dot unread-${worktreeAttention}`}

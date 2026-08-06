@@ -1358,6 +1358,33 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   text-transform: uppercase;
 }
 
+/* Bulk expansion gets its own row: the heading's four icons are already as many as it holds. */
+.tree-controls {
+  display: flex;
+  gap: 3px;
+  padding: 0 6px 5px;
+}
+
+.tree-controls button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--quiet);
+  background: var(--surface-hover);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.tree-controls button:hover {
+  color: var(--text);
+}
+
 .icon-button {
   display: grid;
   width: 29px;
@@ -1542,11 +1569,35 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: 12px;
 }
 
+/*
+ * The 폴더 row carries a status the user sets by hand, so it must not read as one more automatic
+ * session colour. Session rows use a 3px bar plus a background wash; this layer uses a thicker 4px
+ * bar and no wash, which keeps the two legible where 완료 green sits directly above an idle session
+ * that is also green.
+ */
 .project-row {
+  --folder-accent: var(--amber);
+
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto;
-  min-height: 48px;
+  min-height: 30px;
   border-radius: 5px;
+  box-shadow: inset 4px 0 0 var(--folder-accent);
+}
+
+.project-row.folder-done {
+  --folder-accent: var(--green);
+}
+
+/* Finished folders stop competing for attention, the same way completed work projects do. */
+.project-row.folder-done {
+  opacity: 0.55;
+}
+
+.project-row.folder-done:hover,
+.project-row.folder-done:focus-within,
+.project-row.folder-done.selected {
+  opacity: 1;
 }
 
 .project-row:hover,
@@ -1554,8 +1605,10 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface-hover);
 }
 
+/* Selection adds a ring rather than its own bar, so it cannot hide the status — the trade-off
+   `.session-row.selected` already settled. */
 .project-row.selected {
-  box-shadow: inset 2px 0 0 var(--teal);
+  box-shadow: inset 4px 0 0 var(--folder-accent), inset 0 0 0 1px var(--line-strong);
 }
 
 .project-row.missing .project-select > svg,
@@ -1610,7 +1663,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .project-select {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   min-width: 0;
   align-items: center;
   gap: 8px;
@@ -1622,34 +1675,37 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
+/* Neutral, so the folder icon does not read as a second status signal beside the bar and dot. */
 .project-select > svg {
-  color: var(--amber);
+  color: var(--muted);
 }
 
+/* The status dot rides with the name rather than the row edge: the name shrinks first, so a short
+   name keeps its dot right beside it instead of stranded across the row. */
 .project-copy {
-  display: block;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
 }
 
-.project-name,
-.project-path {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.folder-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--folder-accent);
 }
 
 .project-name {
+  display: block;
+  overflow: hidden;
   color: var(--text);
   font-size: 12px;
   font-weight: 580;
-}
-
-.project-path {
-  margin-top: 2px;
-  color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-status {
@@ -1661,7 +1717,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
-.project-row .project-edit {
+.project-row .project-edit,
+.folder-status-toggle {
   width: 24px;
   height: 24px;
   flex: 0 0 24px;
@@ -1672,8 +1729,26 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .project-row:hover .project-edit,
 .project-row.selected .project-edit,
-.project-row .project-edit:focus-visible {
+.project-row .project-edit:focus-visible,
+.project-row:hover .folder-status-toggle,
+.project-row.selected .folder-status-toggle,
+.folder-status-toggle:focus-visible {
   visibility: visible;
+}
+
+.folder-status-toggle {
+  display: grid;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  color: var(--folder-accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.folder-status-toggle:hover {
+  background: var(--surface-hover);
 }
 
 .project-row.hidden-project .project-copy {

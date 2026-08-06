@@ -52,6 +52,7 @@ import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
 import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
+import { isFolderDone, nextFolderStatus } from "./folder-status";
 
 type ActiveView = "home" | "detail" | "work-project" | "terminal" | "file" | "git-diff" | "git-graph" | "pull-request";
 
@@ -71,6 +72,18 @@ const DEFAULT_RIGHT_SIDEBAR_WIDTH = 280;
 const MIN_RIGHT_SIDEBAR_WIDTH = 220;
 const MAX_RIGHT_SIDEBAR_WIDTH = 480;
 const RIGHT_SIDEBAR_RAIL_WIDTH = 36;
+/**
+ * Both tree layers persist which nodes are *collapsed*, so a folder or group added later starts
+ * expanded rather than hidden. One writer for both keys — see `persistCollapsed`.
+ */
+const COLLAPSED_PROJECTS_KEY = "multi-cli-work.projects.v1";
+const COLLAPSED_WORK_PROJECTS_KEY = "multi-cli-work.work-projects.v1";
+
+function persistCollapsed(key: string, collapsed: Set<string>): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ version: 1, collapsed: [...collapsed] }));
+  } catch { /* unavailable storage */ }
+}
 
 interface ContextMenuState {
   project: SharedProject;
@@ -161,7 +174,7 @@ export function App() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem("multi-cli-work.projects.v1") ?? "{}") as { collapsed?: string[] };
+      const stored = JSON.parse(localStorage.getItem(COLLAPSED_PROJECTS_KEY) ?? "{}") as { collapsed?: string[] };
       return new Set(stored.collapsed ?? []);
     } catch { return new Set(); }
   });
@@ -169,7 +182,7 @@ export function App() {
   const [selectedWorkProjectId, setSelectedWorkProjectId] = useState<string | null>(null);
   const [collapsedWorkProjectIds, setCollapsedWorkProjectIds] = useState<Set<string>>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem("multi-cli-work.work-projects.v1") ?? "{}") as { collapsed?: string[] };
+      const stored = JSON.parse(localStorage.getItem(COLLAPSED_WORK_PROJECTS_KEY) ?? "{}") as { collapsed?: string[] };
       return new Set(stored.collapsed ?? []);
     } catch { return new Set(); }
   });
@@ -705,7 +718,7 @@ export function App() {
       if (next.has(projectId)) { next.delete(projectId); collapsed.add(projectId); }
       else { next.add(projectId); collapsed.delete(projectId); }
       setCollapsedProjectIds(collapsed);
-      try { localStorage.setItem("multi-cli-work.projects.v1", JSON.stringify({ version: 1, collapsed: [...collapsed] })); } catch { /* unavailable storage */ }
+      persistCollapsed(COLLAPSED_PROJECTS_KEY, collapsed);
       return next;
     });
   };
@@ -715,11 +728,49 @@ export function App() {
       const next = new Set(current);
       if (next.has(workProjectId)) next.delete(workProjectId);
       else next.add(workProjectId);
-      try {
-        localStorage.setItem("multi-cli-work.work-projects.v1", JSON.stringify({ version: 1, collapsed: [...next] }));
-      } catch { /* unavailable storage */ }
+      persistCollapsed(COLLAPSED_WORK_PROJECTS_KEY, next);
       return next;
     });
+  };
+
+  /**
+   * The two layers store expansion differently — 폴더 keeps an expanded set alongside its persisted
+   * collapsed set, while a work project's expanded set is derived from its collapsed set — so a
+   * bulk action has to state what stays open for each and let this fill in both complements.
+   */
+  const applyExpansion = (expandedProjectIds: Set<string>, expandedWorkProjectIds: Set<string>) => {
+    const collapsedProjects = new Set(
+      projects.filter((project) => !expandedProjectIds.has(project.id)).map((project) => project.id),
+    );
+    const collapsedWorkProjects = new Set(
+      workProjects.filter((workProject) => !expandedWorkProjectIds.has(workProject.id)).map((workProject) => workProject.id),
+    );
+    setExpandedProjects(expandedProjectIds);
+    setCollapsedProjectIds(collapsedProjects);
+    setCollapsedWorkProjectIds(collapsedWorkProjects);
+    persistCollapsed(COLLAPSED_PROJECTS_KEY, collapsedProjects);
+    persistCollapsed(COLLAPSED_WORK_PROJECTS_KEY, collapsedWorkProjects);
+  };
+
+  const expandAll = () =>
+    applyExpansion(
+      new Set(projects.map((project) => project.id)),
+      new Set(workProjects.map((workProject) => workProject.id)),
+    );
+
+  const collapseAll = () => applyExpansion(new Set(), new Set());
+
+  /** 작업중 folders stay open, and a group opens when it still owns one. Worktrees are left alone. */
+  const expandWorking = () => {
+    const working = projects.filter((project) => !isFolderDone(project.status));
+    applyExpansion(
+      new Set(working.map((project) => project.id)),
+      new Set(
+        working
+          .map((project) => projectMembership[project.id]?.workProjectId)
+          .filter((workProjectId): workProjectId is string => workProjectId !== undefined),
+      ),
+    );
   };
 
   const selectWorkProject = (workProjectId: string) => {
@@ -1174,6 +1225,17 @@ export function App() {
           }
         : current,
     );
+  };
+
+  /** The 폴더 layer's status is set by hand and nowhere else — no session state feeds into it. */
+  const toggleProjectStatus = async (project: SharedProject) => {
+    try {
+      handleProjectSaved(
+        await window.multiCliWork.projects.update(project.id, { status: nextFolderStatus(project.status) }),
+      );
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
   };
 
   const relinkProject = async () => {
@@ -1688,6 +1750,10 @@ export function App() {
         onSelectProject={selectProject}
         onSelectSession={selectSession}
         onToggleProject={toggleProject}
+        onToggleProjectStatus={(project) => void toggleProjectStatus(project)}
+        onExpandAll={expandAll}
+        onCollapseAll={collapseAll}
+        onExpandWorking={expandWorking}
         onReorderProjects={(orderedIds) => void reorderProjects(orderedIds)}
         onProjectContextMenu={(project, event) => {
           event.preventDefault();
@@ -1982,6 +2048,8 @@ export function App() {
           x={contextMenu.x}
           y={contextMenu.y}
           vscodeAvailable={availability.vscode}
+          done={isFolderDone(contextMenu.project.status)}
+          onToggleStatus={() => void toggleProjectStatus(contextMenu.project)}
           workProjectOptions={workProjects.map((workProject) => ({
             id: workProject.id,
             name: workProject.name,

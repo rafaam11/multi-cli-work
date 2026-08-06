@@ -509,7 +509,9 @@ describe("folder workspace", () => {
     expect(await screen.findByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "PowerShell 세션 열기" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Claude Code 세션 열기" })).toBeInTheDocument();
-    expect(screen.getAllByText("C:\\work\\atlas")).toHaveLength(2);
+    // The path belongs to the main window header now; the sidebar row keeps it as a tooltip only.
+    expect(screen.getByText("C:\\work\\atlas")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Atlas 폴더 선택" })).toHaveAttribute("title", "C:\\work\\atlas");
     expect(harness.api.projects.list).toHaveBeenCalledOnce();
     expect(harness.api.terminals.list).toHaveBeenCalledOnce();
     expect(harness.api.terminals.state).toHaveBeenCalledOnce();
@@ -2134,5 +2136,142 @@ describe("Shift+Enter", () => {
         ),
       ).toHaveLength(1),
     );
+  });
+});
+
+describe("folder status", () => {
+  const archive: SharedProject = {
+    ...atlas,
+    id: "project-archive",
+    rootPath: "C:\\work\\archive",
+    displayName: "Archive",
+    status: "완료",
+    order: 2,
+  };
+
+  const workProject = (id: string, name: string, memberId: string, order: number): WorkProject => ({
+    id,
+    name,
+    category: "정부지원과제",
+    status: "진행중",
+    memo: "",
+    notionLinks: [],
+    localFolders: [],
+    members: [{ projectId: memberId, role: "repo" }],
+    order,
+    createdAt: "2026-07-11T00:00:00.000Z",
+    updatedAt: "2026-07-11T00:00:00.000Z",
+  });
+
+  const folderRow = (name: string) => screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-row")!;
+  const folderNode = (name: string) =>
+    screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-node")!;
+  // Home dashboard cards carry the same aria-label, so group lookups stay scoped to the sidebar.
+  const groupNode = (name: string) =>
+    within(screen.getByRole("navigation", { name: "프로젝트" }))
+      .getByRole("button", { name: `${name} 프로젝트 열기` })
+      .closest(".work-project-node")!;
+
+  it("toggles a folder between 작업중 and 완료 by hand, and never from its sessions", async () => {
+    const harness = createApi({ projects: [atlas], sessions: [powershellSession] });
+    (harness.api.projects.update as ReturnType<typeof vi.fn>).mockResolvedValue({ ...atlas, status: "완료" });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    expect(folderRow("Atlas")).toHaveClass("folder-working");
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 작업 완료로 표시" }));
+
+    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-done"));
+    expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { status: "완료" });
+    // The session below it never moved — its colour is the PTY's business alone.
+    expect(screen.getByRole("button", { name: "PowerShell 세션 열기" })).toHaveClass("status-idle");
+  });
+
+  it("sends a 완료 folder back to 진행중 rather than leaving it stuck there", async () => {
+    const done: SharedProject = { ...atlas, status: "완료" };
+    const harness = createApi({ projects: [done], sessions: [] });
+    (harness.api.projects.update as ReturnType<typeof vi.fn>).mockResolvedValue({ ...done, status: "진행중" });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    expect(folderRow("Atlas")).toHaveClass("folder-done");
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 작업중으로 되돌리기" }));
+
+    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-working"));
+    expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { status: "진행중" });
+  });
+
+  it("reaches the same toggle from the context menu, so the status is not hidden behind a hover", async () => {
+    const harness = createApi({ projects: [atlas], sessions: [] });
+    (harness.api.projects.update as ReturnType<typeof vi.fn>).mockResolvedValue({ ...atlas, status: "완료" });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.contextMenu(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "작업 완료로 표시" }));
+
+    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-done"));
+    expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { status: "완료" });
+  });
+
+  it("keeps 작업중 folders open and closes the rest, across the group and folder layers alike", async () => {
+    const finished: SharedProject = { ...dashboard, status: "완료" };
+    const harness = createApi({
+      projects: [atlas, finished, archive],
+      sessions: [],
+      // wp-live owns one working folder and one finished one; wp-archive owns nothing but finished work.
+      workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0), workProject("wp-archive", "끝난 과제", archive.id, 1)],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    fireEvent.click(screen.getByTitle("작업중인 폴더만 펼치고 나머지는 접기"));
+
+    await waitFor(() => expect(groupNode("끝난 과제")).toHaveAttribute("aria-expanded", "false"));
+    expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "true");
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
+    // Dashboard is 미분류 and finished, so it closes on its own without a group to close it.
+    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("collapses and re-expands both layers at once, and remembers it across a restart", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [],
+      workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0)],
+    });
+    window.multiCliWork = harness.api;
+    const view = render(<App />);
+
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 접기"));
+
+    await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
+    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
+
+    // What persists is the collapsed set on both keys, so the arrangement survives a restart.
+    view.unmount();
+    const restart = createApi({
+      projects: [atlas, dashboard],
+      sessions: [],
+      workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0)],
+    });
+    window.multiCliWork = restart.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Dashboard 폴더 선택" });
+    expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false");
+    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 펼치기"));
+
+    await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "true"));
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
+    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true");
   });
 });

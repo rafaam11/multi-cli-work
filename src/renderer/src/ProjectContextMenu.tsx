@@ -1,4 +1,4 @@
-import { Briefcase, FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
+import { Briefcase, CheckCircle2, Circle, FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
 import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 import { useEffect, useRef, type CSSProperties } from "react";
 
@@ -7,6 +7,9 @@ export interface ProjectContextMenuProps {
   x: number;
   y: number;
   vscodeAvailable: boolean;
+  /** Mirrors the row's own toggle, so the status is reachable without hunting for the button. */
+  done: boolean;
+  onToggleStatus(): void;
   /** Every work project the folder could move to; `current` marks where it already belongs. */
   workProjectOptions: Array<{ id: string; name: string; current: boolean }>;
   onMoveToWorkProject(workProjectId: string | null): void;
@@ -24,6 +27,8 @@ export function ProjectContextMenu({
   x,
   y,
   vscodeAvailable,
+  done,
+  onToggleStatus,
   workProjectOptions,
   onMoveToWorkProject,
   onReveal,
@@ -112,6 +117,10 @@ export function ProjectContextMenu({
         <span>Worktree 만들기</span>
       </button>
       <div className="context-menu-separator" role="separator" />
+      <button type="button" role="menuitem" onClick={run(onToggleStatus)}>
+        {done ? <Circle size={15} /> : <CheckCircle2 size={15} />}
+        <span>{done ? "작업중으로 되돌리기" : "작업 완료로 표시"}</span>
+      </button>
       <button type="button" role="menuitem" onClick={run(onRename)}>
         <Pencil size={15} />
         <span>이름 변경</span>
