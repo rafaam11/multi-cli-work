@@ -1,6 +1,6 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import { CircleStop, RefreshCw, RotateCcw, X } from "lucide-react";
+import { CircleStop, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { SessionNameInput } from "./SessionNameInput";
@@ -24,6 +24,8 @@ interface PaneHeaderProps {
   onStop(): void;
   /** Frees the slot for another session; this one keeps running and keeps its tab. */
   onClearSlot(): void;
+  /** Ends the session and deletes its scrollback — asks first. The one irreversible button here. */
+  onRemove(): void;
   onContextMenu(event: ReactMouseEvent): void;
 }
 
@@ -49,6 +51,7 @@ export function PaneHeader({
   onRefresh,
   onStop,
   onClearSlot,
+  onRemove,
   onContextMenu,
 }: PaneHeaderProps) {
   const agent = findAgent(agents, session.kind);
@@ -109,6 +112,18 @@ export function PaneHeader({
             <CircleStop size={13} />
           </button>
         ) : null}
+        {/* Deleting a session used to be reachable only by right-clicking this header. It sits out
+            in the open now, next to the ✕ it is so often confused with — hence the danger tint. */}
+        <button
+          className="icon-button danger-button"
+          type="button"
+          onClick={onRemove}
+          disabled={pendingAction}
+          aria-label="세션 제거"
+          title="세션 제거 (스크롤백까지 삭제)"
+        >
+          <Trash2 size={13} />
+        </button>
         <button
           className="icon-button"
           type="button"

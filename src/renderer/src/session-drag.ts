@@ -7,11 +7,24 @@ import type { DragEvent as ReactDragEvent } from "react";
  */
 export const SESSION_DRAG_TYPE = "application/x-multi-cli-session";
 
+/**
+ * Both effects have to be allowed, and the two drops really do differ: onto a slot the pane moves,
+ * onto a workspace row it is copied — the folder keeps its own tab. A drag that allowed only "move"
+ * would have the workspace row's `dropEffect = "copy"` rejected as incompatible, and the browser
+ * cancels such a drop outright: the `drop` event never fires and the pane silently never arrives.
+ */
+export const SESSION_DRAG_EFFECT_ALLOWED = "copyMove";
+
 export function startSessionDrag(event: ReactDragEvent, sessionId: string): void {
   event.dataTransfer.setData(SESSION_DRAG_TYPE, sessionId);
   // Some platforms refuse to start a drag without text/plain, so the id goes in twice.
   event.dataTransfer.setData("text/plain", sessionId);
-  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.effectAllowed = SESSION_DRAG_EFFECT_ALLOWED;
+}
+
+/** Whether a drop target's `dropEffect` is one this drag permits — an incompatible pair drops nothing. */
+export function allowsDropEffect(dropEffect: string): boolean {
+  return dropEffect === "copy" || dropEffect === "move";
 }
 
 /**

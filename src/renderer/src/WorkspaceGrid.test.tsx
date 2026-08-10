@@ -64,7 +64,9 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
     onRefreshSession: vi.fn(),
     onStopSession: vi.fn(),
     onClearSlot: vi.fn(),
+    onRemoveSession: vi.fn(),
     onDropPane: vi.fn(),
+    onSnapPane: vi.fn(),
     onSessionContextMenu: vi.fn(),
     onStartRename: vi.fn(),
     onRenameSession: vi.fn(),
@@ -134,6 +136,99 @@ describe("WorkspaceGrid", () => {
 
     fireEvent.dragLeave(empty, { dataTransfer: { types: [SESSION_DRAG_TYPE] } });
     expect(empty.classList.contains("drop-target")).toBe(false);
+  });
+
+  /**
+   * jsdom lays nothing out, so the grid is told how big it is — the zone maths itself is covered in
+   * snap-zones.test.ts; what matters here is that the grid reads the cursor against its own box.
+   */
+  function gridSized(container: HTMLElement, width = 1000, height = 600): HTMLElement {
+    const grid = container.querySelector(".workspace-grid") as HTMLElement;
+    grid.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    return grid;
+  }
+
+  /**
+   * jsdom has no DragEvent, so fireEvent falls back to a plain Event and drops clientX/clientY with
+   * it — and a snap is nothing but a cursor position. A MouseEvent under the drag's name carries
+   * both, and the drag payload is attached the way the platform hands it over.
+   */
+  function dragAt(element: HTMLElement, type: "dragover" | "drop", x: number, y: number, paneId = "session-7") {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    Object.defineProperty(event, "dataTransfer", {
+      value: { types: [SESSION_DRAG_TYPE], dropEffect: "none", getData: () => paneId },
+    });
+    fireEvent(element, event);
+  }
+
+  it("previews the region an edge drop would fill, and snaps the pane into it", () => {
+    const { container, props } = renderGrid({
+      layout: layoutById("2-col")!,
+      slots: [sessionSlot(makeSession("session-1")), null],
+    });
+    const grid = gridSized(container);
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+
+    dragAt(empty, "dragover", 4, 4);
+    const preview = grid.querySelector(".snap-preview") as HTMLElement;
+    expect(preview.getAttribute("data-zone")).toBe("top-left");
+    expect(preview.style.width).toBe("50%");
+    // The edge owns the cursor, so the slot under it stops offering itself.
+    expect(empty.classList.contains("drop-target")).toBe(false);
+    // And still nothing has moved: the drop is the one rearrangement.
+    expect(container.querySelectorAll(".grid-pane")).toHaveLength(1);
+
+    dragAt(empty, "drop", 4, 4);
+    expect(props.onDropPane).not.toHaveBeenCalled();
+    expect(props.onSnapPane).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "top-left", layoutId: "4-quad", slotIndex: 0 }),
+      "session-7",
+    );
+  });
+
+  it("leaves the middle of the grid to the ordinary slot-for-slot drop", () => {
+    const { container, props } = renderGrid({
+      layout: layoutById("2-col")!,
+      slots: [sessionSlot(makeSession("session-1")), null],
+    });
+    gridSized(container);
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+
+    dragAt(empty, "dragover", 500, 300);
+    expect(container.querySelector(".snap-preview")).toBeNull();
+    expect(empty.classList.contains("drop-target")).toBe(true);
+
+    dragAt(empty, "drop", 500, 300);
+    expect(props.onSnapPane).not.toHaveBeenCalled();
+    expect(props.onDropPane).toHaveBeenCalledWith(1, "session-7");
+  });
+
+  it("clears the snap preview when the drag leaves the grid", () => {
+    const { container } = renderGrid({
+      layout: layoutById("2-col")!,
+      slots: [sessionSlot(makeSession("session-1")), null],
+    });
+    const grid = gridSized(container);
+
+    dragAt(grid, "dragover", 500, 4);
+    expect(container.querySelector(".snap-preview")?.getAttribute("data-zone")).toBe("top");
+
+    fireEvent.dragLeave(grid, { dataTransfer: { types: [SESSION_DRAG_TYPE] }, relatedTarget: document.body });
+    expect(container.querySelector(".snap-preview")).toBeNull();
+  });
+
+  /** ✕ and 🗑 sit next to each other, so the test pins which one keeps the session alive. */
+  it("tells emptying a slot apart from deleting the session behind it", () => {
+    const target = makeSession("session-1");
+    const { props } = renderGrid({ slots: [sessionSlot(target)] });
+
+    fireEvent.click(screen.getByRole("button", { name: "슬롯 비우기" }));
+    expect(props.onClearSlot).toHaveBeenCalledWith(0);
+    expect(props.onRemoveSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "세션 제거" }));
+    expect(props.onRemoveSession).toHaveBeenCalledWith(target);
   });
 
   it("hands the pane header over as a drag source so panes can trade slots", () => {

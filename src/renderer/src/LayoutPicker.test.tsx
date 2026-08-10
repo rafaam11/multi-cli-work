@@ -24,10 +24,10 @@ describe("LayoutPicker", () => {
   });
 
   it("previews a layout with the same grid template the real grid draws", () => {
-    renderPicker({ layoutId: "6-grid" });
-    const layout = layoutById("6-row-pairs")!;
+    renderPicker({ layoutId: "auto" });
+    const layout = layoutById("6-grid")!;
     const preview = screen
-      .getByRole("radio", { name: "2×3 (6칸)" })
+      .getByRole("radio", { name: "3×2 (6칸)" })
       .querySelector(".layout-preview") as HTMLElement;
     expect(preview.style.gridTemplateAreas).toBe(layout.areas);
     expect(preview.textContent).toBe("123456");
@@ -36,7 +36,21 @@ describe("LayoutPicker", () => {
   it("shows what 자동 would draw for the panes on screen right now", () => {
     renderPicker({ layoutId: "auto", paneCount: 5 });
     const preview = screen.getByRole("radio", { name: "자동" }).querySelector(".layout-preview") as HTMLElement;
-    expect(preview.style.gridTemplateAreas).toBe(layoutById("5-thirds-split")!.areas);
+    expect(preview.style.gridTemplateAreas).toBe(layoutById("5-main-quad")!.areas);
+  });
+
+  /**
+   * One flat row, ordered as the catalog is. The per-count sections it replaced cost a line of
+   * height in a header that has none to spare, and with two presets at most per count they were
+   * labelling groups the user could already see.
+   */
+  it("lays the presets out in one row, 자동 first and then by slot count", () => {
+    renderPicker();
+    expect(screen.queryByText("4칸")).toBeNull();
+    expect(screen.getAllByRole("radio").map((radio) => radio.getAttribute("aria-label"))).toEqual([
+      "자동",
+      ...GRID_LAYOUTS.map((layout) => `${layout.label} (${layout.slots}칸)`),
+    ]);
   });
 
   it("marks the layout in force, 자동 included", () => {

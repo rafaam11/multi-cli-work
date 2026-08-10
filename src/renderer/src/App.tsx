@@ -48,7 +48,7 @@ import { buildTitleBarMenus, NEW_SESSION_PREFIX } from "./title-bar-menu";
 import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceGrid } from "./WorkspaceGrid";
-import { LayoutPicker } from "./LayoutPicker";
+import type { SnapZone } from "./snap-zones";
 import { PaneTabBar, type ViewTab } from "./PaneTabBar";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
@@ -1033,6 +1033,19 @@ export function App() {
   };
 
   /** Dropping onto a slot: two panes trade places, or an off-screen pane takes the empty slot. */
+  /**
+   * A pane dragged to an edge or a corner. The zone names the arrangement that draws that region,
+   * so the snap is one move: switch the view onto that preset — off 자동 if it was on it, which is
+   * the point of asking for a shape by hand — and put the pane in the slot covering the region.
+   * Whatever no longer fits paginates, exactly as picking the preset from the header would do.
+   */
+  const snapPaneToZone = (zone: SnapZone, paneId: string) => {
+    // The zone's slot index is absolute, so the drop lands where the preview drew it.
+    setPage(0);
+    updateCurrentView((view) => placeInSlot(setLayout(view, zone.layoutId), zone.slotIndex, paneId));
+    focusPane(paneId);
+  };
+
   const dropPaneOnSlot = (index: number, paneId: string) => {
     updateCurrentView((view) => placeInSlot(view, absoluteSlot(index), paneId));
     focusPane(paneId);
@@ -1878,6 +1891,24 @@ export function App() {
     return { index: workspaceIndex, paneCount: paneIds.length, folderCount: folders.size };
   }, [activeView, workspaceIndex, currentView, sessions]);
 
+  /**
+   * What the header's 제거 button acts on: the session behind the focused pane. A document pane has
+   * nothing to delete — it closes from its own viewer — so the button steps aside for one.
+   */
+  const headerFocusedSession = useMemo(() => {
+    if (activeView !== "terminal" || focusedPaneId === null || isDocumentPaneId(focusedPaneId)) return null;
+    const session = sessions.find((candidate) => candidate.id === focusedPaneId);
+    if (!session) return null;
+    return {
+      session,
+      label: sessionLabel(
+        session,
+        sessions.filter((peer) => peer.projectId === session.projectId),
+        agents,
+      ),
+    };
+  }, [activeView, focusedPaneId, sessions, agents]);
+
   // The right-hand file explorer follows whatever the sidebar has selected — a worktree takes
   // precedence over its owning project, mirroring how the sidebar itself scopes a worktree's tree.
   const fileExplorerOwnerProject = selectedWorktree
@@ -2135,6 +2166,8 @@ export function App() {
   const gridSlots = resolvedView.slots.map((paneId) => (paneId === null ? null : paneContentFor(paneId)));
   /** How many of this page's slots are filled — what 자동 arranges around. */
   const gridPaneCount = gridSlots.filter((slot) => slot !== null).length;
+  /** Whether the grid is what the workspace is showing — the header's layout picker follows it. */
+  const showsGrid = !loading && !loadError && activeView === "terminal" && (gridPaneCount > 0 || viewTabs.length > 0);
 
   const titleBarMenus = useMemo(
     () =>
@@ -2302,10 +2335,6 @@ export function App() {
         onSelectWorkspace={selectWorkspace}
         onDropPaneOnWorkspace={dropPaneOnWorkspace}
         flashProjectId={flashProjectId}
-        openFileTabs={openFileTabs}
-        selectedFileTabId={selectedFileTab?.id ?? null}
-        onSelectFileTab={(tab) => selectPane(documentPaneId("file", tab.id))}
-        onCloseFileTab={requestCloseFileTab}
       />
 
       <div
@@ -2322,9 +2351,16 @@ export function App() {
       <main className="terminal-workspace" aria-label="터미널 작업 영역">
         <WorkspaceHeader
           workspace={headerWorkspace}
+          layout={
+            showsGrid
+              ? { layoutId: currentView.layoutId, paneCount: gridPaneCount, onSelect: chooseLayout }
+              : null
+          }
           selectedProject={headerProject}
           selectedSession={headerSession}
           selectedSessionLabel={headerSessionLabel}
+          focusedSession={headerFocusedSession}
+          onRemoveSession={(session, label) => setSessionRemoval({ session, label })}
           projectMissing={selectedProjectMissing}
           agents={agents}
           pendingAction={pendingAction}
@@ -2385,9 +2421,8 @@ export function App() {
               <TriangleAlert size={22} />
               <h2>작업 영역을 불러오지 못했습니다</h2>
             </section>
-          ) : activeView === "terminal" && (gridPaneCount > 0 || viewTabs.length > 0) ? (
+          ) : showsGrid ? (
             <div className="workspace-panes">
-              <LayoutPicker layoutId={currentView.layoutId} paneCount={gridPaneCount} onSelect={chooseLayout} />
               <PaneTabBar
                 tabs={viewTabs}
                 agents={agents}
@@ -2418,7 +2453,18 @@ export function App() {
                 onRefreshSession={(sessionId) => void refreshSession(sessionId)}
                 onStopSession={(session) => void stopSession(session)}
                 onClearSlot={clearSlotAt}
+                onRemoveSession={(session) =>
+                  setSessionRemoval({
+                    session,
+                    label: sessionLabel(
+                      session,
+                      sessions.filter((candidate) => candidate.projectId === session.projectId),
+                      agents,
+                    ),
+                  })
+                }
                 onDropPane={dropPaneOnSlot}
+                onSnapPane={snapPaneToZone}
                 onSessionContextMenu={(session, event) => {
                   event.preventDefault();
                   setSessionMenu({

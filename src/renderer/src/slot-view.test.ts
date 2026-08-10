@@ -236,7 +236,7 @@ describe("viewPageSize", () => {
 
 describe("resolveView", () => {
   it("climbs the 자동 ladder with the number of sessions on the page", () => {
-    const ladder = ["solo", "2-col", "3-col", "4-thirds-right", "5-thirds-split", "6-grid"];
+    const ladder = ["solo", "2-col", "3-col", "4-thirds-right", "5-main-quad", "6-grid"];
     ladder.forEach((layoutId, index) => {
       const slots = Array.from({ length: index + 1 }, (_, slot) => `s${slot}`);
       const view = resolveView({ layoutId: "auto", slots }, 0);

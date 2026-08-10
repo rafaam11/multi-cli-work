@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTO_LAYOUT_ID,
+  AUTO_LAYOUT_IDS,
   DEFAULT_LAYOUT_ID,
   GRID_LAYOUTS,
   MAX_LAYOUT_SLOTS,
@@ -9,7 +10,6 @@ import {
   isAutoLayout,
   layoutAreaNames,
   layoutById,
-  layoutGroups,
   resolveLayout,
 } from "./grid-layouts";
 
@@ -61,6 +61,29 @@ describe("GRID_LAYOUTS", () => {
     );
   });
 
+  /**
+   * The picker is one flat row now, so the catalog is also the list of tiles the user reads. Pinning
+   * it keeps a preset from creeping back in as a shape nobody chose to have.
+   */
+  it("offers only the arrangements that get used", () => {
+    expect(GRID_LAYOUTS.map((layout) => layout.id)).toEqual([
+      "solo",
+      "2-col",
+      "3-main-right",
+      "3-col",
+      "4-quad",
+      "4-thirds-right",
+      "5-main-quad",
+      "6-grid",
+    ]);
+  });
+
+  it("splits two panes side by side and never stacks them", () => {
+    const pairs = GRID_LAYOUTS.filter((layout) => layout.slots === 2);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].rows).toBe("1fr");
+  });
+
   it("never offers more slots than a page can hold", () => {
     for (const layout of GRID_LAYOUTS) expect(layout.slots).toBeLessThanOrEqual(MAX_LAYOUT_SLOTS);
   });
@@ -89,12 +112,21 @@ describe("autoLayoutFor", () => {
     expect(autoLayoutFor(2).id).toBe("2-col");
     expect(autoLayoutFor(3).id).toBe("3-col");
     expect(autoLayoutFor(4).id).toBe("4-thirds-right");
-    expect(autoLayoutFor(5).id).toBe("5-thirds-split");
+    expect(autoLayoutFor(5).id).toBe("5-main-quad");
     expect(autoLayoutFor(6).id).toBe("6-grid");
   });
 
-  it("keeps the split layouts on three columns, so the panes line up as the count grows", () => {
-    for (const count of [3, 4, 5, 6]) expect(autoLayoutFor(count).columns).toBe("1fr 1fr 1fr");
+  it("climbs the ladder in slot-count order, one rung per pane", () => {
+    expect(AUTO_LAYOUT_IDS).toHaveLength(MAX_LAYOUT_SLOTS);
+    AUTO_LAYOUT_IDS.forEach((id, index) => {
+      expect({ id, slots: layoutById(id)?.slots }).toEqual({ id, slots: index + 1 });
+    });
+  });
+
+  it("keeps the split layouts on three columns from three panes up", () => {
+    // Five is the exception: its only preset gives the main pane the wider first column.
+    for (const count of [3, 4, 6]) expect(autoLayoutFor(count).columns).toBe("1fr 1fr 1fr");
+    expect(autoLayoutFor(5).columns).toBe("1.4fr 1fr 1fr");
   });
 
   it("clamps a count no layout can serve instead of coming back empty", () => {
@@ -121,7 +153,13 @@ describe("autoLayoutFor", () => {
 
 describe("resolveLayout", () => {
   it("returns the stored layout when the catalog still has it", () => {
-    expect(resolveLayout("6-row-pairs", 2).id).toBe("6-row-pairs");
+    expect(resolveLayout("6-grid", 2).id).toBe("6-grid");
+  });
+
+  /** A view saved on a preset that has since been dropped opens on the nearest one, not blank. */
+  it("opens a view saved on a retired preset on the count's default", () => {
+    expect(resolveLayout("2-row", 2).id).toBe("2-col");
+    expect(resolveLayout("6-row-pairs", 6).id).toBe("6-grid");
   });
 
   it("reads 자동 as the ladder entry for the count it is handed", () => {
@@ -143,13 +181,5 @@ describe("resolveLayout", () => {
 describe("layoutById", () => {
   it("returns null rather than a guess for an unknown id", () => {
     expect(layoutById("nope")).toBeNull();
-  });
-});
-
-describe("layoutGroups", () => {
-  it("groups the catalog by slot count in ascending order without dropping anything", () => {
-    const groups = layoutGroups();
-    expect(groups.map((group) => group.slots)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(groups.flatMap((group) => group.layouts)).toEqual([...GRID_LAYOUTS]);
   });
 });

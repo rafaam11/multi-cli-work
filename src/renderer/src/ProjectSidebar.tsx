@@ -20,7 +20,6 @@ import {
   RefreshCw,
   SquareTerminal,
   TriangleAlert,
-  X,
   Zap,
 } from "lucide-react";
 import {
@@ -31,8 +30,6 @@ import {
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { FileIcon } from "./file-icons";
-import type { OpenFileTab } from "./file-tabs";
 import { reorderIds, type DropPosition } from "./project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
@@ -99,10 +96,6 @@ interface ProjectSidebarProps {
   onOpenHome(): void;
   collapsed: boolean;
   onToggleCollapse(): void;
-  openFileTabs: OpenFileTab[];
-  selectedFileTabId: string | null;
-  onSelectFileTab(tab: OpenFileTab): void;
-  onCloseFileTab(tab: OpenFileTab): void;
 }
 
 /**
@@ -174,10 +167,6 @@ export function ProjectSidebar({
   onOpenHome,
   collapsed,
   onToggleCollapse,
-  openFileTabs,
-  selectedFileTabId,
-  onSelectFileTab,
-  onCloseFileTab,
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
   const [drag, setDrag] = useState<{ id: string; over: { id: string; position: DropPosition } | null } | null>(null);
@@ -293,39 +282,6 @@ export function ProjectSidebar({
       </li>
     );
   };
-
-  /**
-   * Not a session — a file opened from the right-hand explorer, shown as its own group so it
-   * never mixes with real PTY sessions. A sibling pair of buttons, not a button nesting a button
-   * (invalid HTML — the same trap `.brand-block`'s toggle button hit before).
-   */
-  const renderFileTab = (tab: OpenFileTab) => (
-    <li key={tab.id}>
-      <div className={`file-tab-row ${selectedFileTabId === tab.id ? "selected" : ""}`}>
-        <button
-          type="button"
-          className="file-tab-open"
-          onClick={() => onSelectFileTab(tab)}
-          aria-label={`${tab.name} 파일 열기${tab.dirty ? " (저장 안 됨)" : ""}`}
-        >
-          <span className={`file-tab-dot ${tab.dirty ? "dirty" : ""}`} aria-hidden="true" />
-          <FileIcon extension={tab.extension} size={14} />
-          <span className="file-tab-name" title={tab.relativePath}>
-            {tab.name}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="file-tab-close"
-          onClick={() => onCloseFileTab(tab)}
-          aria-label={`${tab.name} 닫기`}
-          title="닫기"
-        >
-          <X size={12} />
-        </button>
-      </div>
-    </li>
-  );
 
   return (
     <aside className={`project-sidebar ${collapsed ? "collapsed" : ""}`}>
@@ -589,12 +545,8 @@ export function ProjectSidebar({
               const projectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
               const projectWorkspaceViews = workspaceViews.filter((workspace) => workspace.projectId === project.id);
               const mainWorkspace = projectWorkspaceViews.find((workspace) => workspace.kind === "main") ?? null;
-              // The main node only adds useful hierarchy when another worktree exists. With none,
-              // sessions and file tabs remain directly under the project row.
+              // The main node only adds useful hierarchy when another worktree exists.
               const isGitProject = projectWorktrees.length > 0;
-              const projectFileTabs = openFileTabs.filter(
-                (tab) => tab.target.kind === "project" && tab.target.id === project.id,
-              );
               // The folder row shows the strongest wait among its sessions, so a collapsed
               // folder cannot hide an agent asking for approval.
               const projectAttention = attentionOf(projectSessions);
@@ -690,11 +642,9 @@ export function ProjectSidebar({
                   {editingProjectId === project.id ? (
                     <ProjectMetadataEditor project={project} onSaved={onProjectSaved} onClose={onCloseEditor} />
                   ) : null}
-                  {expanded ? (
-                    <>
-                      {!isGitProject ? (projectFileTabs.length > 0 ? <ul className="session-tree" role="group">
-                        {projectFileTabs.map(renderFileTab)}
-                      </ul> : null) : (
+                  {/* The tree stops at the folder: sessions and documents are the grid's business,
+                      so a git folder opens onto its worktrees and a plain one onto nothing. */}
+                  {expanded && isGitProject ? (
                         <ul className="worktree-tree" role="group" aria-label={`${name} worktree`}>
                           {mainWorkspace ? <li className="worktree-node main-workspace-node" key={mainWorkspace.workspaceKey}>
                             <div className={`worktree-row two-line ${selectedProjectId === project.id && selectedWorktreeId === null ? "selected" : ""}`}>
@@ -705,9 +655,6 @@ export function ProjectSidebar({
                                 <GitBranch size={13} /><span className="workspace-copy"><span className="worktree-branch">메인 · {mainWorkspace.branch ?? `detached @ ${mainWorkspace.head?.slice(0, 7) ?? "unknown"}`}</span><span className="workspace-meta">변경 {mainWorkspace.changedFileCount} · 세션 {projectSessions.filter((session) => session.worktreeId === undefined).length}</span></span>
                               </button>
                             </div>
-                            {projectFileTabs.length > 0 && (!expandedWorkspaces.has(mainWorkspace.workspaceKey) || (selectedProjectId === project.id && selectedWorktreeId === null)) ? <ul className="session-tree worktree-sessions" role="group">
-                              {projectFileTabs.map(renderFileTab)}
-                            </ul> : null}
                           </li> : null}
                           {projectWorktrees.sort((left, right) => {
                             const leftReview = activeReviews.find((review) => review.worktreeId === left.id);
@@ -721,9 +668,6 @@ export function ProjectSidebar({
                             const pullRequestReview = activeReviews.find((review) => review.worktreeId === worktree.id);
                             const worktreeSessions = projectSessions.filter(
                               (session) => session.worktreeId === worktree.id,
-                            );
-                            const worktreeFileTabs = openFileTabs.filter(
-                              (tab) => tab.target.kind === "worktree" && tab.target.id === worktree.id,
                             );
                             const worktreeAttention = attentionOf(worktreeSessions);
                             return (
@@ -744,18 +688,11 @@ export function ProjectSidebar({
                                     ) : null}
                                   </button>
                                 </div>
-                                {(!expandedWorkspaces.has(`worktree:${worktree.id}`) || selectedWorktreeId === worktree.id) && worktreeFileTabs.length > 0 ? (
-                                  <ul className="session-tree worktree-sessions" role="group">
-                                    {worktreeFileTabs.map(renderFileTab)}
-                                  </ul>
-                                ) : null}
                               </li>
                             );
                           })}
                           {worktreeWarnings[project.id] ? <li className="project-worktree-warning" role="status"><TriangleAlert size={13} />{worktreeWarnings[project.id]}</li> : null}
                         </ul>
-                      )}
-                    </>
                   ) : null}
                 </li>
               );

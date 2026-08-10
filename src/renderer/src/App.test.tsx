@@ -1614,9 +1614,31 @@ describe("file viewer", () => {
       "docs/guide.md",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "README.md 파일 열기" }));
+    // Back to README through its pane tab — the one place an open document is listed now that the
+    // folder tree no longer draws file rows. A tab click focuses the pane it already has; it must
+    // not read the file off disk a second time.
+    fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
     fireEvent.click(await screen.findByRole("link", { name: "Guide" }));
     expect(harness.api.workspaceFiles.readFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an opened document out of the folder tree, where only folders live", async () => {
+    const harness = createApi({ sessions: [] });
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
+      relativePath: "README.md",
+      encoding: "utf8",
+      content: "# Readme",
+      truncated: false,
+      sizeBytes: 9,
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
+    // The pane and its tab are how the document is reached; the tree gets no row for it.
+    expect(await screen.findByRole("tab", { name: "README.md" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "README.md 파일 열기" })).not.toBeInTheDocument();
   });
 
   it("saves ordinary UTF-8 text with the shared dirty and saving states", async () => {

@@ -9,6 +9,7 @@ import { PaneHeader } from "./PaneHeader";
 import { TerminalPane, type TerminalCommands } from "./TerminalPane";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { sessionLabel } from "./session-labels";
+import { resolveSnapZone, type SnapZone } from "./snap-zones";
 
 interface WorkspaceGridProps {
   /** The arrangement to draw. It alone decides how many cells exist. */
@@ -38,8 +39,12 @@ interface WorkspaceGridProps {
   onStopSession(session: TerminalSessionView): void;
   /** Empties the slot only — the session keeps running, the document stays open, both keep a tab. */
   onClearSlot(index: number): void;
+  /** Asks to end the session and delete its scrollback. The caller confirms before anything happens. */
+  onRemoveSession(session: TerminalSessionView): void;
   /** A pane was dropped on this slot: one from another slot, or a tab from the bar. */
   onDropPane(index: number, paneId: string): void;
+  /** A pane was dropped on an edge or a corner: take the zone's preset and put the pane in its slot. */
+  onSnapPane(zone: SnapZone, paneId: string): void;
   onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
   onStartRename(sessionId: string): void;
   onRenameSession(sessionId: string, name: string | null): void;
@@ -77,13 +82,16 @@ export function WorkspaceGrid({
   onRefreshSession,
   onStopSession,
   onClearSlot,
+  onRemoveSession,
   onDropPane,
+  onSnapPane,
   onSessionContextMenu,
   onStartRename,
   onRenameSession,
   onCancelRename,
 }: WorkspaceGridProps) {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [snapZone, setSnapZone] = useState<SnapZone | null>(null);
   const shiftEnterBytes = (pane: TerminalSessionView): string | null =>
     SHIFT_ENTER_BYTES[agents.find((agent) => agent.id === pane.kind)?.shiftEnter ?? "enter"];
   const labelFor = (pane: TerminalSessionView): string =>
@@ -108,10 +116,35 @@ export function WorkspaceGrid({
       if (!isSessionDrag(event)) return;
       event.preventDefault();
       setDropIndex(null);
+      setSnapZone(null);
       const paneId = readSessionDrag(event);
-      if (paneId) onDropPane(index, paneId);
+      if (!paneId) return;
+      // The edge wins over the slot beneath it: the cursor is there on purpose, and the region it
+      // asks for is bigger than any one slot.
+      if (snapZone) onSnapPane(snapZone, paneId);
+      else onDropPane(index, paneId);
     },
   });
+
+  /**
+   * The slot handlers run first and the grid's own runs after, so this is where the two indicators
+   * are reconciled: over an edge, only the snap preview shows.
+   */
+  const trackSnapZone = (event: ReactDragEvent) => {
+    if (!isSessionDrag(event)) return;
+    const zone = resolveSnapZone(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
+    setSnapZone((current) => (current?.id === zone?.id ? current : zone));
+    if (zone) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setDropIndex(null);
+    }
+  };
+
+  const endDrag = () => {
+    setDropIndex(null);
+    setSnapZone(null);
+  };
 
   const paneClass = (paneId: string, index: number, extra?: string): string =>
     ["grid-pane", extra ?? "", paneId === focusedPaneId ? "pane-focused" : "", dropIndex === index ? "drop-target" : ""]
@@ -128,8 +161,31 @@ export function WorkspaceGrid({
         gridTemplateRows: layout.rows,
         gridTemplateAreas: layout.areas,
       }}
-      onDragEnd={() => setDropIndex(null)}
+      onDragOver={trackSnapZone}
+      onDragLeave={(event) => {
+        // The grid is one drop surface: crossing between its own slots is not leaving it.
+        const next = event.relatedTarget as Node | null;
+        if (next && event.currentTarget.contains(next)) return;
+        setSnapZone(null);
+      }}
+      onDrop={endDrag}
+      onDragEnd={endDrag}
     >
+      {snapZone ? (
+        <div
+          className="snap-preview"
+          data-zone={snapZone.id}
+          aria-hidden="true"
+          style={{
+            left: `${snapZone.rect.left * 100}%`,
+            top: `${snapZone.rect.top * 100}%`,
+            width: `${snapZone.rect.width * 100}%`,
+            height: `${snapZone.rect.height * 100}%`,
+          }}
+        >
+          <span>{snapZone.label}</span>
+        </div>
+      ) : null}
       {slots.map((item, index) => {
         if (!item) {
           return (
@@ -212,6 +268,7 @@ export function WorkspaceGrid({
               onRefresh={() => onRefreshSession(session.id)}
               onStop={() => onStopSession(session)}
               onClearSlot={() => onClearSlot(index)}
+              onRemove={() => onRemoveSession(session)}
               onContextMenu={(event) => onSessionContextMenu(session, event)}
             />
             <TerminalPane

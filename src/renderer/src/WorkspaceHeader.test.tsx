@@ -1,0 +1,98 @@
+import type { TerminalSessionView } from "@shared/api-types";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceHeader } from "./WorkspaceHeader";
+
+const session: TerminalSessionView = {
+  id: "session-1",
+  projectId: "project-atlas",
+  tool: null,
+  title: null,
+  name: "Echo Agent",
+  kind: "powershell",
+  cwd: "C:\\work\\atlas",
+  providerConversationId: null,
+  interruptedByShutdown: false,
+  status: "idle",
+  pid: 4100,
+  exitCode: null,
+  createdAt: "2026-08-11T01:00:00.000Z",
+  updatedAt: "2026-08-11T01:00:00.000Z",
+};
+
+function renderHeader(overrides: Partial<Parameters<typeof WorkspaceHeader>[0]> = {}) {
+  const props: Parameters<typeof WorkspaceHeader>[0] = {
+    workspace: null,
+    layout: { layoutId: "auto", paneCount: 2, onSelect: vi.fn() },
+    selectedProject: null,
+    selectedSession: null,
+    selectedSessionLabel: null,
+    focusedSession: null,
+    onRemoveSession: vi.fn(),
+    projectMissing: false,
+    agents: [],
+    pendingAction: false,
+    readOnly: false,
+    detailActive: false,
+    onOpenDetail: vi.fn(),
+    onStartSession: vi.fn(),
+    onRelinkProject: vi.fn(),
+    ...overrides,
+  };
+  const result = render(<WorkspaceHeader {...props} />);
+  return { ...result, props };
+}
+
+afterEach(cleanup);
+
+describe("WorkspaceHeader", () => {
+  /**
+   * The picker sits in the header so the grid keeps the row it used to spend on it. That only works
+   * if the header is where it renders — and on a surface with no grid it must not render at all.
+   */
+  it("carries the layout picker beside the launchers, and drops it where there is no grid", () => {
+    const { rerender, props } = renderHeader();
+    const picker = screen.getByRole("radiogroup", { name: "레이아웃 선택" });
+    expect(picker.closest(".workspace-actions")).toBeTruthy();
+
+    rerender(<WorkspaceHeader {...props} layout={null} />);
+    expect(screen.queryByRole("radiogroup", { name: "레이아웃 선택" })).toBeNull();
+  });
+
+  it("reports the layout the user picked", () => {
+    const { props } = renderHeader();
+    fireEvent.click(screen.getByRole("radio", { name: "좌우 (2칸)" }));
+    expect(props.layout?.onSelect).toHaveBeenCalledWith("2-col");
+  });
+
+  /** A workspace holds panes from several folders, so it has no folder controls — but it has a grid. */
+  it("keeps the picker on a workspace, where every other control steps aside", () => {
+    renderHeader({ workspace: { index: 0, paneCount: 2, folderCount: 2 } });
+    expect(screen.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "폴더 상세" })).toBeNull();
+    expect(screen.getByText("작업공간1")).toBeTruthy();
+  });
+
+  /**
+   * Deleting a session was reachable only by right-clicking a pane header. The header button names
+   * the session it would delete, because on a grid nothing else says which one that is.
+   */
+  it("offers 제거 for the focused pane's session, naming it", () => {
+    const { props } = renderHeader({ focusedSession: { session, label: "Echo Agent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Echo Agent 세션 제거" }));
+    expect(props.onRemoveSession).toHaveBeenCalledWith(session, "Echo Agent");
+  });
+
+  it("offers 제거 on a workspace too, where the focus is the only thing that says which session", () => {
+    renderHeader({
+      workspace: { index: 0, paneCount: 2, folderCount: 2 },
+      focusedSession: { session, label: "Echo Agent" },
+    });
+    expect(screen.getByRole("button", { name: "Echo Agent 세션 제거" })).toBeTruthy();
+  });
+
+  it("has nothing to delete when the focused pane is a document", () => {
+    renderHeader({ focusedSession: null });
+    expect(screen.queryByRole("button", { name: /세션 제거/ })).toBeNull();
+  });
+});

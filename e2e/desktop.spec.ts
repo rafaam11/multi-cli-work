@@ -42,6 +42,20 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
   return { app: nextApp, page: await nextApp.firstWindow() };
 }
 
+/**
+ * What the app opens at (`src/main/index.ts`), which is what every test that is not about window
+ * size should run in. Playwright drives one window across the whole file, so a resize is a change
+ * to every test after it unless it is put back.
+ */
+const DEFAULT_WINDOW = { width: 1280, height: 820 };
+
+async function restoreDefaultWindowSize(): Promise<void> {
+  await page.setViewportSize(DEFAULT_WINDOW);
+  await expect
+    .poll(() => page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })))
+    .toMatchObject(DEFAULT_WINDOW);
+}
+
 async function attachScreenshot(name: string): Promise<void> {
   const screenshotPath = test.info().outputPath(`${name}.png`);
   await page.screenshot({ path: screenshotPath });
@@ -90,6 +104,20 @@ async function dragTabOnto(label: string, targetLabelPrefix: string): Promise<vo
         element.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer }));
       fire(tab, "dragstart");
       fire(target, "dragover");
+      // Dispatching the events by hand skips the effect negotiation a real drag goes through, and a
+      // dropEffect the drag never allowed is one the browser answers by cancelling the drop outright
+      // — no drop event at all. Asserting it here is what keeps this helper from passing a drag the
+      // platform would have thrown away.
+      const allowed = dataTransfer.effectAllowed;
+      const wanted = dataTransfer.dropEffect;
+      const compatible =
+        wanted === "none" ||
+        allowed === "all" ||
+        allowed === "uninitialized" ||
+        allowed.toLowerCase().includes(wanted);
+      if (!compatible) {
+        throw new Error(`drop rejected: dropEffect "${wanted}" is not in effectAllowed "${allowed}"`);
+      }
       fire(target, "drop");
       fire(tab, "dragend");
     },
@@ -313,6 +341,12 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       const state = window as typeof window & { __multiCliWorkE2eUnsubscribe?: () => void };
       state.__multiCliWorkE2eUnsubscribe?.();
     });
+
+    // The compact size is this test's subject, not the suite's. Leaving the window at 900x600 gave
+    // every later test a terminal only a few rows tall, so a marker printed above a long prompt
+    // scrolled out of the rendered rows before it could be read — a failure about window size
+    // wearing the mask of whichever assertion happened to run there.
+    await restoreDefaultWindowSize();
   });
 
   test("pastes each Ctrl+V shortcut exactly once from Electron's native clipboard", async () => {

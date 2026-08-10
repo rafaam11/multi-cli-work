@@ -2,16 +2,29 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import { FolderOpen, LayoutGrid, MonitorDot, PanelsTopLeft } from "lucide-react";
+import { FolderOpen, LayoutGrid, MonitorDot, PanelsTopLeft, Trash2 } from "lucide-react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
+import { LayoutPicker } from "./LayoutPicker";
 import { newSessionLabel, projectName, statusLabels } from "./session-labels";
 
 interface WorkspaceHeaderProps {
   /** Set when one of the three workspaces is on screen; the folder controls step aside for it. */
   workspace: { index: number; paneCount: number; folderCount: number } | null;
+  /**
+   * The grid's arrangement, or null on a surface that has no grid to arrange. The picker rides here
+   * rather than above the grid so choosing a layout costs no terminal height.
+   */
+  layout: { layoutId: string; paneCount: number; onSelect(layoutId: string): void } | null;
   selectedProject: SharedProject | null;
   selectedSession: TerminalSessionView | null;
   selectedSessionLabel: string | null;
+  /**
+   * The session in the pane that has the focus, wherever that pane came from. `selectedSession`
+   * belongs to the folder on screen and is null on a workspace, which holds panes from several — so
+   * the 제거 button follows the focus instead, and works on both surfaces.
+   */
+  focusedSession: { session: TerminalSessionView; label: string } | null;
+  onRemoveSession(session: TerminalSessionView, label: string): void;
   projectMissing: boolean;
   agents: AgentView[];
   pendingAction: boolean;
@@ -34,9 +47,12 @@ interface WorkspaceHeaderProps {
  */
 export function WorkspaceHeader({
   workspace,
+  layout,
   selectedProject,
   selectedSession,
   selectedSessionLabel,
+  focusedSession,
+  onRemoveSession,
   projectMissing,
   agents,
   pendingAction,
@@ -83,6 +99,10 @@ export function WorkspaceHeader({
       </div>
 
       <div className="workspace-actions">
+        {/* A workspace hides the folder controls, so on that surface the picker is the whole row. */}
+        {layout ? (
+          <LayoutPicker layoutId={layout.layoutId} paneCount={layout.paneCount} onSelect={layout.onSelect} />
+        ) : null}
         {workspace ? null : selectedSession ? (
           <span className={`active-status status-${selectedSession.status}`}>
             <span className={`status-dot status-${selectedSession.status}`} aria-hidden="true" />
@@ -141,6 +161,20 @@ export function WorkspaceHeader({
               </button>
             ))}
           </div>
+        ) : null}
+
+        {/* Last in the row and on its own: the only control here that destroys anything. */}
+        {focusedSession ? (
+          <button
+            className="icon-button danger-button"
+            type="button"
+            onClick={() => onRemoveSession(focusedSession.session, focusedSession.label)}
+            disabled={pendingAction}
+            aria-label={`${focusedSession.label} 세션 제거`}
+            title={`${focusedSession.label} 세션 제거 (스크롤백까지 삭제)`}
+          >
+            <Trash2 size={15} />
+          </button>
         ) : null}
       </div>
     </header>

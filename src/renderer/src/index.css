@@ -1580,8 +1580,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
-.project-tree,
-.session-tree {
+.project-tree {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1955,20 +1954,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   opacity: 0.5;
 }
 
-.session-tree {
-  position: relative;
-  margin: 1px 0 4px 25px;
-  padding-left: 10px;
-}
-
-.session-tree::before {
-  position: absolute;
-  inset: 0 auto 3px 0;
-  width: 1px;
-  background: var(--line);
-  content: "";
-}
-
 /* The same accent variable drives every status-tinted row across the app (home dashboard, project
    detail, pane headers), so the colour mapping lives in one place. */
 .monitor-row.status-starting,
@@ -2027,89 +2012,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface);
   font-family: inherit;
   font-size: 11px;
-}
-
-/* File tabs are the only rows the tree still draws — sessions moved to the grid's pane headers.
-   The row keeps the wash-and-ring treatment those session rows had, but is a flex pair of sibling
-   buttons (open + close) rather than one button: a button cannot nest a button. */
-.file-tab-row {
-  --session-accent: var(--quiet);
-
-  display: flex;
-  width: 100%;
-  min-height: 34px;
-  align-items: stretch;
-  border-radius: 4px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--session-accent) 10%, transparent);
-  box-shadow: inset 3px 0 0 var(--session-accent);
-  text-align: left;
-}
-
-.file-tab-row:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 18%, var(--surface-hover));
-}
-
-/* Selection adds a ring rather than a colour, so it stays legible on top of the wash. */
-.file-tab-row.selected {
-  color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
-  box-shadow: inset 3px 0 0 var(--session-accent), inset 0 0 0 1px var(--line-strong);
-}
-
-.file-tab-open {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px 0 7px;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-tab-close {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
-  place-items: center;
-  align-self: center;
-  margin-right: 6px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--quiet);
-  background: transparent;
-  cursor: pointer;
-}
-
-.file-tab-close:hover {
-  color: var(--text);
-  background: var(--surface-hover);
-}
-
-.file-tab-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  border-radius: 50%;
-  background: transparent;
-}
-
-.file-tab-dot.dirty {
-  background: var(--amber);
-}
-
-.file-tab-name {
-  overflow: hidden;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .status-dot {
@@ -2294,11 +2196,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
-.worktree-sessions {
-  padding-left: 14px;
-}
 
-/* Layout row, tab row, then the grid taking whatever height is left. */
+/* Tab row, then the grid taking whatever height is left — the layout row moved into the header. */
 .workspace-panes {
   display: flex;
   min-width: 0;
@@ -2311,6 +2210,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
  * (s1…s6) so a pane's place survives being dragged elsewhere. The 1px gap draws the frame lines.
  */
 .workspace-grid {
+  position: relative;
   display: grid;
   min-height: 0;
   flex: 1;
@@ -2361,6 +2261,32 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-style: solid;
   border-color: var(--teal);
   color: var(--teal);
+}
+
+/*
+ * The snap preview: the region an edge or corner drop would fill, drawn over the panes rather than
+ * by moving them — same reason as above, and here the region spans slots no single outline could.
+ * It takes no pointer events, so the drop still reaches the slot underneath.
+ */
+.snap-preview {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  padding: 8px;
+  border: 2px solid var(--teal);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--teal) 16%, transparent);
+  place-items: center;
+  pointer-events: none;
+}
+
+.snap-preview > span {
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--bg);
+  background: var(--teal);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /*
@@ -2902,52 +2828,32 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * Every arrangement in one row across the top of the workspace. Choosing one is frequent enough that
- * it should not cost a popup, and each option is its own preview: the tile is drawn with the same
- * `grid-template-*` the grid will use, so the row reads as a picture of the result rather than a
- * list of names. It scrolls sideways at narrow widths instead of wrapping, which would push the grid.
+ * Every arrangement in one row, inside the workspace header beside the launchers. Choosing one is
+ * frequent enough that it should not cost a popup, and each option is its own preview: the tile is
+ * drawn with the same `grid-template-*` the grid will use, so the row reads as a picture of the
+ * result rather than a list of names. Living in the header rather than above the grid is what buys
+ * the terminals back a row of height — so it never scrolls or wraps here; the tiles shrink instead.
  */
 .layout-bar {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  background: var(--surface);
-  scrollbar-width: none;
-}
-
-.layout-bar::-webkit-scrollbar {
-  display: none;
-}
-
-.layout-bar-group {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
+  flex: 0 0 auto;
+  align-items: center;
   gap: 2px;
-  padding-left: 8px;
-  border-left: 1px solid var(--line);
+  margin-right: 6px;
 }
 
-.layout-bar-title {
-  color: var(--quiet);
-  font-size: 8px;
-  letter-spacing: 0.04em;
-}
-
-.layout-bar-options {
-  display: flex;
-  gap: 4px;
+.layout-bar-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--line);
 }
 
 .layout-option {
   display: flex;
   flex: 0 0 auto;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
   padding: 3px;
   border: 1px solid transparent;
   border-radius: 3px;
@@ -2987,11 +2893,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-color: var(--accent);
 }
 
+/* Only 자동 is named: its tile keeps changing shape, so the picture alone would not say what it is. */
 .layout-option-label {
   overflow: hidden;
+  padding-right: 2px;
   color: var(--muted);
-  font-size: 9px;
-  text-align: center;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4624,7 +4531,30 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /* The usable header width is the centre grid column, not the window width. Resizable sidebars can
-   make that column compact while the viewport is still wide, so respond to the header itself. */
+   make that column compact while the viewport is still wide, so respond to the header itself.
+   The layout tiles give up their spacing first, then 자동's name, then size — the row never scrolls,
+   because a picker you have to scroll to reach costs more than the height it was moved here to save. */
+@container (max-width: 940px) {
+  .workspace-header .layout-option-label {
+    display: none;
+  }
+
+  .workspace-header .layout-bar-divider {
+    margin: 0 2px;
+  }
+}
+
+@container (max-width: 780px) {
+  .workspace-header .layout-preview {
+    width: 26px;
+    height: 18px;
+  }
+
+  .workspace-header .layout-option {
+    padding: 2px;
+  }
+}
+
 @container (max-width: 620px) {
   .workspace-header .active-status,
   .workspace-header .workspace-path {
