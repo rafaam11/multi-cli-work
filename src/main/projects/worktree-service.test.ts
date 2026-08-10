@@ -44,7 +44,10 @@ function project(): SharedProject {
   };
 }
 
-function service(removeWorktreeSessions = vi.fn(async () => undefined), hasWorktreeSessions?: (id: string) => boolean) {
+function service(
+  removeWorktreeSessions = vi.fn(async () => undefined),
+  hasWorktreeSessions?: (id: string) => boolean | Promise<boolean>,
+) {
   let nextId = 0;
   return {
     removeWorktreeSessions,
@@ -206,6 +209,43 @@ describe("worktree service against a real repo", () => {
 
     expect(snapshot.workspaces.some((workspace) => workspace.worktreeId === created.id)).toBe(false);
     expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeUndefined();
+  });
+
+  it("keeps a worktree created while a sync is in flight, under its original id", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let staleChecks = 0;
+    // The stale entry parks the first sync inside this session check, holding it in flight while
+    // create() writes a fresh entry the sync's registry snapshot has never seen.
+    const { service: worktrees } = service(undefined, async () => {
+      staleChecks += 1;
+      if (staleChecks === 1) await gate;
+      return false;
+    });
+    const stale = await worktrees.create("project-1", "feature-stale-race");
+    await git(repoRoot, "worktree", "remove", stale.path);
+
+    const inFlight = worktrees.sync([project()]);
+    await vi.waitFor(() => expect(staleChecks).toBe(1));
+    const creating = worktrees.create("project-1", "feature-race");
+    await vi.waitFor(async () => {
+      const { worktrees: entries } = await readWorktreeRegistry({ registryPath });
+      expect(Object.values(entries).some((entry) => entry.branch === "feature-race")).toBe(true);
+    });
+    release();
+
+    const created = await creating;
+    await inFlight;
+    const registry = await readWorktreeRegistry({ registryPath });
+    expect(registry.worktrees[created.id]).toBeDefined();
+    expect(registry.worktrees[stale.id]).toBeUndefined();
+    const after = await worktrees.sync([project()]);
+    expect(after.workspaces.find((workspace) => workspace.worktreeId === created.id)).toMatchObject({
+      branch: "feature-race",
+      availability: "available",
+    });
   });
 
   it("keeps stale registry entries that still own sessions during explicit cleanup", async () => {

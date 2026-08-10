@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import type { SharedWorktree, WorktreeRegistryV1 } from "../../shared/worktree-types";
 import { readJsonStore, updateJsonStore, type JsonStoreSpec } from "../storage/json-store";
+import { normalizeWorkspacePath } from "./git-worktree";
 
 export const WORKTREE_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "worktrees.json");
 
@@ -115,14 +116,32 @@ export async function removeWorktreeEntry(
   });
 }
 
-export async function replaceWorktreeEntries(
-  worktrees: Record<string, SharedWorktree>,
+export interface WorktreeEntryChanges {
+  added: SharedWorktree[];
+  removedIds: string[];
+}
+
+/**
+ * Applies a sync's discoveries and removals on top of the registry as it is now, not as it was
+ * when the sync read it: an entry another writer added in the meantime survives, and an addition
+ * whose path another writer registered first is dropped instead of duplicated.
+ */
+export async function applyWorktreeEntryChanges(
+  changes: WorktreeEntryChanges,
   now: string,
   options: WorktreeRegistryOptions = {},
 ): Promise<WorktreeRegistryV1> {
-  return updateJsonStore(STORE, registryPathOf(options), (registry) => ({
-    ...registry,
-    updatedAt: now,
-    worktrees,
-  }));
+  return updateJsonStore(STORE, registryPathOf(options), (registry) => {
+    const worktrees = { ...registry.worktrees };
+    for (const worktreeId of changes.removedIds) delete worktrees[worktreeId];
+    for (const entry of changes.added) {
+      const taken = Object.values(worktrees).some(
+        (existing) =>
+          existing.projectId === entry.projectId &&
+          normalizeWorkspacePath(existing.path) === normalizeWorkspacePath(entry.path),
+      );
+      if (!taken) worktrees[entry.id] = entry;
+    }
+    return { ...registry, updatedAt: now, worktrees };
+  });
 }

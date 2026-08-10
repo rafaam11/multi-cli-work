@@ -21,8 +21,8 @@ import {
 } from "./git-worktree";
 import {
   addWorktreeEntry,
+  applyWorktreeEntryChanges,
   readWorktreeRegistry,
-  replaceWorktreeEntries,
   removeWorktreeEntry,
   type WorktreeRegistryOptions,
 } from "./worktree-registry";
@@ -40,6 +40,7 @@ export interface WorktreeServiceOptions {
 export class WorktreeService {
   private readonly registryOptions: WorktreeRegistryOptions;
   private syncPromise: Promise<WorktreeWorkspaceSnapshot> | null = null;
+  private pendingSync: Promise<WorktreeWorkspaceSnapshot> | null = null;
   private lastProjects: SharedProject[] = [];
 
   constructor(private readonly options: WorktreeServiceOptions) {
@@ -58,7 +59,19 @@ export class WorktreeService {
 
   sync(projects: SharedProject[]): Promise<WorktreeWorkspaceSnapshot> {
     this.lastProjects = projects;
-    if (this.syncPromise) return this.syncPromise;
+    if (!this.syncPromise) return this.startSync(projects);
+    // A sync begun before this call cannot see registry writes made since (worktree create),
+    // so late callers get one coalesced re-run after it, over the latest projects.
+    this.pendingSync ??= this.syncPromise
+      .catch(() => undefined)
+      .then(() => {
+        this.pendingSync = null;
+        return this.startSync(this.lastProjects);
+      });
+    return this.pendingSync;
+  }
+
+  private startSync(projects: SharedProject[]): Promise<WorktreeWorkspaceSnapshot> {
     this.syncPromise = this.performSync(projects).finally(() => {
       this.syncPromise = null;
     });
@@ -70,7 +83,8 @@ export class WorktreeService {
     const entries = { ...registry.worktrees };
     const workspaces: GitWorkspaceView[] = [];
     const warnings: Record<string, string> = {};
-    let changed = false;
+    const added: SharedWorktree[] = [];
+    const removedIds: string[] = [];
 
     const owners = new Map<string, SharedProject>();
     const commonDirs = new Map<string, string>();
@@ -116,7 +130,7 @@ export class WorktreeService {
               };
               entries[entry.id] = entry;
               worktreeId = entry.id;
-              changed = true;
+              added.push(entry);
             }
           }
           workspaces.push({
@@ -137,7 +151,7 @@ export class WorktreeService {
           if (entry.projectId !== project.id || seen.has(normalizeWorkspacePath(entry.path))) continue;
           if (!(await this.options.hasWorktreeSessions?.(entry.id))) {
             delete entries[entry.id];
-            changed = true;
+            removedIds.push(entry.id);
             continue;
           }
           workspaces.push({
@@ -158,7 +172,11 @@ export class WorktreeService {
         warnings[project.id] = error instanceof Error ? error.message : String(error);
       }
     }
-    if (changed) await replaceWorktreeEntries(entries, this.options.now(), this.registryOptions);
+    // Deltas instead of a full replace: the registry may have gained entries since it was read
+    // at the top of this sync, and those must survive the write.
+    if (added.length > 0 || removedIds.length > 0) {
+      await applyWorktreeEntryChanges({ added, removedIds }, this.options.now(), this.registryOptions);
+    }
     return { workspaces, warnings };
   }
 
@@ -261,13 +279,15 @@ export class WorktreeService {
     const listed = await listGitWorktrees(project.rootPath);
     const activePaths = new Set(listed.map((item) => normalizeWorkspacePath(item.path)));
     const registry = await readWorktreeRegistry(this.registryOptions);
-    const entries = { ...registry.worktrees };
-    for (const entry of Object.values(entries)) {
+    const removedIds: string[] = [];
+    for (const entry of Object.values(registry.worktrees)) {
       if (entry.projectId !== projectId || activePaths.has(normalizeWorkspacePath(entry.path))) continue;
       if (await this.options.hasWorktreeSessions?.(entry.id)) continue;
-      delete entries[entry.id];
+      removedIds.push(entry.id);
     }
-    await replaceWorktreeEntries(entries, this.options.now(), this.registryOptions);
+    if (removedIds.length > 0) {
+      await applyWorktreeEntryChanges({ added: [], removedIds }, this.options.now(), this.registryOptions);
+    }
     await pruneGitWorktrees(project.rootPath);
     return this.sync(this.lastProjects.length > 0 ? this.lastProjects : [project]);
   }
