@@ -28,6 +28,15 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
+/** Polls a condition that only real I/O can advance — a microtask flush would run ahead of it. */
+async function until(predicate: () => boolean, label: string): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
 class FakeWorker implements TerminalWorkerGateway {
   readonly create = vi.fn(async (spec: TerminalLaunchSpec): Promise<TerminalSession> => ({
     id: spec.sessionId,
@@ -835,6 +844,76 @@ describe("TerminalCoordinator", () => {
     expect(split.session.pid).toBe(321);
   });
 
+  it("resumes a grid of interrupted sessions two at a time instead of all at once", async () => {
+    const root = await tempRoot();
+    const ids = ["session-1", "session-2", "session-3", "session-4", "session-5", "session-6"];
+    const remaining = [...ids];
+    const first = new TerminalCoordinator({
+      worker: new FakeWorker(),
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async () => project,
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: null,
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: {},
+      idFactory: () => remaining.shift() ?? "session-x",
+      now: () => "2026-07-19T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await first.initialize();
+    for (const _ of ids) await first.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    await first.shutdown();
+
+    // Every create parks until the test lets it go, so in-flight resumes are exactly the started ones.
+    const releases: Array<() => void> = [];
+    let started = 0;
+    let peak = 0;
+    const secondWorker = new FakeWorker();
+    secondWorker.create.mockImplementation(async (spec: TerminalLaunchSpec): Promise<TerminalSession> => {
+      started += 1;
+      peak = Math.max(peak, releases.length + 1);
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return {
+        id: spec.sessionId,
+        projectId: spec.projectId,
+        tool: spec.tool,
+        kind: spec.kind,
+        cwd: spec.cwd,
+        providerConversationId: spec.providerConversationId ?? null,
+        status: "starting",
+        pid: 123,
+        createdAt: spec.createdAt,
+        updatedAt: spec.createdAt,
+        exitCode: null,
+      };
+    });
+    const second = await coordinator(root, secondWorker);
+
+    const attaches = ids.map((id) => second.instance.attachForRenderer(id));
+
+    await until(() => started === 2, "the first two auto-resumes to start");
+    // The other four wait: nothing more may spawn while two are still in flight.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(started).toBe(2);
+
+    releases.shift()?.();
+    await until(() => started === 3, "the queued third auto-resume to start");
+
+    while (started < ids.length || releases.length > 0) {
+      releases.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    await Promise.all(attaches);
+    // Nothing was dropped on the way — every interrupted session got its turn, two at a time.
+    expect(secondWorker.create).toHaveBeenCalledTimes(ids.length);
+    expect(peak).toBeLessThanOrEqual(2);
+  });
+
   it("falls back to the plain scrollback attach when the auto-resume itself fails", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
@@ -1067,19 +1146,26 @@ describe("worktree sessions", () => {
     expect(after.worker.create).not.toHaveBeenCalled();
   });
 
-  it("persists the split pane, refuses unknown sessions, and clears it on removal", async () => {
+  it("persists the grid panes, refuses unknown sessions, and drops removed ones", async () => {
     const root = await tempRoot();
+    const statePath = path.join(root, "state.json");
     const { instance } = worktreeCoordinator(root);
     await instance.initialize();
-    const session = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+    const first = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+    const second = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
 
-    await instance.split(session.id);
-    expect((await readAppState({ statePath: path.join(root, "state.json") })).state.splitSessionId).toBe(session.id);
-    await expect(instance.split("missing")).rejects.toThrow(/unknown terminal session/i);
+    await instance.setVisibleSessions([first.id, second.id]);
+    expect((await readAppState({ statePath })).state.visibleSessionIds).toEqual([first.id, second.id]);
+    await expect(instance.setVisibleSessions(["missing"])).rejects.toThrow(/unknown terminal session/i);
+    const tooMany = Array.from({ length: 7 }, (_, index) => `session-${index}`);
+    await expect(instance.setVisibleSessions(tooMany)).rejects.toThrow(/at most 6/i);
 
-    await instance.remove(session.id);
-    const raw = JSON.parse(await fs.readFile(path.join(root, "state.json"), "utf8"));
-    expect(Object.keys(raw)).not.toContain("splitSessionId");
+    await instance.remove(first.id);
+    expect((await readAppState({ statePath })).state.visibleSessionIds).toEqual([second.id]);
+
+    await instance.remove(second.id);
+    const raw = JSON.parse(await fs.readFile(statePath, "utf8"));
+    expect(Object.keys(raw)).not.toContain("visibleSessionIds");
   });
 
   it("removes only the worktree's sessions, leaving root sessions alone", async () => {

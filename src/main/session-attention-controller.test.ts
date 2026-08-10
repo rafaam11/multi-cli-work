@@ -11,7 +11,7 @@ function deferred<T>() {
 
 describe("createSessionAttentionController", () => {
   it("drops an awaiting result when a newer status wins while selection is loading", async () => {
-    const selection = deferred<{ selectedSessionId: string | null; splitSessionId: string | null }>();
+    const selection = deferred<{ selectedSessionId: string | null; visibleSessionIds: string[] }>();
     const publish = vi.fn();
     const notify = vi.fn();
     const controller = createSessionAttentionController({
@@ -24,7 +24,7 @@ describe("createSessionAttentionController", () => {
 
     const stale = controller.handleStatus("session-1", "awaiting-input");
     await controller.handleStatus("session-1", "working");
-    selection.resolve({ selectedSessionId: null, splitSessionId: null });
+    selection.resolve({ selectedSessionId: null, visibleSessionIds: [] });
     await stale;
 
     expect(controller.snapshot().unread).toEqual({});
@@ -37,7 +37,7 @@ describe("createSessionAttentionController", () => {
     const navigate = vi.fn();
     const clicks = new Map<string, () => void>();
     const controller = createSessionAttentionController({
-      readSelection: async () => ({ selectedSessionId: "session-visible", splitSessionId: null }),
+      readSelection: async () => ({ selectedSessionId: "session-visible", visibleSessionIds: ["session-visible"] }),
       windowState: () => ({ visible: false, focused: false }),
       publish,
       notify: (sessionId, _status, onClick) => { clicks.set(sessionId, onClick); },
@@ -52,16 +52,16 @@ describe("createSessionAttentionController", () => {
     expect(controller.snapshot().unread).toEqual({ "session-third": "input" });
   });
 
-  it("marks only the primary and split sessions seen when the window is restored", async () => {
+  it("marks only the on-screen grid sessions seen when the window is restored", async () => {
     const controller = createSessionAttentionController({
-      readSelection: async () => ({ selectedSessionId: "primary", splitSessionId: "split" }),
+      readSelection: async () => ({ selectedSessionId: "primary", visibleSessionIds: ["primary", "pane-2"] }),
       windowState: () => ({ visible: false, focused: false }),
       publish: vi.fn(),
       notify: vi.fn(),
       navigate: vi.fn(),
     });
     await controller.handleStatus("primary", "awaiting-input");
-    await controller.handleStatus("split", "awaiting-approval");
+    await controller.handleStatus("pane-2", "awaiting-approval");
     await controller.handleStatus("hidden", "awaiting-input");
 
     await controller.markVisibleSessionsSeen();

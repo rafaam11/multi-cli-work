@@ -3,15 +3,16 @@ import type { TerminalStatus } from "../shared/terminal-types";
 interface TerminalStatusNotificationContext {
   eventSessionId: string;
   selectedSessionId: string | null;
-  /** The secondary split pane is on screen exactly like the selected session. */
-  splitSessionId: string | null;
+  /** Every grid pane is on screen exactly like the selected session. */
+  visibleSessionIds: readonly string[];
   windowVisible: boolean;
   windowFocused: boolean;
 }
 
 export function shouldShowTerminalStatusNotification(context: TerminalStatusNotificationContext): boolean {
   const onScreen =
-    context.eventSessionId === context.selectedSessionId || context.eventSessionId === context.splitSessionId;
+    context.visibleSessionIds.includes(context.eventSessionId) ||
+    context.eventSessionId === context.selectedSessionId;
   const sessionIsActivelyVisible = onScreen && context.windowVisible && context.windowFocused;
   return !sessionIsActivelyVisible;
 }

@@ -25,9 +25,14 @@ interface TerminalPaneProps {
   onAttached(session: TerminalSessionView): void;
   onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
+  /**
+   * Whether this pane grabs the keyboard once it has attached. With a grid of panes attaching at
+   * once, only the focused one may — the rest would each steal the keyboard as they finish.
+   */
+  autoFocus?: boolean;
   /** Publishes this pane's command handles; called with null once the terminal is gone. */
   onRegisterCommands?(sessionId: string, commands: TerminalCommands | null): void;
-  /** In a split there is no "active pane" — the last terminal to take the keyboard is the target. */
+  /** In a grid there is no "active pane" — the last terminal to take the keyboard is the target. */
   onTerminalFocused?(sessionId: string): void;
 }
 
@@ -43,6 +48,7 @@ export function TerminalPane({
   session,
   shiftEnterBytes,
   refreshRequest,
+  autoFocus = true,
   onAttached,
   onRefreshComplete,
   onError,
@@ -58,6 +64,7 @@ export function TerminalPane({
   const onErrorRef = useRef(onError);
   const onRegisterCommandsRef = useRef(onRegisterCommands);
   const onTerminalFocusedRef = useRef(onTerminalFocused);
+  const autoFocusRef = useRef(autoFocus);
   const lastRefreshRequestRef = useRef(refreshRequest);
   const scheduleResizeRef = useRef<() => void>(() => undefined);
   const [attaching, setAttaching] = useState(true);
@@ -70,6 +77,7 @@ export function TerminalPane({
   onErrorRef.current = onError;
   onRegisterCommandsRef.current = onRegisterCommands;
   onTerminalFocusedRef.current = onTerminalFocused;
+  autoFocusRef.current = autoFocus;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -285,7 +293,7 @@ export function TerminalPane({
         onAttachedRef.current(attachment.session);
         setAttaching(false);
         scheduleResize();
-        terminal.focus();
+        if (autoFocusRef.current) terminal.focus();
         finishRefresh();
       })
       .catch((error) => {

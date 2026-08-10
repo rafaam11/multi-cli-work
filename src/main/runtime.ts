@@ -298,7 +298,7 @@ export async function createDesktopRuntime(
       const { state } = await coordinator.state();
       return {
         selectedSessionId: state.selectedSessionId,
-        splitSessionId: state.splitSessionId ?? null,
+        visibleSessionIds: state.visibleSessionIds ?? [],
       };
     },
     windowState: () => {

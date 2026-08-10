@@ -5,7 +5,7 @@ import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification
 
 interface SessionSelection {
   selectedSessionId: string | null;
-  splitSessionId: string | null;
+  visibleSessionIds: string[];
 }
 
 interface SessionAttentionControllerOptions {
@@ -65,7 +65,7 @@ export function createSessionAttentionController(
         selection = await options.readSelection();
       } catch (error) {
         options.logError?.("Failed to read the selected terminal session", error);
-        selection = { selectedSessionId: null, splitSessionId: null };
+        selection = { selectedSessionId: null, visibleSessionIds: [] };
       }
       if (revisions.get(sessionId) !== revision) return;
 
@@ -73,7 +73,7 @@ export function createSessionAttentionController(
       const shouldNotify = shouldShowTerminalStatusNotification({
         eventSessionId: sessionId,
         selectedSessionId: selection.selectedSessionId,
-        splitSessionId: selection.splitSessionId,
+        visibleSessionIds: selection.visibleSessionIds,
         windowVisible: window.visible,
         windowFocused: window.focused,
       });
@@ -98,7 +98,9 @@ export function createSessionAttentionController(
     markSeen,
     async markVisibleSessionsSeen() {
       const selection = await options.readSelection();
-      const visible = new Set([selection.selectedSessionId, selection.splitSessionId].filter(Boolean) as string[]);
+      const visible = new Set(
+        [selection.selectedSessionId, ...selection.visibleSessionIds].filter((id): id is string => Boolean(id)),
+      );
       for (const sessionId of visible) {
         bump(sessionId);
         deduper.reset(sessionId);

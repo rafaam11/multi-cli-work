@@ -7,7 +7,7 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "background-session",
         selectedSessionId: "visible-session",
-        splitSessionId: null,
+        visibleSessionIds: ["visible-session"],
         windowVisible: true,
         windowFocused: true,
       }),
@@ -19,7 +19,7 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "visible-session",
         selectedSessionId: "visible-session",
-        splitSessionId: null,
+        visibleSessionIds: ["visible-session"],
         windowVisible: true,
         windowFocused: true,
       }),
@@ -29,7 +29,7 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "visible-session",
         selectedSessionId: "visible-session",
-        splitSessionId: null,
+        visibleSessionIds: ["visible-session"],
         windowVisible: false,
         windowFocused: false,
       }),
@@ -39,34 +39,46 @@ describe("shouldShowTerminalStatusNotification", () => {
       shouldShowTerminalStatusNotification({
         eventSessionId: "visible-session",
         selectedSessionId: "visible-session",
-        splitSessionId: null,
+        visibleSessionIds: ["visible-session"],
         windowVisible: true,
         windowFocused: false,
       }),
     ).toBe(true);
   });
 
-  it("treats the split pane as on screen, exactly like the selected session", () => {
+  it("treats every grid pane as on screen, exactly like the selected session", () => {
     expect(
       shouldShowTerminalStatusNotification({
-        eventSessionId: "split-session",
+        eventSessionId: "pane-session",
         selectedSessionId: "visible-session",
-        splitSessionId: "split-session",
+        visibleSessionIds: ["visible-session", "other-pane", "pane-session"],
         windowVisible: true,
         windowFocused: true,
       }),
     ).toBe(false);
 
-    // An unfocused window still notifies, split or not.
+    // An unfocused window still notifies, gridded or not.
     expect(
       shouldShowTerminalStatusNotification({
-        eventSessionId: "split-session",
+        eventSessionId: "pane-session",
         selectedSessionId: "visible-session",
-        splitSessionId: "split-session",
+        visibleSessionIds: ["visible-session", "pane-session"],
         windowVisible: true,
         windowFocused: false,
       }),
     ).toBe(true);
+  });
+
+  it("falls back to the selected session when the grid list omits it", () => {
+    expect(
+      shouldShowTerminalStatusNotification({
+        eventSessionId: "visible-session",
+        selectedSessionId: "visible-session",
+        visibleSessionIds: [],
+        windowVisible: true,
+        windowFocused: true,
+      }),
+    ).toBe(false);
   });
 });
 

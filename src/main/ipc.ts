@@ -81,7 +81,7 @@ interface TerminalCoordinatorGateway {
   removeProjectSessions(projectId: string): Promise<void>;
   rename(sessionId: string, name: string | null): Promise<unknown>;
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
-  split(sessionId: string | null): Promise<unknown>;
+  setVisibleSessions(sessionIds: readonly string[]): Promise<unknown>;
 }
 
 interface UpdaterGateway {
@@ -835,11 +835,13 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     dependencies.onSessionSelected?.(sessionId);
     return snapshot;
   });
-  ipc.handle("terminals:split", async (_event, sessionId: unknown) => {
-    if (sessionId !== null && typeof sessionId !== "string") throw new Error("Split session id is invalid");
-    const snapshot = await dependencies.coordinator.split(sessionId);
-    // The split pane is on screen from this moment, so its unread badge clears like a selection.
-    dependencies.onSessionSelected?.(sessionId);
+  ipc.handle("terminals:set-visible-sessions", async (_event, sessionIds: unknown) => {
+    if (!Array.isArray(sessionIds) || sessionIds.some((id) => typeof id !== "string" || id.length === 0)) {
+      throw new Error("Visible session ids are invalid");
+    }
+    const snapshot = await dependencies.coordinator.setVisibleSessions(sessionIds as string[]);
+    // Every pane is on screen from this moment, so their unread badges clear like a selection.
+    for (const sessionId of sessionIds as string[]) dependencies.onSessionSelected?.(sessionId);
     return snapshot;
   });
   ipc.handle("window:minimize", () => dependencies.windowControls.minimize());

@@ -31,8 +31,6 @@ function context(overrides?: Partial<TitleBarMenuContext>): TitleBarMenuContext 
     readOnly: false,
     pendingAction: false,
     session: { status: "working", tool: false, refreshing: false },
-    splitCandidateCount: 2,
-    splitActive: false,
     terminalFocused: true,
     canSaveFile: false,
     sidebarCollapsed: false,
@@ -110,14 +108,10 @@ describe("buildTitleBarMenus", () => {
     expect(find({ pendingAction: true }, "session.remove").disabled).toBe(true);
   });
 
-  it("turns 화면 분할 into 분할 해제 once a split is open", () => {
-    const open = find({ splitActive: true, splitCandidateCount: 0 }, "session.split");
-    expect(open.label).toBe("분할 해제");
-    expect(open.disabled).toBeUndefined();
-
-    const closed = find({ splitActive: false, splitCandidateCount: 0 }, "session.split");
-    expect(closed.label).toBe("화면 분할");
-    expect(closed.disabled).toBe(true);
+  it("leaves the pane layout to the grid instead of a 세션 menu command", () => {
+    const sessionMenu = buildTitleBarMenus(context()).find((menu) => menu.id === "session")!;
+    const ids = flatten(sessionMenu.entries).map((entry) => (entry.kind === "separator" ? null : entry.id));
+    expect(ids).not.toContain("session.split");
   });
 
   it("names the sidebar commands after what they will do", () => {

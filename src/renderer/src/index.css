@@ -472,8 +472,10 @@ body.sidebar-resizing {
   padding: 0;
 }
 
+/* The collapsed rail switches folders now, not sessions, so it takes the 폴더 row's hand-set colour
+   rather than a session status. */
 .rail-session-button {
-  --session-accent: var(--quiet);
+  --session-accent: var(--amber);
 
   position: relative;
   display: grid;
@@ -487,6 +489,12 @@ body.sidebar-resizing {
   background: color-mix(in srgb, var(--session-accent) 14%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--session-accent) 35%, transparent);
   cursor: pointer;
+}
+
+.rail-session-button.folder-done {
+  --session-accent: var(--green);
+
+  opacity: 0.55;
 }
 
 .rail-session-button:hover {
@@ -1499,10 +1507,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   opacity: 1;
 }
 
+/* The 업무 프로젝트 row sits a layer above the folders it holds, so it is the taller of the two —
+   height is what separates the layers now that the tree is only two deep. */
 .work-project-row {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);
-  min-height: 28px;
+  min-height: 36px;
   align-items: center;
   border-radius: 5px;
 }
@@ -1554,9 +1564,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   text-transform: uppercase;
 }
 
+/* Folders are the layer below, and the indent has to carry that on its own — the group rail is the
+   only other cue, and a 10px step read as an accident next to a 26px icon column. */
 .project-group {
   margin: 0;
-  padding: 0 0 0 10px;
+  padding: 0 0 0 18px;
   list-style: none;
 }
 
@@ -1833,16 +1845,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   opacity: 0.5;
 }
 
-.tools-group {
-  margin-top: 10px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
-}
-
-.tools-group .session-tree {
-  margin-left: 14px;
-}
-
 .session-tree {
   position: relative;
   margin: 1px 0 4px 25px;
@@ -1857,94 +1859,48 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   content: "";
 }
 
-/* The row carries its status as a colour: a faint wash plus a bar down its leading edge. */
-.session-row {
-  --session-accent: var(--quiet);
-
-  display: grid;
-  grid-template-columns: 8px 15px minmax(0, 1fr) auto;
-  width: 100%;
-  min-height: 34px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--session-accent) 10%, transparent);
-  box-shadow: inset 3px 0 0 var(--session-accent);
-  text-align: left;
-  cursor: pointer;
-}
-
-/* The same accent variable drives every status-tinted row across the app (sidebar, home dashboard,
-   project detail), so the colour mapping lives in one place. */
-.session-row.status-starting,
+/* The same accent variable drives every status-tinted row across the app (home dashboard, project
+   detail, pane headers), so the colour mapping lives in one place. */
 .monitor-row.status-starting,
 .session-card.status-starting,
-.activity-row.status-starting,
-.rail-session-button.status-starting {
+.activity-row.status-starting {
   --session-accent: var(--blue);
 }
 
-.session-row.status-working,
 .monitor-row.status-working,
 .session-card.status-working,
-.activity-row.status-working,
-.rail-session-button.status-working {
+.activity-row.status-working {
   --session-accent: var(--teal);
 }
 
-.session-row.status-awaiting-input,
 .monitor-row.status-awaiting-input,
 .session-card.status-awaiting-input,
-.activity-row.status-awaiting-input,
-.rail-session-button.status-awaiting-input {
+.activity-row.status-awaiting-input {
   --session-accent: var(--violet);
 }
 
-.session-row.status-awaiting-approval,
 .monitor-row.status-awaiting-approval,
 .session-card.status-awaiting-approval,
-.activity-row.status-awaiting-approval,
-.rail-session-button.status-awaiting-approval {
+.activity-row.status-awaiting-approval {
   --session-accent: var(--amber);
 }
 
-.session-row.status-idle,
 .monitor-row.status-idle,
 .session-card.status-idle,
-.activity-row.status-idle,
-.rail-session-button.status-idle {
+.activity-row.status-idle {
   --session-accent: var(--green);
 }
 
-.session-row.status-exited,
 .monitor-row.status-exited,
 .session-card.status-exited,
-.activity-row.status-exited,
-.rail-session-button.status-exited {
+.activity-row.status-exited {
   --session-accent: var(--quiet);
 }
 
-.session-row.status-error,
 .monitor-row.status-error,
 .session-card.status-error,
-.activity-row.status-error,
-.rail-session-button.status-error {
+.activity-row.status-error {
   --session-accent: var(--red);
-}
-
-.session-row:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 18%, var(--surface-hover));
-}
-
-/* Selection has to stay legible on top of any status wash, so it adds a ring rather than a colour. */
-.session-row.selected {
-  color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
-  box-shadow: inset 3px 0 0 var(--session-accent), inset 0 0 0 1px var(--line-strong);
 }
 
 .session-rename {
@@ -1963,13 +1919,33 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: 11px;
 }
 
-/* A file tab reuses .session-row's colour wash and selection ring, but is a flex row of two
-   sibling buttons (open + close) rather than one button with .session-row's 4-column grid — a
-   button cannot nest a button. */
+/* File tabs are the only rows the tree still draws — sessions moved to the grid's pane headers.
+   The row keeps the wash-and-ring treatment those session rows had, but is a flex pair of sibling
+   buttons (open + close) rather than one button: a button cannot nest a button. */
 .file-tab-row {
+  --session-accent: var(--quiet);
+
   display: flex;
+  width: 100%;
+  min-height: 34px;
   align-items: stretch;
-  padding: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--session-accent) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--session-accent);
+  text-align: left;
+}
+
+.file-tab-row:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 18%, var(--surface-hover));
+}
+
+/* Selection adds a ring rather than a colour, so it stays legible on top of the wash. */
+.file-tab-row.selected {
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
+  box-shadow: inset 3px 0 0 var(--session-accent), inset 0 0 0 1px var(--line-strong);
 }
 
 .file-tab-open {
@@ -2019,21 +1995,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--amber);
 }
 
-.session-name,
-.session-status {
+.file-tab-name {
   overflow: hidden;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.session-name {
-  font-size: 11px;
-}
-
-.session-status {
-  color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 8px;
 }
 
 .status-dot {
@@ -2222,59 +2188,101 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding-left: 14px;
 }
 
-.workspace-split {
-  display: flex;
+/* The pane count picks the layout; panes stay equal-sized, the 1px gap draws the frame lines. */
+.workspace-grid {
+  display: grid;
   min-height: 0;
   flex: 1;
+  gap: 1px;
+  background: var(--line);
+  grid-auto-rows: 1fr;
 }
 
-.split-pane {
+.workspace-grid[data-panes="2"] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.workspace-grid[data-panes="3"],
+.workspace-grid[data-panes="4"] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.workspace-grid[data-panes="5"],
+.workspace-grid[data-panes="6"] {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* An odd count leaves one empty cell; the last pane widens to keep the grid full. */
+.workspace-grid[data-panes="3"] .grid-pane:last-child,
+.workspace-grid[data-panes="5"] .grid-pane:last-child {
+  grid-column: span 2;
+}
+
+.grid-pane {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+  background: var(--bg);
 }
 
-.split-primary {
-  flex: 0 0 calc((100% - 4px) * var(--split-ratio, 0.5));
+.workspace-grid:not([data-panes="1"]) .grid-pane.pane-focused {
+  box-shadow: inset 0 0 0 1px var(--teal);
 }
 
-.split-secondary {
-  flex: 1 1 auto;
-}
-
-.split-pane .terminal-surface {
+.grid-pane .terminal-surface {
   min-height: 0;
   flex: 1;
 }
 
-.split-divider {
-  z-index: 4;
-  flex: 0 0 4px;
-  background: var(--line);
-  cursor: col-resize;
-}
-
-.split-divider:hover {
-  background: var(--line-strong);
-}
-
-.split-pane-header {
+.pane-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   padding: 2px 4px 2px 10px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
-.split-pane-title {
+.pane-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* Six headers can be on screen at once, so everything shrinks a step from the workspace header. */
+.pane-header .icon-button {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+}
+
+.pane-header .icon-button.pane-swap-button {
+  width: auto;
+  flex-basis: auto;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pane-header .session-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.pane-header .session-rename input {
+  min-height: 20px;
+  font-size: 11px;
 }
 
 .status-starting .status-dot,
@@ -4293,7 +4301,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 @media (max-width: 680px) {
   .brand-context,
   .project-path,
-  .session-status,
   .workspace-path,
   .command-button span {
     display: none;

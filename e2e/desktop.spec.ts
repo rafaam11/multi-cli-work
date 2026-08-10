@@ -48,6 +48,30 @@ async function attachScreenshot(name: string): Promise<void> {
   await test.info().attach(name, { path: screenshotPath, contentType: "image/png" });
 }
 
+/** One pane of the terminal grid, addressed by the session label its header shows. */
+const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`);
+
+/**
+ * Leaves a single pane on screen. Opening a folder brings up every session it has, so a test that
+ * drives one terminal closes the rest first — closing a pane never touches the session behind it.
+ */
+async function soloPane(label: string): Promise<void> {
+  const others = page.locator(`.grid-pane:not([aria-label="${label}"])`);
+  for (let remaining = await others.count(); remaining > 0; remaining = await others.count()) {
+    await others.first().getByRole("button", { name: "패인 닫기" }).click();
+    await expect(others).toHaveCount(remaining - 1);
+  }
+  await expect(page.locator(".grid-pane")).toHaveCount(1);
+}
+
+/** Deleting a session for good now goes through the pane header's context menu. */
+async function removeSessionFromPane(label: string): Promise<void> {
+  await pane(label).locator(".pane-header").click({ button: "right" });
+  await page.getByRole("menu", { name: `${label} 작업` }).getByRole("menuitem", { name: "제거" }).click();
+  await page.getByRole("dialog", { name: "세션 제거" }).getByRole("button", { name: "제거" }).click();
+  await expect(pane(label)).toBeHidden();
+}
+
 test.describe.serial("Multi CLI Work desktop", () => {
   test.beforeAll(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "multi-cli-work-e2e-"));
@@ -167,14 +191,16 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const bounds = await page.locator(".app-shell, .project-sidebar, .workspace-header, .terminal-surface").evaluateAll((elements) =>
       elements.map((element) => {
         const rect = element.getBoundingClientRect();
-        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+        return { name: element.className, left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
       }),
     );
+    // Sub-pixel slack: fr rounding leaves rects a few ten-thousandths of a pixel past the viewport,
+    // which no user can see. A real overflow is at least a pixel.
     for (const bound of bounds) {
-      expect(bound.left).toBeGreaterThanOrEqual(0);
-      expect(bound.top).toBeGreaterThanOrEqual(0);
-      expect(bound.right).toBeLessThanOrEqual(900);
-      expect(bound.bottom).toBeLessThanOrEqual(600);
+      expect(bound.left, bound.name).toBeGreaterThanOrEqual(-0.5);
+      expect(bound.top, bound.name).toBeGreaterThanOrEqual(-0.5);
+      expect(bound.right, bound.name).toBeLessThanOrEqual(900.5);
+      expect(bound.bottom, bound.name).toBeLessThanOrEqual(600.5);
     }
     await attachScreenshot("compact-900x600");
 
@@ -259,6 +285,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   test("pastes each Ctrl+V shortcut exactly once from Electron's native clipboard", async () => {
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    // The new session joins the folder's grid, and this test drives a single PTY — solo it.
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "2");
+    await soloPane(`${SHELL_LABEL} 2`);
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await terminal.click();
     await page.keyboard.type(shellCommand("$global:mcwPasteCount = 0", "mcwPasteCount=0"));
@@ -307,7 +336,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.type("exit");
     await page.keyboard.press("Enter");
     await expect(page.locator(".active-status")).toHaveText("종료됨");
-    await page.getByRole("button", { name: "세션 제거" }).click();
+    await removeSessionFromPane(`${SHELL_LABEL} 2`);
     await expect(page.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeHidden();
   });
 
@@ -379,12 +408,17 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.locator(".pr-selected-file-header")).toContainText("src/app.ts");
   });
 
-  test("shows the home dashboard from the logo and the project detail page from the folder", async () => {
+  test("shows the home dashboard from the logo and the project detail page from the header", async () => {
     await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
     await expect(page.getByRole("region", { name: "홈 대시보드" })).toBeVisible();
     await expect(page.getByRole("region", { name: "세션 모니터" })).toBeVisible();
 
+    // A folder click opens its work — the terminals — and the 상세 page is a header click away.
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await expect(page.locator(".workspace-grid")).toBeVisible();
+    await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeHidden();
+
+    await page.getByRole("button", { name: "폴더 상세" }).click();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeVisible();
     await expect(page.getByRole("button", { name: new RegExp(`${SHELL_LABEL}( \\d+)? 세션 보기`) }).first()).toBeVisible();
   });
@@ -455,8 +489,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     const terminal = page.getByRole("region", { name: "echo-agent 터미널" });
     await expect(terminal).toBeVisible();
-    await expect(page.locator(".xterm-rows")).toContainText("MCW_CUSTOM_AGENT_READY");
-    await expect(page.getByRole("button", { name: "Echo Agent 세션 열기" })).toBeVisible();
+    await expect(terminal.locator(".xterm-rows")).toContainText("MCW_CUSTOM_AGENT_READY");
+    // It joins the folder's grid rather than replacing the session that was already on screen.
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "2");
+    await expect(pane("Echo Agent")).toBeVisible();
     await attachScreenshot("custom-agent");
 
     // The row grows with every agent the user adds, so at the narrowest supported window it has to
@@ -485,7 +521,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.type(WINDOWS ? "power" : "bash");
     await page.keyboard.press("Enter");
     await expect(palette).toBeHidden();
+    // The session is already on screen, so the jump moves the focus rather than rebuilding the grid.
     await expect(page.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeVisible();
+    await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", SHELL_LABEL);
 
     await page.keyboard.press("Control+p");
     await expect(palette).toBeVisible();
@@ -519,6 +557,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // Fan one prompt out to every live session of the project (worktree + Echo Agent).
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    // Three sessions in the folder: the grid takes a 2×2 without anyone choosing a split.
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "3");
+    await page.getByRole("button", { name: "폴더 상세" }).click();
     await page.getByRole("button", { name: "프롬프트 팬아웃" }).click();
     const fanOut = page.getByRole("dialog", { name: "프롬프트 팬아웃" });
     await expect(fanOut.getByRole("checkbox")).toHaveCount(2);
@@ -528,14 +569,13 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await attachScreenshot("fan-out");
     await fanOut.getByRole("button", { name: "2개 세션에 전송" }).click();
     await expect(fanOut).toBeHidden();
-    await page.getByRole("button", { name: `${SHELL_LABEL} 2 세션 열기` }).click();
-    await expect(page.locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
-    await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
-    await expect(page.locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
+    // Both recipients are panes of the same grid, so one look shows what each of them received.
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await expect(pane(`${SHELL_LABEL} 2`).locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
+    await expect(pane("Echo Agent").locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
 
     // Leave an uncommitted file in the worktree, then read it back from the diff view.
-    await page.getByRole("button", { name: `${SHELL_LABEL} 2 세션 열기` }).click();
-    await page.locator(".terminal-surface").click();
+    await pane(`${SHELL_LABEL} 2`).locator(".terminal-surface").click();
     // The marker is concatenated so it appears in the command's OUTPUT only — the echoed input
     // line must not satisfy the wait, or the diff races the file write.
     await page.keyboard.type(shellCommand(
@@ -543,7 +583,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       "echo MCW_DIRTY > wip.txt; echo MCW_WROTE_DONE",
     ));
     await page.keyboard.press("Enter");
-    await expect(page.locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
+    await expect(pane(`${SHELL_LABEL} 2`).locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
     await page.getByRole("button", { name: "feature/e2e worktree 선택" }).click({ button: "right" });
     await page.getByRole("menu", { name: "feature/e2e worktree 작업" }).getByRole("menuitem", { name: "변경 보기" }).click();
     const diff = page.getByRole("dialog", { name: "변경 보기" });
@@ -606,50 +646,70 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // Playwright's app.close() follows Electron's before-quit path. Stop the remaining live test
     // agent first so the product's native destructive-quit confirmation does not block automation.
-    await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
-    await page.getByRole("button", { name: "세션 중지" }).click();
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await pane("Echo Agent").getByRole("button", { name: "세션 중지" }).click();
     await expect(page.locator(".active-status")).toHaveText("종료됨");
     await app.close();
     ({ app, page } = await launchApp());
 
-    await expect(page.getByRole("button", { name: `${SHELL_LABEL} 세션 열기` })).toBeVisible();
-    await page.getByRole("button", { name: `${SHELL_LABEL} 세션 열기` }).click();
-    await expect(page.getByRole("button", { name: "세션 재개" })).toBeVisible();
+    // The whole grid comes back, not just the one session that had the focus.
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "2");
+    await expect(pane("Echo Agent")).toBeVisible();
+    await expect(pane(SHELL_LABEL).getByRole("button", { name: "세션 재개" })).toBeVisible();
   });
 
-  test("splits the workspace into two independent live terminals", async () => {
-    // Both sessions exited with the relaunch; resume each so both panes are interactive.
-    await page.getByRole("button", { name: "Echo Agent 세션 열기" }).click();
-    await page.getByRole("button", { name: "세션 재개" }).click();
-    await expect(page.locator(".active-status")).not.toHaveText("종료됨");
-    await page.getByRole("button", { name: `${SHELL_LABEL} 세션 열기` }).click();
-    await page.getByRole("button", { name: "세션 재개" }).click();
-    await expect(page.locator(".active-status")).not.toHaveText("종료됨");
-
-    await page.getByRole("button", { name: "화면 분할" }).click();
-    await page.getByRole("menuitem", { name: "Echo Agent" }).click();
-
-    const left = page.locator(".split-primary");
-    const right = page.locator(".split-secondary");
-    await expect(left.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeVisible();
-    await expect(right.getByRole("region", { name: "echo-agent 터미널" })).toBeVisible();
+  /**
+   * The grid is the whole session UI now: the folder's terminals arrive together, every pane runs
+   * its own session, and each pane's header is where that session is resumed, renamed, or set aside.
+   */
+  test("runs each grid pane on its own session from its own header", async () => {
+    // Both sessions exited with the relaunch; each pane resumes its own from its own header.
+    await pane("Echo Agent").getByRole("button", { name: "세션 재개" }).click();
+    await expect(pane("Echo Agent").getByRole("button", { name: "세션 중지" })).toBeVisible();
+    await pane(SHELL_LABEL).getByRole("button", { name: "세션 재개" }).click();
+    await expect(pane(SHELL_LABEL).getByRole("button", { name: "세션 중지" })).toBeVisible();
 
     // Input typed into one pane must never leak into the other.
-    await left.locator(".terminal-surface").click();
-    await page.keyboard.type(shellCommand("Write-Output MCW_SPLIT_LEFT", "echo MCW_SPLIT_LEFT"));
+    await pane(SHELL_LABEL).locator(".terminal-surface").click();
+    await page.keyboard.type(shellCommand("Write-Output MCW_PANE_SHELL", "echo MCW_PANE_SHELL"));
     await page.keyboard.press("Enter");
-    await expect(left.locator(".xterm-rows")).toContainText("MCW_SPLIT_LEFT");
-    await expect(right.locator(".xterm-rows")).not.toContainText("MCW_SPLIT_LEFT");
+    await expect(pane(SHELL_LABEL).locator(".xterm-rows")).toContainText("MCW_PANE_SHELL");
+    await expect(pane("Echo Agent").locator(".xterm-rows")).not.toContainText("MCW_PANE_SHELL");
 
-    await right.locator(".terminal-surface").click();
-    await page.keyboard.type(shellCommand("Write-Output MCW_SPLIT_RIGHT", "echo MCW_SPLIT_RIGHT"));
+    await pane("Echo Agent").locator(".terminal-surface").click();
+    await page.keyboard.type(shellCommand("Write-Output MCW_PANE_AGENT", "echo MCW_PANE_AGENT"));
     await page.keyboard.press("Enter");
-    await expect(right.locator(".xterm-rows")).toContainText("MCW_SPLIT_RIGHT");
-    await expect(left.locator(".xterm-rows")).not.toContainText("MCW_SPLIT_RIGHT");
-    await attachScreenshot("workspace-split");
+    await expect(pane("Echo Agent").locator(".xterm-rows")).toContainText("MCW_PANE_AGENT");
+    await expect(pane(SHELL_LABEL).locator(".xterm-rows")).not.toContainText("MCW_PANE_AGENT");
+    await attachScreenshot("workspace-grid");
 
-    await page.getByRole("button", { name: "분할 닫기" }).click();
-    await expect(page.locator(".split-secondary")).toBeHidden();
+    // Pressing a pane is what moves the focus the header reports.
+    await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Echo Agent");
+
+    // The pane header renames its session in place, and its context menu puts the name back.
+    await pane("Echo Agent").locator(".pane-title").dblclick();
+    const nameField = page.getByRole("textbox", { name: "세션 이름" });
+    await nameField.fill("MCW 이름");
+    await nameField.press("Enter");
+    await expect(pane("MCW 이름")).toBeVisible();
+    await pane("MCW 이름").locator(".pane-header").click({ button: "right" });
+    await page
+      .getByRole("menu", { name: "MCW 이름 작업" })
+      .getByRole("menuitem", { name: "제공자 제목 사용" })
+      .click();
+    await expect(pane("Echo Agent")).toBeVisible();
+
+    // Closing a pane only takes it off screen: the session waits in the +N menu, still running,
+    // and swapping it back in replays everything it kept saying while it was hidden.
+    await pane(SHELL_LABEL).getByRole("button", { name: "패인 닫기" }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "1");
+    await page.getByRole("button", { name: "화면 밖 세션 1개와 교체" }).click();
+    await page
+      .getByRole("menu", { name: "이 패인에 표시할 세션 선택" })
+      .getByRole("menuitem", { name: SHELL_LABEL })
+      .click();
+    await expect(pane(SHELL_LABEL).locator(".xterm-rows")).toContainText("MCW_PANE_SHELL");
+    await expect(pane("Echo Agent")).toBeHidden();
   });
 
   /**
@@ -663,6 +723,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    // The replay is measured in columns, so this one keeps the full width to itself.
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "3");
+    await soloPane(`${SHELL_LABEL} 2`);
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
     await terminal.click();
@@ -699,10 +762,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("region", { name: "홈 대시보드" })).toBeVisible();
     await expect(terminal).toBeHidden();
 
-    await page
-      .getByRole("button", { name: new RegExp(`^${SHELL_LABEL}( \\d+)? 세션 열기$`) })
-      .last()
-      .click();
+    // Coming back through the home monitor: the session is already a pane, so the grid stays a
+    // single pane and the terminal keeps the width the marker was measured against.
+    await page.getByRole("button", { name: `${SHELL_LABEL} 2 세션으로 이동` }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "1");
     await expect(terminal).toBeVisible();
     await expect(page.locator(".xterm-rows").first()).toContainText("MCWCOL");
 
@@ -717,7 +780,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.type("exit");
     await page.keyboard.press("Enter");
     await expect(page.locator(".active-status")).toHaveText("종료됨");
-    await page.getByRole("button", { name: "세션 제거" }).click();
+    await removeSessionFromPane(`${SHELL_LABEL} 2`);
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {

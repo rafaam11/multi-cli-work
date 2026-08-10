@@ -76,20 +76,45 @@ describe("session agent ids", () => {
     expect(() => parseAppState(marked)).toThrow(/interruptedByShutdown/i);
   });
 
-  it("round-trips optional worktree and split keys, and omits both while unused", () => {
+  it("round-trips optional worktree and grid keys, and omits both while unused", () => {
     const plain = parseAppState(stateWithKind("powershell"));
-    expect(Object.keys(plain)).not.toContain("splitSessionId");
+    expect(Object.keys(plain)).not.toContain("visibleSessionIds");
     expect(Object.keys(plain.sessions["session-1"])).not.toContain("worktreeId");
 
     const enriched = stateWithKind("powershell") as {
-      splitSessionId?: string;
+      visibleSessionIds?: string[];
       sessions: Record<string, Record<string, unknown>>;
     };
-    enriched.splitSessionId = "session-1";
+    enriched.visibleSessionIds = ["session-1", "session-2"];
     enriched.sessions["session-1"].worktreeId = "worktree-1";
     const parsed = parseAppState(enriched);
-    expect(parsed.splitSessionId).toBe("session-1");
+    expect(parsed.visibleSessionIds).toEqual(["session-1", "session-2"]);
     expect(parsed.sessions["session-1"].worktreeId).toBe("worktree-1");
+  });
+
+  it("folds a legacy split key into the visible grid sessions", () => {
+    const legacy = stateWithKind("powershell") as Record<string, unknown>;
+    legacy.selectedSessionId = "session-1";
+    legacy.splitSessionId = "session-2";
+    const parsed = parseAppState(legacy);
+    expect(parsed.visibleSessionIds).toEqual(["session-1", "session-2"]);
+    expect(Object.keys(parsed)).not.toContain("splitSessionId");
+
+    const splitOnly = stateWithKind("powershell") as Record<string, unknown>;
+    splitOnly.splitSessionId = "session-2";
+    expect(parseAppState(splitOnly).visibleSessionIds).toEqual(["session-2"]);
+  });
+
+  it("deduplicates and caps the visible grid sessions at six panes", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.visibleSessionIds = ["a", "b", "a", "c", "d", "e", "f", "g"];
+    expect(parseAppState(state).visibleSessionIds).toEqual(["a", "b", "c", "d", "e", "f"]);
+
+    state.visibleSessionIds = [];
+    expect(Object.keys(parseAppState(state))).not.toContain("visibleSessionIds");
+
+    state.visibleSessionIds = [42];
+    expect(() => parseAppState(state)).toThrow(/visibleSessionIds/);
   });
 });
 

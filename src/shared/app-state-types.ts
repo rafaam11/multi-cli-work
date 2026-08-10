@@ -27,16 +27,21 @@ export interface PersistedTerminalSession {
   updatedAt: string;
 }
 
+/** The workspace grid never shows more panes than this; extra sessions wait behind the +N menu. */
+export const MAX_VISIBLE_SESSIONS = 6;
+
 export interface AppStateV1 {
   schemaVersion: 1;
   updatedAt: string;
   selectedProjectId: string | null;
   selectedSessionId: string | null;
   /**
-   * The session shown in the secondary split pane. Omitted (not null) while nothing is split, so a
-   * state file that never used the split keeps its exact shape and still loads in older builds.
+   * The sessions shown as workspace grid panes, in pane order (at most MAX_VISIBLE_SESSIONS).
+   * Omitted (not null) while the grid is empty, so a state file that never used it keeps its exact
+   * shape. Files from before the grid carry a single `splitSessionId` instead; parsing folds that
+   * legacy key into this array.
    */
-  splitSessionId?: string;
+  visibleSessionIds?: string[];
   sessions: Record<string, PersistedTerminalSession>;
 }
 

@@ -1,5 +1,9 @@
 import type { AgentDefinition, AgentId } from "../../shared/agent-types";
-import type { AppStateV1, PersistedTerminalSession } from "../../shared/app-state-types";
+import {
+  MAX_VISIBLE_SESSIONS,
+  type AppStateV1,
+  type PersistedTerminalSession,
+} from "../../shared/app-state-types";
 import type {
   CreateTerminalInput,
   CreateToolTerminalInput,
@@ -36,6 +40,12 @@ const DEFAULT_LOG_FLUSH_MS = 100;
 /** A lazy auto-resume starts at the same default size the renderer uses, then gets resized to fit. */
 const AUTO_RESUME_COLS = 80;
 const AUTO_RESUME_ROWS = 24;
+/**
+ * How many interrupted sessions may resume at the same time. A grid attaches up to six panes in one
+ * breath, and each interrupted one would otherwise spawn its CLI right then — six `claude --resume`
+ * processes starting together. The rest wait their turn; nothing is dropped.
+ */
+const MAX_CONCURRENT_AUTO_RESUMES = 2;
 
 /** Written into the session log before an auto-resume, so the boundary survives later re-reads. */
 export function resumeSeparatorText(nowIso: string): string {
@@ -121,6 +131,9 @@ export class TerminalCoordinator {
   private readonly logWrites = new Map<string, Promise<void>>();
   private readonly removedSessionIds = new Set<string>();
   private readonly pendingResumes = new Map<string, Promise<string | null>>();
+  /** Auto-resumes running right now, and the attaches waiting for one of those slots to free up. */
+  private activeAutoResumes = 0;
+  private readonly autoResumeQueue: Array<() => void> = [];
   private readonly transcriptPaths = new Map<string, string>();
   private readonly pendingProviderStarts = new Map<string, ProviderStatusEvent>();
   private eventChain: Promise<void> = Promise.resolve();
@@ -267,8 +280,9 @@ export class TerminalCoordinator {
 
   /**
    * Resolves to the replay prefix (saved scrollback + separator) when this attach resumed the
-   * session, or null when there was nothing to resume. Concurrent attaches — the primary and split
-   * panes ask at the same time — share one attempt instead of spawning two PTYs.
+   * session, or null when there was nothing to resume. Concurrent attaches — several grid panes ask
+   * at the same time — share one attempt per session instead of spawning two PTYs, and at most
+   * MAX_CONCURRENT_AUTO_RESUMES of them run at once.
    */
   private maybeAutoResume(sessionId: string): Promise<string | null> {
     const view = this.views.get(sessionId);
@@ -277,6 +291,7 @@ export class TerminalCoordinator {
     const pending = this.pendingResumes.get(sessionId);
     if (pending) return pending;
     const attempt = (async () => {
+      await this.acquireAutoResumeSlot();
       try {
         // Snapshot the old scrollback before the replacement PTY can emit output. The separator is
         // committed only after create() succeeds, so failed retries leave the durable log intact.
@@ -299,11 +314,32 @@ export class TerminalCoordinator {
         // The marking stays, so the next attach — or the manual resume button — can retry.
         this.reportAsyncError("Lazy auto-resume failed", error);
         return null;
+      } finally {
+        this.releaseAutoResumeSlot();
       }
     })();
     this.pendingResumes.set(sessionId, attempt);
     void attempt.finally(() => this.pendingResumes.delete(sessionId));
     return attempt;
+  }
+
+  /** Resolves once this auto-resume may spawn its PTY — immediately, or when a slot frees up. */
+  private acquireAutoResumeSlot(): Promise<void> {
+    if (this.activeAutoResumes < MAX_CONCURRENT_AUTO_RESUMES) {
+      this.activeAutoResumes += 1;
+      return Promise.resolve();
+    }
+    return new Promise((admit) => {
+      this.autoResumeQueue.push(() => {
+        this.activeAutoResumes += 1;
+        admit();
+      });
+    });
+  }
+
+  private releaseAutoResumeSlot(): void {
+    this.activeAutoResumes -= 1;
+    this.autoResumeQueue.shift()?.();
   }
 
   async attach(sessionId: string): Promise<TerminalAttachResult> {
@@ -369,7 +405,7 @@ export class TerminalCoordinator {
           ...state,
           sessions,
           selectedSessionId: state.selectedSessionId === sessionId ? null : state.selectedSessionId,
-          ...(state.splitSessionId === sessionId ? { splitSessionId: undefined } : {}),
+          visibleSessionIds: state.visibleSessionIds?.filter((id) => id !== sessionId),
         };
       },
       { statePath: this.options.statePath },
@@ -417,13 +453,17 @@ export class TerminalCoordinator {
     return { state, source: "primary" as const, writable: true };
   }
 
-  /** Which session fills the secondary split pane; null collapses back to a single terminal. */
-  async split(sessionId: string | null) {
-    if (sessionId !== null && !this.views.has(sessionId)) {
-      throw new Error(`Unknown terminal session: ${sessionId}`);
+  /** Which sessions fill the grid panes, in pane order; an empty array collapses the grid. */
+  async setVisibleSessions(sessionIds: readonly string[]) {
+    const unique = [...new Set(sessionIds)];
+    if (unique.length > MAX_VISIBLE_SESSIONS) {
+      throw new Error(`The grid shows at most ${MAX_VISIBLE_SESSIONS} sessions`);
+    }
+    for (const sessionId of unique) {
+      if (!this.views.has(sessionId)) throw new Error(`Unknown terminal session: ${sessionId}`);
     }
     const state = await updateAppState(
-      (current) => ({ ...current, splitSessionId: sessionId ?? undefined }),
+      (current) => ({ ...current, visibleSessionIds: unique.length > 0 ? unique : undefined }),
       { statePath: this.options.statePath },
     );
     return { state, source: "primary" as const, writable: true };

@@ -35,9 +35,6 @@ export interface TitleBarMenuContext {
   pendingAction: boolean;
   /** The session the 세션 menu acts on. */
   session: { status: TerminalStatus; tool: boolean; refreshing: boolean } | null;
-  /** How many other sessions could fill the second pane. */
-  splitCandidateCount: number;
-  splitActive: boolean;
   /**
    * Whether a terminal currently owns the keyboard. The 편집 menu drives xterm's own selection and
    * clipboard, so with a file tab or the home screen in front there is nothing for it to act on.
@@ -134,11 +131,6 @@ export function buildTitleBarMenus(context: TitleBarMenuContext): TitleBarMenu[]
         item("session.refresh", "새로고침", { disabled: !session || session.refreshing }),
         item("session.stop", "중지", { disabled: !session || finished || context.pendingAction }),
         item("session.remove", "제거", { disabled: !session || context.pendingAction }),
-        separator,
-        // One press ends an active split; starting one needs somewhere for the second pane to go.
-        item("session.split", context.splitActive ? "분할 해제" : "화면 분할", {
-          disabled: !session || (!context.splitActive && context.splitCandidateCount === 0),
-        }),
       ],
     },
     {

@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  AppStateSnapshot,
-  AppStateV1,
-  PersistedTerminalSession,
+import {
+  MAX_VISIBLE_SESSIONS,
+  type AppStateSnapshot,
+  type AppStateV1,
+  type PersistedTerminalSession,
 } from "../../shared/app-state-types";
 import type { ToolCommand } from "../../shared/terminal-types";
 import { tailOnUtf8Boundary } from "../utf8";
@@ -113,27 +114,55 @@ function parseSession(value: unknown, key: string): PersistedTerminalSession {
   };
 }
 
-export function parseAppState(value: unknown): AppStateV1 {
-  if (!isRecord(value)) throw new AppStateError("App state must be an object");
-  exactKeys(
-    value,
-    ["schemaVersion", "updatedAt", "selectedProjectId", "selectedSessionId", "splitSessionId", "sessions"],
-    "App state",
-  );
-  if (value.schemaVersion !== 1) throw new AppStateError(`Unsupported app state schema: ${String(value.schemaVersion)}`);
-  if (!isRecord(value.sessions)) throw new AppStateError("App state sessions must be an object");
-  // Like a session's worktreeId: the key only exists while a split is active, so state files that
-  // never used the split keep their exact shape.
+/**
+ * The grid panes, present only while the grid shows something (like a session's worktreeId).
+ * Files from before the grid carry the single `splitSessionId` instead; folding it here means the
+ * rest of the app only ever sees the array.
+ */
+function visibleSessionIdsOf(value: Record<string, unknown>): string[] | undefined {
+  if (value.visibleSessionIds !== undefined && value.visibleSessionIds !== null) {
+    if (!Array.isArray(value.visibleSessionIds)) {
+      throw new AppStateError("App state visibleSessionIds must be an array");
+    }
+    const ids = value.visibleSessionIds.map((entry, index) =>
+      string(entry, `App state visibleSessionIds[${index}]`),
+    );
+    const unique = [...new Set(ids)].slice(0, MAX_VISIBLE_SESSIONS);
+    return unique.length > 0 ? unique : undefined;
+  }
   const splitSessionId =
     value.splitSessionId === undefined || value.splitSessionId === null
       ? undefined
       : string(value.splitSessionId, "App state splitSessionId");
+  if (splitSessionId === undefined) return undefined;
+  const selectedSessionId = typeof value.selectedSessionId === "string" ? value.selectedSessionId : null;
+  return [...new Set([selectedSessionId, splitSessionId].filter((id): id is string => id !== null && id.length > 0))];
+}
+
+export function parseAppState(value: unknown): AppStateV1 {
+  if (!isRecord(value)) throw new AppStateError("App state must be an object");
+  exactKeys(
+    value,
+    [
+      "schemaVersion",
+      "updatedAt",
+      "selectedProjectId",
+      "selectedSessionId",
+      "splitSessionId",
+      "visibleSessionIds",
+      "sessions",
+    ],
+    "App state",
+  );
+  if (value.schemaVersion !== 1) throw new AppStateError(`Unsupported app state schema: ${String(value.schemaVersion)}`);
+  if (!isRecord(value.sessions)) throw new AppStateError("App state sessions must be an object");
+  const visibleSessionIds = visibleSessionIdsOf(value);
   return {
     schemaVersion: 1,
     updatedAt: iso(value.updatedAt, "App state updatedAt"),
     selectedProjectId: nullableString(value.selectedProjectId, "App state selectedProjectId"),
     selectedSessionId: nullableString(value.selectedSessionId, "App state selectedSessionId"),
-    ...(splitSessionId !== undefined ? { splitSessionId } : {}),
+    ...(visibleSessionIds !== undefined ? { visibleSessionIds } : {}),
     sessions: Object.fromEntries(Object.entries(value.sessions).map(([key, session]) => [key, parseSession(session, key)])),
   };
 }

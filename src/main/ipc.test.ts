@@ -54,7 +54,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     }),
     rename: vi.fn(async (sessionId: string, name: string | null) => ({ id: sessionId, name })),
     select: vi.fn(),
-    split: vi.fn(async (sessionId: string | null) => ({ splitSessionId: sessionId })),
+    setVisibleSessions: vi.fn(async (sessionIds: readonly string[]) => ({ visibleSessionIds: sessionIds })),
     state: vi.fn(async () => ({
       source: "primary" as const,
       writable: true,
@@ -294,17 +294,21 @@ describe("main IPC boundary", () => {
     expect(await handlers.get("attention:state")!({})).toEqual({ "session-1": "input" });
   });
 
-  it("persists the split pane and marks the split session seen", async () => {
+  it("persists the grid panes and marks every pane session seen", async () => {
     const onSessionSelected = vi.fn();
     const { handlers, coordinator } = setup({ onSessionSelected });
 
-    await handlers.get("terminals:split")!({}, "session-2");
+    await handlers.get("terminals:set-visible-sessions")!({}, ["session-1", "session-2"]);
 
-    expect(coordinator.split).toHaveBeenCalledWith("session-2");
+    expect(coordinator.setVisibleSessions).toHaveBeenCalledWith(["session-1", "session-2"]);
+    expect(onSessionSelected).toHaveBeenCalledWith("session-1");
     expect(onSessionSelected).toHaveBeenCalledWith("session-2");
 
-    await handlers.get("terminals:split")!({}, null);
-    expect(coordinator.split).toHaveBeenCalledWith(null);
+    await handlers.get("terminals:set-visible-sessions")!({}, []);
+    expect(coordinator.setVisibleSessions).toHaveBeenCalledWith([]);
+
+    await expect(handlers.get("terminals:set-visible-sessions")!({}, ["ok", 42])).rejects.toThrow(/invalid/i);
+    await expect(handlers.get("terminals:set-visible-sessions")!({}, "session-1")).rejects.toThrow(/invalid/i);
   });
 
   it("validates PR annotation shape before forwarding it to main services", async () => {

@@ -1,7 +1,5 @@
-import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
-import type { TerminalStatus } from "@shared/terminal-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
@@ -23,7 +21,6 @@ import {
   RefreshCw,
   SquareTerminal,
   TriangleAlert,
-  Wrench,
   X,
   Zap,
 } from "lucide-react";
@@ -33,8 +30,8 @@ import type { OpenFileTab } from "./file-tabs";
 import { reorderIds, type DropPosition } from "./project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
-import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
-import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
+import { GitHubIcon, TeamsIcon } from "./brand-icons";
+import { projectName } from "./session-labels";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
 import { folderStatusClass, isFolderDone } from "./folder-status";
 
@@ -51,29 +48,25 @@ interface ProjectSidebarProps {
   onCreateWorkProject(): void;
   /** Null moves the folder back to 미분류. Also the drop action for cross-group drags. */
   onMoveProjectToWorkProject(projectId: string, workProjectId: string | null): void;
+  /** Sessions never get rows of their own any more — they feed the folder and worktree badges. */
   sessions: TerminalSessionView[];
-  agents: AgentView[];
   /** Sessions that started waiting while off screen — the sidebar's dot badges. */
   unread: Record<string, SessionAttention>;
   worktrees: SharedWorktree[];
   activeReviews: ActivePullRequestReview[];
   workspaceViews: GitWorkspaceView[];
   worktreeWarnings: Record<string, string>;
-  toolSessions: TerminalSessionView[];
   selectedProjectId: string | null;
-  selectedSessionId: string | null;
   selectedWorktreeId: string | null;
   onSelectWorktree(worktree: SharedWorktree): void;
   onWorktreeContextMenu(worktree: SharedWorktree, event: ReactMouseEvent): void;
   expandedProjects: Set<string>;
   editingProjectId: string | null;
-  renamingSessionId: string | null;
   loading: boolean;
   loadError: string | null;
   onReload(): void;
   onAddProject(): void;
   onSelectProject(projectId: string): void;
-  onSelectSession(session: TerminalSessionView): void;
   onToggleProject(projectId: string): void;
   /** The 폴더 layer's only status control — 작업중 ↔ 완료, never derived from the sessions below it. */
   onToggleProjectStatus(project: SharedProject): void;
@@ -83,9 +76,6 @@ interface ProjectSidebarProps {
   onExpandWorking(): void;
   onReorderProjects(orderedIds: string[]): void;
   onProjectContextMenu(project: SharedProject, event: ReactMouseEvent): void;
-  onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
-  onRenameSession(sessionId: string, name: string | null): void;
-  onCancelRename(): void;
   onProjectSaved(project: SharedProject): void;
   onCloseEditor(): void;
   onRestoreBackup(): void;
@@ -107,50 +97,19 @@ function byCreation(left: TerminalSessionView, right: TerminalSessionView): numb
   return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
 }
 
-/** Sessions still attached to a live process — what the collapsed rail offers to switch between. */
-const ACTIVE_STATUSES = new Set<TerminalStatus>([
-  "starting",
-  "working",
-  "awaiting-input",
-  "awaiting-approval",
-  "idle",
-]);
-
-function SessionNameInput({
-  initialName,
-  onSubmit,
-  onCancel,
-}: {
-  initialName: string;
-  onSubmit(name: string | null): void;
-  onCancel(): void;
-}) {
-  const [value, setValue] = useState(initialName);
-  return (
-    <form
-      className="session-rename"
-      aria-label="세션 이름 변경"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit(value.trim() === "" ? null : value.trim());
-      }}
-    >
-      <input
-        type="text"
-        aria-label="세션 이름"
-        value={value}
-        autoFocus
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.stopPropagation();
-            onCancel();
-          }
-        }}
-        onBlur={onCancel}
-      />
-    </form>
-  );
+/**
+ * With no session rows left in the tree, a folder's own badge is the only unread signal the
+ * sidebar has — so it rolls up its sessions and keeps the loudest of them, 승인 대기 first.
+ */
+function rollUpAttention(
+  sessions: TerminalSessionView[],
+  unread: Record<string, SessionAttention>,
+): SessionAttention | null {
+  return sessions.reduce<SessionAttention | null>((strongest, session) => {
+    const attention = unread[session.id];
+    if (attention === "approval" || strongest === "approval") return "approval";
+    return attention ?? strongest;
+  }, null);
 }
 
 export function ProjectSidebar({
@@ -165,27 +124,22 @@ export function ProjectSidebar({
   onCreateWorkProject,
   onMoveProjectToWorkProject,
   sessions,
-  agents,
   unread,
   worktrees,
   activeReviews,
   workspaceViews,
   worktreeWarnings,
-  toolSessions,
   selectedProjectId,
-  selectedSessionId,
   selectedWorktreeId,
   onSelectWorktree,
   onWorktreeContextMenu,
   expandedProjects,
   editingProjectId,
-  renamingSessionId,
   loading,
   loadError,
   onReload,
   onAddProject,
   onSelectProject,
-  onSelectSession,
   onToggleProject,
   onToggleProjectStatus,
   onExpandAll,
@@ -193,9 +147,6 @@ export function ProjectSidebar({
   onExpandWorking,
   onReorderProjects,
   onProjectContextMenu,
-  onSessionContextMenu,
-  onRenameSession,
-  onCancelRename,
   onProjectSaved,
   onCloseEditor,
   onRestoreBackup,
@@ -260,69 +211,27 @@ export function ProjectSidebar({
     return sections;
   }, [workProjects, projects, projectMembership]);
 
-  const allSessions = useMemo(() => [...sessions, ...toolSessions], [sessions, toolSessions]);
-  const railSessions = useMemo(
-    () => allSessions.filter((session) => ACTIVE_STATUSES.has(session.status)).sort(byCreation),
-    [allSessions],
-  );
+  const attentionOf = (candidates: TerminalSessionView[]) => rollUpAttention(candidates, unread);
 
-  const renderRailSession = (session: TerminalSessionView) => {
-    const agent = findAgent(agents, session.kind);
-    const label = sessionLabel(session, allSessions, agents);
-    const sessionUnread = unread[session.id];
+  /**
+   * The collapsed rail switches between folders, not sessions: with the grid showing a folder's
+   * terminals at once, the folder is the unit worth one click of a 44px-wide strip.
+   */
+  const renderRailProject = (project: SharedProject) => {
+    const name = projectName(project);
+    const attention = attentionOf(sessions.filter((session) => session.projectId === project.id));
     return (
-      <li key={session.id}>
+      <li key={project.id}>
         <button
           type="button"
-          className={`rail-session-button status-${session.status} ${selectedSessionId === session.id ? "selected" : ""}`}
-          onClick={() => onSelectSession(session)}
-          onContextMenu={(event) => onSessionContextMenu(session, event)}
-          title={label}
-          aria-label={`${label} 세션 열기${sessionUnread ? " (읽지 않음)" : ""}`}
+          className={`rail-session-button ${folderStatusClass(project.status)} ${selectedProjectId === project.id ? "selected" : ""}`}
+          onClick={() => onSelectProject(project.id)}
+          onContextMenu={(event) => onProjectContextMenu(project, event)}
+          title={name}
+          aria-label={`${name} 폴더 선택${attention ? " (읽지 않음)" : ""}`}
         >
-          {session.tool ? <Wrench size={15} /> : <AgentIcon agent={agent} size={15} />}
-          <span className={`status-dot status-${session.status}`} aria-hidden="true" />
-          {sessionUnread ? (
-            <span className={`unread-dot unread-${sessionUnread}`} aria-hidden="true" />
-          ) : null}
-        </button>
-      </li>
-    );
-  };
-
-  const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
-    const agent = findAgent(agents, session.kind);
-    const label = sessionLabel(session, peers, agents);
-    const sessionUnread = unread[session.id];
-    if (renamingSessionId === session.id) {
-      return (
-        <li key={session.id}>
-          <SessionNameInput
-            initialName={session.name ?? label}
-            onSubmit={(name) => onRenameSession(session.id, name)}
-            onCancel={onCancelRename}
-          />
-        </li>
-      );
-    }
-    return (
-      <li key={session.id}>
-        <button
-          className={`session-row status-${session.status} ${selectedSessionId === session.id ? "selected" : ""}`}
-          type="button"
-          onClick={() => onSelectSession(session)}
-          onContextMenu={(event) => onSessionContextMenu(session, event)}
-          aria-label={`${label} 세션 열기${sessionUnread ? " (읽지 않음)" : ""}`}
-        >
-          <span className={`status-dot status-${session.status}`} aria-hidden="true" />
-          {session.tool ? <Wrench size={14} /> : <AgentIcon agent={agent} size={14} />}
-          <span className="session-name" title={label}>
-            {label}
-          </span>
-          {sessionUnread ? (
-            <span className={`unread-dot unread-${sessionUnread}`} title="응답 대기" aria-hidden="true" />
-          ) : null}
-          <span className="session-status">{statusLabels[session.status]}</span>
+          <Folder size={15} />
+          {attention ? <span className={`unread-dot unread-${attention}`} aria-hidden="true" /> : null}
         </button>
       </li>
     );
@@ -335,7 +244,7 @@ export function ProjectSidebar({
    */
   const renderFileTab = (tab: OpenFileTab) => (
     <li key={tab.id}>
-      <div className={`session-row file-tab-row ${selectedFileTabId === tab.id ? "selected" : ""}`}>
+      <div className={`file-tab-row ${selectedFileTabId === tab.id ? "selected" : ""}`}>
         <button
           type="button"
           className="file-tab-open"
@@ -344,7 +253,7 @@ export function ProjectSidebar({
         >
           <span className={`file-tab-dot ${tab.dirty ? "dirty" : ""}`} aria-hidden="true" />
           <FileIcon extension={tab.extension} size={14} />
-          <span className="session-name" title={tab.relativePath}>
+          <span className="file-tab-name" title={tab.relativePath}>
             {tab.name}
           </span>
         </button>
@@ -390,8 +299,8 @@ export function ProjectSidebar({
       </div>
 
       {collapsed ? (
-        <div className="sidebar-rail-sessions" aria-label="진행 중인 세션">
-          <ul role="list">{railSessions.map(renderRailSession)}</ul>
+        <div className="sidebar-rail-sessions" aria-label="폴더 바로가기">
+          <ul role="list">{projects.map(renderRailProject)}</ul>
         </div>
       ) : (
       <nav className="project-navigation" aria-label="프로젝트">
@@ -578,11 +487,7 @@ export function ProjectSidebar({
               );
               // The folder row shows the strongest wait among its sessions, so a collapsed
               // folder cannot hide an agent asking for approval.
-              const projectAttention = projectSessions.reduce<SessionAttention | null>((strongest, session) => {
-                const attention = unread[session.id];
-                if (attention === "approval" || strongest === "approval") return "approval";
-                return attention ?? strongest;
-              }, null);
+              const projectAttention = attentionOf(projectSessions);
               return (
                 <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
                   <div
@@ -690,10 +595,9 @@ export function ProjectSidebar({
                   ) : null}
                   {expanded ? (
                     <>
-                      {!isGitProject ? <ul className="session-tree" role="group">
-                        {projectSessions.filter((session) => session.worktreeId === undefined).map((session) => renderSession(session, projectSessions))}
+                      {!isGitProject ? (projectFileTabs.length > 0 ? <ul className="session-tree" role="group">
                         {projectFileTabs.map(renderFileTab)}
-                      </ul> : (
+                      </ul> : null) : (
                         <ul className="worktree-tree" role="group" aria-label={`${name} worktree`}>
                           {mainWorkspace ? <li className="worktree-node main-workspace-node" key={mainWorkspace.workspaceKey}>
                             <div className={`worktree-row two-line ${selectedProjectId === project.id && selectedWorktreeId === null ? "selected" : ""}`}>
@@ -704,8 +608,7 @@ export function ProjectSidebar({
                                 <GitBranch size={13} /><span className="workspace-copy"><span className="worktree-branch">메인 · {mainWorkspace.branch ?? `detached @ ${mainWorkspace.head?.slice(0, 7) ?? "unknown"}`}</span><span className="workspace-meta">변경 {mainWorkspace.changedFileCount} · 세션 {projectSessions.filter((session) => session.worktreeId === undefined).length}</span></span>
                               </button>
                             </div>
-                            {(!expandedWorkspaces.has(mainWorkspace.workspaceKey) || (selectedProjectId === project.id && selectedWorktreeId === null)) ? <ul className="session-tree worktree-sessions" role="group">
-                              {projectSessions.filter((session) => session.worktreeId === undefined).map((session) => renderSession(session, projectSessions))}
+                            {projectFileTabs.length > 0 && (!expandedWorkspaces.has(mainWorkspace.workspaceKey) || (selectedProjectId === project.id && selectedWorktreeId === null)) ? <ul className="session-tree worktree-sessions" role="group">
                               {projectFileTabs.map(renderFileTab)}
                             </ul> : null}
                           </li> : null}
@@ -725,14 +628,7 @@ export function ProjectSidebar({
                             const worktreeFileTabs = openFileTabs.filter(
                               (tab) => tab.target.kind === "worktree" && tab.target.id === worktree.id,
                             );
-                            const worktreeAttention = worktreeSessions.reduce<SessionAttention | null>(
-                              (strongest, session) => {
-                                const attention = unread[session.id];
-                                if (attention === "approval" || strongest === "approval") return "approval";
-                                return attention ?? strongest;
-                              },
-                              null,
-                            );
+                            const worktreeAttention = attentionOf(worktreeSessions);
                             return (
                               <li className="worktree-node" key={worktree.id}>
                                 <div className={`worktree-row two-line ${selectedWorktreeId === worktree.id ? "selected" : ""}`} onContextMenu={(event) => onWorktreeContextMenu(worktree, event)}>
@@ -751,9 +647,8 @@ export function ProjectSidebar({
                                     ) : null}
                                   </button>
                                 </div>
-                                {(!expandedWorkspaces.has(`worktree:${worktree.id}`) || selectedWorktreeId === worktree.id) && (worktreeSessions.length > 0 || worktreeFileTabs.length > 0) ? (
+                                {(!expandedWorkspaces.has(`worktree:${worktree.id}`) || selectedWorktreeId === worktree.id) && worktreeFileTabs.length > 0 ? (
                                   <ul className="session-tree worktree-sessions" role="group">
-                                    {worktreeSessions.map((session) => renderSession(session, projectSessions))}
                                     {worktreeFileTabs.map(renderFileTab)}
                                   </ul>
                                 ) : null}
@@ -777,16 +672,6 @@ export function ProjectSidebar({
           </ul>
         )}
 
-        {toolSessions.length > 0 ? (
-          <div className="tools-group">
-            <div className="section-heading">
-              <span>도구</span>
-            </div>
-            <ul className="session-tree" role="group" aria-label="유지보수 세션">
-              {[...toolSessions].sort(byCreation).map((session) => renderSession(session, toolSessions))}
-            </ul>
-          </div>
-        ) : null}
       </nav>
       )}
 
@@ -806,7 +691,7 @@ export function ProjectSidebar({
         <span className="connection-dot" aria-hidden="true" />
         <span>폴더 {projects.length}개</span>
         <span className="footer-separator">/</span>
-        <span>세션 {sessions.length + toolSessions.length}개</span>
+        <span>세션 {sessions.length}개</span>
       </footer>
     </aside>
   );
