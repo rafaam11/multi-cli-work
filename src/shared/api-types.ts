@@ -5,7 +5,7 @@ import type {
   PullRequestReviewAnnotation, PullRequestReviewAnnotationInput, PullRequestReviewAnnotationSendResult,
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "./github-types";
-import type { AppStateSnapshot, PersistedTerminalSession } from "./app-state-types";
+import type { AppStateSnapshot, PersistedTerminalSession, SlotViewState } from "./app-state-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
@@ -217,6 +217,15 @@ export interface ResumeTerminalInput {
   rows: number;
 }
 
+/**
+ * Every saved grid in one write. They travel together because a single drag can touch both — a tab
+ * dragged out of a folder view and into a workspace — and two writes would let a crash split them.
+ */
+export interface SlotViewsInput {
+  folderViews: Record<string, SlotViewState>;
+  workspaces: SlotViewState[];
+}
+
 export interface TerminalAttachResult {
   session: TerminalSessionView;
   replay: string;
@@ -420,8 +429,10 @@ export interface MultiCliWorkApi {
     remove(sessionId: string): Promise<void>;
     rename(sessionId: string, name: string | null): Promise<TerminalSessionView>;
     select(projectId: string | null, sessionId: string | null): Promise<AppStateSnapshot>;
-    /** Which sessions fill the grid panes, in pane order; an empty array collapses the grid. */
+    /** Which sessions fill the grid panes on the current page; an empty array collapses the grid. */
     setVisibleSessions(sessionIds: readonly string[]): Promise<AppStateSnapshot>;
+    /** The saved arrangements — each folder's grid and the curated workspaces. */
+    setSlotViews(input: SlotViewsInput): Promise<AppStateSnapshot>;
     onEvent(listener: (event: TerminalEvent) => void): () => void;
   };
   updates: {

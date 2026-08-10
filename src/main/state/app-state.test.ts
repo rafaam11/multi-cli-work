@@ -116,6 +116,69 @@ describe("session agent ids", () => {
     state.visibleSessionIds = [42];
     expect(() => parseAppState(state)).toThrow(/visibleSessionIds/);
   });
+
+  it("round-trips the saved grids and omits both keys while unused", () => {
+    const plain = parseAppState(stateWithKind("powershell"));
+    expect(Object.keys(plain)).not.toContain("folderViews");
+    expect(Object.keys(plain)).not.toContain("workspaces");
+
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.folderViews = { "project-1": { layoutId: "3-main-right", slots: ["a", null, "b"] } };
+    state.workspaces = [
+      { layoutId: "6-grid", slots: ["a"] },
+      { layoutId: "solo", slots: [] },
+    ];
+    const parsed = parseAppState(state);
+    expect(parsed.folderViews).toEqual({ "project-1": { layoutId: "3-main-right", slots: ["a", null, "b"] } });
+    expect(parsed.workspaces).toEqual([
+      { layoutId: "6-grid", slots: ["a"] },
+      { layoutId: "solo", slots: [] },
+    ]);
+    expect(parseAppState(parsed)).toEqual(parsed);
+  });
+
+  it("keeps a layout id it has never heard of, because the catalog lives in the renderer", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspaces = [{ layoutId: "layout-from-a-future-version", slots: [] }];
+    expect(parseAppState(state).workspaces).toEqual([{ layoutId: "layout-from-a-future-version", slots: [] }]);
+  });
+
+  it("keeps the holes the user left but drops the ones the layout already implies", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspaces = [{ layoutId: "6-grid", slots: [null, "a", null, null] }];
+    expect(parseAppState(state).workspaces).toEqual([{ layoutId: "6-grid", slots: [null, "a"] }]);
+  });
+
+  it("lets a session sit in one slot per view, and in more than one view", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.folderViews = { "project-1": { layoutId: "2-col", slots: ["a", "b"] } };
+    state.workspaces = [{ layoutId: "2-col", slots: ["a", "a", "b"] }];
+    const parsed = parseAppState(state);
+    expect(parsed.workspaces).toEqual([{ layoutId: "2-col", slots: ["a", null, "b"] }]);
+    expect(parsed.folderViews?.["project-1"].slots).toEqual(["a", "b"]);
+  });
+
+  it("never keeps more workspaces than the sidebar offers", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspaces = Array.from({ length: 5 }, (_, index) => ({ layoutId: "solo", slots: [`s${index}`] }));
+    expect(parseAppState(state).workspaces).toHaveLength(3);
+  });
+
+  it("rejects saved grids that are the wrong shape", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspaces = [{ layoutId: "solo", slots: "a" }];
+    expect(() => parseAppState(state)).toThrow(/workspaces\[0\]\.slots/i);
+
+    state.workspaces = [{ layoutId: "", slots: [] }];
+    expect(() => parseAppState(state)).toThrow(/layoutId/i);
+
+    state.workspaces = [{ layoutId: "solo", slots: [], extra: 1 }];
+    expect(() => parseAppState(state)).toThrow(/unknown fields/i);
+
+    delete state.workspaces;
+    state.folderViews = { "project-1": { slots: [] } };
+    expect(() => parseAppState(state)).toThrow(/layoutId/i);
+  });
 });
 
 describe("app state", () => {

@@ -444,6 +444,7 @@ function createApi(options?: {
         },
       }),
       setVisibleSessions: vi.fn().mockResolvedValue(appState),
+      setSlotViews: vi.fn().mockResolvedValue(appState),
       onEvent: vi.fn((listener) => {
         listeners.add(listener);
         return () => listeners.delete(listener);
@@ -513,7 +514,7 @@ function xtermFor(sessionId: string) {
 }
 
 describe("folder workspace", () => {
-  it("loads opened folders and opens the restored session in the grid", async () => {
+  it("loads opened folders and lays the restored folder's sessions out in the grid", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
 
@@ -521,11 +522,10 @@ describe("folder workspace", () => {
 
     expect(screen.getAllByText("작업 영역 불러오는 중")).toHaveLength(2);
     expect(await screen.findByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
-    // The tree stops at the folder: sessions are panes now, and the restored one has the grid to
-    // itself until the folder is opened.
+    // The tree stops at the folder: sessions are panes, and the restored folder brings all of its
+    // own onto the grid, most recently active first.
+    expect(screen.getByRole("region", { name: "Claude Code" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "PowerShell" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Claude Code" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "화면 밖 세션 1개와 교체" })).toBeInTheDocument();
     // The path belongs to the main window header now; the sidebar row keeps it as a tooltip only.
     expect(screen.getByText("C:\\work\\atlas")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Atlas 폴더 선택" })).toHaveAttribute("title", "C:\\work\\atlas");
@@ -824,9 +824,40 @@ describe("folder workspace", () => {
       });
     });
 
-    // It waits behind the grid rather than taking a pane away from what is on screen.
-    fireEvent.click(await screen.findByRole("button", { name: "화면 밖 세션 1개와 교체" }));
-    expect(screen.getByRole("menuitem", { name: "스폰된 세션" })).toBeInTheDocument();
+    // It gets a tab straight away, but no slot: nothing already on screen is pushed off for it.
+    const tab = await screen.findByRole("tab", { name: /스폰된 세션/ });
+    expect(tab).toHaveClass("offscreen");
+    expect(screen.queryByRole("region", { name: "스폰된 세션" })).not.toBeInTheDocument();
+
+    // Clicking the tab is what gives it one.
+    fireEvent.click(tab);
+    expect(await screen.findByRole("region", { name: "스폰된 세션" })).toBeInTheDocument();
+  });
+
+  it("sends a new session to its own page instead of collapsing the grid onto it", async () => {
+    const crowd = Array.from({ length: 6 }, (_, index): TerminalSessionView => ({
+      ...powershellSession,
+      id: `session-crowd-${index}`,
+      createdAt: `2026-07-10T0${index}:00:00.000Z`,
+      updatedAt: `2026-07-10T0${index}:00:00.000Z`,
+    }));
+    const harness = createApi({ sessions: crowd });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(document.querySelector(".workspace-grid")).toHaveAttribute("data-slots", "6"));
+
+    // The reported v1.13 bug: a seventh session folded the grid onto itself and the other six had
+    // no way back but reopening the folder. Now it opens on a page of its own.
+    fireEvent.click(screen.getByRole("button", { name: "새 PowerShell 세션" }));
+    expect(await screen.findByRole("region", { name: "PowerShell 7" })).toBeInTheDocument();
+    expect(screen.getByLabelText("2페이지 중 2페이지")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "이전 페이지" }));
+    await waitFor(() => expect(document.querySelector(".workspace-grid")).toHaveAttribute("data-slots", "6"));
+    expect(screen.getByRole("region", { name: "PowerShell 1" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "PowerShell 6" })).toBeInTheDocument();
   });
 
   it("names a session after the work it is doing, and carries its status onto the pane header", async () => {
@@ -1007,7 +1038,10 @@ describe("folder workspace", () => {
     render(<App />);
 
     const terminalRegion = await screen.findByRole("region", { name: "powershell 터미널" });
-    expect(terminalRegion.closest(".workspace-grid")!.parentElement).toHaveClass("workspace-body");
+    // The tab bar, the layout row and the grid share one flexible column inside the body.
+    const panes = terminalRegion.closest(".workspace-grid")!.parentElement!;
+    expect(panes).toHaveClass("workspace-panes");
+    expect(panes.parentElement).toHaveClass("workspace-body");
   });
 
   it("attaches replay, forwards input and live output, and resizes the PTY", async () => {
@@ -1805,13 +1839,16 @@ describe("prompt fan-out", () => {
 
 describe("workspace grid", () => {
   it("opens a folder straight into a grid of its sessions, most recent first", async () => {
-    const harness = createApi();
+    // Boots on Dashboard, which owns no session at all, so the grid starts empty.
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      selection: { selectedProjectId: dashboard.id, selectedSessionId: null },
+    });
     window.multiCliWork = harness.api;
     render(<App />);
 
-    // Boots into the restored session alone; opening the folder brings its peers along.
-    await screen.findByRole("region", { name: "powershell 터미널" });
-    expect(screen.queryByRole("region", { name: "claude 터미널" })).not.toBeInTheDocument();
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    expect(screen.queryByRole("region", { name: "powershell 터미널" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
 
@@ -1824,7 +1861,7 @@ describe("workspace grid", () => {
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(claudeSession.id));
   });
 
-  it("closes a pane without ending the session and swaps it back through the +N menu", async () => {
+  it("empties a slot without ending the session, and the tab puts it back", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
@@ -1833,17 +1870,45 @@ describe("workspace grid", () => {
     await screen.findByRole("region", { name: "claude 터미널" });
 
     // The first pane is the most recent session — Claude Code.
-    fireEvent.click(screen.getAllByRole("button", { name: "패인 닫기" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "슬롯 비우기" })[0]!);
     expect(screen.queryByRole("region", { name: "claude 터미널" })).not.toBeInTheDocument();
     expect(harness.api.terminals.setVisibleSessions).toHaveBeenLastCalledWith([powershellSession.id]);
     expect(harness.api.terminals.stop).not.toHaveBeenCalled();
     expect(harness.api.terminals.remove).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "화면 밖 세션 1개와 교체" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Claude Code" }));
+    // The tab outlives the slot, so one click is the whole way back — no swap menu in between.
+    fireEvent.click(screen.getByRole("tab", { name: /Claude Code/ }));
 
     expect(await screen.findByRole("region", { name: "claude 터미널" })).toBeInTheDocument();
-    expect(harness.api.terminals.setVisibleSessions).toHaveBeenLastCalledWith([claudeSession.id]);
+    expect(harness.api.terminals.setVisibleSessions).toHaveBeenLastCalledWith([
+      powershellSession.id,
+      claudeSession.id,
+    ]);
+  });
+
+  it("points the sidebar at the folder a clicked tab belongs to, then lets go of it", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    await screen.findByRole("region", { name: "claude 터미널" });
+    const row = screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")!;
+    expect(row).not.toHaveClass("flash");
+
+    // A workspace mixes folders, so a tab says where its pane came from — briefly, then quietly.
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("tab", { name: /PowerShell/ }));
+      expect(row).toHaveClass("flash");
+
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(row).not.toHaveClass("flash");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("recreates xterm and uses refresh without stopping or resuming the selected session", async () => {
@@ -1853,12 +1918,24 @@ describe("workspace grid", () => {
 
     await screen.findByRole("region", { name: "powershell 터미널" });
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(powershellSession.id));
-    const previous = terminalHarness.instances.at(-1)!;
+    const previous = await xtermFor(powershellSession.id);
 
-    fireEvent.click(screen.getByRole("button", { name: "세션 새로고침" }));
+    // Every pane carries its own refresh button, so the click has to name the pane it means.
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "PowerShell" })).getByRole("button", { name: "세션 새로고침" }),
+    );
 
     await waitFor(() => expect(harness.api.terminals.refresh).toHaveBeenCalledWith(powershellSession.id));
-    expect(terminalHarness.instances.at(-1)).not.toBe(previous);
+    // The replacement is the xterm that replayed the refreshed scrollback — with a grid of panes,
+    // the newest instance on the list says nothing about which session it belongs to.
+    const replacement = await waitFor(() => {
+      const instance = terminalHarness.instances.find((candidate) =>
+        candidate.write.mock.calls.some((call) => call[0] === `${powershellSession.id} refreshed\r\n`),
+      );
+      if (!instance) throw new Error("No refreshed xterm yet");
+      return instance;
+    });
+    expect(replacement).not.toBe(previous);
     expect(previous.dispose).toHaveBeenCalledOnce();
     expect(harness.api.terminals.stop).not.toHaveBeenCalled();
     expect(harness.api.terminals.resume).not.toHaveBeenCalled();
@@ -1902,14 +1979,16 @@ describe("workspace grid", () => {
     expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code");
   });
 
-  it("shows refresh failures and restores the header button's busy state", async () => {
+  it("shows refresh failures and restores the pane button's busy state", async () => {
     const harness = createApi();
     vi.mocked(harness.api.terminals.refresh).mockRejectedValueOnce(new Error("refresh unavailable"));
     window.multiCliWork = harness.api;
     render(<App />);
 
     await screen.findByRole("region", { name: "powershell 터미널" });
-    const button = screen.getByRole("button", { name: "세션 새로고침" });
+    const button = within(screen.getByRole("region", { name: "PowerShell" })).getByRole("button", {
+      name: "세션 새로고침",
+    });
     fireEvent.click(button);
 
     expect(button).toBeDisabled();
@@ -1950,7 +2029,8 @@ describe("file drop", () => {
     await screen.findByRole("region", { name: "powershell 터미널" });
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
 
-    const host = document.querySelector(".terminal-host")!;
+    // A drop lands in the pane it was aimed at, and the folder's grid holds more than one.
+    const host = screen.getByRole("region", { name: "PowerShell" }).querySelector(".terminal-host")!;
     fireEvent.drop(host, {
       dataTransfer: {
         types: ["Files"],
@@ -1958,7 +2038,7 @@ describe("file drop", () => {
       },
     });
 
-    const terminal = terminalHarness.instances.at(-1)!;
+    const terminal = await xtermFor(powershellSession.id);
     expect(terminal.paste).toHaveBeenCalledWith('"C:\\dropped\\shot.png" "C:\\dropped\\notes.md" ');
   });
 
@@ -2171,7 +2251,7 @@ describe("Shift+Enter", () => {
   });
 });
 
-describe("folder status", () => {
+describe("folder colour", () => {
   const archive: SharedProject = {
     ...atlas,
     id: "project-archive",
@@ -2204,58 +2284,51 @@ describe("folder status", () => {
       .getByRole("button", { name: `${name} 프로젝트 열기` })
       .closest(".work-project-node")!;
 
-  it("toggles a folder between 작업중 and 완료 by hand, and never from its sessions", async () => {
+  it("follows the folder's own agents rather than a hand-set flag", async () => {
     const harness = createApi({ projects: [atlas], sessions: [powershellSession] });
-    (harness.api.projects.update as ReturnType<typeof vi.fn>).mockResolvedValue({ ...atlas, status: "완료" });
     window.multiCliWork = harness.api;
     render(<App />);
 
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    expect(folderRow("Atlas")).toHaveClass("folder-working");
+    expect(folderRow("Atlas")).toHaveClass("folder-idle");
 
-    fireEvent.click(screen.getByRole("button", { name: "Atlas 작업 완료로 표시" }));
+    // Amber is "an agent is doing something right now", and nothing else says so.
+    await act(async () => {
+      harness.emit({ type: "status", sessionId: powershellSession.id, status: "working" });
+    });
+    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-active"));
 
-    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-done"));
-    expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { status: "완료" });
-    // Its session never moved — a pane's colour is the PTY's business alone.
+    await act(async () => {
+      harness.emit({ type: "status", sessionId: powershellSession.id, status: "idle" });
+    });
+    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-idle"));
+    // The pane keeps its own colour throughout — a pane's dot is the PTY's business alone.
     expect(document.querySelector(".pane-header .status-dot")).toHaveClass("status-idle");
   });
 
-  it("sends a 완료 folder back to 진행중 rather than leaving it stuck there", async () => {
+  it("leaves the registry's 완료 flag out of it, and offers no toggle for it", async () => {
     const done: SharedProject = { ...atlas, status: "완료" };
-    const harness = createApi({ projects: [done], sessions: [] });
-    (harness.api.projects.update as ReturnType<typeof vi.fn>).mockResolvedValue({ ...done, status: "진행중" });
+    const harness = createApi({ projects: [done], sessions: [powershellSession] });
     window.multiCliWork = harness.api;
     render(<App />);
 
+    // v1.14 dropped the hand-set toggle: a second, manual record of what the sessions already say.
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    expect(folderRow("Atlas")).toHaveClass("folder-done");
+    expect(folderRow("Atlas")).toHaveClass("folder-idle");
+    expect(screen.queryByRole("button", { name: "Atlas 작업 완료로 표시" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Atlas 작업중으로 되돌리기" }));
-
-    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-working"));
-    expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { status: "진행중" });
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("menuitem", { name: "작업 완료로 표시" })).not.toBeInTheDocument();
+    expect(harness.api.projects.update).not.toHaveBeenCalled();
   });
 
-  it("reaches the same toggle from the context menu, so the status is not hidden behind a hover", async () => {
-    const harness = createApi({ projects: [atlas], sessions: [] });
-    (harness.api.projects.update as ReturnType<typeof vi.fn>).mockResolvedValue({ ...atlas, status: "완료" });
-    window.multiCliWork = harness.api;
-    render(<App />);
-
-    fireEvent.contextMenu(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "작업 완료로 표시" }));
-
-    await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-done"));
-    expect(harness.api.projects.update).toHaveBeenCalledWith(atlas.id, { status: "완료" });
-  });
-
-  it("keeps 작업중 folders open and closes the rest, across the group and folder layers alike", async () => {
-    const finished: SharedProject = { ...dashboard, status: "완료" };
+  it("keeps folders with a running agent open and closes the rest, across the group and folder layers alike", async () => {
+    const working: TerminalSessionView = { ...powershellSession, status: "working" };
     const harness = createApi({
-      projects: [atlas, finished, archive],
-      sessions: [],
-      // wp-live owns one working folder and one finished one; wp-archive owns nothing but finished work.
+      projects: [atlas, dashboard, archive],
+      // Only Atlas has an agent running, so only Atlas — and the group holding it — stays open.
+      sessions: [working],
       workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0), workProject("wp-archive", "끝난 과제", archive.id, 1)],
     });
     window.multiCliWork = harness.api;
@@ -2267,7 +2340,7 @@ describe("folder status", () => {
     await waitFor(() => expect(groupNode("끝난 과제")).toHaveAttribute("aria-expanded", "false"));
     expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "true");
     expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
-    // Dashboard is 미분류 and finished, so it closes on its own without a group to close it.
+    // Dashboard is 미분류 and idle, so it closes on its own without a group to close it.
     expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
   });
 

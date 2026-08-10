@@ -16,6 +16,7 @@ import type {
   ProviderAvailability,
   ResumeTerminalInput,
   SessionAttention,
+  SlotViewsInput,
   UpdaterStatus,
   WindowChromeState,
   WindowZoomAction,
@@ -82,6 +83,7 @@ interface TerminalCoordinatorGateway {
   rename(sessionId: string, name: string | null): Promise<unknown>;
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
   setVisibleSessions(sessionIds: readonly string[]): Promise<unknown>;
+  setSlotViews(input: SlotViewsInput): Promise<unknown>;
 }
 
 interface UpdaterGateway {
@@ -243,6 +245,39 @@ function nonEmptyString(value: unknown, label: string): string {
 function integer(value: unknown, label: string): number {
   if (!Number.isInteger(value)) throw new Error(`${label} must be an integer`);
   return value as number;
+}
+
+/**
+ * The saved grids as they cross the bridge. Shape only — whether a slot's session still exists is
+ * the coordinator's business, and the layout id belongs to a catalog only the renderer has.
+ */
+function slotViewsInput(value: unknown, label = "Slot views"): SlotViewsInput {
+  if (typeof value !== "object" || value === null) throw new Error(`${label} must be an object`);
+  const { folderViews, workspaces } = value as Record<string, unknown>;
+  if (typeof folderViews !== "object" || folderViews === null || Array.isArray(folderViews)) {
+    throw new Error(`${label} folderViews must be an object`);
+  }
+  if (!Array.isArray(workspaces)) throw new Error(`${label} workspaces must be an array`);
+  const view = (candidate: unknown, viewLabel: string) => {
+    if (typeof candidate !== "object" || candidate === null) throw new Error(`${viewLabel} must be an object`);
+    const { layoutId, slots } = candidate as Record<string, unknown>;
+    if (!Array.isArray(slots)) throw new Error(`${viewLabel} slots must be an array`);
+    return {
+      layoutId: nonEmptyString(layoutId, `${viewLabel} layoutId`),
+      slots: slots.map((slot, index) =>
+        slot === null ? null : nonEmptyString(slot, `${viewLabel} slots[${index}]`),
+      ),
+    };
+  };
+  return {
+    folderViews: Object.fromEntries(
+      Object.entries(folderViews).map(([projectId, entry]) => [
+        nonEmptyString(projectId, `${label} folderViews key`),
+        view(entry, `${label} folderViews.${projectId}`),
+      ]),
+    ),
+    workspaces: workspaces.map((entry, index) => view(entry, `${label} workspaces[${index}]`)),
+  };
 }
 
 /**
@@ -843,6 +878,9 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     // Every pane is on screen from this moment, so their unread badges clear like a selection.
     for (const sessionId of sessionIds as string[]) dependencies.onSessionSelected?.(sessionId);
     return snapshot;
+  });
+  ipc.handle("terminals:set-slot-views", async (_event, input: unknown) => {
+    return dependencies.coordinator.setSlotViews(slotViewsInput(input));
   });
   ipc.handle("window:minimize", () => dependencies.windowControls.minimize());
   ipc.handle("window:toggle-maximize", () => dependencies.windowControls.toggleMaximize());

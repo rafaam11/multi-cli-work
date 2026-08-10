@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { SlotViewsInput } from "../shared/api-types";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
 
 function setup(options: { onSessionSelected?: (sessionId: string | null) => void } = {}) {
@@ -55,6 +56,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     rename: vi.fn(async (sessionId: string, name: string | null) => ({ id: sessionId, name })),
     select: vi.fn(),
     setVisibleSessions: vi.fn(async (sessionIds: readonly string[]) => ({ visibleSessionIds: sessionIds })),
+    setSlotViews: vi.fn(async (input: SlotViewsInput) => input),
     state: vi.fn(async () => ({
       source: "primary" as const,
       writable: true,

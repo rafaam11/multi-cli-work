@@ -3,9 +3,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   MAX_VISIBLE_SESSIONS,
+  WORKSPACE_COUNT,
   type AppStateSnapshot,
   type AppStateV1,
   type PersistedTerminalSession,
+  type SlotViewState,
 } from "../../shared/app-state-types";
 import type { ToolCommand } from "../../shared/terminal-types";
 import { tailOnUtf8Boundary } from "../utf8";
@@ -139,6 +141,50 @@ function visibleSessionIdsOf(value: Record<string, unknown>): string[] | undefin
   return [...new Set([selectedSessionId, splitSessionId].filter((id): id is string => id !== null && id.length > 0))];
 }
 
+/**
+ * A saved grid. The layout id is checked for shape only — the catalog that names it lives in the
+ * renderer, and an id main has never heard of must not cost the user their arrangement; the
+ * renderer falls back on a layout of the right size instead.
+ *
+ * Two normalisations keep the file from drifting: a session sits in at most one slot per view
+ * (later repeats read as empty), and trailing empty slots are dropped because the layout already
+ * says how many slots exist. Leading and middle nulls stay — those are positions the user left open.
+ */
+function parseSlotView(value: unknown, label: string): SlotViewState {
+  if (!isRecord(value)) throw new AppStateError(`${label} must be an object`);
+  exactKeys(value, ["layoutId", "slots"], label);
+  const layoutId = string(value.layoutId, `${label}.layoutId`);
+  if (!Array.isArray(value.slots)) throw new AppStateError(`${label}.slots must be an array`);
+  const seen = new Set<string>();
+  const slots = value.slots.map((entry, index) => {
+    if (entry === undefined || entry === null) return null;
+    const id = string(entry, `${label}.slots[${index}]`);
+    if (seen.has(id)) return null;
+    seen.add(id);
+    return id;
+  });
+  while (slots.length > 0 && slots[slots.length - 1] === null) slots.pop();
+  return { layoutId, slots };
+}
+
+function folderViewsOf(value: Record<string, unknown>): Record<string, SlotViewState> | undefined {
+  if (value.folderViews === undefined || value.folderViews === null) return undefined;
+  if (!isRecord(value.folderViews)) throw new AppStateError("App state folderViews must be an object");
+  const entries = Object.entries(value.folderViews).map(
+    ([key, view]) => [key, parseSlotView(view, `App state folderViews.${key}`)] as const,
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function workspacesOf(value: Record<string, unknown>): SlotViewState[] | undefined {
+  if (value.workspaces === undefined || value.workspaces === null) return undefined;
+  if (!Array.isArray(value.workspaces)) throw new AppStateError("App state workspaces must be an array");
+  const views = value.workspaces
+    .slice(0, WORKSPACE_COUNT)
+    .map((view, index) => parseSlotView(view, `App state workspaces[${index}]`));
+  return views.length > 0 ? views : undefined;
+}
+
 export function parseAppState(value: unknown): AppStateV1 {
   if (!isRecord(value)) throw new AppStateError("App state must be an object");
   exactKeys(
@@ -150,6 +196,8 @@ export function parseAppState(value: unknown): AppStateV1 {
       "selectedSessionId",
       "splitSessionId",
       "visibleSessionIds",
+      "folderViews",
+      "workspaces",
       "sessions",
     ],
     "App state",
@@ -157,12 +205,16 @@ export function parseAppState(value: unknown): AppStateV1 {
   if (value.schemaVersion !== 1) throw new AppStateError(`Unsupported app state schema: ${String(value.schemaVersion)}`);
   if (!isRecord(value.sessions)) throw new AppStateError("App state sessions must be an object");
   const visibleSessionIds = visibleSessionIdsOf(value);
+  const folderViews = folderViewsOf(value);
+  const workspaces = workspacesOf(value);
   return {
     schemaVersion: 1,
     updatedAt: iso(value.updatedAt, "App state updatedAt"),
     selectedProjectId: nullableString(value.selectedProjectId, "App state selectedProjectId"),
     selectedSessionId: nullableString(value.selectedSessionId, "App state selectedSessionId"),
     ...(visibleSessionIds !== undefined ? { visibleSessionIds } : {}),
+    ...(folderViews !== undefined ? { folderViews } : {}),
+    ...(workspaces !== undefined ? { workspaces } : {}),
     sessions: Object.fromEntries(Object.entries(value.sessions).map(([key, session]) => [key, parseSession(session, key)])),
   };
 }

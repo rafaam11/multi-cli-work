@@ -1,26 +1,30 @@
 import type { AgentView } from "@shared/agent-types";
 import { SHIFT_ENTER_BYTES } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import type { MouseEvent as ReactMouseEvent } from "react";
-import { PaneHeader, type HiddenSessionCandidate } from "./PaneHeader";
+import { X } from "lucide-react";
+import { useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import type { GridLayout } from "./grid-layouts";
+import { DocumentPaneIcon, paneContentId, type PaneContent } from "./pane-items";
+import { PaneHeader } from "./PaneHeader";
 import { TerminalPane, type TerminalCommands } from "./TerminalPane";
+import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { sessionLabel } from "./session-labels";
 
 interface WorkspaceGridProps {
-  /** The on-screen sessions, in pane order — at most six, resolved by the caller. */
-  sessions: TerminalSessionView[];
+  /** The arrangement to draw. It alone decides how many cells exist. */
+  layout: GridLayout;
+  /** One entry per slot the layout draws: a pane, or null for a slot left open as a drop target. */
+  slots: (PaneContent | null)[];
   /** Every session, for label numbering among a pane's project peers. */
   allSessions: TerminalSessionView[];
   agents: AgentView[];
   /** The pane keyboard input goes to; panes surface it, clicking one moves it. */
-  focusedSessionId: string | null;
+  focusedPaneId: string | null;
   renamingSessionId: string | null;
   refreshRequests: Readonly<Record<string, number>>;
   refreshingSessionIds: ReadonlySet<string>;
   pendingAction: boolean;
   isProjectMissing(projectId: string | null): boolean;
-  /** Sessions with no pane, most recently active first — every pane's +N swap menu. */
-  hiddenSessions: HiddenSessionCandidate[];
   onAttached(session: TerminalSessionView): void;
   onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
@@ -28,13 +32,14 @@ interface WorkspaceGridProps {
   /** A terminal took the keyboard — the 편집 menu's target, not a selection change. */
   onTerminalFocused(sessionId: string): void;
   /** The user pressed inside this pane, which is what moves the focused-pane selection. */
-  onFocusPane(sessionId: string): void;
+  onFocusPane(paneId: string): void;
   onResumeSession(session: TerminalSessionView): void;
   onRefreshSession(sessionId: string): void;
   onStopSession(session: TerminalSessionView): void;
-  /** Removes the pane from the grid only — the session keeps running behind it. */
-  onClosePane(sessionId: string): void;
-  onSwapSession(paneSessionId: string, nextSessionId: string): void;
+  /** Empties the slot only — the session keeps running, the document stays open, both keep a tab. */
+  onClearSlot(index: number): void;
+  /** A pane was dropped on this slot: one from another slot, or a tab from the bar. */
+  onDropPane(index: number, paneId: string): void;
   onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
   onStartRename(sessionId: string): void;
   onRenameSession(sessionId: string, name: string | null): void;
@@ -42,21 +47,26 @@ interface WorkspaceGridProps {
 }
 
 /**
- * The pane count alone decides the layout — 1 fills the view, 2 sit side by side, 3–4 take a 2×2,
- * 5–6 a 2×3 — so there is nothing to drag and nothing to persist beyond the session list itself.
- * Each pane keeps its own xterm, fit addon and resize reporting; the grid is pure layout.
+ * A grid of slots, not a list of panes. The layout hands over `grid-template-*` and every slot sits
+ * in its own named area, so a pane's place is a property of the arrangement rather than of how many
+ * sessions happen to be open. A slot holds a terminal or a document — the grid treats them alike.
+ *
+ * Panes are keyed by pane id: dragging one to another slot moves a `grid-area` and nothing more,
+ * which is what keeps xterm from being torn down and re-attached on every rearrangement. Nothing
+ * moves while a drag is in flight either — only the outline under the cursor changes — because a
+ * pane changing size walks the whole xterm→PTY resize chain.
  */
 export function WorkspaceGrid({
-  sessions,
+  layout,
+  slots,
   allSessions,
   agents,
-  focusedSessionId,
+  focusedPaneId,
   renamingSessionId,
   refreshRequests,
   refreshingSessionIds,
   pendingAction,
   isProjectMissing,
-  hiddenSessions,
   onAttached,
   onRefreshComplete,
   onError,
@@ -66,62 +76,158 @@ export function WorkspaceGrid({
   onResumeSession,
   onRefreshSession,
   onStopSession,
-  onClosePane,
-  onSwapSession,
+  onClearSlot,
+  onDropPane,
   onSessionContextMenu,
   onStartRename,
   onRenameSession,
   onCancelRename,
 }: WorkspaceGridProps) {
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
   const shiftEnterBytes = (pane: TerminalSessionView): string | null =>
     SHIFT_ENTER_BYTES[agents.find((agent) => agent.id === pane.kind)?.shiftEnter ?? "enter"];
   const labelFor = (pane: TerminalSessionView): string =>
     sessionLabel(pane, allSessions.filter((peer) => peer.projectId === pane.projectId), agents);
 
+  const slotProps = (index: number) => ({
+    "data-slot": index,
+    style: { gridArea: `s${index + 1}` },
+    onDragOver: (event: ReactDragEvent) => {
+      if (!isSessionDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (dropIndex !== index) setDropIndex(index);
+    },
+    onDragLeave: (event: ReactDragEvent) => {
+      // Crossing into a child fires dragleave too; only a real exit clears the outline.
+      const next = event.relatedTarget as Node | null;
+      if (next && event.currentTarget.contains(next)) return;
+      setDropIndex((current) => (current === index ? null : current));
+    },
+    onDrop: (event: ReactDragEvent) => {
+      if (!isSessionDrag(event)) return;
+      event.preventDefault();
+      setDropIndex(null);
+      const paneId = readSessionDrag(event);
+      if (paneId) onDropPane(index, paneId);
+    },
+  });
+
+  const paneClass = (paneId: string, index: number, extra?: string): string =>
+    ["grid-pane", extra ?? "", paneId === focusedPaneId ? "pane-focused" : "", dropIndex === index ? "drop-target" : ""]
+      .filter(Boolean)
+      .join(" ");
+
   return (
-    <div className="workspace-grid" data-panes={sessions.length}>
-      {sessions.map((session) => (
-        <section
-          key={session.id}
-          className={`grid-pane ${session.id === focusedSessionId ? "pane-focused" : ""}`}
-          aria-label={labelFor(session)}
-          onMouseDownCapture={() => {
-            if (session.id !== focusedSessionId) onFocusPane(session.id);
-          }}
-        >
-          <PaneHeader
-            session={session}
-            label={labelFor(session)}
-            agents={agents}
-            renaming={renamingSessionId === session.id}
-            pendingAction={pendingAction}
-            refreshing={refreshingSessionIds.has(session.id)}
-            resumeBlocked={!session.tool && isProjectMissing(session.projectId)}
-            hiddenSessions={hiddenSessions}
-            onStartRename={() => onStartRename(session.id)}
-            onRename={(name) => onRenameSession(session.id, name)}
-            onCancelRename={onCancelRename}
-            onResume={() => onResumeSession(session)}
-            onRefresh={() => onRefreshSession(session.id)}
-            onStop={() => onStopSession(session)}
-            onClosePane={() => onClosePane(session.id)}
-            onSwap={(nextSessionId) => onSwapSession(session.id, nextSessionId)}
-            onContextMenu={(event) => onSessionContextMenu(session, event)}
-          />
-          <TerminalPane
-            key={session.id}
-            session={session}
-            shiftEnterBytes={shiftEnterBytes(session)}
-            refreshRequest={refreshRequests[session.id] ?? 0}
-            autoFocus={session.id === focusedSessionId}
-            onAttached={onAttached}
-            onRefreshComplete={onRefreshComplete}
-            onError={onError}
-            onRegisterCommands={onRegisterCommands}
-            onTerminalFocused={onTerminalFocused}
-          />
-        </section>
-      ))}
+    <div
+      className="workspace-grid"
+      data-layout={layout.id}
+      data-slots={layout.slots}
+      style={{
+        gridTemplateColumns: layout.columns,
+        gridTemplateRows: layout.rows,
+        gridTemplateAreas: layout.areas,
+      }}
+      onDragEnd={() => setDropIndex(null)}
+    >
+      {slots.map((item, index) => {
+        if (!item) {
+          return (
+            <div
+              key={`slot-${index}`}
+              {...slotProps(index)}
+              className={`grid-slot empty ${dropIndex === index ? "drop-target" : ""}`.trim()}
+              aria-label={`빈 슬롯 ${index + 1} — 세션을 끌어다 놓기`}
+            >
+              <span className="grid-slot-number">{index + 1}</span>
+              <span className="grid-slot-hint">세션 탭을 끌어다 놓기</span>
+            </div>
+          );
+        }
+
+        const paneId = paneContentId(item);
+        if (item.kind === "document") {
+          const { document, content } = item;
+          return (
+            <section
+              key={paneId}
+              {...slotProps(index)}
+              className={paneClass(paneId, index, "grid-pane-document")}
+              aria-label={document.label}
+              onMouseDownCapture={() => {
+                if (paneId !== focusedPaneId) onFocusPane(paneId);
+              }}
+            >
+              <header
+                className="pane-header"
+                draggable
+                onDragStart={(event) => startSessionDrag(event, paneId)}
+              >
+                <DocumentPaneIcon kind={document.kind} />
+                <span className="pane-title" title={document.label}>
+                  {document.label}
+                </span>
+                {document.dirty ? <span className="pane-dirty" title="저장하지 않은 변경" /> : null}
+                {document.detail ? <span className="pane-detail">{document.detail}</span> : null}
+                <div className="pane-actions">
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => onClearSlot(index)}
+                    aria-label="슬롯 비우기"
+                    title="슬롯 비우기 (문서는 탭에 남습니다)"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </header>
+              <div className="grid-pane-body">{content}</div>
+            </section>
+          );
+        }
+
+        const session = item.session;
+        return (
+          <section
+            key={paneId}
+            {...slotProps(index)}
+            className={paneClass(paneId, index)}
+            aria-label={labelFor(session)}
+            onMouseDownCapture={() => {
+              if (paneId !== focusedPaneId) onFocusPane(paneId);
+            }}
+          >
+            <PaneHeader
+              session={session}
+              label={labelFor(session)}
+              agents={agents}
+              renaming={renamingSessionId === session.id}
+              pendingAction={pendingAction}
+              refreshing={refreshingSessionIds.has(session.id)}
+              resumeBlocked={!session.tool && isProjectMissing(session.projectId)}
+              onStartRename={() => onStartRename(session.id)}
+              onRename={(name) => onRenameSession(session.id, name)}
+              onCancelRename={onCancelRename}
+              onResume={() => onResumeSession(session)}
+              onRefresh={() => onRefreshSession(session.id)}
+              onStop={() => onStopSession(session)}
+              onClearSlot={() => onClearSlot(index)}
+              onContextMenu={(event) => onSessionContextMenu(session, event)}
+            />
+            <TerminalPane
+              session={session}
+              shiftEnterBytes={shiftEnterBytes(session)}
+              refreshRequest={refreshRequests[session.id] ?? 0}
+              autoFocus={paneId === focusedPaneId}
+              onAttached={onAttached}
+              onRefreshComplete={onRefreshComplete}
+              onError={onError}
+              onRegisterCommands={onRegisterCommands}
+              onTerminalFocused={onTerminalFocused}
+            />
+          </section>
+        );
+      })}
     </div>
   );
 }

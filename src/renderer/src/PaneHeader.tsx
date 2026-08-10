@@ -1,19 +1,11 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import { CircleStop, Grid2x2, RefreshCw, RotateCcw, X } from "lucide-react";
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { CircleStop, RefreshCw, RotateCcw, X } from "lucide-react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { SessionNameInput } from "./SessionNameInput";
+import { startSessionDrag } from "./session-drag";
 import { findAgent, statusLabels } from "./session-labels";
-import { useDismissable } from "./use-dismissable";
-
-/** A session waiting behind the grid — what the +N menu offers to swap into this pane. */
-export interface HiddenSessionCandidate {
-  sessionId: string;
-  label: string;
-  /** Context shown dimmed: the folder (or "도구") the candidate belongs to. */
-  detail: string | null;
-}
 
 interface PaneHeaderProps {
   session: TerminalSessionView;
@@ -24,21 +16,23 @@ interface PaneHeaderProps {
   refreshing: boolean;
   /** A missing folder blocks resume until it is relinked; tool sessions never are. */
   resumeBlocked: boolean;
-  hiddenSessions: HiddenSessionCandidate[];
   onStartRename(): void;
   onRename(name: string | null): void;
   onCancelRename(): void;
   onResume(): void;
   onRefresh(): void;
   onStop(): void;
-  onClosePane(): void;
-  onSwap(sessionId: string): void;
+  /** Frees the slot for another session; this one keeps running and keeps its tab. */
+  onClearSlot(): void;
   onContextMenu(event: ReactMouseEvent): void;
 }
 
 /**
  * Session controls live on the pane, not in the workspace header: with several terminals on screen
  * only the pane itself says which session a button acts on.
+ *
+ * The header doubles as the pane's drag handle — dragging it onto another slot is how panes trade
+ * places. Renaming turns the handle off so the name field can take a text selection.
  */
 export function PaneHeader({
   session,
@@ -48,24 +42,25 @@ export function PaneHeader({
   pendingAction,
   refreshing,
   resumeBlocked,
-  hiddenSessions,
   onStartRename,
   onRename,
   onCancelRename,
   onResume,
   onRefresh,
   onStop,
-  onClosePane,
-  onSwap,
+  onClearSlot,
   onContextMenu,
 }: PaneHeaderProps) {
-  const [swapMenuOpen, setSwapMenuOpen] = useState(false);
-  const swapAnchor = useDismissable(() => setSwapMenuOpen(false));
   const agent = findAgent(agents, session.kind);
   const finished = session.status === "exited" || session.status === "error";
 
   return (
-    <header className="pane-header" onContextMenu={onContextMenu}>
+    <header
+      className="pane-header"
+      draggable={!renaming}
+      onDragStart={(event) => startSessionDrag(event, session.id)}
+      onContextMenu={onContextMenu}
+    >
       <span
         className={`status-dot status-${session.status}`}
         title={statusLabels[session.status]}
@@ -114,48 +109,12 @@ export function PaneHeader({
             <CircleStop size={13} />
           </button>
         ) : null}
-        {hiddenSessions.length > 0 ? (
-          <div className="session-menu-anchor" ref={swapAnchor}>
-            <button
-              className="icon-button pane-swap-button"
-              type="button"
-              aria-label={`화면 밖 세션 ${hiddenSessions.length}개와 교체`}
-              title={`화면 밖 세션 ${hiddenSessions.length}개와 교체`}
-              aria-expanded={swapMenuOpen}
-              aria-haspopup="menu"
-              onClick={() => setSwapMenuOpen((open) => !open)}
-            >
-              +{hiddenSessions.length}
-            </button>
-            {swapMenuOpen ? (
-              <div className="provider-menu" role="menu" aria-label="이 패인에 표시할 세션 선택">
-                {hiddenSessions.map((candidate) => (
-                  <button
-                    key={candidate.sessionId}
-                    type="button"
-                    role="menuitem"
-                    aria-label={candidate.label}
-                    title={candidate.label}
-                    onClick={() => {
-                      setSwapMenuOpen(false);
-                      onSwap(candidate.sessionId);
-                    }}
-                  >
-                    <Grid2x2 size={15} />
-                    <span>{candidate.label}</span>
-                    {candidate.detail ? <span className="provider-unavailable">{candidate.detail}</span> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
         <button
           className="icon-button"
           type="button"
-          onClick={onClosePane}
-          aria-label="패인 닫기"
-          title="패인 닫기 (세션은 유지)"
+          onClick={onClearSlot}
+          aria-label="슬롯 비우기"
+          title="슬롯 비우기 (세션은 유지)"
         >
           <X size={13} />
         </button>

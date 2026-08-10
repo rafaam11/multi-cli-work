@@ -1,6 +1,9 @@
 import type { TerminalSessionView } from "@shared/api-types";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { layoutById } from "./grid-layouts";
+import type { PaneContent } from "./pane-items";
+import { SESSION_DRAG_TYPE } from "./session-drag";
 import { WorkspaceGrid } from "./WorkspaceGrid";
 
 vi.mock("./TerminalPane", () => ({
@@ -29,19 +32,28 @@ function makeSession(id: string, overrides: Partial<TerminalSessionView> = {}): 
   };
 }
 
+function sessionSlot(session: TerminalSessionView): PaneContent {
+  return { kind: "session", session };
+}
+
+function sessionsOf(slots: (PaneContent | null)[]): TerminalSessionView[] {
+  return slots.flatMap((slot) => (slot?.kind === "session" ? [slot.session] : []));
+}
+
 function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}) {
-  const sessions = overrides.sessions ?? [makeSession("session-1")];
+  const slots = overrides.slots ?? [sessionSlot(makeSession("session-1"))];
+  const sessions = sessionsOf(slots);
   const props: Parameters<typeof WorkspaceGrid>[0] = {
-    sessions,
+    layout: layoutById("solo")!,
+    slots,
     allSessions: sessions,
     agents: [],
-    focusedSessionId: sessions[0]?.id ?? null,
+    focusedPaneId: sessions[0]?.id ?? null,
     renamingSessionId: null,
     refreshRequests: {},
     refreshingSessionIds: new Set(),
     pendingAction: false,
     isProjectMissing: () => false,
-    hiddenSessions: [],
     onAttached: vi.fn(),
     onRefreshComplete: vi.fn(),
     onError: vi.fn(),
@@ -51,8 +63,8 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
     onResumeSession: vi.fn(),
     onRefreshSession: vi.fn(),
     onStopSession: vi.fn(),
-    onClosePane: vi.fn(),
-    onSwapSession: vi.fn(),
+    onClearSlot: vi.fn(),
+    onDropPane: vi.fn(),
     onSessionContextMenu: vi.fn(),
     onStartRename: vi.fn(),
     onRenameSession: vi.fn(),
@@ -65,22 +77,81 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
 afterEach(cleanup);
 
 describe("WorkspaceGrid", () => {
-  it("renders one pane per visible session and exposes the count for the layout", () => {
-    for (const count of [1, 2, 4, 6]) {
-      cleanup();
-      const sessions = Array.from({ length: count }, (_, index) => makeSession(`session-${index + 1}`));
-      const { container } = renderGrid({ sessions });
-      expect(container.querySelector(".workspace-grid")?.getAttribute("data-panes")).toBe(String(count));
-      expect(container.querySelectorAll(".grid-pane")).toHaveLength(count);
-      for (const session of sessions) {
-        expect(screen.getByTestId(`terminal-${session.id}`)).toBeTruthy();
-      }
-    }
+  it("draws the layout it is given and puts each pane in its own area", () => {
+    const layout = layoutById("4-thirds-right")!;
+    const sessions = [makeSession("session-1"), makeSession("session-2"), makeSession("session-3")];
+    const { container } = renderGrid({ layout, slots: [...sessions.map(sessionSlot), null] });
+
+    const grid = container.querySelector(".workspace-grid") as HTMLElement;
+    expect(grid.style.gridTemplateAreas).toBe(layout.areas);
+    expect(grid.style.gridTemplateColumns).toBe(layout.columns);
+    expect(grid.getAttribute("data-slots")).toBe("4");
+    expect([...container.querySelectorAll(".grid-pane")].map((pane) => (pane as HTMLElement).style.gridArea)).toEqual([
+      "s1",
+      "s2",
+      "s3",
+    ]);
+    for (const session of sessions) expect(screen.getByTestId(`terminal-${session.id}`)).toBeTruthy();
+  });
+
+  it("leaves an open slot as a labelled drop target instead of collapsing the layout", () => {
+    const { container } = renderGrid({
+      layout: layoutById("2-col")!,
+      slots: [null, sessionSlot(makeSession("session-2"))],
+    });
+    const empty = screen.getByLabelText("빈 슬롯 1 — 세션을 끌어다 놓기");
+    expect((empty as HTMLElement).style.gridArea).toBe("s1");
+    expect(container.querySelectorAll(".grid-pane")).toHaveLength(1);
+  });
+
+  it("reports the slot a dropped pane landed on, ignoring drags that carry no pane", () => {
+    const { props } = renderGrid({
+      layout: layoutById("2-col")!,
+      slots: [sessionSlot(makeSession("session-1")), null],
+    });
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+
+    fireEvent.drop(empty, { dataTransfer: { types: ["text/plain"], getData: () => "project-atlas" } });
+    expect(props.onDropPane).not.toHaveBeenCalled();
+
+    fireEvent.drop(empty, {
+      dataTransfer: { types: [SESSION_DRAG_TYPE], getData: () => "session-7" },
+    });
+    expect(props.onDropPane).toHaveBeenCalledWith(1, "session-7");
+  });
+
+  it("outlines the slot under the cursor while a pane drag is in flight", () => {
+    const { container } = renderGrid({
+      layout: layoutById("2-col")!,
+      slots: [sessionSlot(makeSession("session-1")), null],
+    });
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+
+    fireEvent.dragOver(empty, { dataTransfer: { types: [SESSION_DRAG_TYPE] } });
+    expect(empty.classList.contains("drop-target")).toBe(true);
+    // The panes themselves stay put — only the outline moves during the drag.
+    expect(container.querySelectorAll(".grid-pane")).toHaveLength(1);
+
+    fireEvent.dragLeave(empty, { dataTransfer: { types: [SESSION_DRAG_TYPE] } });
+    expect(empty.classList.contains("drop-target")).toBe(false);
+  });
+
+  it("hands the pane header over as a drag source so panes can trade slots", () => {
+    renderGrid({ slots: [sessionSlot(makeSession("session-1"))] });
+    const setData = vi.fn();
+    fireEvent.dragStart(screen.getByTitle("session-1").closest("header")!, {
+      dataTransfer: { setData, types: [] },
+    });
+    expect(setData).toHaveBeenCalledWith(SESSION_DRAG_TYPE, "session-1");
   });
 
   it("marks only the focused pane and moves focus when another pane is pressed", () => {
     const sessions = [makeSession("session-1"), makeSession("session-2")];
-    const { container, props } = renderGrid({ sessions, focusedSessionId: "session-1" });
+    const { container, props } = renderGrid({
+      layout: layoutById("2-col")!,
+      slots: sessions.map(sessionSlot),
+      focusedPaneId: "session-1",
+    });
     const panes = container.querySelectorAll(".grid-pane");
     expect(panes[0]?.classList.contains("pane-focused")).toBe(true);
     expect(panes[1]?.classList.contains("pane-focused")).toBe(false);
@@ -93,29 +164,37 @@ describe("WorkspaceGrid", () => {
     expect(props.onFocusPane).toHaveBeenCalledTimes(1);
   });
 
-  it("swaps a pane's session through the +N menu of off-screen sessions", () => {
+  it("gives a document the same slot, header and close button a terminal gets", () => {
     const { props } = renderGrid({
-      sessions: [makeSession("session-1")],
-      hiddenSessions: [
-        { sessionId: "session-7", label: "일곱째", detail: "atlas" },
-        { sessionId: "session-8", label: "여덟째", detail: null },
+      layout: layoutById("2-col")!,
+      slots: [
+        sessionSlot(makeSession("session-1")),
+        {
+          kind: "document",
+          document: {
+            id: "file:project:atlas:README.md",
+            kind: "file",
+            label: "README.md",
+            detail: "atlas",
+            dirty: true,
+          },
+          content: <div data-testid="document-body" />,
+        },
       ],
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "화면 밖 세션 2개와 교체" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "일곱째" }));
-    expect(props.onSwapSession).toHaveBeenCalledWith("session-1", "session-7");
+    expect(screen.getByTestId("document-body")).toBeTruthy();
+    expect(screen.getByLabelText("README.md")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "슬롯 비우기" })[1]!);
+    expect(props.onClearSlot).toHaveBeenCalledWith(1);
   });
 
-  it("closes only the pane, renames inline, and offers resume for a finished session", () => {
-    const sessions = [
-      makeSession("session-1", { status: "exited" }),
-      makeSession("session-2"),
-    ];
-    const { props, rerender } = renderGrid({ sessions });
+  it("empties the slot by index, renames inline, and offers resume for a finished session", () => {
+    const sessions = [makeSession("session-1", { status: "exited" }), makeSession("session-2")];
+    const { props, rerender } = renderGrid({ layout: layoutById("2-col")!, slots: sessions.map(sessionSlot) });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "패인 닫기" })[0]!);
-    expect(props.onClosePane).toHaveBeenCalledWith("session-1");
+    fireEvent.click(screen.getAllByRole("button", { name: "슬롯 비우기" })[0]!);
+    expect(props.onClearSlot).toHaveBeenCalledWith(0);
 
     fireEvent.click(screen.getByRole("button", { name: "세션 재개" }));
     expect(props.onResumeSession).toHaveBeenCalledWith(sessions[0]);
@@ -132,7 +211,7 @@ describe("WorkspaceGrid", () => {
 
   it("blocks resume while the session's folder is missing", () => {
     renderGrid({
-      sessions: [makeSession("session-1", { status: "error" })],
+      slots: [sessionSlot(makeSession("session-1", { status: "error" }))],
       isProjectMissing: (projectId) => projectId === "project-atlas",
     });
     expect((screen.getByRole("button", { name: "세션 재개" }) as HTMLButtonElement).disabled).toBe(true);

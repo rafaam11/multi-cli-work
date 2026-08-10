@@ -1,5 +1,5 @@
 import type { AgentView } from "@shared/agent-types";
-import { MAX_VISIBLE_SESSIONS } from "@shared/app-state-types";
+import { WORKSPACE_COUNT, type SlotViewState } from "@shared/app-state-types";
 import type {
   GitChangeEntry,
   GitDiffResult,
@@ -48,15 +48,88 @@ import { buildTitleBarMenus, NEW_SESSION_PREFIX } from "./title-bar-menu";
 import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceGrid } from "./WorkspaceGrid";
-import type { HiddenSessionCandidate } from "./PaneHeader";
+import { LayoutPicker } from "./LayoutPicker";
+import { PaneTabBar, type ViewTab } from "./PaneTabBar";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
 import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
-import { isFolderDone, nextFolderStatus } from "./folder-status";
+import { isFolderActive } from "./folder-status";
+import { DEFAULT_LAYOUT_ID } from "./grid-layouts";
+import {
+  documentPaneId,
+  isDocumentPaneId,
+  type DocumentKind,
+  type DocumentPane,
+  type PaneContent,
+} from "./pane-items";
+import {
+  appendSession,
+  clampPage,
+  clearSlot,
+  normalizeSlots,
+  pageOfSession,
+  placeInSlot,
+  removeSession,
+  resolveView,
+  setLayout,
+  viewPageSize,
+} from "./slot-view";
 
-type ActiveView = "home" | "detail" | "work-project" | "terminal" | "file" | "git-diff" | "git-graph" | "pull-request";
+type ActiveView = "home" | "detail" | "work-project" | "terminal";
+
+/**
+ * A grid belongs to a surface, and a surface is either a folder (a project, or one of its
+ * worktrees, or the tool sessions that belong to none) or one of the three workspaces. Folder
+ * surfaces are keyed by a string so they can all live in one persisted record; the prefixes keep a
+ * worktree's grid from colliding with a project id.
+ */
+const TOOLS_VIEW_KEY = "@tools";
+
+function folderViewKeyOf(projectId: string | null, worktreeId: string | null): string {
+  if (worktreeId) return `@worktree:${worktreeId}`;
+  return projectId ?? TOOLS_VIEW_KEY;
+}
+
+const EMPTY_VIEW: SlotViewState = { layoutId: DEFAULT_LAYOUT_ID, slots: [] };
+
+/** 작업공간1/2/3 always exist, even before anything has been dropped into them. */
+function emptyWorkspaces(): SlotViewState[] {
+  return Array.from({ length: WORKSPACE_COUNT }, () => ({ layoutId: DEFAULT_LAYOUT_ID, slots: [] }));
+}
+
+/**
+ * Restores the saved workspaces, padded to the fixed three. A state file written before v1.14.0
+ * has no workspaces at all but does carry `visibleSessionIds` — the panes that were on screen when
+ * the app last closed. Those become 작업공간1, so the arrangement survives the upgrade instead of
+ * vanishing into a version the user never asked for.
+ */
+function restoreWorkspaces(
+  saved: readonly SlotViewState[] | undefined,
+  legacyVisibleSessionIds: readonly string[] | undefined,
+  paneIds: readonly string[],
+): SlotViewState[] {
+  const restored = emptyWorkspaces();
+  const source = saved && saved.length > 0
+    ? saved
+    : legacyVisibleSessionIds && legacyVisibleSessionIds.length > 0
+      ? [{ layoutId: DEFAULT_LAYOUT_ID, slots: [...legacyVisibleSessionIds] }]
+      : [];
+  source.slice(0, WORKSPACE_COUNT).forEach((view, index) => {
+    restored[index] = normalizeSlots(view, [], { keep: paneIds });
+  });
+  return restored;
+}
+
+function restoreFolderViews(
+  saved: Readonly<Record<string, SlotViewState>> | undefined,
+  paneIds: readonly string[],
+): Record<string, SlotViewState> {
+  return Object.fromEntries(
+    Object.entries(saved ?? {}).map(([key, view]) => [key, normalizeSlots(view, [], { keep: paneIds })]),
+  );
+}
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
@@ -88,20 +161,17 @@ function persistCollapsed(key: string, collapsed: Set<string>): void {
 }
 
 /**
- * Panes only restore for sessions that still exist — a stale id silently drops out. The focused
- * session always gets a pane, so a preserved selection can never end up behind the grid.
+ * A document opened from the right-hand sidebar. It takes a slot exactly like a terminal does, so
+ * a diff can sit beside the session that produced it rather than replacing the whole workspace.
+ * Files are not here: `openFileTabs` already holds their content, and their pane id points at it.
  */
-function restoreVisibleSessionIds(
-  persisted: readonly string[] | undefined,
-  sessions: readonly TerminalSessionView[],
-  focusedSessionId: string | null,
-): string[] {
-  const known = new Set(sessions.map((session) => session.id));
-  const ids = (persisted ?? []).filter((sessionId) => known.has(sessionId));
-  if (focusedSessionId && known.has(focusedSessionId) && !ids.includes(focusedSessionId)) {
-    ids.unshift(focusedSessionId);
-  }
-  return ids.slice(0, MAX_VISIBLE_SESSIONS);
+type OpenDocument =
+  | { id: string; kind: "diff"; file: GitDiffFile }
+  | { id: string; kind: "graph"; target: FileExplorerTarget; targetLabel: string | null }
+  | { id: string; kind: "pull-request"; projectId: string; remoteName: string; number: number; label: string };
+
+function documentTargetKey(target: FileExplorerTarget): string {
+  return `${target.kind}:${target.id}`;
 }
 
 interface ContextMenuState {
@@ -189,8 +259,6 @@ export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("home");
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const sessionsRef = useRef<TerminalSessionView[]>([]);
-  /** Read by listeners registered once, which would otherwise see the first render's pane list. */
-  const visibleSessionIdsRef = useRef<string[]>([]);
   const activityIdRef = useRef(0);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => {
@@ -218,12 +286,9 @@ export function App() {
   const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
-  const [gitDiffFile, setGitDiffFile] = useState<GitDiffFile | null>(null);
-  const [selectedPullRequest, setSelectedPullRequest] = useState<{ projectId: string; remoteName: string; number: number } | null>(null);
-  /** Where closing the diff pane returns to — whatever view was active when it opened. */
-  const gitDiffReturnView = useRef<ActiveView>("detail");
+  /** Diffs, commit graphs and pull requests on the grid. Files live in `openFileTabs` instead. */
+  const [documents, setDocuments] = useState<OpenDocument[]>([]);
   const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
-  const [selectedFileTabId, setSelectedFileTabId] = useState<string | null>(null);
   const [fileTabCloseRequest, setFileTabCloseRequest] = useState<OpenFileTab | null>(null);
   const fileWriteQueuesRef = useRef<Map<string, Promise<boolean>>>(new Map());
   const pendingFileWriteCountsRef = useRef<Map<string, number>>(new Map());
@@ -248,12 +313,27 @@ export function App() {
   const [worktreeForce, setWorktreeForce] = useState<WorktreeForceState | null>(null);
   const [fanOutVisible, setFanOutVisible] = useState(false);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
-  /** The grid's panes, in pane order — `selectedSessionId` is the focused one among them. */
-  const [visibleSessionIds, setVisibleSessionIds] = useState<string[]>([]);
+  /** Each folder's saved grid, keyed by `folderViewKeyOf`. */
+  const [folderViews, setFolderViews] = useState<Record<string, SlotViewState>>({});
+  /** 작업공간1/2/3, always three entries. */
+  const [workspaces, setWorkspaces] = useState<SlotViewState[]>(emptyWorkspaces);
+  /** Which workspace the grid is showing, or null while it shows a folder. */
+  const [workspaceIndex, setWorkspaceIndex] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  /** The pane the keyboard and the outline follow — a session id or a document id. */
+  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
+  /** The folder a tab click just pointed at; the sidebar pulses it for three seconds. */
+  const [flashProjectId, setFlashProjectId] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set once the first load has published its arrangements, so an empty grid is never saved over. */
+  const slotViewsRestored = useRef(false);
+  const publishedSessionIds = useRef<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
   /** Which terminal the 편집 menu acts on — a grid has several, and only focus tells them apart. */
   const [lastFocusedTerminalId, setLastFocusedTerminalId] = useState<string | null>(null);
   const terminalCommands = useRef(new Map<string, TerminalCommands>());
+  /** Tray navigation subscribes once, so it reaches the current reveal through a ref. */
+  const revealSessionRef = useRef<(session: TerminalSessionView) => void>(() => undefined);
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -301,15 +381,8 @@ export function App() {
   }, [projects, projectMembership, selectedWorkProject]);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const selectedWorktree = worktrees.find((worktree) => worktree.id === selectedWorktreeId) ?? null;
-  const selectedFileTab = openFileTabs.find((tab) => tab.id === selectedFileTabId) ?? null;
-  /** The panes actually on screen: the persisted order, resolved against the sessions that exist. */
-  const visibleSessions = useMemo(
-    () =>
-      visibleSessionIds
-        .map((sessionId) => sessions.find((session) => session.id === sessionId))
-        .filter((session): session is TerminalSessionView => session !== undefined),
-    [visibleSessionIds, sessions],
-  );
+  /** The file the keyboard is in — the pane with focus, when that pane is a file. */
+  const selectedFileTab = openFileTabs.find((tab) => documentPaneId("file", tab.id) === focusedPaneId) ?? null;
   const selectedSessionLabel = selectedSession
     ? sessionLabel(
         selectedSession,
@@ -323,6 +396,81 @@ export function App() {
   const isProjectMissing = useCallback(
     (projectId: string | null) => Boolean(projectId && snapshot?.missingRootProjectIds.includes(projectId)),
     [snapshot],
+  );
+
+  /**
+   * Every open document as a pane: the file tabs and the diffs, graphs and pull requests opened from
+   * the right sidebar. A slot holds one of these exactly as it holds a session.
+   */
+  const documentPanes = useMemo<DocumentPane[]>(
+    () => [
+      ...openFileTabs.map((tab) => ({
+        id: documentPaneId("file", tab.id),
+        kind: "file" as DocumentKind,
+        label: tab.name,
+        detail: tab.targetLabel,
+        dirty: tab.dirty,
+      })),
+      ...documents.map((document) => {
+        if (document.kind === "diff") {
+          return {
+            id: document.id,
+            kind: "diff" as DocumentKind,
+            label: document.file.path.split("/").at(-1) ?? document.file.path,
+            detail: document.file.targetLabel,
+            dirty: false,
+          };
+        }
+        if (document.kind === "graph") {
+          return {
+            id: document.id,
+            kind: "graph" as DocumentKind,
+            label: "커밋 그래프",
+            detail: document.targetLabel,
+            dirty: false,
+          };
+        }
+        return { id: document.id, kind: "pull-request" as DocumentKind, label: document.label, detail: null, dirty: false };
+      }),
+    ],
+    [openFileTabs, documents],
+  );
+  const documentPaneIds = useMemo(() => documentPanes.map((pane) => pane.id), [documentPanes]);
+  /** The pull request the focused pane shows, so the sidebar's list can mark it as the open one. */
+  const focusedPullRequest =
+    documents.find(
+      (document): document is Extract<OpenDocument, { kind: "pull-request" }> =>
+        document.kind === "pull-request" && document.id === focusedPaneId,
+    ) ?? null;
+  const folderViewKey = folderViewKeyOf(selectedProjectId, selectedWorktreeId);
+  /** The grid on screen: one of the three workspaces, or the folder the sidebar has selected. */
+  const currentView =
+    workspaceIndex !== null
+      ? (workspaces[workspaceIndex] ?? EMPTY_VIEW)
+      : (folderViews[folderViewKey] ?? EMPTY_VIEW);
+  const resolvedView = useMemo(() => resolveView(currentView, page), [currentView, page]);
+
+  // Closing panes or picking a roomier layout can leave the last page behind; the grid already
+  // draws a clamped page, and this keeps the stored one from springing back later.
+  useEffect(() => {
+    setPage((current) => clampPage(current, resolvedView.pages));
+  }, [resolvedView.pages]);
+
+  /**
+   * What a folder surface is about: a worktree's own sessions, or a project's (its worktrees
+   * included), or — for the tool surface, which belongs to no folder — the sessions with no project.
+   */
+  const surfaceSessions = useMemo(() => {
+    if (workspaceIndex !== null) return [];
+    if (selectedWorktreeId) return sessions.filter((session) => session.worktreeId === selectedWorktreeId);
+    if (selectedProjectId) return sessions.filter((session) => session.projectId === selectedProjectId);
+    return sessions.filter((session) => session.projectId === null);
+  }, [sessions, selectedProjectId, selectedWorktreeId, workspaceIndex]);
+
+  /** The sessions this page actually draws — what main reads to decide about notifications. */
+  const visibleSessionIds = useMemo(
+    () => resolvedView.slots.filter((id): id is string => id !== null && !isDocumentPaneId(id)),
+    [resolvedView],
   );
 
   const rightSidebarSpace = rightSidebarCollapsed ? RIGHT_SIDEBAR_RAIL_WIDTH : rightSidebarWidth;
@@ -429,6 +577,23 @@ export function App() {
         const preferredProjectId = preservedSelection ? preservedSelection.projectId : savedWorktree?.projectId ?? appState.state.selectedProjectId;
         const preferredSessionId = preservedSelection ? preservedSelection.sessionId : appState.state.selectedSessionId;
         const restoredSession = terminalSessions.find((session) => session.id === preferredSessionId) ?? null;
+        const paneIds = terminalSessions.map((session) => session.id);
+        // A folder's grid catches up on the sessions it does not list yet, most recently active
+        // first — the arrangement the user saved, plus whatever was started since.
+        const recentIds = (matches: (session: TerminalSessionView) => boolean) =>
+          terminalSessions
+            .filter(matches)
+            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+            .map((session) => session.id);
+        const restoreViews = (key: string, sessionIds: string[]) => {
+          const restored = restoreFolderViews(appState.state.folderViews, paneIds);
+          restored[key] = normalizeSlots(restored[key], sessionIds, { autoAppend: true, keep: paneIds });
+          setFolderViews(restored);
+          setWorkspaces(restoreWorkspaces(appState.state.workspaces, appState.state.visibleSessionIds, paneIds));
+          setWorkspaceIndex(null);
+          setPage(0);
+          slotViewsRestored.current = true;
+        };
 
         // A maintenance session belongs to no folder, so restoring it must not fall back to the
         // first folder in the list the way a plain "nothing selected" state does.
@@ -440,9 +605,8 @@ export function App() {
           setSelectedProjectId(null);
           setSelectedSessionId(restoredSession.id);
           setSelectedWorktreeId(null);
-          setVisibleSessionIds(
-            restoreVisibleSessionIds(appState.state.visibleSessionIds, terminalSessions, restoredSession.id),
-          );
+          setFocusedPaneId(restoredSession.id);
+          restoreViews(folderViewKeyOf(null, null), recentIds((session) => session.projectId === null));
           setActiveView(forceHome ? "home" : "terminal");
           return;
         }
@@ -459,15 +623,25 @@ export function App() {
                 .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null)
             : null;
 
+        const initialWorktreeId =
+          initialSession?.worktreeId ??
+          (savedWorktree && savedWorktree.projectId === initialProject?.id ? savedWorktree.id : null);
+
         setSnapshot(registrySnapshot);
         setSessions(terminalSessions);
         setAvailability(providers);
         setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
         setSelectedProjectId(initialProject?.id ?? null);
         setSelectedSessionId(initialSession?.id ?? null);
-        setSelectedWorktreeId(initialSession?.worktreeId ?? (savedWorktree && savedWorktree.projectId === initialProject?.id ? savedWorktree.id : null));
-        setVisibleSessionIds(
-          restoreVisibleSessionIds(appState.state.visibleSessionIds, terminalSessions, initialSession?.id ?? null),
+        setSelectedWorktreeId(initialWorktreeId);
+        setFocusedPaneId(initialSession?.id ?? null);
+        restoreViews(
+          folderViewKeyOf(initialProject?.id ?? null, initialWorktreeId),
+          initialWorktreeId
+            ? recentIds((session) => session.worktreeId === initialWorktreeId)
+            : initialProject
+              ? recentIds((session) => session.projectId === initialProject.id)
+              : recentIds((session) => session.projectId === null),
         );
         setActiveView(forceHome ? "home" : initialSession ? "terminal" : initialProject ? "detail" : "home");
       } catch (error) {
@@ -570,19 +744,18 @@ export function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
       if (event.key.toLowerCase() !== "s") return;
-      if (activeView !== "file" || !selectedFileTab || !["markdown", "html", "text"].includes(selectedFileTab.category) || selectedFileTab.truncated || selectedFileTab.encoding !== "utf8") return;
+      if (!selectedFileTab || !["markdown", "html", "text"].includes(selectedFileTab.category) || selectedFileTab.truncated || selectedFileTab.encoding !== "utf8") return;
       event.preventDefault();
       event.stopPropagation();
       if (selectedFileTab.dirty) void saveFileTab(selectedFileTab.id);
     };
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, [activeView, selectedFileTab]);
+  }, [selectedFileTab]);
 
   useEffect(() => {
     if (
       !pendingFileAnchor ||
-      activeView !== "file" ||
       selectedFileTab?.id !== pendingFileAnchor.tabId ||
       selectedFileTab.loading ||
       selectedFileTab.category !== "markdown"
@@ -592,7 +765,7 @@ export function App() {
       setPendingFileAnchor((current) => (current === pendingFileAnchor ? null : current));
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeView, pendingFileAnchor, selectedFileTab]);
+  }, [pendingFileAnchor, selectedFileTab]);
 
   const beginSidebarResize = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -633,18 +806,52 @@ export function App() {
     sessionsRef.current = sessions;
   }, [sessions]);
 
+  // A session can be removed from anywhere — the sidebar, another pane, the title bar — so every
+  // arrangement drops the slots whose session is gone. Document panes are left alone: they answer to
+  // their own tab list, not to the session registry.
   useEffect(() => {
-    visibleSessionIdsRef.current = visibleSessionIds;
-  }, [visibleSessionIds]);
-
-  // A session can be removed from anywhere — the sidebar, another pane, the title bar — so the pane
-  // list follows the sessions that actually exist. The main process prunes the persisted copy itself.
-  useEffect(() => {
-    setVisibleSessionIds((current) => {
-      const next = current.filter((sessionId) => sessions.some((session) => session.id === sessionId));
-      return next.length === current.length ? current : next;
+    const alive = new Set(sessions.map((session) => session.id));
+    const prune = (view: SlotViewState): SlotViewState => {
+      let next = view;
+      for (const id of view.slots) {
+        if (id !== null && !isDocumentPaneId(id) && !alive.has(id)) next = removeSession(next, id);
+      }
+      return next;
+    };
+    setFolderViews((current) => {
+      let changed = false;
+      const next: Record<string, SlotViewState> = {};
+      for (const [key, view] of Object.entries(current)) {
+        next[key] = prune(view);
+        if (next[key] !== view) changed = true;
+      }
+      return changed ? next : current;
+    });
+    setWorkspaces((current) => {
+      const next = current.map(prune);
+      return next.some((view, index) => view !== current[index]) ? next : current;
     });
   }, [sessions]);
+
+  // The single writer for "what is on screen": the sessions the current page draws. Notification
+  // policy in main reads this, so it has to follow every slot, page and layout change.
+  useEffect(() => {
+    if (!slotViewsRestored.current) return;
+    const key = visibleSessionIds.join(" ");
+    if (publishedSessionIds.current === key) return;
+    publishedSessionIds.current = key;
+    void window.multiCliWork.terminals.setVisibleSessions(visibleSessionIds).catch((error) => {
+      setActionError(errorMessage(error));
+    });
+  }, [visibleSessionIds]);
+
+  // Arrangements are persisted whole, so a restart brings back the same slots and the same layouts.
+  useEffect(() => {
+    if (!slotViewsRestored.current) return;
+    void window.multiCliWork.terminals.setSlotViews({ folderViews, workspaces }).catch(() => undefined);
+  }, [folderViews, workspaces]);
+
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
 
   useEffect(
     () =>
@@ -689,57 +896,109 @@ export function App() {
     });
   }, []);
 
-  /** The single writer for the grid: renderer state and the persisted pane list stay in step. */
-  const applyVisibleSessions = useCallback((sessionIds: readonly string[]) => {
-    const next = [...new Set(sessionIds)].slice(0, MAX_VISIBLE_SESSIONS);
-    setVisibleSessionIds(next);
-    void window.multiCliWork.terminals.setVisibleSessions(next).catch((error) => {
-      setActionError(errorMessage(error));
-    });
-    return next;
-  }, []);
-
-  /** The most recently active sessions of a folder — the panes a folder click opens with. */
-  const gridSessionsFor = useCallback(
+  /** The sessions of one folder, most recently active first — the order a grid fills itself in. */
+  const folderSessionIds = useCallback(
     (matches: (session: TerminalSessionView) => boolean) =>
       sessionsRef.current
         .filter(matches)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-        .slice(0, MAX_VISIBLE_SESSIONS)
         .map((session) => session.id),
     [],
   );
+
+  const updateFolderView = useCallback((key: string, mutate: (view: SlotViewState) => SlotViewState) => {
+    setFolderViews((current) => ({ ...current, [key]: mutate(current[key] ?? EMPTY_VIEW) }));
+  }, []);
+
+  const updateCurrentView = (mutate: (view: SlotViewState) => SlotViewState) => {
+    if (workspaceIndex !== null) {
+      setWorkspaces((current) => current.map((view, index) => (index === workspaceIndex ? mutate(view) : view)));
+      return;
+    }
+    updateFolderView(folderViewKey, mutate);
+  };
+
+  /**
+   * A folder's grid catches up on the sessions it does not list yet. This runs when a folder view
+   * comes on screen and when one of its sessions is born — never on every render, so a slot emptied
+   * by hand stays empty.
+   */
+  const catchUpFolder = (key: string, sessionIds: readonly string[]): SlotViewState => {
+    const next = normalizeSlots(folderViews[key], sessionIds, { autoAppend: true, keep: documentPaneIds });
+    setFolderViews((current) => ({ ...current, [key]: next }));
+    return next;
+  };
+
+  /** Points the sidebar at a folder for three seconds — how a tab click says where it came from. */
+  const flashFolder = (projectId: string | null) => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    setFlashProjectId(projectId);
+    if (!projectId) return;
+    flashTimer.current = setTimeout(() => setFlashProjectId(null), 3000);
+  };
 
   // Opening a folder means opening its work: the grid fills with that folder's sessions, and the
   // 상세 page is a click away in the header rather than a stop on the way.
   const selectProject = (projectId: string) => {
     try { localStorage.setItem("multi-cli-work.last-workspace.v1", `main:${projectId}`); } catch { /* unavailable storage */ }
-    const paneIds = gridSessionsFor((session) => session.projectId === projectId);
-    applyVisibleSessions(paneIds);
+    const view = catchUpFolder(
+      folderViewKeyOf(projectId, null),
+      folderSessionIds((session) => session.projectId === projectId),
+    );
+    const first = view.slots.find((id): id is string => id !== null && !isDocumentPaneId(id)) ?? null;
+    setWorkspaceIndex(null);
+    setPage(0);
     setSelectedProjectId(projectId);
-    setSelectedSessionId(paneIds[0] ?? null);
+    setSelectedSessionId(first);
     setSelectedWorktreeId(null);
+    setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
     setExpandedProjects((current) => new Set(current).add(projectId));
     setActionError(null);
-    persistSelection(projectId, paneIds[0] ?? null);
+    persistSelection(projectId, first);
   };
 
-  const selectSession = (session: TerminalSessionView) => {
+  /**
+   * Shows a session in the grid it belongs to. A jump from Quick Open, the home dashboard or the tray
+   * lands on that session's own folder view, on the page that holds it — nothing else is rearranged.
+   */
+  const revealSession = (session: TerminalSessionView) => {
+    const key = folderViewKeyOf(session.projectId, session.worktreeId ?? null);
+    let view = catchUpFolder(
+      key,
+      folderSessionIds((candidate) =>
+        session.worktreeId
+          ? candidate.worktreeId === session.worktreeId
+          : candidate.projectId === session.projectId,
+      ),
+    );
+    if (!view.slots.includes(session.id)) {
+      view = appendSession(view, session.id);
+      setFolderViews((current) => ({ ...current, [key]: view }));
+    }
+    setWorkspaceIndex(null);
+    setPage(pageOfSession(view.slots, viewPageSize(view), session.id) ?? 0);
     setSelectedProjectId(session.projectId);
     setSelectedSessionId(session.id);
     setSelectedWorktreeId(session.worktreeId ?? null);
+    setFocusedPaneId(session.id);
     setActiveView("terminal");
     setActionError(null);
-    // A session already on screen only takes the focus; anything else replaces the grid, so a
-    // deliberate jump never leaves the target hidden behind five other panes.
-    if (!visibleSessionIds.includes(session.id)) applyVisibleSessions([session.id]);
+    if (session.projectId) {
+      const projectId = session.projectId;
+      setExpandedProjects((current) => new Set(current).add(projectId));
+    }
+    flashFolder(session.projectId);
     persistSelection(session.projectId, session.id);
   };
 
+  const selectSession = (session: TerminalSessionView) => revealSession(session);
+
   /** Pressing a pane moves the focus — the keyboard target and what the 세션 menu acts on. */
-  const focusPane = (sessionId: string) => {
-    const session = sessions.find((candidate) => candidate.id === sessionId);
+  const focusPane = (paneId: string) => {
+    setFocusedPaneId(paneId);
+    if (isDocumentPaneId(paneId)) return;
+    const session = sessions.find((candidate) => candidate.id === paneId);
     if (!session || session.id === selectedSessionId) return;
     setSelectedProjectId(session.projectId);
     setSelectedSessionId(session.id);
@@ -747,59 +1006,93 @@ export function App() {
     persistSelection(session.projectId, session.id);
   };
 
-  /** Closing a pane only takes it off screen; the session keeps running behind the +N menu. */
-  const closePane = (sessionId: string) => {
-    const remaining = applyVisibleSessions(visibleSessionIds.filter((paneId) => paneId !== sessionId));
-    if (selectedSessionId !== sessionId) return;
-    const nextPane = sessions.find((candidate) => candidate.id === remaining[0]) ?? null;
-    setSelectedSessionId(nextPane?.id ?? null);
-    persistSelection(nextPane ? nextPane.projectId : selectedProjectId, nextPane?.id ?? null);
-  };
-
-  /** The +N menu swaps one pane's session in place, leaving the rest of the grid alone. */
-  const swapPaneSession = (paneSessionId: string, nextSessionId: string) => {
-    applyVisibleSessions(
-      visibleSessionIds.map((paneId) => (paneId === paneSessionId ? nextSessionId : paneId)),
-    );
-    if (selectedSessionId === paneSessionId) {
-      const next = sessions.find((candidate) => candidate.id === nextSessionId);
-      if (next) {
-        setSelectedProjectId(next.projectId);
-        setSelectedSessionId(next.id);
-        setSelectedWorktreeId(next.worktreeId ?? null);
-        persistSelection(next.projectId, next.id);
-      }
+  /** A tab click goes to the page holding that pane, focuses it, and points at its folder. */
+  const selectPane = (paneId: string) => {
+    const target = pageOfSession(currentView.slots, viewPageSize(currentView), paneId);
+    // A tab for a pane this view has no slot for — an orphaned document — gets one on the way.
+    if (target === null) openPane(paneId);
+    else setPage(target);
+    focusPane(paneId);
+    if (isDocumentPaneId(paneId)) return;
+    const session = sessions.find((candidate) => candidate.id === paneId);
+    if (session?.projectId) {
+      const projectId = session.projectId;
+      setExpandedProjects((current) => new Set(current).add(projectId));
+      flashFolder(projectId);
     }
   };
+
+  /** Page-relative slots are what the grid draws; the arrangement is addressed absolutely. */
+  const absoluteSlot = (index: number) => resolvedView.page * viewPageSize(currentView) + index;
+
+  /** Emptying a slot only takes the pane off screen — the session keeps running, the file stays open. */
+  const clearSlotAt = (index: number) => {
+    const paneId = resolvedView.slots[index] ?? null;
+    updateCurrentView((view) => clearSlot(view, absoluteSlot(index)));
+    if (paneId !== null && paneId === focusedPaneId) setFocusedPaneId(null);
+  };
+
+  /** Dropping onto a slot: two panes trade places, or an off-screen pane takes the empty slot. */
+  const dropPaneOnSlot = (index: number, paneId: string) => {
+    updateCurrentView((view) => placeInSlot(view, absoluteSlot(index), paneId));
+    focusPane(paneId);
+  };
+
+  /**
+   * Picking an arrangement is also picking how many panes fit, so a narrower layout pushes the rest
+   * onto later pages rather than dropping them. Going back to the first page keeps the pane the user
+   * was looking at in view — it is the one that stays put in every layout.
+   */
+  const chooseLayout = (layoutId: string) => {
+    updateCurrentView((view) => setLayout(view, layoutId));
+    setPage(0);
+  };
+
+  const selectWorkspace = (index: number) => {
+    const view = workspaces[index] ?? EMPTY_VIEW;
+    setWorkspaceIndex(index);
+    setPage(0);
+    setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
+    setActiveView("terminal");
+    setActionError(null);
+  };
+
+  /** A workspace is filled by hand only: a dropped pane takes the first free slot, or a new page. */
+  const dropPaneOnWorkspace = (index: number, paneId: string) => {
+    setWorkspaces((current) => current.map((view, at) => (at === index ? appendSession(view, paneId) : view)));
+  };
+
+  useEffect(() => {
+    revealSessionRef.current = revealSession;
+  });
 
   useEffect(
     () =>
       window.multiCliWork.navigation.onSessionRequested((sessionId) => {
         const session = sessionsRef.current.find((candidate) => candidate.id === sessionId);
-        if (!session) return;
-        setSelectedProjectId(session.projectId);
-        setSelectedSessionId(session.id);
-        setSelectedWorktreeId(session.worktreeId ?? null);
-        setActiveView("terminal");
-        setActionError(null);
-        if (!visibleSessionIdsRef.current.includes(session.id)) applyVisibleSessions([session.id]);
-        persistSelection(session.projectId, session.id);
+        if (session) revealSessionRef.current(session);
       }),
-    [persistSelection, applyVisibleSessions],
+    [],
   );
 
   /** A worktree behaves like a sub-folder: selecting it fills the grid with its own sessions. */
   const selectWorktree = (worktree: SharedWorktree) => {
     try { localStorage.setItem("multi-cli-work.last-workspace.v1", `worktree:${worktree.id}`); } catch { /* unavailable storage */ }
-    const paneIds = gridSessionsFor((session) => session.worktreeId === worktree.id);
-    applyVisibleSessions(paneIds);
+    const view = catchUpFolder(
+      folderViewKeyOf(worktree.projectId, worktree.id),
+      folderSessionIds((session) => session.worktreeId === worktree.id),
+    );
+    const first = view.slots.find((id): id is string => id !== null && !isDocumentPaneId(id)) ?? null;
+    setWorkspaceIndex(null);
+    setPage(0);
     setSelectedProjectId(worktree.projectId);
-    setSelectedSessionId(paneIds[0] ?? null);
+    setSelectedSessionId(first);
     setSelectedWorktreeId(worktree.id);
+    setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
     setExpandedProjects((current) => new Set(current).add(worktree.projectId));
     setActionError(null);
-    persistSelection(worktree.projectId, paneIds[0] ?? null);
+    persistSelection(worktree.projectId, first);
   };
 
   const openHome = () => setActiveView("home");
@@ -855,7 +1148,9 @@ export function App() {
 
   /** 작업중 folders stay open, and a group opens when it still owns one. Worktrees are left alone. */
   const expandWorking = () => {
-    const working = projects.filter((project) => !isFolderDone(project.status));
+    const working = projects.filter((project) =>
+      isFolderActive(sessions.filter((session) => session.projectId === project.id)),
+    );
     applyExpansion(
       new Set(working.map((project) => project.id)),
       new Set(
@@ -958,20 +1253,6 @@ export function App() {
     }
   };
 
-  /**
-   * A new session joins the panes already on screen when they share its folder, so starting a
-   * second agent puts the two side by side. Anything else — a full grid, another folder, a tool —
-   * gets the view to itself rather than mixing scopes behind the user's back.
-   */
-  const revealNewSession = (created: TerminalSessionView) => {
-    const sameScope = visibleSessions.every((pane) => pane.projectId === created.projectId);
-    applyVisibleSessions(
-      sameScope && visibleSessionIds.length < MAX_VISIBLE_SESSIONS
-        ? [...visibleSessionIds, created.id]
-        : [created.id],
-    );
-  };
-
   const startSession = async (project: SharedProject, kind: TerminalKind, worktreeId?: string) => {
     if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
     setPendingAction(true);
@@ -984,12 +1265,9 @@ export function App() {
         ...DEFAULT_TERMINAL_SIZE,
       });
       setSessions((current) => replaceSession(current, created));
-      revealNewSession(created);
-      setSelectedProjectId(project.id);
-      setSelectedSessionId(created.id);
-      setSelectedWorktreeId(worktreeId ?? null);
-      setActiveView("terminal");
-      persistSelection(project.id, created.id);
+      // The new pane takes the next free slot of its folder's grid — nothing already on screen is
+      // pushed off, which is the whole point of this release.
+      revealSession(created);
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -1003,11 +1281,7 @@ export function App() {
     try {
       const created = await window.multiCliWork.terminals.createTool({ tool, ...DEFAULT_TERMINAL_SIZE });
       setSessions((current) => replaceSession(current, created));
-      revealNewSession(created);
-      setSelectedProjectId(null);
-      setSelectedSessionId(created.id);
-      setActiveView("terminal");
-      persistSelection(null, created.id);
+      revealSession(created);
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -1102,9 +1376,10 @@ export function App() {
     try {
       await window.multiCliWork.terminals.remove(session.id);
       setSessions((current) => current.filter((candidate) => candidate.id !== session.id));
-      // The main process prunes its own copy of the pane list, so this only mirrors the result.
+      // Every arrangement drops the slot on its own once the session is gone; this only decides
+      // where the focus lands.
       const remaining = visibleSessionIds.filter((paneId) => paneId !== session.id);
-      setVisibleSessionIds(remaining);
+      if (focusedPaneId === session.id) setFocusedPaneId(remaining[0] ?? null);
       if (selectedSessionId === session.id) {
         // The focus falls to the first pane still standing; an empty grid keeps its launcher up.
         const nextPane = sessions.find((candidate) => candidate.id === remaining[0]) ?? null;
@@ -1124,6 +1399,28 @@ export function App() {
     await removeSessionById(session);
   };
 
+  /**
+   * Puts a pane on the grid being viewed — the first free slot, or a new one at the end. A document
+   * opened from the right sidebar lands here exactly as a session does, which is what makes the two
+   * interchangeable in a slot.
+   */
+  const openPane = (paneId: string) => {
+    const next = appendSession(currentView, paneId);
+    updateCurrentView(() => next);
+    setPage(pageOfSession(next.slots, viewPageSize(next), paneId) ?? 0);
+    setFocusedPaneId(paneId);
+    setActiveView("terminal");
+  };
+
+  /** A closed document leaves every arrangement — unlike a session, it has no life off the grid. */
+  const dropPaneEverywhere = (paneId: string) => {
+    setFolderViews((current) =>
+      Object.fromEntries(Object.entries(current).map(([key, view]) => [key, removeSession(view, paneId)])),
+    );
+    setWorkspaces((current) => current.map((view) => removeSession(view, paneId)));
+    setFocusedPaneId((current) => (current === paneId ? null : current));
+  };
+
   const openFile = (target: FileExplorerTarget, targetLabel: string, entry: FileTreeEntry): string => {
     if (entry.executable) {
       setExecutableRequest({ target, entry, error: null, running: false });
@@ -1131,8 +1428,7 @@ export function App() {
     }
     const id = fileTabId(target, entry.relativePath);
     if (openFileTabs.some((tab) => tab.id === id)) {
-      setSelectedFileTabId(id);
-      setActiveView("file");
+      openPane(documentPaneId("file", id));
       return id;
     }
     const category = categorizeFile(entry.name, entry.extension);
@@ -1155,8 +1451,7 @@ export function App() {
       truncated: false,
     };
     setOpenFileTabs((current) => [...current, tab]);
-    setSelectedFileTabId(id);
-    setActiveView("file");
+    openPane(documentPaneId("file", id));
     if (category === "unsupported") return id;
     void window.multiCliWork.workspaceFiles
       .readFile(target, entry.relativePath)
@@ -1283,10 +1578,7 @@ export function App() {
 
   const closeFileTabImmediately = (tabId: string) => {
     setOpenFileTabs((current) => current.filter((tab) => tab.id !== tabId));
-    if (selectedFileTabId === tabId) {
-      setSelectedFileTabId(null);
-      setActiveView(selectedProjectId ? "detail" : "home");
-    }
+    dropPaneEverywhere(documentPaneId("file", tabId));
   };
 
   const requestCloseFileTab = (tab: OpenFileTab) => {
@@ -1338,17 +1630,6 @@ export function App() {
           }
         : current,
     );
-  };
-
-  /** The 폴더 layer's status is set by hand and nowhere else — no session state feeds into it. */
-  const toggleProjectStatus = async (project: SharedProject) => {
-    try {
-      handleProjectSaved(
-        await window.multiCliWork.projects.update(project.id, { status: nextFolderStatus(project.status) }),
-      );
-    } catch (error) {
-      setActionError(errorMessage(error));
-    }
   };
 
   const relinkProject = async () => {
@@ -1581,6 +1862,22 @@ export function App() {
   const headerSession = activeView === "home" ? null : selectedSession;
   const headerSessionLabel = activeView === "home" ? null : selectedSessionLabel;
 
+  /**
+   * A workspace on screen replaces the folder identity in the header: it belongs to no single folder,
+   * so it is named by what it gathers instead. Documents count toward the panes but not the folders —
+   * the folder tally is about how many places the work in view comes from.
+   */
+  const headerWorkspace = useMemo(() => {
+    if (activeView !== "terminal" || workspaceIndex === null) return null;
+    const paneIds = currentView.slots.filter((id): id is string => id !== null);
+    const folders = new Set(
+      paneIds
+        .map((id) => sessions.find((session) => session.id === id)?.projectId ?? null)
+        .filter((projectId): projectId is string => projectId !== null),
+    );
+    return { index: workspaceIndex, paneCount: paneIds.length, folderCount: folders.size };
+  }, [activeView, workspaceIndex, currentView, sessions]);
+
   // The right-hand file explorer follows whatever the sidebar has selected — a worktree takes
   // precedence over its owning project, mirroring how the sidebar itself scopes a worktree's tree.
   const fileExplorerOwnerProject = selectedWorktree
@@ -1620,31 +1917,51 @@ export function App() {
     const worktree = worktrees.find((candidate) => candidate.id === worktreeId);
     if (worktree) selectWorktree(worktree);
   };
+  /** Opening a document twice moves the focus to the pane already holding it. */
+  const openDocument = (document: OpenDocument) => {
+    setDocuments((current) => (current.some((item) => item.id === document.id) ? current : [...current, document]));
+    openPane(document.id);
+  };
+
+  const closeDocument = (paneId: string) => {
+    setDocuments((current) => current.filter((document) => document.id !== paneId));
+    dropPaneEverywhere(paneId);
+  };
+
   const openGitDiff = (change: GitChangeEntry) => {
     if (!fileExplorerTarget) return;
-    if (activeView !== "git-diff") gitDiffReturnView.current = activeView;
-    setGitDiffFile({
-      target: fileExplorerTarget,
-      path: change.path,
-      status: change.status,
-      ...(change.renamedFrom !== undefined ? { renamedFrom: change.renamedFrom } : {}),
-      targetLabel: fileExplorerTargetLabel,
+    openDocument({
+      id: documentPaneId("diff", `${documentTargetKey(fileExplorerTarget)}:${change.path}`),
+      kind: "diff",
+      file: {
+        target: fileExplorerTarget,
+        path: change.path,
+        status: change.status,
+        ...(change.renamedFrom !== undefined ? { renamedFrom: change.renamedFrom } : {}),
+        targetLabel: fileExplorerTargetLabel,
+      },
     });
-    setActiveView("git-diff");
-  };
-  const closeGitDiff = () => {
-    setGitDiffFile(null);
-    setActiveView(gitDiffReturnView.current);
   };
   const openGitGraph = () => {
-    if (fileExplorerTarget) setActiveView("git-graph");
+    if (!fileExplorerTarget) return;
+    openDocument({
+      id: documentPaneId("graph", documentTargetKey(fileExplorerTarget)),
+      kind: "graph",
+      target: fileExplorerTarget,
+      targetLabel: fileExplorerTargetLabel,
+    });
   };
   const openPullRequest = (remoteName: string, item: PullRequestListItem) => {
     if (!fileExplorerOwnerProject) return;
-    setSelectedProjectId(fileExplorerOwnerProject.id);
-    setSelectedPullRequest({ projectId: fileExplorerOwnerProject.id, remoteName, number: item.number });
-    setActiveView("pull-request");
-    persistSelection(fileExplorerOwnerProject.id, null);
+    const owner = fileExplorerOwnerProject;
+    openDocument({
+      id: documentPaneId("pull-request", `${owner.id}:${remoteName}:${item.number}`),
+      kind: "pull-request",
+      projectId: owner.id,
+      remoteName,
+      number: item.number,
+      label: `#${item.number} ${item.title}`,
+    });
   };
   const refreshReviewWorkspace = async (sessionId?: string) => {
     const [nextSessions, nextWorktrees, nextViews, nextReviews] = await Promise.all([
@@ -1668,35 +1985,156 @@ export function App() {
     } catch (error) { setActionError(errorMessage(error)); }
   };
 
-  // Everything the grid is not showing, most recently active first — what a pane's +N menu swaps
-  // in. Exited sessions belong here too: their read-only scrollback is worth comparing against.
-  const hiddenSessions = useMemo<HiddenSessionCandidate[]>(() => {
-    const nameById = new Map(projects.map((project) => [project.id, projectName(project)]));
-    return [...sessions]
-      .filter((session) => !visibleSessionIds.includes(session.id))
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .map((session) => ({
-        sessionId: session.id,
-        label: sessionLabel(
-          session,
-          sessions.filter((peer) => peer.projectId === session.projectId),
-          agents,
-        ),
-        detail: session.projectId ? (nameById.get(session.projectId) ?? null) : "도구",
-      }));
-  }, [visibleSessionIds, sessions, projects, agents]);
-
   // Terminals only exist while the terminal view is up, so anything else empties the 편집 menu.
   // Before either pane has been clicked, the primary one is the obvious stand-in for "the terminal".
   const editTargetId =
     activeView === "terminal" ? (lastFocusedTerminalId ?? selectedSession?.id ?? null) : null;
   const canSaveFile = Boolean(
-    activeView === "file" &&
-      selectedFileTab &&
+    selectedFileTab &&
       ["markdown", "html", "text"].includes(selectedFileTab.category) &&
       !selectedFileTab.truncated &&
       selectedFileTab.encoding === "utf8",
   );
+
+  /** Every pane that already has a slot somewhere — the rest are orphans looking for one. */
+  const placedPaneIds = useMemo(() => {
+    const placed = new Set<string>();
+    for (const view of Object.values(folderViews)) for (const id of view.slots) if (id) placed.add(id);
+    for (const view of workspaces) for (const id of view.slots) if (id) placed.add(id);
+    return placed;
+  }, [folderViews, workspaces]);
+
+  /**
+   * The tab bar lists every pane this view can show, page or no page: the folder's sessions in
+   * creation order, then the documents it holds — plus any document with no slot at all, so one
+   * closed out of a grid is never stranded.
+   */
+  const viewTabs = useMemo<ViewTab[]>(() => {
+    const onScreen = new Set(resolvedView.slots.filter((id): id is string => id !== null));
+    const inWorkspace = workspaceIndex !== null;
+    const nameById = new Map(projects.map((project) => [project.id, projectName(project)]));
+    const sessionTab = (session: TerminalSessionView): ViewTab => ({
+      id: session.id,
+      kind: "session",
+      label: sessionLabel(session, sessions.filter((peer) => peer.projectId === session.projectId), agents),
+      detail: inWorkspace ? (session.projectId ? (nameById.get(session.projectId) ?? null) : "도구") : null,
+      onScreen: onScreen.has(session.id),
+      status: session.status,
+      agent: session.kind,
+    });
+    const documentTab = (pane: DocumentPane): ViewTab => ({
+      id: pane.id,
+      kind: "document",
+      label: pane.label,
+      detail: inWorkspace ? pane.detail : null,
+      onScreen: onScreen.has(pane.id),
+      document: pane.kind,
+      dirty: pane.dirty,
+    });
+    if (inWorkspace) {
+      // A workspace holds only what was dropped into it, so its tabs are its slots, in slot order.
+      return currentView.slots
+        .filter((id): id is string => id !== null)
+        .map((id) => {
+          const pane = documentPanes.find((candidate) => candidate.id === id);
+          if (pane) return documentTab(pane);
+          const session = sessions.find((candidate) => candidate.id === id);
+          return session ? sessionTab(session) : null;
+        })
+        .filter((tab): tab is ViewTab => tab !== null);
+    }
+    return [
+      ...[...surfaceSessions]
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .map(sessionTab),
+      ...documentPanes
+        .filter((pane) => currentView.slots.includes(pane.id) || !placedPaneIds.has(pane.id))
+        .map(documentTab),
+    ];
+  }, [
+    resolvedView,
+    workspaceIndex,
+    currentView,
+    surfaceSessions,
+    documentPanes,
+    placedPaneIds,
+    sessions,
+    projects,
+    agents,
+  ]);
+
+  /** Builds what a slot draws. The grid knows nothing about viewers; this is where they are chosen. */
+  const paneContentFor = (paneId: string): PaneContent | null => {
+    if (!isDocumentPaneId(paneId)) {
+      const session = sessions.find((candidate) => candidate.id === paneId);
+      return session ? { kind: "session", session } : null;
+    }
+    const pane = documentPanes.find((candidate) => candidate.id === paneId);
+    if (!pane) return null;
+    const fileTab = openFileTabs.find((tab) => documentPaneId("file", tab.id) === paneId);
+    if (fileTab) {
+      return {
+        kind: "document",
+        document: pane,
+        content:
+          fileTab.category === "html" ? (
+            <HtmlView
+              tab={fileTab}
+              onChangeContent={(content) => updateFileTabContent(fileTab.id, content)}
+              onSave={() => void saveFileTab(fileTab.id)}
+              onClose={() => requestCloseFileTab(fileTab)}
+            />
+          ) : (
+            <FileViewerPane
+              tab={fileTab}
+              onChangeContent={(content) => updateFileTabContent(fileTab.id, content)}
+              onAutoSaveContent={(content) => void saveFileTab(fileTab.id, content)}
+              onSave={() => void saveFileTab(fileTab.id)}
+              onClose={() => requestCloseFileTab(fileTab)}
+              onForceOpen={() => forceOpenFileTab(fileTab.id)}
+              onOpenRelativePath={(relativePath, anchor) => openRelativeFile(fileTab, relativePath, anchor)}
+            />
+          ),
+      };
+    }
+    const document = documents.find((candidate) => candidate.id === paneId);
+    if (!document) return null;
+    if (document.kind === "diff") {
+      return {
+        kind: "document",
+        document: pane,
+        content: (
+          <Suspense fallback={<div className="git-diff-state">불러오는 중</div>}>
+            <GitDiffPane file={document.file} onClose={() => closeDocument(paneId)} />
+          </Suspense>
+        ),
+      };
+    }
+    if (document.kind === "graph") {
+      return {
+        kind: "document",
+        document: pane,
+        content: <GitGraphEmbed target={document.target} targetLabel={document.targetLabel} />,
+      };
+    }
+    return {
+      kind: "document",
+      document: pane,
+      content: (
+        <PullRequestDetailView
+          projectId={document.projectId}
+          remoteName={document.remoteName}
+          prNumber={document.number}
+          onReviewOpened={(sessionId) => void refreshReviewWorkspace(sessionId)}
+          onWorkspaceChanged={() => void refreshReviewWorkspace()}
+        />
+      ),
+    };
+  };
+
+  const gridSlots = resolvedView.slots.map((paneId) => (paneId === null ? null : paneContentFor(paneId)));
+  /** How many of this page's slots are filled — what 자동 arranges around. */
+  const gridPaneCount = gridSlots.filter((slot) => slot !== null).length;
 
   const titleBarMenus = useMemo(
     () =>
@@ -1848,7 +2286,6 @@ export function App() {
         onAddProject={() => void addProject()}
         onSelectProject={selectProject}
         onToggleProject={toggleProject}
-        onToggleProjectStatus={(project) => void toggleProjectStatus(project)}
         onExpandAll={expandAll}
         onCollapseAll={collapseAll}
         onExpandWorking={expandWorking}
@@ -1860,12 +2297,14 @@ export function App() {
         onProjectSaved={handleProjectSaved}
         onCloseEditor={() => setEditingProjectId(null)}
         onRestoreBackup={() => void restoreFromBackup()}
+        workspacePaneCounts={workspaces.map((view) => view.slots.filter((id) => id !== null).length)}
+        selectedWorkspaceIndex={activeView === "terminal" ? workspaceIndex : null}
+        onSelectWorkspace={selectWorkspace}
+        onDropPaneOnWorkspace={dropPaneOnWorkspace}
+        flashProjectId={flashProjectId}
         openFileTabs={openFileTabs}
-        selectedFileTabId={activeView === "file" ? selectedFileTabId : null}
-        onSelectFileTab={(tab) => {
-          setSelectedFileTabId(tab.id);
-          setActiveView("file");
-        }}
+        selectedFileTabId={selectedFileTab?.id ?? null}
+        onSelectFileTab={(tab) => selectPane(documentPaneId("file", tab.id))}
         onCloseFileTab={requestCloseFileTab}
       />
 
@@ -1882,6 +2321,7 @@ export function App() {
 
       <main className="terminal-workspace" aria-label="터미널 작업 영역">
         <WorkspaceHeader
+          workspace={headerWorkspace}
           selectedProject={headerProject}
           selectedSession={headerSession}
           selectedSessionLabel={headerSessionLabel}
@@ -1945,85 +2385,70 @@ export function App() {
               <TriangleAlert size={22} />
               <h2>작업 영역을 불러오지 못했습니다</h2>
             </section>
-          ) : activeView === "terminal" && visibleSessions.length > 0 ? (
-            <WorkspaceGrid
-              sessions={visibleSessions}
-              allSessions={sessions}
-              agents={agents}
-              focusedSessionId={selectedSessionId}
-              renamingSessionId={renamingSessionId}
-              refreshRequests={refreshRequests}
-              refreshingSessionIds={refreshingSessionIds}
-              pendingAction={pendingAction}
-              isProjectMissing={isProjectMissing}
-              hiddenSessions={hiddenSessions}
-              onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
-              onRefreshComplete={finishSessionRefresh}
-              onError={(message) => setActionError(message)}
-              onRegisterCommands={registerTerminalCommands}
-              onTerminalFocused={setLastFocusedTerminalId}
-              onFocusPane={focusPane}
-              onResumeSession={(session) => void resumeSession(session)}
-              onRefreshSession={(sessionId) => void refreshSession(sessionId)}
-              onStopSession={(session) => void stopSession(session)}
-              onClosePane={closePane}
-              onSwapSession={swapPaneSession}
-              onSessionContextMenu={(session, event) => {
-                event.preventDefault();
-                setSessionMenu({
-                  session,
-                  label: sessionLabel(
+          ) : activeView === "terminal" && (gridPaneCount > 0 || viewTabs.length > 0) ? (
+            <div className="workspace-panes">
+              <LayoutPicker layoutId={currentView.layoutId} paneCount={gridPaneCount} onSelect={chooseLayout} />
+              <PaneTabBar
+                tabs={viewTabs}
+                agents={agents}
+                activePaneId={focusedPaneId}
+                page={resolvedView.page}
+                pageCount={resolvedView.pages}
+                onSelect={selectPane}
+                onPageChange={setPage}
+              />
+              <WorkspaceGrid
+                layout={resolvedView.layout}
+                slots={gridSlots}
+                allSessions={sessions}
+                agents={agents}
+                focusedPaneId={focusedPaneId}
+                renamingSessionId={renamingSessionId}
+                refreshRequests={refreshRequests}
+                refreshingSessionIds={refreshingSessionIds}
+                pendingAction={pendingAction}
+                isProjectMissing={isProjectMissing}
+                onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
+                onRefreshComplete={finishSessionRefresh}
+                onError={(message) => setActionError(message)}
+                onRegisterCommands={registerTerminalCommands}
+                onTerminalFocused={setLastFocusedTerminalId}
+                onFocusPane={focusPane}
+                onResumeSession={(session) => void resumeSession(session)}
+                onRefreshSession={(sessionId) => void refreshSession(sessionId)}
+                onStopSession={(session) => void stopSession(session)}
+                onClearSlot={clearSlotAt}
+                onDropPane={dropPaneOnSlot}
+                onSessionContextMenu={(session, event) => {
+                  event.preventDefault();
+                  setSessionMenu({
                     session,
-                    sessions.filter((candidate) => candidate.projectId === session.projectId),
-                    agents,
-                  ),
-                  x: event.clientX,
-                  y: event.clientY,
-                });
-              }}
-              onStartRename={setRenamingSessionId}
-              onRenameSession={(sessionId, name) => void renameSession(sessionId, name)}
-              onCancelRename={() => setRenamingSessionId(null)}
-            />
+                    label: sessionLabel(
+                      session,
+                      sessions.filter((candidate) => candidate.projectId === session.projectId),
+                      agents,
+                    ),
+                    x: event.clientX,
+                    y: event.clientY,
+                  });
+                }}
+                onStartRename={setRenamingSessionId}
+                onRenameSession={(sessionId, name) => void renameSession(sessionId, name)}
+                onCancelRename={() => setRenamingSessionId(null)}
+              />
+            </div>
+          ) : activeView === "terminal" && workspaceIndex !== null ? (
+            <section className="terminal-empty">
+              <SquareTerminal size={22} />
+              <h2>작업공간{workspaceIndex + 1}이 비어 있습니다</h2>
+              <p>세션이나 문서 탭을 사이드바의 이 작업공간 행으로 끌어다 놓으세요.</p>
+            </section>
           ) : activeView === "terminal" && selectedProject ? (
             <section className="terminal-empty">
               <SquareTerminal size={22} />
               <h2>{projectName(selectedProject)}에 세션이 없습니다</h2>
               <p>위 도구 모음에서 에이전트를 골라 첫 세션을 시작하세요.</p>
             </section>
-          ) : activeView === "file" && selectedFileTab && selectedFileTab.category === "html" ? (
-            <HtmlView
-              tab={selectedFileTab}
-              onChangeContent={(content) => updateFileTabContent(selectedFileTab.id, content)}
-              onSave={() => void saveFileTab(selectedFileTab.id)}
-              onClose={() => requestCloseFileTab(selectedFileTab)}
-            />
-          ) : activeView === "file" && selectedFileTab ? (
-            <FileViewerPane
-              tab={selectedFileTab}
-              onChangeContent={(content) => updateFileTabContent(selectedFileTab.id, content)}
-              onAutoSaveContent={(content) => void saveFileTab(selectedFileTab.id, content)}
-              onSave={() => void saveFileTab(selectedFileTab.id)}
-              onClose={() => requestCloseFileTab(selectedFileTab)}
-              onForceOpen={() => forceOpenFileTab(selectedFileTab.id)}
-              onOpenRelativePath={(relativePath, anchor) =>
-                openRelativeFile(selectedFileTab, relativePath, anchor)
-              }
-            />
-          ) : activeView === "git-diff" && gitDiffFile ? (
-            <Suspense fallback={<div className="git-diff-state">불러오는 중</div>}>
-              <GitDiffPane file={gitDiffFile} onClose={closeGitDiff} />
-            </Suspense>
-          ) : activeView === "git-graph" && fileExplorerTarget ? (
-            <GitGraphEmbed target={fileExplorerTarget} targetLabel={fileExplorerTargetLabel} />
-          ) : activeView === "pull-request" && selectedPullRequest ? (
-            <PullRequestDetailView
-              projectId={selectedPullRequest.projectId}
-              remoteName={selectedPullRequest.remoteName}
-              prNumber={selectedPullRequest.number}
-              onReviewOpened={(sessionId) => void refreshReviewWorkspace(sessionId)}
-              onWorkspaceChanged={() => void refreshReviewWorkspace()}
-            />
           ) : activeView === "work-project" && selectedWorkProject ? (
             <WorkProjectDetailPage
               key={selectedWorkProject.id}
@@ -2137,7 +2562,7 @@ export function App() {
         onOpenDiff={openGitDiff}
         onOpenGraph={openGitGraph}
         projectId={fileExplorerOwnerProject?.id ?? null}
-        selectedPullRequest={selectedPullRequest ? { projectId: selectedPullRequest.projectId, remoteName: selectedPullRequest.remoteName, prNumber: selectedPullRequest.number } : null}
+        selectedPullRequest={focusedPullRequest ? { projectId: focusedPullRequest.projectId, remoteName: focusedPullRequest.remoteName, prNumber: focusedPullRequest.number } : null}
         onOpenPullRequest={openPullRequest}
       />
 
@@ -2147,8 +2572,6 @@ export function App() {
           x={contextMenu.x}
           y={contextMenu.y}
           vscodeAvailable={availability.vscode}
-          done={isFolderDone(contextMenu.project.status)}
-          onToggleStatus={() => void toggleProjectStatus(contextMenu.project)}
           workProjectOptions={workProjects.map((workProject) => ({
             id: workProject.id,
             name: workProject.name,

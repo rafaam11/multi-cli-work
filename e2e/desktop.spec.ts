@@ -52,16 +52,49 @@ async function attachScreenshot(name: string): Promise<void> {
 const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`);
 
 /**
+ * A pane's tab. Every pane the view holds has one whatever page it sits on, and the accessible name
+ * carries the status the dot reports before the label — so the label is matched at the end of it.
+ */
+const paneTab = (label: string) => page.getByRole("tab", { name: new RegExp(`${label}$`) });
+
+/**
  * Leaves a single pane on screen. Opening a folder brings up every session it has, so a test that
- * drives one terminal closes the rest first — closing a pane never touches the session behind it.
+ * drives one terminal empties the other slots first — a slot emptied here keeps its session running
+ * and keeps its tab, so nothing is lost by it.
  */
 async function soloPane(label: string): Promise<void> {
   const others = page.locator(`.grid-pane:not([aria-label="${label}"])`);
   for (let remaining = await others.count(); remaining > 0; remaining = await others.count()) {
-    await others.first().getByRole("button", { name: "패인 닫기" }).click();
+    await others.first().getByRole("button", { name: "슬롯 비우기" }).click();
     await expect(others).toHaveCount(remaining - 1);
   }
   await expect(page.locator(".grid-pane")).toHaveCount(1);
+}
+
+/**
+ * Drops a pane's tab on a sidebar row. Electron hands Playwright no real HTML5 drag, so the
+ * platform's own drag machinery cannot carry this one: the three events a drop is made of are
+ * dispatched here instead, sharing a single DataTransfer exactly as the platform would. What the app
+ * does with them — the payload type, the drop handler, the workspace it lands in — is untouched.
+ */
+async function dragTabOnto(label: string, targetLabelPrefix: string): Promise<void> {
+  await page.evaluate(
+    ({ label, targetLabelPrefix }) => {
+      const tab = [...document.querySelectorAll<HTMLElement>(".session-tab")].find(
+        (candidate) => candidate.querySelector(".session-tab-label")?.textContent?.trim() === label,
+      );
+      const target = document.querySelector<HTMLElement>(`[aria-label^="${targetLabelPrefix}"]`);
+      if (!tab || !target) throw new Error(`drag ${label} → ${targetLabelPrefix}: source or target missing`);
+      const dataTransfer = new DataTransfer();
+      const fire = (element: HTMLElement, type: string) =>
+        element.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer }));
+      fire(tab, "dragstart");
+      fire(target, "dragover");
+      fire(target, "drop");
+      fire(tab, "dragend");
+    },
+    { label, targetLabelPrefix },
+  );
 }
 
 /** Deleting a session for good now goes through the pane header's context menu. */
@@ -286,7 +319,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
     // The new session joins the folder's grid, and this test drives a single PTY — solo it.
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "2");
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
     await soloPane(`${SHELL_LABEL} 2`);
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await terminal.click();
@@ -393,6 +426,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.getByLabel("PR 상태").selectOption("open");
     await page.getByText("Open PR", { exact: true }).click();
     await expect(page.getByRole("region", { name: "PR #1 상세" })).toBeVisible();
+    // A PR is read in a pane of its own — the diff needs the width, and the terminals it was sharing
+    // the grid with keep running behind their tabs.
+    await soloPane("#1 Open PR");
     await page.getByRole("tab", { name: /변경 파일/ }).click();
     await page.getByRole("button", { name: /README\.md/ }).click();
     await expect(page.locator(".pr-diff-line.add")).toContainText("readme");
@@ -490,9 +526,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const terminal = page.getByRole("region", { name: "echo-agent 터미널" });
     await expect(terminal).toBeVisible();
     await expect(terminal.locator(".xterm-rows")).toContainText("MCW_CUSTOM_AGENT_READY");
-    // It joins the folder's grid rather than replacing the session that was already on screen.
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "2");
+    // It takes the next free slot of the folder's grid rather than replacing what was on screen.
     await expect(pane("Echo Agent")).toBeVisible();
+    await expect(pane(SHELL_LABEL)).toBeVisible();
     await attachScreenshot("custom-agent");
 
     // The row grows with every agent the user adds, so at the narrowest supported window it has to
@@ -557,8 +593,12 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // Fan one prompt out to every live session of the project (worktree + Echo Agent).
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    // Three sessions in the folder: the grid takes a 2×2 without anyone choosing a split.
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "3");
+    // The folder's grid holds every session it has, the worktree's included — nothing was pushed off
+    // to make room for the new one. Two unnamed shells of one project are numbered, so the first
+    // session takes the "1" suffix from here until the worktree is removed again.
+    await expect(pane(`${SHELL_LABEL} 1`)).toBeVisible();
+    await expect(pane(`${SHELL_LABEL} 2`)).toBeVisible();
+    await expect(pane("Echo Agent")).toBeVisible();
     await page.getByRole("button", { name: "폴더 상세" }).click();
     await page.getByRole("button", { name: "프롬프트 팬아웃" }).click();
     const fanOut = page.getByRole("dialog", { name: "프롬프트 팬아웃" });
@@ -652,8 +692,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await app.close();
     ({ app, page } = await launchApp());
 
-    // The whole grid comes back, not just the one session that had the focus.
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "2");
+    // The whole arrangement comes back, not just the one session that had the focus. Documents are
+    // not saved across a run, so what is restored is the two sessions and the layout they were on.
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
     await expect(pane("Echo Agent")).toBeVisible();
     await expect(pane(SHELL_LABEL).getByRole("button", { name: "세션 재개" })).toBeVisible();
   });
@@ -699,17 +740,60 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       .click();
     await expect(pane("Echo Agent")).toBeVisible();
 
-    // Closing a pane only takes it off screen: the session waits in the +N menu, still running,
-    // and swapping it back in replays everything it kept saying while it was hidden.
-    await pane(SHELL_LABEL).getByRole("button", { name: "패인 닫기" }).click();
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "1");
-    await page.getByRole("button", { name: "화면 밖 세션 1개와 교체" }).click();
-    await page
-      .getByRole("menu", { name: "이 패인에 표시할 세션 선택" })
-      .getByRole("menuitem", { name: SHELL_LABEL })
-      .click();
+    // Emptying a slot only takes the pane off screen: the session keeps running and keeps its tab,
+    // and the tab puts it back — with everything it went on saying while it was away, and without
+    // displacing the pane that stayed.
+    await pane(SHELL_LABEL).getByRole("button", { name: "슬롯 비우기" }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "1");
+    await expect(pane(SHELL_LABEL)).toBeHidden();
+    await paneTab(SHELL_LABEL).click();
     await expect(pane(SHELL_LABEL).locator(".xterm-rows")).toContainText("MCW_PANE_SHELL");
+    await expect(pane("Echo Agent")).toBeVisible();
+  });
+
+  /**
+   * The three ways a pane is put where the user wants it: the tab bar reaches one on any page, the
+   * layout row decides how many fit at once (the rest paginate rather than disappear), and a tab
+   * dragged onto a workspace row builds a screen out of panes picked by hand.
+   */
+  test("moves panes by tab, layout and page, and fills a workspace by dragging a tab", async () => {
+    const layoutBar = page.locator(".layout-bar");
+    const workspaceRow = page.getByRole("button", { name: /작업공간1 열기/ });
+
+    // A tab click moves the focus; it rearranges nothing.
+    await paneTab(SHELL_LABEL).click();
+    await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", SHELL_LABEL);
+
+    // The layout is what says how many panes a page holds. Down to one, and the second session is
+    // not gone — it is on page two, still running, still a tab.
+    await layoutBar.getByRole("radio", { name: "전체 (1칸)" }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "solo");
+    await expect(page.locator(".grid-pane")).toHaveCount(1);
+    await expect(pane("Echo Agent")).toBeVisible();
+    await expect(paneTab(SHELL_LABEL)).toBeVisible();
+    await expect(page.getByLabel("2페이지 중 1페이지")).toBeVisible();
+
+    await page.getByRole("button", { name: "다음 페이지" }).click();
+    await expect(page.getByLabel("2페이지 중 2페이지")).toBeVisible();
+    await expect(pane(SHELL_LABEL)).toBeVisible();
     await expect(pane("Echo Agent")).toBeHidden();
+
+    // Dragging a tab onto 작업공간1 copies a reference: the pane keeps its place in the folder too.
+    await dragTabOnto("Echo Agent", "작업공간1 열기");
+    await expect(page.getByRole("button", { name: "작업공간1 열기 (패인 1개)" })).toBeVisible();
+    await workspaceRow.click();
+    await expect(page.locator(".workspace-title")).toHaveText("작업공간1");
+    await expect(pane("Echo Agent")).toBeVisible();
+    await expect(pane(SHELL_LABEL)).toBeHidden();
+    await attachScreenshot("workspace-shelf");
+
+    // Back to the folder, which kept both panes and the layout it was left on.
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "solo");
+    await layoutBar.getByRole("radio", { name: "자동" }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
+    await expect(pane(SHELL_LABEL)).toBeVisible();
+    await expect(pane("Echo Agent")).toBeVisible();
   });
 
   /**
@@ -723,9 +807,13 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
-    // The replay is measured in columns, so this one keeps the full width to itself.
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "3");
+    // The replay is measured in columns, so this one keeps the full width to itself. Emptying the
+    // other slots is not enough: a folder view refills itself every time it is opened, so the layout
+    // — which is what actually decides how many panes a page holds — is pinned to one as well.
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "3");
     await soloPane(`${SHELL_LABEL} 2`);
+    await page.locator(".layout-bar").getByRole("radio", { name: "전체 (1칸)" }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "1");
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
     await terminal.click();
@@ -762,10 +850,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("region", { name: "홈 대시보드" })).toBeVisible();
     await expect(terminal).toBeHidden();
 
-    // Coming back through the home monitor: the session is already a pane, so the grid stays a
-    // single pane and the terminal keeps the width the marker was measured against.
+    // Coming back through the home monitor lands on the page this session is on, and the one-pane
+    // layout means the terminal keeps the width the marker was measured against.
     await page.getByRole("button", { name: `${SHELL_LABEL} 2 세션으로 이동` }).click();
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-panes", "1");
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "1");
     await expect(terminal).toBeVisible();
     await expect(page.locator(".xterm-rows").first()).toContainText("MCWCOL");
 

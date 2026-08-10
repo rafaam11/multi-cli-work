@@ -1,26 +1,30 @@
-import type { ProjectStatus } from "@shared/project-types";
+import type { TerminalStatus } from "@shared/terminal-types";
 
 /**
- * The 폴더 layer's status is the one colour in the sidebar the user sets by hand — session rows keep
- * deriving theirs from the PTY. `SharedProject.status` has carried four values since the registry
- * was written, but the sidebar only ever offers a toggle, so this module reads that field as a
- * binary: 완료, or still being worked on.
+ * A folder's colour is derived, not declared. The hand-set 완료 toggle went away in v1.14.0: it
+ * asked the user to keep a second, manual record of something the sessions already say out loud,
+ * and it drifted the moment they forgot to flip it back.
  *
- * 보류/보관 stay valid in the registry and simply read as 작업중 here. Nothing in the UI can produce
- * them, and giving them a colour of their own would mean a toggle with no way back.
+ * Amber means an agent is actually running in that folder right now — starting up, working, or
+ * stopped to ask something. Everything else, including a folder with no sessions at all, is green.
+ * `SharedProject.status` still lives in the registry for the work-project layer; the sidebar simply
+ * stopped reading it.
  *
- * The colours live in index.css keyed by `folderStatusClass`, the same one-place mapping
+ * The colours live in index.css keyed by `folderActivityClass`, the same one-place mapping
  * work-project-accent.ts uses for the group rails.
  */
-export function isFolderDone(status: ProjectStatus | null): boolean {
-  return status === "완료";
+const ACTIVE_STATUSES: ReadonlySet<TerminalStatus> = new Set<TerminalStatus>([
+  "starting",
+  "working",
+  "awaiting-input",
+  "awaiting-approval",
+]);
+
+/** True while at least one of the folder's sessions has an agent doing something. */
+export function isFolderActive(sessions: readonly { status: TerminalStatus }[]): boolean {
+  return sessions.some((session) => ACTIVE_STATUSES.has(session.status));
 }
 
-/** The toggle's round trip, closed: 완료 and 진행중 are the only two values it ever writes. */
-export function nextFolderStatus(status: ProjectStatus | null): ProjectStatus {
-  return isFolderDone(status) ? "진행중" : "완료";
-}
-
-export function folderStatusClass(status: ProjectStatus | null): string {
-  return isFolderDone(status) ? "folder-done" : "folder-working";
+export function folderActivityClass(sessions: readonly { status: TerminalStatus }[]): string {
+  return isFolderActive(sessions) ? "folder-active" : "folder-idle";
 }

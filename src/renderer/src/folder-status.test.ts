@@ -1,55 +1,52 @@
+import type { TerminalStatus } from "@shared/terminal-types";
 import { describe, expect, it } from "vitest";
-import type { ProjectStatus } from "@shared/project-types";
-import { folderStatusClass, isFolderDone, nextFolderStatus } from "./folder-status";
+import { folderActivityClass, isFolderActive } from "./folder-status";
 
-const ALL_STATUSES: Array<ProjectStatus | null> = [null, "진행중", "보류", "완료", "보관"];
+const ALL_STATUSES: TerminalStatus[] = [
+  "starting",
+  "working",
+  "awaiting-input",
+  "awaiting-approval",
+  "idle",
+  "exited",
+  "error",
+];
 
-describe("isFolderDone", () => {
-  it("treats only 완료 as done", () => {
-    expect(isFolderDone("완료")).toBe(true);
-    expect(isFolderDone("진행중")).toBe(false);
+function sessions(...statuses: TerminalStatus[]) {
+  return statuses.map((status) => ({ status }));
+}
+
+describe("isFolderActive", () => {
+  it("counts a folder active while an agent is running or waiting on the user", () => {
+    expect(isFolderActive(sessions("starting"))).toBe(true);
+    expect(isFolderActive(sessions("working"))).toBe(true);
+    expect(isFolderActive(sessions("awaiting-input"))).toBe(true);
+    expect(isFolderActive(sessions("awaiting-approval"))).toBe(true);
   });
 
-  it("reads a folder that was never touched as still being worked on", () => {
-    expect(isFolderDone(null)).toBe(false);
+  it("leaves a folder quiet when nothing is running", () => {
+    expect(isFolderActive(sessions("idle", "exited", "error"))).toBe(false);
   });
 
-  it("reads the statuses the sidebar cannot produce as 작업중 rather than a missing state", () => {
-    expect(isFolderDone("보류")).toBe(false);
-    expect(isFolderDone("보관")).toBe(false);
-  });
-});
-
-describe("nextFolderStatus", () => {
-  it("closes the round trip between the two values the toggle writes", () => {
-    expect(nextFolderStatus("진행중")).toBe("완료");
-    expect(nextFolderStatus("완료")).toBe("진행중");
+  it("reads an empty folder as quiet rather than unknown", () => {
+    expect(isFolderActive([])).toBe(false);
   });
 
-  it("sends every other status into 완료 on the first press", () => {
-    expect(nextFolderStatus(null)).toBe("완료");
-    expect(nextFolderStatus("보류")).toBe("완료");
-    expect(nextFolderStatus("보관")).toBe("완료");
-  });
-
-  it("never leaves a folder in a status the toggle cannot move again", () => {
-    for (const status of ALL_STATUSES) {
-      const next = nextFolderStatus(status);
-      expect(nextFolderStatus(next)).not.toBe(next);
-    }
+  it("takes one busy session as enough, whatever the others are doing", () => {
+    expect(isFolderActive(sessions("idle", "exited", "working"))).toBe(true);
   });
 });
 
-describe("folderStatusClass", () => {
-  it("gives each of the two visual states its own class", () => {
-    expect(folderStatusClass("완료")).toBe("folder-done");
-    expect(folderStatusClass("진행중")).toBe("folder-working");
-    expect(folderStatusClass(null)).toBe("folder-working");
+describe("folderActivityClass", () => {
+  it("names the two colours the sidebar can paint", () => {
+    expect(folderActivityClass(sessions("working"))).toBe("folder-active");
+    expect(folderActivityClass(sessions("idle"))).toBe("folder-idle");
+    expect(folderActivityClass([])).toBe("folder-idle");
   });
 
-  it("lands on exactly two classes across every status the registry accepts", () => {
-    expect(new Set(ALL_STATUSES.map(folderStatusClass))).toEqual(
-      new Set(["folder-done", "folder-working"]),
+  it("never invents a third class, whatever a session reports", () => {
+    expect(new Set(ALL_STATUSES.map((status) => folderActivityClass(sessions(status))))).toEqual(
+      new Set(["folder-active", "folder-idle"]),
     );
   });
 });

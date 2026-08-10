@@ -1,8 +1,10 @@
 import type { AgentDefinition, AgentId } from "../../shared/agent-types";
 import {
   MAX_VISIBLE_SESSIONS,
+  WORKSPACE_COUNT,
   type AppStateV1,
   type PersistedTerminalSession,
+  type SlotViewState,
 } from "../../shared/app-state-types";
 import type {
   CreateTerminalInput,
@@ -46,6 +48,27 @@ const AUTO_RESUME_ROWS = 24;
  * processes starting together. The rest wait their turn; nothing is dropped.
  */
 const MAX_CONCURRENT_AUTO_RESUMES = 2;
+
+/**
+ * Every saved view with this session replaced by an empty slot. Keys the state file never had stay
+ * absent, so removing a session from a state file that predates saved views leaves its shape alone.
+ */
+function clearSessionFromViews(state: AppStateV1, sessionId: string): Partial<AppStateV1> {
+  const clear = (view: SlotViewState): SlotViewState => ({
+    layoutId: view.layoutId,
+    slots: view.slots.map((id) => (id === sessionId ? null : id)),
+  });
+  return {
+    ...(state.folderViews
+      ? {
+          folderViews: Object.fromEntries(
+            Object.entries(state.folderViews).map(([projectId, view]) => [projectId, clear(view)]),
+          ),
+        }
+      : {}),
+    ...(state.workspaces ? { workspaces: state.workspaces.map(clear) } : {}),
+  };
+}
 
 /** Written into the session log before an auto-resume, so the boundary survives later re-reads. */
 export function resumeSeparatorText(nowIso: string): string {
@@ -406,6 +429,9 @@ export class TerminalCoordinator {
           sessions,
           selectedSessionId: state.selectedSessionId === sessionId ? null : state.selectedSessionId,
           visibleSessionIds: state.visibleSessionIds?.filter((id) => id !== sessionId),
+          // A removed session leaves a hole rather than pulling the rest up: every other pane keeps
+          // the slot the user put it in. Parsing drops the hole when it is the last slot.
+          ...clearSessionFromViews(state, sessionId),
         };
       },
       { statePath: this.options.statePath },
@@ -453,7 +479,7 @@ export class TerminalCoordinator {
     return { state, source: "primary" as const, writable: true };
   }
 
-  /** Which sessions fill the grid panes, in pane order; an empty array collapses the grid. */
+  /** Which sessions fill the grid panes on the current page; an empty array collapses the grid. */
   async setVisibleSessions(sessionIds: readonly string[]) {
     const unique = [...new Set(sessionIds)];
     if (unique.length > MAX_VISIBLE_SESSIONS) {
@@ -464,6 +490,34 @@ export class TerminalCoordinator {
     }
     const state = await updateAppState(
       (current) => ({ ...current, visibleSessionIds: unique.length > 0 ? unique : undefined }),
+      { statePath: this.options.statePath },
+    );
+    return { state, source: "primary" as const, writable: true };
+  }
+
+  /**
+   * The saved arrangements — each folder's grid and the curated workspaces. Unlike the visible
+   * list, these outlive the sessions in them: a slot holding a session that has since gone is
+   * cleared rather than rejected, so a stale renderer save cannot fail the whole write.
+   */
+  async setSlotViews(input: { folderViews: Record<string, SlotViewState>; workspaces: SlotViewState[] }) {
+    const known = (slots: readonly (string | null)[]) =>
+      slots.map((id) => (id !== null && this.views.has(id) ? id : null));
+    const folderViews = Object.fromEntries(
+      Object.entries(input.folderViews).map(([projectId, view]) => [
+        projectId,
+        { layoutId: view.layoutId, slots: known(view.slots) },
+      ]),
+    );
+    const workspaces = input.workspaces
+      .slice(0, WORKSPACE_COUNT)
+      .map((view) => ({ layoutId: view.layoutId, slots: known(view.slots) }));
+    const state = await updateAppState(
+      (current) => ({
+        ...current,
+        folderViews: Object.keys(folderViews).length > 0 ? folderViews : undefined,
+        workspaces: workspaces.length > 0 ? workspaces : undefined,
+      }),
       { statePath: this.options.statePath },
     );
     return { state, source: "primary" as const, writable: true };

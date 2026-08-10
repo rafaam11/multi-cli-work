@@ -273,9 +273,6 @@ export function TerminalPane({
     // The replay is the PTY's own output, stored at the width the PTY wrote it. A terminal still on
     // xterm's 80x24 default re-wraps every one of those lines — padded ones fold into blank lines —
     // and the later fit cannot fully undo it. Size this terminal, and the PTY, before asking for it.
-    // The replay is the PTY's own output, stored at the width the PTY wrote it. A terminal still on
-    // xterm's 80x24 default re-wraps every one of those lines — padded ones fold into blank lines —
-    // and the later fit cannot fully undo it. Size this terminal, and the PTY, before asking for it.
     resize();
 
     const attachment = refreshing

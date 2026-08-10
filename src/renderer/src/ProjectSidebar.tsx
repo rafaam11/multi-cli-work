@@ -5,17 +5,16 @@ import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import {
   Briefcase,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
-  Circle,
   Folder,
   FolderOpen,
   FolderPlus,
   FolderX,
   GitBranch,
+  LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
@@ -24,7 +23,14 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { FileIcon } from "./file-icons";
 import type { OpenFileTab } from "./file-tabs";
 import { reorderIds, type DropPosition } from "./project-order";
@@ -32,8 +38,9 @@ import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { UpdateBadge } from "./UpdateBadge";
 import { GitHubIcon, TeamsIcon } from "./brand-icons";
 import { projectName } from "./session-labels";
+import { isSessionDrag, readSessionDrag } from "./session-drag";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
-import { folderStatusClass, isFolderDone } from "./folder-status";
+import { folderActivityClass } from "./folder-status";
 
 interface ProjectSidebarProps {
   snapshot: ProjectWorkspaceSnapshot | null;
@@ -68,8 +75,6 @@ interface ProjectSidebarProps {
   onAddProject(): void;
   onSelectProject(projectId: string): void;
   onToggleProject(projectId: string): void;
-  /** The 폴더 layer's only status control — 작업중 ↔ 완료, never derived from the sessions below it. */
-  onToggleProjectStatus(project: SharedProject): void;
   onExpandAll(): void;
   onCollapseAll(): void;
   /** One-shot tidy: leaves 작업중 folders open and closes the rest. Not a mode that stays on. */
@@ -79,6 +84,17 @@ interface ProjectSidebarProps {
   onProjectSaved(project: SharedProject): void;
   onCloseEditor(): void;
   onRestoreBackup(): void;
+  /**
+   * 작업공간1/2/3 are fixed in number, so the shelf takes only how full each one is — the views
+   * themselves stay in App, which is the single writer for slots.
+   */
+  workspacePaneCounts: number[];
+  selectedWorkspaceIndex: number | null;
+  onSelectWorkspace(index: number): void;
+  /** A tab or pane dropped on 작업공간N. The pane stays in its folder view too — this is a reference. */
+  onDropPaneOnWorkspace(index: number, paneId: string): void;
+  /** The folder a tab click just pointed at. It pulses for a moment, then App clears this. */
+  flashProjectId: string | null;
   isHome: boolean;
   onOpenHome(): void;
   collapsed: boolean;
@@ -141,7 +157,6 @@ export function ProjectSidebar({
   onAddProject,
   onSelectProject,
   onToggleProject,
-  onToggleProjectStatus,
   onExpandAll,
   onCollapseAll,
   onExpandWorking,
@@ -150,6 +165,11 @@ export function ProjectSidebar({
   onProjectSaved,
   onCloseEditor,
   onRestoreBackup,
+  workspacePaneCounts,
+  selectedWorkspaceIndex,
+  onSelectWorkspace,
+  onDropPaneOnWorkspace,
+  flashProjectId,
   isHome,
   onOpenHome,
   collapsed,
@@ -161,6 +181,8 @@ export function ProjectSidebar({
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
   const [drag, setDrag] = useState<{ id: string; over: { id: string; position: DropPosition } | null } | null>(null);
+  const [workspaceDropIndex, setWorkspaceDropIndex] = useState<number | null>(null);
+  const flashRow = useRef<HTMLDivElement | null>(null);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(() => {
     try {
       const value = JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}") as { expandedWorkspaces?: string[] };
@@ -174,7 +196,41 @@ export function ProjectSidebar({
     return next;
   });
 
+  // A folder pointed at from a tab may sit inside a collapsed group; App expands it, and the row
+  // scrolls itself into view here rather than leaving the pulse to happen off screen.
+  useEffect(() => {
+    if (!flashProjectId) return;
+    flashRow.current?.scrollIntoView?.({ block: "nearest" });
+  }, [flashProjectId]);
+
   const endDrag = () => setDrag(null);
+
+  /**
+   * 작업공간 rows accept panes, not folders — folder drags carry only `text/plain`, so the session
+   * type is what tells the two apart. The drop copies a reference: the pane keeps its folder tab.
+   */
+  const workspaceDropProps = (index: number) => ({
+    onDragOver: (event: ReactDragEvent<HTMLElement>) => {
+      if (!isSessionDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      setWorkspaceDropIndex(index);
+    },
+    onDragLeave: (event: ReactDragEvent<HTMLElement>) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      setWorkspaceDropIndex((current) => (current === index ? null : current));
+    },
+    onDrop: (event: ReactDragEvent<HTMLElement>) => {
+      if (!isSessionDrag(event)) return;
+      event.preventDefault();
+      setWorkspaceDropIndex(null);
+      const paneId = readSessionDrag(event);
+      if (paneId) onDropPaneOnWorkspace(index, paneId);
+    },
+  });
+
+  const workspaceLabel = (index: number, count: number) =>
+    `작업공간${index + 1} 열기 (패인 ${count}개)`;
 
   const dropOn = (targetId: string, position: DropPosition) => {
     if (!drag) return;
@@ -219,12 +275,13 @@ export function ProjectSidebar({
    */
   const renderRailProject = (project: SharedProject) => {
     const name = projectName(project);
-    const attention = attentionOf(sessions.filter((session) => session.projectId === project.id));
+    const projectSessions = sessions.filter((session) => session.projectId === project.id);
+    const attention = attentionOf(projectSessions);
     return (
       <li key={project.id}>
         <button
           type="button"
-          className={`rail-session-button ${folderStatusClass(project.status)} ${selectedProjectId === project.id ? "selected" : ""}`}
+          className={`rail-session-button ${folderActivityClass(projectSessions)} ${selectedProjectId === project.id ? "selected" : ""}`}
           onClick={() => onSelectProject(project.id)}
           onContextMenu={(event) => onProjectContextMenu(project, event)}
           title={name}
@@ -297,6 +354,59 @@ export function ProjectSidebar({
           {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
       </div>
+
+      {/* 작업공간1/2/3 sit above the tree because they are screens, not folders: a workspace is a
+          hand-picked set of panes from anywhere, so it belongs to no group in the tree below. */}
+      {collapsed ? (
+        <ul className="rail-workspaces" role="list" aria-label="작업공간">
+          {workspacePaneCounts.map((count, index) => (
+            <li key={index}>
+              <button
+                type="button"
+                className={[
+                  "rail-workspace-button",
+                  selectedWorkspaceIndex === index ? "selected" : "",
+                  workspaceDropIndex === index ? "drop-target" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => onSelectWorkspace(index)}
+                aria-label={workspaceLabel(index, count)}
+                title={`작업공간${index + 1}`}
+                {...workspaceDropProps(index)}
+              >
+                <LayoutGrid size={14} />
+                <span className="rail-workspace-index" aria-hidden="true">
+                  {index + 1}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="workspace-shelf" aria-label="작업공간">
+          {workspacePaneCounts.map((count, index) => (
+            <button
+              key={index}
+              type="button"
+              className={[
+                "workspace-shelf-row",
+                selectedWorkspaceIndex === index ? "selected" : "",
+                workspaceDropIndex === index ? "drop-target" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => onSelectWorkspace(index)}
+              aria-label={workspaceLabel(index, count)}
+              {...workspaceDropProps(index)}
+            >
+              <LayoutGrid size={14} />
+              <span className="workspace-shelf-name">작업공간{index + 1}</span>
+              {count > 0 ? <span className="workspace-shelf-count">{count}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
 
       {collapsed ? (
         <div className="sidebar-rail-sessions" aria-label="폴더 바로가기">
@@ -491,10 +601,12 @@ export function ProjectSidebar({
               return (
                 <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
                   <div
+                    ref={flashProjectId === project.id ? flashRow : undefined}
                     className={[
                       "project-row",
-                      folderStatusClass(project.status),
+                      folderActivityClass(projectSessions),
                       selectedProjectId === project.id ? "selected" : "",
+                      flashProjectId === project.id ? "flash" : "",
                       rootMissing ? "missing" : "",
                       drag?.id === project.id ? "dragging" : "",
                       drag?.over?.id === project.id ? `drop-${drag.over.position}` : "",
@@ -573,21 +685,6 @@ export function ProjectSidebar({
                         />
                       ) : null}
                       {rootMissing ? <span className="project-status missing-status">없음</span> : null}
-                    </button>
-                    {/* A sibling of .project-select, not a child — a button inside a button is the
-                        invalid nesting `.brand-block` and the file tab rows both had to avoid. */}
-                    <button
-                      className="folder-status-toggle"
-                      type="button"
-                      onClick={() => onToggleProjectStatus(project)}
-                      aria-label={
-                        isFolderDone(project.status)
-                          ? `${name} 작업중으로 되돌리기`
-                          : `${name} 작업 완료로 표시`
-                      }
-                      title={isFolderDone(project.status) ? "작업중으로 되돌리기" : "작업 완료로 표시"}
-                    >
-                      {isFolderDone(project.status) ? <CheckCircle2 size={14} /> : <Circle size={14} />}
                     </button>
                   </div>
                   {editingProjectId === project.id ? (

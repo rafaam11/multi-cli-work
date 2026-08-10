@@ -1168,6 +1168,43 @@ describe("worktree sessions", () => {
     expect(Object.keys(raw)).not.toContain("visibleSessionIds");
   });
 
+  it("persists the saved grids, empties slots whose session is gone, and keeps the rest in place", async () => {
+    const root = await tempRoot();
+    const statePath = path.join(root, "state.json");
+    const { instance } = worktreeCoordinator(root);
+    await instance.initialize();
+    const first = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+    const second = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+
+    await instance.setSlotViews({
+      folderViews: { [project.id]: { layoutId: "3-main-right", slots: [first.id, null, second.id] } },
+      workspaces: [{ layoutId: "6-grid", slots: [second.id] }],
+    });
+    const saved = (await readAppState({ statePath })).state;
+    expect(saved.folderViews).toEqual({
+      [project.id]: { layoutId: "3-main-right", slots: [first.id, null, second.id] },
+    });
+    expect(saved.workspaces).toEqual([{ layoutId: "6-grid", slots: [second.id] }]);
+
+    // A stale save naming a session that has since gone clears that slot instead of failing.
+    await instance.setSlotViews({
+      folderViews: { [project.id]: { layoutId: "2-col", slots: ["missing", first.id] } },
+      workspaces: [],
+    });
+    expect((await readAppState({ statePath })).state.folderViews).toEqual({
+      [project.id]: { layoutId: "2-col", slots: [null, first.id] },
+    });
+
+    await instance.setSlotViews({
+      folderViews: { [project.id]: { layoutId: "2-col", slots: [first.id, second.id] } },
+      workspaces: [{ layoutId: "2-col", slots: [first.id, second.id] }],
+    });
+    await instance.remove(first.id);
+    const afterRemoval = (await readAppState({ statePath })).state;
+    expect(afterRemoval.folderViews?.[project.id].slots).toEqual([null, second.id]);
+    expect(afterRemoval.workspaces?.[0].slots).toEqual([null, second.id]);
+  });
+
   it("removes only the worktree's sessions, leaving root sessions alone", async () => {
     const root = await tempRoot();
     const { instance } = worktreeCoordinator(root);

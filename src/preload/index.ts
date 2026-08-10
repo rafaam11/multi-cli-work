@@ -170,6 +170,7 @@ const api: MultiCliWorkApi = {
     rename: (sessionId, name) => ipcRenderer.invoke("terminals:rename", sessionId, name),
     select: (projectId, sessionId) => ipcRenderer.invoke("terminals:select", projectId, sessionId),
     setVisibleSessions: (sessionIds) => ipcRenderer.invoke("terminals:set-visible-sessions", sessionIds),
+    setSlotViews: (input) => ipcRenderer.invoke("terminals:set-slot-views", input),
     onEvent(listener) {
       const handler = (_event: Electron.IpcRendererEvent, terminalEvent: TerminalEvent) => listener(terminalEvent);
       ipcRenderer.on("terminal:event", handler);

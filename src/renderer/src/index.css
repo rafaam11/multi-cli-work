@@ -424,7 +424,7 @@ body.sidebar-resizing {
 .project-sidebar {
   grid-column: 1;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   min-width: 0;
   min-height: 0;
   border-right: 1px solid var(--line);
@@ -445,13 +445,128 @@ body.sidebar-resizing {
   display: none;
 }
 
-/* ProjectSidebar renders .project-navigation and .sidebar-rail-sessions mutually exclusively (only
-   one is ever mounted), but both get an explicit grid-row anyway rather than relying on
+/* ProjectSidebar renders the expanded and rail forms of each band mutually exclusively (only one of
+   each pair is ever mounted), but every one gets an explicit grid-row rather than relying on
    auto-placement — an item missing from flow would otherwise shift later siblings up a row (see
    the .sidebar-resizer incident above). */
+.workspace-shelf,
+.rail-workspaces {
+  grid-row: 2;
+}
+
 .project-navigation,
 .sidebar-rail-sessions {
-  grid-row: 2;
+  grid-row: 3;
+}
+
+/*
+ * 작업공간1/2/3. A shelf above the tree, not a tree section: a workspace holds panes picked from
+ * anywhere, so nesting it under a folder group would say something untrue about where its panes
+ * come from. Rows are drop targets — dragging a tab here is the only way panes get in.
+ */
+.workspace-shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.workspace-shelf-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 26px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-shelf-row:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.workspace-shelf-row.selected {
+  color: var(--text);
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.workspace-shelf-row.drop-target {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 16%, transparent);
+}
+
+.workspace-shelf-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-shelf-count {
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  color: var(--quiet);
+  background: var(--surface);
+  font-size: 9px;
+  text-align: center;
+}
+
+.rail-workspaces {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+  margin: 0;
+}
+
+.rail-workspace-button {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--quiet);
+  background: transparent;
+  cursor: pointer;
+}
+
+.rail-workspace-button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.rail-workspace-button.selected {
+  color: var(--text);
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1px var(--teal);
+}
+
+.rail-workspace-button.drop-target {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 16%, transparent);
+}
+
+.rail-workspace-index {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-size: 8px;
+  line-height: 1;
 }
 
 .sidebar-rail-sessions {
@@ -472,10 +587,10 @@ body.sidebar-resizing {
   padding: 0;
 }
 
-/* The collapsed rail switches folders now, not sessions, so it takes the 폴더 row's hand-set colour
-   rather than a session status. */
+/* The collapsed rail switches folders now, not sessions, so it takes the 폴더 row's derived colour
+   rather than any one session's status. */
 .rail-session-button {
-  --session-accent: var(--amber);
+  --session-accent: var(--green);
 
   position: relative;
   display: grid;
@@ -491,10 +606,8 @@ body.sidebar-resizing {
   cursor: pointer;
 }
 
-.rail-session-button.folder-done {
-  --session-accent: var(--green);
-
-  opacity: 0.55;
+.rail-session-button.folder-active {
+  --session-accent: var(--amber);
 }
 
 .rail-session-button:hover {
@@ -1582,13 +1695,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * The 폴더 row carries a status the user sets by hand, so it must not read as one more automatic
- * session colour. Session rows use a 3px bar plus a background wash; this layer uses a thicker 4px
- * bar and no wash, which keeps the two legible where 완료 green sits directly above an idle session
- * that is also green.
+ * The 폴더 row's colour is derived from its sessions: amber only while an agent is actually running
+ * or waiting on the user, green otherwise. Green is the resting state, so it gets no dimming — a
+ * quiet tree would go almost entirely grey. Session rows use a 3px bar plus a background wash; this
+ * layer uses a thicker 4px bar and no wash, so the two stay legible when stacked.
  */
 .project-row {
-  --folder-accent: var(--amber);
+  --folder-accent: var(--green);
 
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto;
@@ -1597,19 +1710,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   box-shadow: inset 4px 0 0 var(--folder-accent);
 }
 
-.project-row.folder-done {
-  --folder-accent: var(--green);
-}
-
-/* Finished folders stop competing for attention, the same way completed work projects do. */
-.project-row.folder-done {
-  opacity: 0.55;
-}
-
-.project-row.folder-done:hover,
-.project-row.folder-done:focus-within,
-.project-row.folder-done.selected {
-  opacity: 1;
+.project-row.folder-active {
+  --folder-accent: var(--amber);
 }
 
 .project-row:hover,
@@ -1729,8 +1831,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
-.project-row .project-edit,
-.folder-status-toggle {
+.project-row .project-edit {
   width: 24px;
   height: 24px;
   flex: 0 0 24px;
@@ -1741,26 +1842,35 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .project-row:hover .project-edit,
 .project-row.selected .project-edit,
-.project-row .project-edit:focus-visible,
-.project-row:hover .folder-status-toggle,
-.project-row.selected .folder-status-toggle,
-.folder-status-toggle:focus-visible {
+.project-row .project-edit:focus-visible {
   visibility: visible;
 }
 
-.folder-status-toggle {
-  display: grid;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 4px;
-  color: var(--folder-accent);
-  background: transparent;
-  cursor: pointer;
+/*
+ * Clicking a pane tab answers "where does this session live?" by pulsing its folder for three
+ * seconds. A pulse rather than a lasting highlight: it has to be noticeable without becoming a
+ * second selection state competing with `.selected`.
+ */
+.project-row.flash {
+  animation: folder-flash 3s ease-out 1;
 }
 
-.folder-status-toggle:hover {
-  background: var(--surface-hover);
+@keyframes folder-flash {
+  0%,
+  70% {
+    background: color-mix(in srgb, var(--teal) 24%, transparent);
+  }
+
+  100% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-row.flash {
+    animation: none;
+    background: color-mix(in srgb, var(--teal) 24%, transparent);
+  }
 }
 
 .project-row.hidden-project .project-copy {
@@ -2188,34 +2298,24 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding-left: 14px;
 }
 
-/* The pane count picks the layout; panes stay equal-sized, the 1px gap draws the frame lines. */
+/* Layout row, tab row, then the grid taking whatever height is left. */
+.workspace-panes {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/*
+ * The chosen layout supplies grid-template-columns/rows/areas inline; every slot names its own area
+ * (s1…s6) so a pane's place survives being dragged elsewhere. The 1px gap draws the frame lines.
+ */
 .workspace-grid {
   display: grid;
   min-height: 0;
   flex: 1;
   gap: 1px;
   background: var(--line);
-  grid-auto-rows: 1fr;
-}
-
-.workspace-grid[data-panes="2"] {
-  grid-template-columns: 1fr 1fr;
-}
-
-.workspace-grid[data-panes="3"],
-.workspace-grid[data-panes="4"] {
-  grid-template-columns: 1fr 1fr;
-}
-
-.workspace-grid[data-panes="5"],
-.workspace-grid[data-panes="6"] {
-  grid-template-columns: 1fr 1fr 1fr;
-}
-
-/* An odd count leaves one empty cell; the last pane widens to keep the grid full. */
-.workspace-grid[data-panes="3"] .grid-pane:last-child,
-.workspace-grid[data-panes="5"] .grid-pane:last-child {
-  grid-column: span 2;
 }
 
 .grid-pane {
@@ -2226,8 +2326,125 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--bg);
 }
 
-.workspace-grid:not([data-panes="1"]) .grid-pane.pane-focused {
+.workspace-grid:not([data-slots="1"]) .grid-pane.pane-focused {
   box-shadow: inset 0 0 0 1px var(--teal);
+}
+
+/* A slot the user left open. It is a drop target, so it says so instead of looking broken. */
+.grid-slot.empty {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--line-strong);
+  color: var(--quiet);
+  background: var(--bg);
+  font-size: 11px;
+}
+
+.grid-slot-number {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 15px;
+}
+
+/* Nothing moves during a drag — only the outline under the cursor — because resizing a pane walks
+   the whole xterm→PTY chain. The drop does the one rearrangement. */
+.grid-pane.drop-target,
+.grid-slot.empty.drop-target {
+  box-shadow: inset 0 0 0 2px var(--teal);
+}
+
+.grid-slot.empty.drop-target {
+  border-style: solid;
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+/*
+ * Every session of the view on one line, whether or not it has a pane right now. It scrolls rather
+ * than wrapping so the grid below keeps its height as sessions pile up.
+ */
+.session-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.session-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.session-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.session-tab {
+  display: inline-flex;
+  min-height: 24px;
+  max-width: 190px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: grab;
+  font-size: 11px;
+}
+
+.session-tab:hover {
+  background: var(--surface-hover);
+}
+
+.session-tab.current {
+  border-color: color-mix(in srgb, var(--teal) 55%, var(--line));
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+/* A session on another page keeps its tab — dimmed, because clicking it is how you get back to it. */
+.session-tab.offscreen {
+  opacity: 0.55;
+}
+
+.session-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-tab-detail {
+  flex: 0 0 auto;
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.session-tab-pages {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.session-tab-page-count {
+  font-variant-numeric: tabular-nums;
 }
 
 .grid-pane .terminal-surface {
@@ -2235,6 +2452,38 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   flex: 1;
 }
 
+/* A document pane wraps a viewer that already draws its own header, so the body just gives it the
+   remaining height and lets it lay itself out. */
+.grid-pane-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.grid-pane-body > * {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.pane-dirty {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.pane-detail {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The header is the pane's drag handle: grab it to trade slots with another pane. */
 .pane-header {
   display: flex;
   align-items: center;
@@ -2242,7 +2491,16 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 2px 4px 2px 10px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
+  cursor: grab;
   font-size: 11px;
+}
+
+.pane-header .icon-button {
+  cursor: pointer;
+}
+
+.pane-header .session-rename input {
+  cursor: text;
 }
 
 .pane-title {
@@ -2264,14 +2522,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   width: 22px;
   height: 22px;
   flex-basis: 22px;
-}
-
-.pane-header .icon-button.pane-swap-button {
-  width: auto;
-  flex-basis: auto;
-  padding: 0 6px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
 }
 
 .pane-header .session-rename {
@@ -2649,6 +2899,105 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: 8px;
+}
+
+/*
+ * Every arrangement in one row across the top of the workspace. Choosing one is frequent enough that
+ * it should not cost a popup, and each option is its own preview: the tile is drawn with the same
+ * `grid-template-*` the grid will use, so the row reads as a picture of the result rather than a
+ * list of names. It scrolls sideways at narrow widths instead of wrapping, which would push the grid.
+ */
+.layout-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  background: var(--surface);
+  scrollbar-width: none;
+}
+
+.layout-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.layout-bar-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.layout-bar-title {
+  color: var(--quiet);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+}
+
+.layout-bar-options {
+  display: flex;
+  gap: 4px;
+}
+
+.layout-option {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.layout-option:hover {
+  background: var(--surface-hover);
+}
+
+.layout-option.current {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.layout-preview {
+  display: grid;
+  width: 34px;
+  height: 24px;
+  gap: 1px;
+}
+
+.layout-preview > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 1px;
+  color: transparent;
+  background: var(--bg);
+  font-size: 6px;
+  line-height: 1;
+}
+
+.layout-option.current .layout-preview > span {
+  border-color: var(--accent);
+}
+
+.layout-option-label {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-option.current .layout-option-label {
+  color: var(--text);
 }
 
 /*

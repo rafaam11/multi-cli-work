@@ -27,8 +27,25 @@ export interface PersistedTerminalSession {
   updatedAt: string;
 }
 
-/** The workspace grid never shows more panes than this; extra sessions wait behind the +N menu. */
+/**
+ * One page of the workspace grid never shows more panes than this — no layout has more slots.
+ * The cap lives here because it guards the `terminals:set-visible-sessions` contract in main,
+ * which cannot see the renderer's layout catalog.
+ */
 export const MAX_VISIBLE_SESSIONS = 6;
+
+/** How many workspaces the sidebar offers. Fixed at three; naming and resizing them are later work. */
+export const WORKSPACE_COUNT = 3;
+
+/**
+ * One grid's arrangement: the layout preset it uses, and which session sits in each slot.
+ * `slots` may run longer than the layout has slots — the overflow is the next page. A `null` is a
+ * slot deliberately left empty, which the UI keeps as a drop target rather than closing up.
+ */
+export interface SlotViewState {
+  layoutId: string;
+  slots: (string | null)[];
+}
 
 export interface AppStateV1 {
   schemaVersion: 1;
@@ -36,12 +53,17 @@ export interface AppStateV1 {
   selectedProjectId: string | null;
   selectedSessionId: string | null;
   /**
-   * The sessions shown as workspace grid panes, in pane order (at most MAX_VISIBLE_SESSIONS).
-   * Omitted (not null) while the grid is empty, so a state file that never used it keeps its exact
-   * shape. Files from before the grid carry a single `splitSessionId` instead; parsing folds that
-   * legacy key into this array.
+   * The sessions on screen right now, in pane order (at most MAX_VISIBLE_SESSIONS). This is what
+   * main reads to decide whether a session's event deserves a notification, so it tracks the
+   * current page rather than the saved arrangement. Omitted (not null) while nothing is on screen,
+   * so a state file that never used it keeps its exact shape. Files from before the grid carry a
+   * single `splitSessionId` instead; parsing folds that legacy key into this array.
    */
   visibleSessionIds?: string[];
+  /** Each folder's saved grid, keyed by project id. Omitted while no folder has one. */
+  folderViews?: Record<string, SlotViewState>;
+  /** The curated workspaces, in sidebar order (at most WORKSPACE_COUNT). Omitted while unused. */
+  workspaces?: SlotViewState[];
   sessions: Record<string, PersistedTerminalSession>;
 }
 
