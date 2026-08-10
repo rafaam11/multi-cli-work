@@ -27,6 +27,14 @@ describe("GitHub client validation", () => {
     expect(classifyGhError(failure).state).toBe(state);
   });
 
+  it("tells a timed out gh apart from an ordinary failure", () => {
+    expect(classifyGhError({ code: 1, stderr: "", timedOut: true })).toMatchObject({
+      state: "network-error",
+      message: expect.stringContaining("30초"),
+    });
+    expect(classifyGhError({ code: 1, stderr: "" }).message).not.toContain("30초");
+  });
+
   it("keeps only valid six digit GitHub label colors", async () => {
     const raw = {
       number: 12, title: "Fix", state: "OPEN", isDraft: false, author: { login: "octo" },

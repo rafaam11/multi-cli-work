@@ -6,7 +6,8 @@ import type {
 } from "../../shared/github-types";
 
 const MAX_DIFF_BYTES = 1024 * 1024;
-type ExecFailure = { code?: string | number; stderr?: string; message?: string };
+const GH_TIMEOUT_MS = 30_000;
+type ExecFailure = { code?: string | number; stderr?: string; message?: string; timedOut?: boolean };
 
 export class GitHubClientError extends Error {
   constructor(public readonly state: GitHubIntegrationStatus["state"], message: string, options?: ErrorOptions) {
@@ -17,6 +18,7 @@ export class GitHubClientError extends Error {
 export function classifyGhError(error: ExecFailure): GitHubIntegrationStatus {
   const text = `${error.stderr ?? ""} ${error.message ?? ""}`.toLowerCase();
   if (error.code === "ENOENT") return { state: "gh-missing", host: null, message: "gh CLI가 설치되어 있지 않습니다." };
+  if (error.timedOut) return { state: "network-error", host: null, message: "gh가 30초 안에 응답하지 않았습니다." };
   if (/not logged|authentication|authenticate|login/.test(text)) return { state: "unauthenticated", host: null, message: "GitHub 인증이 필요합니다." };
   if (/rate limit|secondary rate/.test(text)) return { state: "rate-limited", host: null, message: "GitHub API 요청 한도를 초과했습니다." };
   if (/not found|could not resolve.*pull\s*request/.test(text)) return { state: "not-found", host: null, message: "PR이 삭제되었거나 더 이상 접근할 수 없습니다." };
@@ -85,14 +87,24 @@ async function defaultRun(args: string[], options: { cwd?: string; input?: strin
       const commandArgs = process.env.MULTI_CLI_WORK_GH_SCRIPT ? [process.env.MULTI_CLI_WORK_GH_SCRIPT, ...args] : args;
       const child = spawn(executable, commandArgs, { cwd: options.cwd, windowsHide: true, shell: false, stdio: "pipe" });
       const stdout: Buffer[] = []; const stderr: Buffer[] = []; let size = 0;
-      const timer = setTimeout(() => child.kill(), 30_000);
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+        // A gh stuck past SIGTERM would leak otherwise; Windows kill() is already forceful.
+        if (process.platform !== "win32") {
+          const killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+          killTimer.unref();
+          child.once("close", () => clearTimeout(killTimer));
+        }
+      }, GH_TIMEOUT_MS);
       child.stdout.on("data", (chunk: Buffer) => { size += chunk.length; if (size <= 16 * 1024 * 1024) stdout.push(chunk); });
       child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
       child.once("error", (error) => { clearTimeout(timer); reject(error); });
       child.once("close", (code) => {
         clearTimeout(timer); const result = { stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") };
         if (code === 0 && size <= 16 * 1024 * 1024) resolve(result);
-        else reject(Object.assign(new Error(result.stderr || `gh exited with ${code}`), { code, stderr: result.stderr }));
+        else reject(Object.assign(new Error(result.stderr || `gh exited with ${code}`), { code, stderr: result.stderr, timedOut }));
       });
       child.stdin.end(options.input);
     });
