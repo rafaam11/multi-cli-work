@@ -86,6 +86,11 @@ export interface GitPanelData {
   /** Local branches, most recently committed first. */
   branches: string[];
   changes: GitChangeEntry[];
+  /**
+   * Ignored paths, each without a trailing slash — an ignored folder appears once instead of
+   * every file under it. The file explorer dims whatever sits at or below one of these.
+   */
+  ignored: string[];
 }
 
 export interface GitCommitRequest {
@@ -332,6 +337,24 @@ export interface MultiCliWorkApi {
     readFile(target: FileExplorerTarget, relativePath: string): Promise<WorkspaceFileContent>;
     writeFile(target: FileExplorerTarget, relativePath: string, content: string): Promise<void>;
     runExecutable(target: FileExplorerTarget, relativePath: string): Promise<void>;
+    /** Absolute on-disk path of a file or folder, for "copy path" and for the OS shell. */
+    absolutePath(target: FileExplorerTarget, relativePath: string): Promise<string>;
+    /** Shows the entry selected in the OS file manager. */
+    reveal(target: FileExplorerTarget, relativePath: string): Promise<void>;
+    openInEditor(target: FileExplorerTarget, relativePath: string): Promise<void>;
+    /** Creates an empty file or folder, resolving to the new entry's relative path. */
+    create(
+      target: FileExplorerTarget,
+      parentRelativePath: string,
+      name: string,
+      kind: "file" | "directory",
+    ): Promise<string>;
+    /** Renames in place, resolving to the new relative path. */
+    rename(target: FileExplorerTarget, relativePath: string, name: string): Promise<string>;
+    /** Copies the entry next to itself, resolving to the copy's relative path. */
+    duplicate(target: FileExplorerTarget, relativePath: string): Promise<string>;
+    /** Moves the entry to the OS recycle bin — never an unrecoverable delete. */
+    trash(target: FileExplorerTarget, relativePath: string): Promise<void>;
   };
   git: {
     panelData(target: FileExplorerTarget): Promise<GitPanelData>;

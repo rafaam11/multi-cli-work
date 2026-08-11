@@ -10,6 +10,7 @@ import {
   pageSlots,
   placeInSlot,
   removeSession,
+  renamePaneId,
   resolveView,
   setLayout,
   viewPageSize,
@@ -29,10 +30,10 @@ describe("normalizeSlots", () => {
     expect(normalizeSlots(view, ["a", "b", "c"], { autoAppend: true }).layoutId).toBe("2-col");
   });
 
-  it("empties slots whose session is gone but leaves the others where they are", () => {
+  it("closes the grid up behind a session that is gone", () => {
     expect(normalizeSlots({ layoutId: "6-grid", slots: ["a", "gone", "c"] }, ["a", "c"])).toEqual({
       layoutId: "6-grid",
-      slots: ["a", null, "c"],
+      slots: ["a", "c"],
     });
   });
 
@@ -49,7 +50,7 @@ describe("normalizeSlots", () => {
     ).toEqual({ layoutId: "6-grid", slots: ["a", "d", "c", "e"] });
   });
 
-  it("leaves a hand-emptied slot alone without auto-append", () => {
+  it("leaves the hole a drop reached past alone without auto-append", () => {
     expect(normalizeSlots({ layoutId: "6-grid", slots: ["a", null, "c"] }, ["a", "b", "c"])).toEqual({
       layoutId: "6-grid",
       slots: ["a", null, "c"],
@@ -67,11 +68,11 @@ describe("normalizeSlots", () => {
   it("drops a repeated session, since one view shows it once", () => {
     expect(normalizeSlots({ layoutId: "6-grid", slots: ["a", "a", "b"] }, ["a", "b"])).toEqual({
       layoutId: "6-grid",
-      slots: ["a", null, "b"],
+      slots: ["a", "b"],
     });
   });
 
-  it("trims holes the layout already implies, keeping the ones with panes after them", () => {
+  it("trims trailing holes, keeping the ones with panes after them", () => {
     expect(normalizeSlots({ layoutId: "6-grid", slots: [null, "a", null, null] }, ["a"]).slots).toEqual([null, "a"]);
   });
 
@@ -84,24 +85,24 @@ describe("normalizeSlots", () => {
 });
 
 describe("placeInSlot", () => {
-  it("trades places when the session already sits in this view", () => {
-    expect(placeInSlot({ layoutId: "6-grid", slots: ["a", "b", "c"] }, 0, "c").slots).toEqual(["c", "b", "a"]);
+  it("slides the panes between the two ends rather than trading places", () => {
+    expect(placeInSlot({ layoutId: "6-grid", slots: ["a", "b", "c"] }, 0, "c").slots).toEqual(["c", "a", "b"]);
   });
 
-  it("moves into an open slot, leaving a hole behind", () => {
-    expect(placeInSlot({ layoutId: "6-grid", slots: ["a", "b", null, "d"] }, 2, "a").slots).toEqual([
-      null,
+  it("closes the slot a moved pane left behind", () => {
+    expect(placeInSlot({ layoutId: "6-grid", slots: ["a", "b", "c", "d"] }, 2, "a").slots).toEqual([
       "b",
+      "c",
       "a",
       "d",
     ]);
   });
 
-  it("pushes the pane it lands on to the nearest open slot rather than dropping it", () => {
-    expect(placeInSlot({ layoutId: "6-grid", slots: ["a", null, "c"] }, 0, "new").slots).toEqual(["new", "a", "c"]);
+  it("pushes the pane it lands on back one slot rather than dropping it", () => {
+    expect(placeInSlot({ layoutId: "6-grid", slots: ["a", "c"] }, 0, "new").slots).toEqual(["new", "a", "c"]);
   });
 
-  it("appends the displaced pane when nothing is open", () => {
+  it("pushes the whole tail back when the drop lands mid-grid", () => {
     expect(placeInSlot({ layoutId: "2-col", slots: ["a", "b"] }, 1, "new").slots).toEqual(["a", "new", "b"]);
   });
 
@@ -110,7 +111,7 @@ describe("placeInSlot", () => {
     expect(placeInSlot(view, 0, "a")).toBe(view);
   });
 
-  it("grows the array to reach a slot past the end", () => {
+  it("keeps the holes it padded to reach a slot past the end", () => {
     expect(placeInSlot({ layoutId: "6-grid", slots: ["a"] }, 3, "b").slots).toEqual(["a", null, null, "b"]);
   });
 
@@ -120,8 +121,8 @@ describe("placeInSlot", () => {
 });
 
 describe("clearSlot", () => {
-  it("keeps the hole when panes follow it", () => {
-    expect(clearSlot({ layoutId: "6-grid", slots: ["a", "b", "c"] }, 1).slots).toEqual(["a", null, "c"]);
+  it("pulls the panes behind it forward", () => {
+    expect(clearSlot({ layoutId: "6-grid", slots: ["a", "b", "c"] }, 1).slots).toEqual(["a", "c"]);
   });
 
   it("shortens the view when the last pane leaves", () => {
@@ -155,13 +156,28 @@ describe("appendSession", () => {
 });
 
 describe("removeSession", () => {
-  it("leaves a hole so the other panes keep their slots", () => {
-    expect(removeSession({ layoutId: "6-grid", slots: ["a", "b", "c"] }, "b").slots).toEqual(["a", null, "c"]);
+  it("closes the grid up so no gap is left behind", () => {
+    expect(removeSession({ layoutId: "6-grid", slots: ["a", "b", "c"] }, "b").slots).toEqual(["a", "c"]);
   });
 
   it("returns the same view when the session was never here", () => {
     const view = { layoutId: "6-grid", slots: ["a"] };
     expect(removeSession(view, "zz")).toBe(view);
+  });
+});
+
+describe("renamePaneId", () => {
+  it("keeps the slot a renamed document was in", () => {
+    expect(renamePaneId({ layoutId: "6-grid", slots: ["a", "old", "c"] }, "old", "new").slots).toEqual([
+      "a",
+      "new",
+      "c",
+    ]);
+  });
+
+  it("returns the same view when the pane is not in it", () => {
+    const view = { layoutId: "6-grid", slots: ["a"] };
+    expect(renamePaneId(view, "old", "new")).toBe(view);
   });
 });
 
@@ -305,7 +321,7 @@ describe("nextWorkspaceSlot", () => {
     });
   });
 
-  it("reuses the hole a removed pane left behind before opening a new page", () => {
+  it("fills a hole a drop reached past before opening a new page", () => {
     const shelf = [
       { layoutId: "6-grid", slots: ["a", null, "c", "d", "e", "f"] },
       { layoutId: "6-grid", slots: full("b") },

@@ -16,7 +16,10 @@ export interface RightSidebarProps {
   target: FileExplorerTarget | null;
   targetLabel: string | null;
   selectedRelativePath: string | null;
+  vscodeAvailable: boolean;
   onOpenFile(entry: FileTreeEntry): void;
+  onEntryDeleted(relativePath: string, kind: FileTreeEntry["kind"]): void;
+  onEntryRenamed(relativePath: string, nextRelativePath: string, kind: FileTreeEntry["kind"]): void;
   worktreeOptions: GitWorktreeOption[];
   onSelectWorktreeOption(worktreeId: string | null): void;
   onOpenDiff(change: GitChangeEntry): void;
@@ -36,7 +39,10 @@ export function RightSidebar({
   target,
   targetLabel,
   selectedRelativePath,
+  vscodeAvailable,
   onOpenFile,
+  onEntryDeleted,
+  onEntryRenamed,
   worktreeOptions,
   onSelectWorktreeOption,
   onOpenDiff,
@@ -108,7 +114,10 @@ export function RightSidebar({
           target={target}
           targetLabel={targetLabel}
           selectedRelativePath={selectedRelativePath}
+          vscodeAvailable={vscodeAvailable}
           onOpenFile={onOpenFile}
+          onEntryDeleted={onEntryDeleted}
+          onEntryRenamed={onEntryRenamed}
         />
         <GitPanel
           hidden={collapsed || activeTab !== "git"}

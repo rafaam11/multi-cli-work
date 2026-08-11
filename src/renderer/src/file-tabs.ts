@@ -59,3 +59,13 @@ export function categorizeFile(name: string, extension: string | null): FileTabC
 export function fileTabId(target: FileExplorerTarget, relativePath: string): string {
   return `${target.kind}:${target.id}:${relativePath}`;
 }
+
+/**
+ * The extension a `FileTreeEntry` would carry, for names the tree did not hand us — a Markdown link
+ * target, or a file the user just typed a new name for. A leading dot is part of the name, not an
+ * extension, so `.gitignore` has none.
+ */
+export function fileExtensionOf(name: string): string | null {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLocaleLowerCase("en-US") : null;
+}

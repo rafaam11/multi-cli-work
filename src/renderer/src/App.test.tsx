@@ -331,6 +331,13 @@ function createApi(options?: {
       readFile: vi.fn().mockResolvedValue({ relativePath: "", encoding: "utf8", content: "", truncated: false, sizeBytes: 0 }),
       writeFile: vi.fn().mockResolvedValue(undefined),
       runExecutable: vi.fn().mockResolvedValue(undefined),
+      absolutePath: vi.fn().mockResolvedValue(""),
+      reveal: vi.fn().mockResolvedValue(undefined),
+      openInEditor: vi.fn().mockResolvedValue(undefined),
+      create: vi.fn().mockResolvedValue(""),
+      rename: vi.fn().mockResolvedValue(""),
+      duplicate: vi.fn().mockResolvedValue(""),
+      trash: vi.fn().mockResolvedValue(undefined),
     },
     git: {
       panelData: vi.fn().mockResolvedValue({
@@ -341,6 +348,7 @@ function createApi(options?: {
         behind: null,
         branches: ["main"],
         changes: [],
+        ignored: [],
       }),
       checkout: vi.fn().mockResolvedValue(undefined),
       createBranch: vi.fn().mockResolvedValue(undefined),
@@ -1317,6 +1325,15 @@ describe("folder workspace", () => {
     expect(await screen.findByText("폴더를 찾을 수 없습니다")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "새 PowerShell 세션" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "폴더 다시 연결" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")).toHaveClass(
+      "missing",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "사이드바 접기" }));
+    expect(screen.getByRole("button", { name: "Atlas 폴더 선택 (폴더 없음)" })).toHaveClass(
+      "missing",
+      "folder-idle",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "폴더 다시 연결" }));
     await waitFor(() => expect(harness.api.projects.relink).toHaveBeenCalledWith(atlas.id));
@@ -1697,6 +1714,68 @@ describe("file viewer", () => {
     );
   });
 
+  /**
+   * A tab id is derived from the file's path, so a rename in the explorer would otherwise strand the
+   * pane under an id nothing points at. The open document follows the file instead — without being
+   * read off disk again.
+   */
+  it("follows an explorer rename with the open tab", async () => {
+    const harness = createApi({ sessions: [] });
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
+      relativePath: "README.md",
+      encoding: "utf8",
+      content: "# Readme",
+      truncated: false,
+      sizeBytes: 9,
+    });
+    vi.mocked(harness.api.workspaceFiles.rename).mockResolvedValue("GUIDE.md");
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
+    await screen.findByRole("button", { name: "README.md 문서 열기" });
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "README.md" }), { clientX: 8, clientY: 8 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    const field = await screen.findByLabelText("파일 이름");
+    fireEvent.change(field, { target: { value: "GUIDE.md" } });
+    fireEvent.submit(field);
+
+    expect(await screen.findByRole("button", { name: "GUIDE.md 문서 열기" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "README.md 문서 열기" })).not.toBeInTheDocument();
+    expect(harness.api.workspaceFiles.readFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the tab of a file the explorer moved to the trash", async () => {
+    const harness = createApi({ sessions: [] });
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
+      relativePath: "README.md",
+      encoding: "utf8",
+      content: "# Readme",
+      truncated: false,
+      sizeBytes: 9,
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
+    await screen.findByRole("button", { name: "README.md 문서 열기" });
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "README.md" }), { clientX: 8, clientY: 8 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "삭제" }));
+    const dialog = await screen.findByRole("dialog", { name: "휴지통으로 이동" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "휴지통으로 이동" }));
+
+    await waitFor(() =>
+      expect(harness.api.workspaceFiles.trash).toHaveBeenCalledWith({ kind: "project", id: atlas.id }, "README.md"),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "README.md 문서 열기" })).not.toBeInTheDocument(),
+    );
+  });
+
   it("saves ordinary UTF-8 text with the shared dirty and saving states", async () => {
     const harness = createApi({ sessions: [] });
     const notes: FileTreeEntry = {
@@ -1786,11 +1865,43 @@ describe("unread badges", () => {
     // Claude Code sits behind the grid here, so the folder row is the only place left to say so.
     act(() => harness.emitAttention({ [claudeSession.id]: "approval" }));
 
-    expect(screen.getByRole("status", { name: "응답 대기 세션 있음" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "승인 대기 세션 있음" })).toHaveClass(
+      "unread-approval",
+    );
 
     act(() => harness.emitAttention({}));
 
-    expect(screen.queryByRole("status", { name: "응답 대기 세션 있음" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "승인 대기 세션 있음" })).not.toBeInTheDocument();
+  });
+
+  it("keeps input and approval waits neutral while showing their distinct folder alerts", async () => {
+    const input: TerminalSessionView = { ...powershellSession, status: "awaiting-input" };
+    const approval: TerminalSessionView = {
+      ...claudeSession,
+      id: "session-dashboard-approval",
+      projectId: dashboard.id,
+      cwd: dashboard.rootPath,
+      status: "awaiting-approval",
+      pid: 4201,
+      exitCode: null,
+    };
+    const harness = createApi({ projects: [atlas, dashboard], sessions: [input, approval] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Dashboard 폴더 선택" });
+
+    act(() => harness.emitAttention({ [input.id]: "input", [approval.id]: "approval" }));
+
+    const atlasRow = screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row") as HTMLElement;
+    const dashboardRow = screen.getByRole("button", { name: "Dashboard 폴더 선택" }).closest(".project-row") as HTMLElement;
+    expect(atlasRow).toHaveClass("folder-idle");
+    expect(dashboardRow).toHaveClass("folder-idle");
+    expect(within(atlasRow).getByRole("status", { name: "입력 대기 세션 있음" })).toHaveClass(
+      "unread-input",
+    );
+    expect(within(dashboardRow).getByRole("status", { name: "승인 대기 세션 있음" })).toHaveClass(
+      "unread-approval",
+    );
   });
 });
 
@@ -2448,7 +2559,8 @@ describe("folder colour", () => {
     updatedAt: "2026-07-11T00:00:00.000Z",
   });
 
-  const folderRow = (name: string) => screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-row")!;
+  const folderRow = (name: string) =>
+    screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-row") as HTMLElement;
   const folderNode = (name: string) =>
     screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-node")!;
   // Home dashboard cards carry the same aria-label, so group lookups stay scoped to the sidebar.
@@ -2463,9 +2575,10 @@ describe("folder colour", () => {
     render(<App />);
 
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    expect(folderRow("Atlas")).toHaveClass("folder-idle");
+    expect(folderRow("Atlas")).toHaveClass("folder-idle", "selected");
+    expect(folderRow("Atlas").querySelector(".folder-status-dot")).not.toBeInTheDocument();
 
-    // Amber is "an agent is doing something right now", and nothing else says so.
+    // Teal is "an agent is doing something right now", and nothing else says so.
     await act(async () => {
       harness.emit({ type: "status", sessionId: powershellSession.id, status: "working" });
     });
@@ -2477,6 +2590,43 @@ describe("folder colour", () => {
     await waitFor(() => expect(folderRow("Atlas")).toHaveClass("folder-idle"));
     // The pane keeps its own colour throughout — a pane's dot is the PTY's business alone.
     expect(document.querySelector(".pane-header .status-dot")).toHaveClass("status-idle");
+  });
+
+  it("keeps the working rail and approval alert visible together, expanded and collapsed", async () => {
+    const working: TerminalSessionView = { ...powershellSession, status: "working" };
+    const approval: TerminalSessionView = {
+      ...claudeSession,
+      id: "session-approval",
+      status: "awaiting-approval",
+      pid: 4202,
+      exitCode: null,
+    };
+    const harness = createApi({ projects: [atlas], sessions: [working, approval] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    act(() => harness.emitAttention({ [approval.id]: "approval" }));
+
+    const expandedRow = folderRow("Atlas");
+    expect(expandedRow).toHaveClass("folder-active", "selected");
+    expect(expandedRow.querySelector(".folder-status-dot")).not.toBeInTheDocument();
+    expect(within(expandedRow).getByRole("status", { name: "승인 대기 세션 있음" })).toHaveClass(
+      "unread-approval",
+    );
+
+    const sessionRow = screen.getByRole("button", { name: "PowerShell 세션 열기" });
+    expect(sessionRow).toHaveClass("status-working", "current");
+    expect(sessionRow.querySelector(".status-dot")).toHaveClass("status-working");
+    expect(within(sessionRow).getByText("작업 중")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "사이드바 접기" }));
+    const railRow = screen.getByRole("button", {
+      name: "Atlas 폴더 선택 (작업 중) (승인 대기 세션 있음)",
+    });
+    expect(railRow).toHaveClass("folder-active", "selected");
+    expect(railRow.querySelector(".folder-activity-dot")).toBeInTheDocument();
+    expect(railRow.querySelector(".unread-approval")).toBeInTheDocument();
   });
 
   it("leaves the registry's 완료 flag out of it, and offers no toggle for it", async () => {

@@ -133,6 +133,13 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     readFile: vi.fn(async () => ({ relativePath: "readme.md", encoding: "utf8" as const, content: "", truncated: false, sizeBytes: 0 })),
     writeFile: vi.fn(async () => undefined),
     runExecutable: vi.fn(async () => undefined),
+    absolutePath: vi.fn(async () => "C:/project/readme.md"),
+    reveal: vi.fn(async () => undefined),
+    openInEditor: vi.fn(async () => undefined),
+    create: vi.fn(async () => "src/new.ts"),
+    rename: vi.fn(async () => "src/renamed.ts"),
+    duplicate: vi.fn(async () => "src/index copy.ts"),
+    trash: vi.fn(async () => undefined),
   };
   const shellGateway = {
     openExternal: vi.fn(async () => undefined),
@@ -150,6 +157,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
       behind: null,
       branches: ["main"],
       changes: [],
+      ignored: [],
     })),
     checkout: vi.fn(async () => undefined),
     createBranch: vi.fn(async () => undefined),

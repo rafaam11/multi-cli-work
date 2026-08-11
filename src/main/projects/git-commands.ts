@@ -46,6 +46,7 @@ export interface ParsedGitStatus {
   ahead: number | null;
   behind: number | null;
   changes: GitChangeEntry[];
+  ignored: string[];
 }
 
 /** Collapses porcelain's separate index/worktree columns to the one badge the panel shows. */
@@ -75,6 +76,7 @@ function changeStatus(xy: string): GitChangeEntry["status"] {
 export function parseGitStatusV2(output: string): ParsedGitStatus {
   const records = output.split("\0");
   const changes: GitChangeEntry[] = [];
+  const ignored: string[] = [];
   let currentBranch: string | null = null;
   let upstream: string | null = null;
   let ahead: number | null = null;
@@ -95,6 +97,10 @@ export function parseGitStatusV2(output: string): ParsedGitStatus {
       }
     } else if (record.startsWith("? ")) {
       changes.push({ path: record.slice(2), status: "?" });
+    } else if (record.startsWith("! ")) {
+      // git marks an ignored directory with a trailing slash; dropping it lets one prefix test
+      // ("is this path the entry or below it") cover ignored files and ignored folders alike.
+      ignored.push(record.slice(2).replace(/\/$/, ""));
     } else if (record.startsWith("1 ")) {
       const fields = record.split(" ");
       changes.push({ path: fields.slice(8).join(" "), status: changeStatus(fields[1] ?? "..") });
@@ -109,7 +115,7 @@ export function parseGitStatusV2(output: string): ParsedGitStatus {
       changes.push({ path: fields.slice(10).join(" "), status: "U" });
     }
   }
-  return { currentBranch, upstream, ahead, behind, changes };
+  return { currentBranch, upstream, ahead, behind, changes, ignored };
 }
 
 /**
@@ -119,7 +125,14 @@ export function parseGitStatusV2(output: string): ParsedGitStatus {
 export async function readGitPanelData(rootPath: string): Promise<GitPanelData> {
   try {
     const [statusOutput, branchesOutput] = await Promise.all([
-      git(rootPath, ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"], QUERY_TIMEOUT_MS),
+      // `--ignored=matching` reports an ignored folder as one entry and never walks into it, so
+      // node_modules costs a single record here. `traditional` would expand it file by file,
+      // because --untracked-files=all is already in force.
+      git(
+        rootPath,
+        ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "--ignored=matching", "-z"],
+        QUERY_TIMEOUT_MS,
+      ),
       git(rootPath, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)"], QUERY_TIMEOUT_MS),
     ]);
     return {
@@ -131,7 +144,16 @@ export async function readGitPanelData(rootPath: string): Promise<GitPanelData> 
         .filter((line) => line.length > 0),
     };
   } catch {
-    return { isRepo: false, currentBranch: null, upstream: null, ahead: null, behind: null, branches: [], changes: [] };
+    return {
+      isRepo: false,
+      currentBranch: null,
+      upstream: null,
+      ahead: null,
+      behind: null,
+      branches: [],
+      changes: [],
+      ignored: [],
+    };
   }
 }
 

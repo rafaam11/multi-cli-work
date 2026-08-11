@@ -93,10 +93,10 @@
 }
 
 /*
- * A folder row tints every child svg at once (--amber in the sidebar, --teal in the member list) so
- * the folder glyphs read as one family. A brand mark has to escape that tint, and these win on
- * specificity: Teams keeps its purple, while GitHub — a black/white mark that disappears against
- * this background once given its own colour — follows the row's own text instead.
+ * Folder glyphs are neutral in the sidebar and teal in the member list. A brand mark has to escape
+ * that inherited tint, and these win on specificity: Teams keeps its purple, while GitHub — a
+ * black/white mark that disappears against this background once given its own colour — follows the
+ * row's own text instead.
  */
 .project-select > svg.brand-icon-teams,
 .member-open > svg.brand-icon-teams {
@@ -613,11 +613,8 @@ body.sidebar-resizing {
   padding: 0;
 }
 
-/* The collapsed rail switches folders now, not sessions, so it takes the 폴더 row's derived colour
-   rather than any one session's status. */
+/* Collapsed folders stay neutral. Activity and unread attention use two independent corner dots. */
 .rail-session-button {
-  --session-accent: var(--green);
-
   position: relative;
   display: grid;
   width: 32px;
@@ -627,31 +624,35 @@ body.sidebar-resizing {
   border: 0;
   border-radius: 6px;
   color: var(--muted);
-  background: color-mix(in srgb, var(--session-accent) 14%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--session-accent) 35%, transparent);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
   cursor: pointer;
-}
-
-.rail-session-button.folder-active {
-  --session-accent: var(--amber);
 }
 
 .rail-session-button:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
+  background: var(--surface-hover);
 }
 
 .rail-session-button.selected {
   color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 30%, var(--surface-hover));
-  box-shadow: inset 0 0 0 1px var(--session-accent);
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
-.rail-session-button .status-dot {
+.rail-session-button.missing {
+  color: var(--red);
+}
+
+.rail-session-button .folder-activity-dot {
   position: absolute;
   right: -2px;
   bottom: -2px;
+  width: 7px;
+  height: 7px;
   flex: none;
+  border-radius: 50%;
+  background: var(--teal);
   box-shadow: 0 0 0 2px var(--sidebar);
 }
 
@@ -1364,14 +1365,21 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface);
 }
 
+/* Heading, an optional error bar, then the tree taking whatever is left. */
 .file-explorer-body {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
   min-height: 0;
+  flex-direction: column;
+}
+
+.file-explorer-body > .section-heading,
+.file-explorer-body > .action-error {
+  flex: 0 0 auto;
 }
 
 .file-tree {
   min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
   padding: 4px 0;
   scrollbar-color: var(--line-strong) transparent;
@@ -1379,24 +1387,41 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .file-tree ul {
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+/*
+ * One guide line per nesting level, sitting under the parent row's chevron: --file-tree-indent is
+ * this group's row padding, and the chevron's centre is half its 13px box back from there. The root
+ * group has no parent to point at, so it draws nothing. The line stays above the row backgrounds so
+ * hovering one row does not break the column — it only ever crosses empty indent space.
+ */
+.file-tree ul:not([data-depth="0"])::before {
+  position: absolute;
+  z-index: 1;
+  width: 1px;
+  background: var(--line);
+  content: "";
+  inset: 0 auto 0 calc(var(--file-tree-indent) - 7.5px);
+}
+
 .file-tree-row {
   display: flex;
   width: 100%;
-  min-height: 26px;
+  min-height: 24px;
   align-items: center;
-  gap: 6px;
   padding-right: 8px;
+  padding-left: var(--file-tree-indent, 8px);
   border: 0;
   border-radius: 4px;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
   background: transparent;
   font-size: 12px;
   text-align: left;
+  gap: 6px;
   cursor: pointer;
 }
 
@@ -1411,6 +1436,32 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   box-shadow: inset 2px 0 0 var(--teal);
 }
 
+/* Which row the open context menu is about — the pointer has usually left the row by then. */
+.file-tree-row.menu-target {
+  color: var(--text);
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+/* The inline field for a rename or a new entry. It keeps the row's own padding so the name it is
+   replacing does not appear to jump sideways. */
+.file-tree-edit {
+  cursor: default;
+}
+
+.file-tree-edit input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--teal);
+  border-radius: 3px;
+  color: var(--text);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
 .file-tree-toggle {
   display: grid;
   width: 13px;
@@ -1419,10 +1470,53 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--quiet);
 }
 
+.file-icon {
+  flex: 0 0 auto;
+}
+
 .file-tree-name {
   overflow: hidden;
+  flex: 0 1 auto;
+  min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Git marks colour the name only: the icon carries the file type and the row background carries
+ * selection, so neither can be spent on status.
+ */
+.file-tree-row.git-modified .file-tree-name {
+  color: var(--amber);
+}
+
+.file-tree-row.git-added .file-tree-name,
+.file-tree-row.git-untracked .file-tree-name {
+  color: var(--green);
+}
+
+.file-tree-row.git-conflict .file-tree-name {
+  color: var(--red);
+}
+
+.file-tree-row.git-deleted .file-tree-name {
+  color: var(--red);
+  text-decoration: line-through;
+}
+
+.file-tree-row.git-ignored {
+  opacity: 0.45;
+}
+
+/* A collapsed folder still says that something below it moved. */
+.file-tree-row.git-dirty::after {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--amber);
+  content: "";
 }
 
 .file-tree-state {
@@ -1723,13 +1817,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * The 폴더 row's colour is derived from its sessions: amber only while an agent is actually running
- * or waiting on the user, green otherwise. Green is the resting state, so it gets no dimming — a
- * quiet tree would go almost entirely grey. Session rows use a 3px bar plus a background wash; this
- * layer uses a thicker 4px bar and no wash, so the two stay legible when stacked.
+ * The folder rail is teal only while an agent is starting or working. Waiting is rendered by the
+ * violet/amber unread dot at the other edge, so activity and attention can be visible together.
+ * Quiet folders use a neutral rail; a missing root overrides both with the error colour.
  */
 .project-row {
-  --folder-accent: var(--green);
+  --folder-accent: var(--line-strong);
 
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto;
@@ -1739,7 +1832,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .project-row.folder-active {
-  --folder-accent: var(--amber);
+  --folder-accent: var(--teal);
+}
+
+.project-row.missing {
+  --folder-accent: var(--red);
 }
 
 .project-row:hover,
@@ -1748,14 +1845,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * Selection adds a ring rather than its own bar, so it cannot hide the status. Ring and wash are
- * both tinted with --folder-accent, which is what keeps the two states apart: selection used to
- * share hover's background and differ only by a grey ring, so the current folder looked no
- * different from whichever one the pointer happened to be over.
+ * Selection adds a neutral ring without changing the status rail. Hover and selection therefore do
+ * not acquire the meaning of activity, attention, or error colours.
  */
 .project-row.selected {
-  background: color-mix(in srgb, var(--folder-accent) 20%, var(--surface-hover));
-  box-shadow: inset 4px 0 0 var(--folder-accent), inset 0 0 0 2px color-mix(in srgb, var(--folder-accent) 60%, transparent);
+  background: var(--surface-hover);
+  box-shadow: inset 4px 0 0 var(--folder-accent), inset 0 0 0 1px var(--line-strong);
 }
 
 /* The name is already --text; this lifts the rest of the row to match so the whole selected row
@@ -1829,13 +1924,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
-/* Neutral, so the folder icon does not read as a second status signal beside the bar and dot. */
+/* Neutral, so the folder icon does not read as a second status signal beside the rail. */
 .project-select > svg {
   color: var(--muted);
 }
 
-/* The status dot rides with the name rather than the row edge: the name shrinks first, so a short
-   name keeps its dot right beside it instead of stranded across the row. */
 .project-copy {
   display: flex;
   min-width: 0;
@@ -1851,14 +1944,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   align-items: center;
   justify-self: end;
   gap: 6px;
-}
-
-.folder-status-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: 50%;
-  background: var(--folder-accent);
 }
 
 .project-name {
@@ -2072,9 +2157,9 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * A pane's row in the tree: a session, or a document opened from that folder. The left bar carries
- * the session's status colour; documents keep the neutral default. `current` is the focused pane and
- * `on-screen` the ones the grid is drawing right now — everything else reads as merely open.
+ * A pane's row in the tree: a session, or a document opened from that folder. Status stays on the
+ * dot and label; neutral hover and selection styles carry interaction state. `current` is focused
+ * and `on-screen` marks panes the grid is drawing right now.
  */
 .session-tree {
   position: relative;
@@ -2098,8 +2183,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 /* Flex, not the grid this row used to be: the unread dot is optional, and a fixed column count made
    its presence push the status text onto a second line. */
 .session-row {
-  --session-accent: var(--quiet);
-
   display: flex;
   width: 100%;
   min-height: 34px;
@@ -2109,8 +2192,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: 0;
   border-radius: 4px;
   color: var(--muted);
-  background: color-mix(in srgb, var(--session-accent) 10%, transparent);
-  box-shadow: inset 3px 0 0 var(--session-accent);
+  background: transparent;
+  box-shadow: none;
   text-align: left;
   cursor: pointer;
 }
@@ -2122,7 +2205,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .session-row:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 18%, var(--surface-hover));
+  background: var(--surface-hover);
 }
 
 .session-row.on-screen {
@@ -2131,10 +2214,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .session-row.current {
   color: var(--text);
-  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
-  box-shadow:
-    inset 3px 0 0 var(--session-accent),
-    inset 0 0 0 1px var(--line-strong);
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+/* Idle is neutral in the sidebar; the global status palette remains unchanged outside this scope. */
+.project-sidebar .status-idle .status-dot,
+.project-sidebar .status-dot.status-idle {
+  background: var(--quiet);
 }
 
 .session-name,
@@ -2474,6 +2561,52 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   content: "";
   inset: 0;
   pointer-events: none;
+}
+
+/*
+ * A pane that wants something says so in its own frame, so a full grid does not have to be read off
+ * the sidebar. Same overlay trick as the focus ring, on ::before so the ring paints over it and a
+ * focused pane still reads as focused.
+ *
+ * Only the three statuses that are actually news are here. 진행 중 is teal, which is the focus
+ * colour, and 대기/종료 are the resting states — drawing those would make every pane a frame.
+ */
+.grid-pane.status-awaiting-input,
+.grid-pane.status-awaiting-approval {
+  --status-pulse: pane-status-pulse 2.4s ease-in-out infinite;
+}
+
+.grid-pane.status-awaiting-input {
+  --session-accent: var(--violet);
+}
+
+.grid-pane.status-awaiting-approval {
+  --session-accent: var(--amber);
+}
+
+/* An error is a finished condition, not a wait, so it holds still. */
+.grid-pane.status-error {
+  --session-accent: var(--red);
+  --status-pulse: none;
+}
+
+.grid-pane.status-awaiting-input::before,
+.grid-pane.status-awaiting-approval::before,
+.grid-pane.status-error::before {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--session-accent);
+  animation: var(--status-pulse);
+  box-shadow: inset 0 0 12px color-mix(in srgb, var(--session-accent) 22%, transparent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+}
+
+@keyframes pane-status-pulse {
+  50% {
+    opacity: 0.4;
+  }
 }
 
 /* A slot the user left open. It is a drop target, so it says so instead of looking broken. */

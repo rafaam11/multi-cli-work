@@ -5,10 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createWorkspaceEntry,
+  duplicateWorkspaceEntry,
   isWorkspaceExecutable,
   listWorkspaceDirectory,
   readWorkspaceFile,
+  renameWorkspaceEntry,
+  resolveWorkspaceEntryPath,
   runWorkspaceExecutable,
+  trashWorkspaceEntry,
+  workspaceEntryName,
   writeWorkspaceFile,
 } from "./workspace-files";
 
@@ -145,5 +151,113 @@ describe("writeWorkspaceFile", () => {
   it("rejects content larger than the write cap", async () => {
     const huge = "a".repeat(6 * 1024 * 1024);
     await expect(writeWorkspaceFile(projectRoot, "src/index.ts", huge)).rejects.toThrow(/too large/);
+  });
+});
+
+describe("workspaceEntryName", () => {
+  it("keeps an ordinary name, trimmed", () => {
+    expect(workspaceEntryName("  notes.md  ")).toBe("notes.md");
+  });
+
+  it("refuses names that would escape the folder or that Windows cannot hold", () => {
+    expect(() => workspaceEntryName("")).toThrow(/must not be empty/);
+    expect(() => workspaceEntryName("../escape")).toThrow(/must not contain/);
+    expect(() => workspaceEntryName("sub/child.ts")).toThrow(/must not contain/);
+    expect(() => workspaceEntryName("a:b")).toThrow(/must not contain/);
+    expect(() => workspaceEntryName("..")).toThrow(/is invalid/);
+    expect(() => workspaceEntryName("trailing.")).toThrow(/must not end with a dot/);
+    expect(() => workspaceEntryName("aux.ts")).toThrow(/Windows reserves/);
+    expect(() => workspaceEntryName(`a${String.fromCharCode(0)}b`)).toThrow(/control characters/);
+    expect(() => workspaceEntryName("a".repeat(256))).toThrow(/too long/);
+  });
+});
+
+describe("resolveWorkspaceEntryPath", () => {
+  it("resolves a folder as well as a file", async () => {
+    expect(await resolveWorkspaceEntryPath(projectRoot, "src")).toBe(path.join(projectRoot, "src"));
+    expect(await resolveWorkspaceEntryPath(projectRoot, "readme.md")).toBe(path.join(projectRoot, "readme.md"));
+  });
+
+  it("rejects a path outside the root and one that is not there", async () => {
+    await expect(resolveWorkspaceEntryPath(projectRoot, "../secret.txt")).rejects.toThrow(/escapes the project root/);
+    await expect(resolveWorkspaceEntryPath(projectRoot, "nope.txt")).rejects.toThrow();
+  });
+});
+
+describe("createWorkspaceEntry", () => {
+  it("creates an empty file and a folder under the given parent", async () => {
+    expect(await createWorkspaceEntry(projectRoot, "src", "new.ts", "file")).toBe("src/new.ts");
+    expect(await createWorkspaceEntry(projectRoot, "", "docs", "directory")).toBe("docs");
+
+    expect(await fs.readFile(path.join(projectRoot, "src", "new.ts"), "utf8")).toBe("");
+    expect((await fs.stat(path.join(projectRoot, "docs"))).isDirectory()).toBe(true);
+  });
+
+  it("refuses to overwrite an existing entry", async () => {
+    await expect(createWorkspaceEntry(projectRoot, "src", "index.ts", "file")).rejects.toThrow(/already exists/);
+    expect(await fs.readFile(path.join(projectRoot, "src", "index.ts"), "utf8")).toBe("export {};\n");
+  });
+
+  it("refuses a name that walks out of the parent", async () => {
+    await expect(createWorkspaceEntry(projectRoot, "src", "../../pwned.txt", "file")).rejects.toThrow(/must not contain/);
+    await expect(createWorkspaceEntry(projectRoot, "..", "pwned.txt", "file")).rejects.toThrow(/escapes the project root/);
+  });
+});
+
+describe("renameWorkspaceEntry", () => {
+  it("renames in place and reports the new relative path", async () => {
+    expect(await renameWorkspaceEntry(projectRoot, "src/index.ts", "main.ts")).toBe("src/main.ts");
+    expect(await fs.readFile(path.join(projectRoot, "src", "main.ts"), "utf8")).toBe("export {};\n");
+  });
+
+  it("refuses to replace a name that is taken", async () => {
+    await fs.writeFile(path.join(projectRoot, "src", "taken.ts"), "keep\n", "utf8");
+    await expect(renameWorkspaceEntry(projectRoot, "src/index.ts", "taken.ts")).rejects.toThrow(/already exists/);
+    expect(await fs.readFile(path.join(projectRoot, "src", "taken.ts"), "utf8")).toBe("keep\n");
+  });
+
+  it("lets a rename that only changes case through on a case-insensitive file system", async () => {
+    expect(await renameWorkspaceEntry(projectRoot, "readme.md", "README.md", "win32")).toBe("README.md");
+  });
+
+  it("refuses the root and a path outside it", async () => {
+    await expect(renameWorkspaceEntry(projectRoot, "", "elsewhere")).rejects.toThrow(/root folder cannot be renamed/);
+    await expect(renameWorkspaceEntry(projectRoot, "../secret.txt", "taken.txt")).rejects.toThrow(/escapes the project root/);
+  });
+});
+
+describe("duplicateWorkspaceEntry", () => {
+  it("copies a file next to itself, keeping the extension", async () => {
+    expect(await duplicateWorkspaceEntry(projectRoot, "src/index.ts")).toBe("src/index copy.ts");
+    expect(await fs.readFile(path.join(projectRoot, "src", "index copy.ts"), "utf8")).toBe("export {};\n");
+  });
+
+  it("numbers the next copy instead of overwriting the first", async () => {
+    await duplicateWorkspaceEntry(projectRoot, "src/index.ts");
+    expect(await duplicateWorkspaceEntry(projectRoot, "src/index.ts")).toBe("src/index copy 2.ts");
+  });
+
+  it("copies a folder with everything under it", async () => {
+    expect(await duplicateWorkspaceEntry(projectRoot, "src")).toBe("src copy");
+    expect(await fs.readFile(path.join(projectRoot, "src copy", "index.ts"), "utf8")).toBe("export {};\n");
+  });
+
+  it("refuses the root", async () => {
+    await expect(duplicateWorkspaceEntry(projectRoot, "")).rejects.toThrow(/root folder cannot be duplicated/);
+  });
+});
+
+describe("trashWorkspaceEntry", () => {
+  it("hands the absolute path to the trash function", async () => {
+    const trashItem = vi.fn(async () => undefined);
+    await trashWorkspaceEntry(projectRoot, "src/index.ts", trashItem);
+    expect(trashItem).toHaveBeenCalledWith(path.join(projectRoot, "src", "index.ts"));
+  });
+
+  it("never reaches outside the root, or the root itself", async () => {
+    const trashItem = vi.fn(async () => undefined);
+    await expect(trashWorkspaceEntry(projectRoot, "../secret.txt", trashItem)).rejects.toThrow(/escapes the project root/);
+    await expect(trashWorkspaceEntry(projectRoot, "", trashItem)).rejects.toThrow(/root folder cannot be deleted/);
+    expect(trashItem).not.toHaveBeenCalled();
   });
 });

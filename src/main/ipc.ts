@@ -120,6 +120,13 @@ interface WorkspaceFilesGateway {
   readFile(rootPath: string, relativePath: string): Promise<WorkspaceFileContent>;
   writeFile(rootPath: string, relativePath: string, content: string): Promise<void>;
   runExecutable(rootPath: string, relativePath: string): Promise<void>;
+  absolutePath(rootPath: string, relativePath: string): Promise<string>;
+  reveal(rootPath: string, relativePath: string): Promise<void>;
+  openInEditor(rootPath: string, relativePath: string): Promise<void>;
+  create(rootPath: string, parentRelativePath: string, name: string, kind: "file" | "directory"): Promise<string>;
+  rename(rootPath: string, relativePath: string, name: string): Promise<string>;
+  duplicate(rootPath: string, relativePath: string): Promise<string>;
+  trash(rootPath: string, relativePath: string): Promise<void>;
 }
 
 interface GitGateway {
@@ -720,6 +727,57 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
       content,
     );
   });
+  // The context menu's own calls. The name is only checked for its type here; what a file system
+  // will accept is workspace-files.ts's business, next to the root guard it belongs with.
+  ipc.handle("workspace-files:absolute-path", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.absolutePath(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
+  ipc.handle("workspace-files:reveal", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.reveal(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
+  ipc.handle("workspace-files:open-in-editor", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.openInEditor(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
+  ipc.handle(
+    "workspace-files:create",
+    async (_event, target: unknown, parentRelativePath: unknown, name: unknown, kind: unknown) => {
+      if (kind !== "file" && kind !== "directory") throw new Error("Entry kind must be 'file' or 'directory'");
+      return dependencies.workspaceFiles.create(
+        await rootPathForTarget(validateFileExplorerTarget(target)),
+        relativePathString(parentRelativePath),
+        nonEmptyString(name, "Entry name"),
+        kind,
+      );
+    },
+  );
+  ipc.handle("workspace-files:rename", async (_event, target: unknown, relativePath: unknown, name: unknown) =>
+    dependencies.workspaceFiles.rename(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+      nonEmptyString(name, "Entry name"),
+    ),
+  );
+  ipc.handle("workspace-files:duplicate", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.duplicate(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
+  ipc.handle("workspace-files:trash", async (_event, target: unknown, relativePath: unknown) =>
+    dependencies.workspaceFiles.trash(
+      await rootPathForTarget(validateFileExplorerTarget(target)),
+      relativePathString(relativePath),
+    ),
+  );
   const targetRoot = (target: unknown) => rootPathForTarget(validateFileExplorerTarget(target));
   ipc.handle("git:panel-data", async (_event, target: unknown) => dependencies.git.panelData(await targetRoot(target)));
   ipc.handle("git:checkout", async (_event, target: unknown, branch: unknown) =>

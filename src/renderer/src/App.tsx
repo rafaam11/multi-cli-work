@@ -32,7 +32,7 @@ import type { GitDiffFile } from "./GitDiffPane";
 import { GitGraphEmbed } from "./GitGraphEmbed";
 import type { GitWorktreeOption } from "./GitPanel";
 import { RightSidebar, type RightSidebarTab } from "./RightSidebar";
-import { categorizeFile, fileTabId, type OpenFileTab } from "./file-tabs";
+import { categorizeFile, fileExtensionOf, fileTabId, type OpenFileTab } from "./file-tabs";
 import { FileViewerPane } from "./FileViewerPane";
 import { HtmlView } from "./HtmlView";
 import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
@@ -74,6 +74,7 @@ import {
   pageOfSession,
   placeInSlot,
   removeSession,
+  renamePaneId,
   resolveView,
   setLayout,
   viewPageSize,
@@ -1055,14 +1056,16 @@ export function App() {
   /** Page-relative slots are what the grid draws; the arrangement is addressed absolutely. */
   const absoluteSlot = (index: number) => resolvedView.page * viewPageSize(currentView) + index;
 
-  /** Emptying a slot only takes the pane off screen — the session keeps running, the file stays open. */
+  /**
+   * Emptying a slot only takes the pane off screen — the session keeps running, the file stays
+   * open — and the panes behind it move forward so the grid is never left with a gap.
+   */
   const clearSlotAt = (index: number) => {
     const paneId = resolvedView.slots[index] ?? null;
     updateCurrentView((view) => clearSlot(view, absoluteSlot(index)));
     if (paneId !== null && paneId === focusedPaneId) setFocusedPaneId(null);
   };
 
-  /** Dropping onto a slot: two panes trade places, or an off-screen pane takes the empty slot. */
   /**
    * A pane dragged to an edge or a corner. The zone names the arrangement that draws that region,
    * so the snap is one move: switch the view onto that preset — off 자동 if it was on it, which is
@@ -1076,6 +1079,7 @@ export function App() {
     focusPane(paneId);
   };
 
+  /** Dropping onto a slot inserts the pane there; whoever held it slides back one place. */
   const dropPaneOnSlot = (index: number, paneId: string) => {
     updateCurrentView((view) => placeInSlot(view, absoluteSlot(index), paneId));
     focusPane(paneId);
@@ -1120,8 +1124,8 @@ export function App() {
   };
 
   /**
-   * Takes a pane off one workspace's grid and leaves the slot open — the session keeps running and
-   * its folder keeps its own copy. The hole is deliberate: it is where the next shelved pane goes.
+   * Takes a pane off one workspace's grid — the session keeps running and its folder keeps its own
+   * copy. The panes behind it move forward, and the shelf's next free slot is the end of the row.
    */
   const removeFromWorkspace = (index: number, paneId: string) => {
     setWorkspaces((current) => current.map((view, at) => (at === index ? removeSession(view, paneId) : view)));
@@ -1584,8 +1588,7 @@ export function App() {
 
   const openRelativeFile = (sourceTab: OpenFileTab, relativePath: string, anchor: string | null) => {
     const name = relativePath.split("/").at(-1) ?? relativePath;
-    const dot = name.lastIndexOf(".");
-    const extension = dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLocaleLowerCase("en-US") : null;
+    const extension = fileExtensionOf(name);
     const tabId = openFile(sourceTab.target, sourceTab.targetLabel, {
       name,
       relativePath,
@@ -1688,6 +1691,70 @@ export function App() {
       return;
     }
     closeFileTabImmediately(tab.id);
+  };
+
+  /** The tabs an explorer operation touched: the file itself, or everything under a folder. */
+  const fileTabsUnder = (target: FileExplorerTarget, relativePath: string, kind: "file" | "directory") => {
+    const key = documentTargetKey(target);
+    return openFileTabs.filter(
+      (tab) =>
+        documentTargetKey(tab.target) === key &&
+        (kind === "directory"
+          ? tab.relativePath === relativePath || tab.relativePath.startsWith(`${relativePath}/`)
+          : tab.relativePath === relativePath),
+    );
+  };
+
+  const closeFileTabsUnder = (target: FileExplorerTarget, relativePath: string, kind: "file" | "directory") => {
+    const affected = fileTabsUnder(target, relativePath, kind);
+    for (const tab of affected.filter((tab) => !tab.dirty)) closeFileTabImmediately(tab.id);
+    // Unsaved edits outlive the file on disk, so they go through the usual close confirmation. The
+    // dialog holds one tab at a time; any others stay open rather than losing their content to a
+    // queue nobody can see.
+    const dirty = affected.find((tab) => tab.dirty);
+    if (dirty) setFileTabCloseRequest(dirty);
+  };
+
+  /**
+   * A renamed file keeps its pane. Both the tab id and the pane id are derived from the path, so
+   * every arrangement holding the old id is rewritten in place instead of losing the pane.
+   */
+  const moveFileTabs = (
+    target: FileExplorerTarget,
+    relativePath: string,
+    nextRelativePath: string,
+    kind: "file" | "directory",
+  ) => {
+    const affected = fileTabsUnder(target, relativePath, kind);
+    if (affected.length === 0) return;
+    const movedPath = (path: string) => nextRelativePath + path.slice(relativePath.length);
+    const renames = affected.map((tab) => ({
+      from: documentPaneId("file", tab.id),
+      to: documentPaneId("file", fileTabId(tab.target, movedPath(tab.relativePath))),
+    }));
+    const applyRenames = (view: SlotViewState) =>
+      renames.reduce((current, rename) => renamePaneId(current, rename.from, rename.to), view);
+    setOpenFileTabs((current) =>
+      current.map((tab) => {
+        if (!affected.some((candidate) => candidate.id === tab.id)) return tab;
+        const moved = movedPath(tab.relativePath);
+        const name = moved.split("/").at(-1) ?? moved;
+        const extension = fileExtensionOf(name);
+        return {
+          ...tab,
+          id: fileTabId(tab.target, moved),
+          relativePath: moved,
+          name,
+          extension,
+          category: categorizeFile(name, extension),
+        };
+      }),
+    );
+    setFolderViews((current) =>
+      Object.fromEntries(Object.entries(current).map(([key, view]) => [key, applyRenames(view)])),
+    );
+    setWorkspaces((current) => current.map(applyRenames));
+    setFocusedPaneId((current) => renames.find((rename) => rename.from === current)?.to ?? current);
   };
 
   const renameSession = async (sessionId: string, name: string | null) => {
@@ -2741,7 +2808,14 @@ export function App() {
             ? selectedFileTab.relativePath
             : null
         }
+        vscodeAvailable={availability.vscode}
         onOpenFile={(entry) => fileExplorerTarget && openFile(fileExplorerTarget, fileExplorerTargetLabel ?? "", entry)}
+        onEntryDeleted={(relativePath, kind) =>
+          fileExplorerTarget && closeFileTabsUnder(fileExplorerTarget, relativePath, kind)
+        }
+        onEntryRenamed={(relativePath, nextRelativePath, kind) =>
+          fileExplorerTarget && moveFileTabs(fileExplorerTarget, relativePath, nextRelativePath, kind)
+        }
         worktreeOptions={gitWorktreeOptions}
         onSelectWorktreeOption={selectGitWorktreeOption}
         onOpenDiff={openGitDiff}

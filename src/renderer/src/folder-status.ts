@@ -5,8 +5,9 @@ import type { TerminalStatus } from "@shared/terminal-types";
  * asked the user to keep a second, manual record of something the sessions already say out loud,
  * and it drifted the moment they forgot to flip it back.
  *
- * Amber means an agent is actually running in that folder right now — starting up, working, or
- * stopped to ask something. Everything else, including a folder with no sessions at all, is green.
+ * Teal means an agent is actually running in that folder right now — starting up or working.
+ * Waiting for input or approval is attention, not activity, and the sidebar renders that separately.
+ * Everything else, including a folder with no sessions at all, is neutral.
  * `SharedProject.status` still lives in the registry for the work-project layer; the sidebar simply
  * stopped reading it.
  *
@@ -16,8 +17,6 @@ import type { TerminalStatus } from "@shared/terminal-types";
 const ACTIVE_STATUSES: ReadonlySet<TerminalStatus> = new Set<TerminalStatus>([
   "starting",
   "working",
-  "awaiting-input",
-  "awaiting-approval",
 ]);
 
 /** True while at least one of the folder's sessions has an agent doing something. */

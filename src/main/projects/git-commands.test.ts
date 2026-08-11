@@ -55,7 +55,7 @@ afterEach(async () => {
 });
 
 describe("parseGitStatusV2", () => {
-  it("reads branch headers, ordinary changes, untracked files, and renames", () => {
+  it("reads branch headers, ordinary changes, untracked files, renames, and ignored paths", () => {
     const output = [
       "# branch.oid abc123",
       "# branch.head main",
@@ -66,6 +66,8 @@ describe("parseGitStatusV2", () => {
       "2 R. N... 100644 100644 100644 abc def R100 new name.txt",
       "old name.txt",
       "? fresh.txt",
+      "! node_modules/",
+      "! secrets.env",
     ].join("\0");
 
     expect(parseGitStatusV2(output)).toEqual({
@@ -79,6 +81,7 @@ describe("parseGitStatusV2", () => {
         { path: "new name.txt", status: "R", renamedFrom: "old name.txt" },
         { path: "fresh.txt", status: "?" },
       ],
+      ignored: ["node_modules", "secrets.env"],
     });
   });
 
@@ -109,6 +112,18 @@ describe("git panel data against a real repo", () => {
     );
   });
 
+  it("reports an ignored folder once instead of every file inside it", async () => {
+    await write(".gitignore", "vendor/\n");
+    await fs.mkdir(path.join(repoRoot, "vendor", "pkg"), { recursive: true });
+    await write("vendor/a.txt", "a\n");
+    await write("vendor/pkg/b.txt", "b\n");
+
+    const data = await readGitPanelData(repoRoot);
+
+    expect(data.ignored).toEqual(["vendor"]);
+    expect(data.changes.map((change) => change.path)).not.toContain("vendor/a.txt");
+  });
+
   it("collapses a folder that is not a repository to isRepo: false", async () => {
     const plainDir = path.join(tempRoot, "plain");
     await fs.mkdir(plainDir, { recursive: true });
@@ -123,6 +138,7 @@ describe("git panel data against a real repo", () => {
       behind: null,
       branches: [],
       changes: [],
+      ignored: [],
     });
   });
 });

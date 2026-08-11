@@ -30,7 +30,7 @@ describe("GitGraphEmbed", () => {
     list.mockReset().mockResolvedValue({ commits: [first, second], offset: 0, limit: 200, hasMore: false });
     commitDetails.mockReset().mockImplementation(async (_target, hash) => ({ ...([first, second].find((commit) => commit.hash === hash) ?? first), message: "전체 메시지", authorEmail: "a@example.com", committerName: "Committer", committerEmail: "c@example.com", committedAt: "2026-01-01T00:00:00Z", files: [] }));
     createBranch.mockReset().mockResolvedValue(undefined);
-    panelData.mockReset().mockResolvedValue({ isRepo: true, currentBranch: "main", upstream: null, ahead: null, behind: null, branches: ["main"], changes: [] });
+    panelData.mockReset().mockResolvedValue({ isRepo: true, currentBranch: "main", upstream: null, ahead: null, behind: null, branches: ["main"], changes: [], ignored: [] });
     Object.assign(window, { multiCliWork: { gitGraph: { list, commitDetails, fileDiff: vi.fn(), createBranch, createTag: vi.fn(), cherryPick: vi.fn(), revert: vi.fn() }, git: { checkout: vi.fn(), panelData }, clipboard: { writeText: vi.fn() } } });
   });
 
@@ -107,7 +107,7 @@ describe("GitGraphEmbed", () => {
   });
 
   it("shows a pending-changes row only while the working tree is dirty", async () => {
-    panelData.mockResolvedValue({ isRepo: true, currentBranch: "main", upstream: null, ahead: null, behind: null, branches: ["main"], changes: [{ path: "a.ts", status: "M" }, { path: "b.ts", status: "?" }] });
+    panelData.mockResolvedValue({ isRepo: true, currentBranch: "main", upstream: null, ahead: null, behind: null, branches: ["main"], changes: [{ path: "a.ts", status: "M" }, { path: "b.ts", status: "?" }], ignored: [] });
     render(<GitGraphEmbed target={target} targetLabel="Repo" />);
 
     expect(await screen.findByText("미커밋 변경 2건")).toBeInTheDocument();

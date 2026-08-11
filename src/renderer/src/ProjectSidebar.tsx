@@ -42,7 +42,7 @@ import { DocumentPaneIcon, type DocumentPane, type PaneRow } from "./pane-items"
 import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
-import { folderActivityClass } from "./folder-status";
+import { folderActivityClass, isFolderActive } from "./folder-status";
 
 interface ProjectSidebarProps {
   snapshot: ProjectWorkspaceSnapshot | null;
@@ -168,6 +168,10 @@ function rollUpAttention(
     if (attention === "approval" || strongest === "approval") return "approval";
     return attention ?? strongest;
   }, null);
+}
+
+function attentionLabel(attention: SessionAttention): string {
+  return attention === "approval" ? "승인 대기 세션 있음" : "입력 대기 세션 있음";
 }
 
 export function ProjectSidebar({
@@ -491,18 +495,33 @@ export function ProjectSidebar({
   const renderRailProject = (project: SharedProject) => {
     const name = projectName(project);
     const projectSessions = sessions.filter((session) => session.projectId === project.id);
+    const active = isFolderActive(projectSessions);
     const attention = attentionOf(projectSessions);
+    const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
+    const details = [
+      active ? "작업 중" : null,
+      attention ? attentionLabel(attention) : null,
+      rootMissing ? "폴더 없음" : null,
+    ].filter(Boolean);
     return (
       <li key={project.id}>
         <button
           type="button"
-          className={`rail-session-button ${folderActivityClass(projectSessions)} ${selectedProjectId === project.id ? "selected" : ""}`}
+          className={[
+            "rail-session-button",
+            folderActivityClass(projectSessions),
+            selectedProjectId === project.id ? "selected" : "",
+            rootMissing ? "missing" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           onClick={() => onSelectProject(project.id)}
           onContextMenu={(event) => onProjectContextMenu(project, event)}
           title={name}
-          aria-label={`${name} 폴더 선택${attention ? " (읽지 않음)" : ""}`}
+          aria-label={`${name} 폴더 선택${details.map((detail) => ` (${detail})`).join("")}`}
         >
-          <Folder size={15} />
+          {rootMissing ? <FolderX size={15} aria-hidden="true" /> : <Folder size={15} />}
+          {active ? <span className="folder-activity-dot" aria-hidden="true" /> : null}
           {attention ? <span className={`unread-dot unread-${attention}`} aria-hidden="true" /> : null}
         </button>
       </li>
@@ -880,10 +899,7 @@ export function ProjectSidebar({
                       ) : (
                         <Folder size={15} />
                       )}
-                      {/* The dot sits inside .project-copy so it stays beside the name however
-                          short the name is, rather than drifting to the far edge of the row. */}
                       <span className="project-copy">
-                        <span className="folder-status-dot" aria-hidden="true" />
                         <span className="project-name">{name}</span>
                       </span>
                       {/* The row's right edge is a rail: the count lands on the same spot for every
@@ -894,8 +910,8 @@ export function ProjectSidebar({
                           <span
                             className={`unread-dot unread-${projectAttention}`}
                             role="status"
-                            aria-label="응답 대기 세션 있음"
-                            title="응답 대기 세션 있음"
+                            aria-label={attentionLabel(projectAttention)}
+                            title={attentionLabel(projectAttention)}
                           />
                         ) : null}
                         {rootMissing ? <span className="project-status missing-status">없음</span> : null}

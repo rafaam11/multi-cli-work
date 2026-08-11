@@ -47,10 +47,15 @@ import { WorkProjectService } from "./projects/work-project-service";
 import { readWorkProjectRegistry } from "./projects/work-project-registry";
 import { writeWorkProjectBrief, type WorkProjectBriefMember } from "./projects/work-project-brief";
 import {
+  createWorkspaceEntry,
+  duplicateWorkspaceEntry,
   listWorkspaceDirectory,
   readWorkspaceFile,
+  renameWorkspaceEntry,
+  resolveWorkspaceEntryPath,
   resolveWorkspaceFilePath,
   runWorkspaceExecutable,
+  trashWorkspaceEntry,
   writeWorkspaceFile,
 } from "./projects/workspace-files";
 import { WorktreeService } from "./projects/worktree-service";
@@ -381,6 +386,18 @@ export async function createDesktopRuntime(
             });
           });
         }),
+      absolutePath: resolveWorkspaceEntryPath,
+      reveal: async (rootPath, relativePath) => {
+        // showItemInFolder selects the entry rather than opening it, which is what the menu says.
+        shell.showItemInFolder(await resolveWorkspaceEntryPath(rootPath, relativePath));
+      },
+      openInEditor: async (rootPath, relativePath) =>
+        projectActions.openInEditor(await resolveWorkspaceEntryPath(rootPath, relativePath)),
+      create: createWorkspaceEntry,
+      rename: (rootPath, relativePath, name) => renameWorkspaceEntry(rootPath, relativePath, name),
+      duplicate: duplicateWorkspaceEntry,
+      trash: (rootPath, relativePath) =>
+        trashWorkspaceEntry(rootPath, relativePath, (target) => shell.trashItem(target)),
     },
     git: {
       panelData: readGitPanelData,

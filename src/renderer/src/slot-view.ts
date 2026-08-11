@@ -16,12 +16,18 @@ import {
  * another and the rules stay testable without a DOM.
  *
  * The array is longer than one page whenever sessions spill over: slot index `n` sits on page
- * `floor(n / pageSize)`. Trailing holes are always trimmed — the layout already says how many slots
- * a page draws — but holes with something after them are kept, because those are positions the user
- * deliberately left open as drop targets.
+ * `floor(n / pageSize)`.
  *
- * A 자동 view is the exception: it holds no holes at all. Its layout follows the session count, so
- * an empty slot would only ever be a slot the layout was about to stop drawing.
+ * Panes close up behind a departure. Removing a session, emptying a slot or losing a document
+ * splices the entry out, so everything after it moves one slot forward and the grid never shows a
+ * gap nobody asked for. A drop is the mirror image: the pane is spliced *in* at the slot it landed
+ * on and whoever stood there moves back, rather than the two trading places.
+ *
+ * The one hole that survives comes from dropping past the end — the padding in front of that slot
+ * is a position the user picked on purpose, so it is kept and only trailing holes are trimmed.
+ *
+ * A 자동 view holds no holes at all. Its layout follows the session count, so an empty slot would
+ * only ever be a slot the layout was about to stop drawing.
  */
 
 function trimTrailingHoles(slots: (string | null)[]): (string | null)[] {
@@ -30,7 +36,7 @@ function trimTrailingHoles(slots: (string | null)[]): (string | null)[] {
   return next;
 }
 
-/** Holes are drop targets in a fixed layout and meaningless in 자동, which closes them up. */
+/** A hole is a slot a drop reached past in a fixed layout, and meaningless in 자동. */
 function tidySlots(layoutId: string, slots: (string | null)[]): (string | null)[] {
   if (isAutoLayout(layoutId)) return slots.filter((id): id is string => id !== null);
   return trimTrailingHoles(slots);
@@ -41,7 +47,8 @@ function firstHole(slots: readonly (string | null)[], except: number): number {
 }
 
 /**
- * Drops slots whose session is gone and repeats of a session already placed. With `autoAppend`,
+ * Closes up behind slots whose session is gone and repeats of a session already placed, leaving
+ * the holes a drop put there alone. With `autoAppend`,
  * sessions the view does not list yet take the first open slot, then the end — that is how a
  * folder's grid fills itself. Callers turn it on at the moments a folder view should catch up
  * (opening it, a session being born) rather than on every render, so emptying a slot by hand is
@@ -62,14 +69,16 @@ export function normalizeSlots(
   const layoutId = view?.layoutId ?? DEFAULT_LAYOUT_ID;
   const known = new Set([...sessionIds, ...(options.keep ?? [])]);
   const placed = new Set<string>();
-  const slots: (string | null)[] = tidySlots(
-    layoutId,
-    (view?.slots ?? []).map((id) => {
-      if (id === null || !known.has(id) || placed.has(id)) return null;
+  const kept: (string | null)[] = [];
+  for (const id of view?.slots ?? []) {
+    // A hole stays where it is; a pane that is gone takes its slot with it.
+    if (id === null) kept.push(null);
+    else if (known.has(id) && !placed.has(id)) {
       placed.add(id);
-      return id;
-    }),
-  );
+      kept.push(id);
+    }
+  }
+  const slots: (string | null)[] = tidySlots(layoutId, kept);
   if (options.autoAppend) {
     for (const id of sessionIds) {
       if (placed.has(id)) continue;
@@ -83,33 +92,28 @@ export function normalizeSlots(
 }
 
 /**
- * Moves a session into a slot. If it already sat elsewhere in this view the two trade places,
- * which is what dragging one pane onto another means. If it did not, whoever held the slot is
- * pushed to the nearest open slot rather than dropped, so nothing leaves the view unasked.
+ * Moves a session into a slot by inserting it there: whoever held that slot, and everyone after
+ * them, moves back one. A pane already in this view leaves its old slot first, so the panes
+ * between the two ends shift by one rather than the two swapping. Nothing leaves the view unasked.
+ *
+ * Dropping past the last pane pads with holes and lands on the slot the user aimed at.
  */
 export function placeInSlot(view: SlotViewState, index: number, sessionId: string): SlotViewState {
   if (index < 0) return view;
   const slots: (string | null)[] = [...view.slots];
-  while (slots.length <= index) slots.push(null);
   const from = slots.indexOf(sessionId);
   if (from === index) return view;
-  const displaced = slots[index];
-  slots[index] = sessionId;
-  if (from >= 0) {
-    slots[from] = displaced;
-  } else if (displaced !== null) {
-    const hole = firstHole(slots, index);
-    if (hole >= 0) slots[hole] = displaced;
-    else slots.push(displaced);
-  }
+  if (from >= 0) slots.splice(from, 1);
+  while (slots.length < index) slots.push(null);
+  slots.splice(index, 0, sessionId);
   return { ...view, slots: tidySlots(view.layoutId, slots) };
 }
 
-/** Empties a slot without touching the session behind it. */
+/** Takes a pane off the grid without touching the session behind it; the rest move forward. */
 export function clearSlot(view: SlotViewState, index: number): SlotViewState {
   if (index < 0 || index >= view.slots.length) return view;
   const slots = [...view.slots];
-  slots[index] = null;
+  slots.splice(index, 1);
   return { ...view, slots: tidySlots(view.layoutId, slots) };
 }
 
@@ -123,16 +127,25 @@ export function appendSession(view: SlotViewState, sessionId: string): SlotViewS
   return { ...view, slots: tidySlots(view.layoutId, slots) };
 }
 
-/** Leaves a hole where the session was: every other pane keeps the slot the user gave it. */
+/** Closes the grid up behind the session: the panes after it each move one slot forward. */
 export function removeSession(view: SlotViewState, sessionId: string): SlotViewState {
   if (!view.slots.includes(sessionId)) return view;
   return {
     ...view,
     slots: tidySlots(
       view.layoutId,
-      view.slots.map((id) => (id === sessionId ? null : id)),
+      view.slots.filter((id) => id !== sessionId),
     ),
   };
+}
+
+/**
+ * Swaps one pane id for another in place — a renamed file keeps its slot instead of vanishing and
+ * reopening somewhere else. Only documents need this: a file tab's id is derived from its path.
+ */
+export function renamePaneId(view: SlotViewState, oldId: string, newId: string): SlotViewState {
+  if (!view.slots.includes(oldId)) return view;
+  return { ...view, slots: view.slots.map((id) => (id === oldId ? newId : id)) };
 }
 
 /** Switching to or from 자동 changes what a hole means, so the slots are tidied to the new rule. */
@@ -193,8 +206,8 @@ export function visibleSessionsOf(
 /**
  * Where a pane the app shelves by itself should land. The workspaces read as one shelf: page 1 of
  * 작업공간1 fills before page 1 of 작업공간2, and only once every workspace's first page is full does
- * 작업공간1 open a second page. A hole left behind by a pane that went away counts as free, so the
- * shelf closes up instead of only ever growing.
+ * 작업공간1 open a second page. A hole a drop reached past counts as free, so the shelf fills the
+ * gaps in front of it before it grows.
  *
  * A page holds as many panes as that workspace's own layout draws — six on 자동, which is the default
  * and the ceiling for every preset.

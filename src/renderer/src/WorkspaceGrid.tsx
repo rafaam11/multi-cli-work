@@ -247,7 +247,7 @@ export function WorkspaceGrid({
           <section
             key={paneId}
             {...slotProps(index)}
-            className={paneClass(paneId, index)}
+            className={paneClass(paneId, index, `status-${session.status}`)}
             aria-label={labelFor(session)}
             onMouseDownCapture={() => {
               if (paneId !== focusedPaneId) onFocusPane(paneId);

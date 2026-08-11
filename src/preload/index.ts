@@ -72,6 +72,14 @@ const api: MultiCliWorkApi = {
     writeFile: (target, relativePath, content) =>
       ipcRenderer.invoke("workspace-files:write-file", target, relativePath, content),
     runExecutable: (target, relativePath) => ipcRenderer.invoke("workspace-files:run-executable", target, relativePath),
+    absolutePath: (target, relativePath) => ipcRenderer.invoke("workspace-files:absolute-path", target, relativePath),
+    reveal: (target, relativePath) => ipcRenderer.invoke("workspace-files:reveal", target, relativePath),
+    openInEditor: (target, relativePath) => ipcRenderer.invoke("workspace-files:open-in-editor", target, relativePath),
+    create: (target, parentRelativePath, name, kind) =>
+      ipcRenderer.invoke("workspace-files:create", target, parentRelativePath, name, kind),
+    rename: (target, relativePath, name) => ipcRenderer.invoke("workspace-files:rename", target, relativePath, name),
+    duplicate: (target, relativePath) => ipcRenderer.invoke("workspace-files:duplicate", target, relativePath),
+    trash: (target, relativePath) => ipcRenderer.invoke("workspace-files:trash", target, relativePath),
   },
   git: {
     panelData: (target) => ipcRenderer.invoke("git:panel-data", target),
