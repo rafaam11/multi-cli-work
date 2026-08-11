@@ -24,6 +24,7 @@ function renderHeader(overrides: Partial<Parameters<typeof WorkspaceHeader>[0]> 
   const props: Parameters<typeof WorkspaceHeader>[0] = {
     workspace: null,
     layout: { layoutId: "auto", paneCount: 2, onSelect: vi.fn() },
+    pages: null,
     selectedProject: null,
     selectedSession: null,
     selectedSessionLabel: null,
@@ -48,15 +49,27 @@ afterEach(cleanup);
 describe("WorkspaceHeader", () => {
   /**
    * The picker sits in the header so the grid keeps the row it used to spend on it. That only works
-   * if the header is where it renders — and on a surface with no grid it must not render at all.
+   * if the header is where it renders — and `layout: null` is the caller's way of saying this
+   * surface has no arrangement at all (the 홈 and 상세 pages), which must leave the row empty.
    */
-  it("carries the layout picker beside the launchers, and drops it where there is no grid", () => {
+  it("carries the layout picker beside the launchers, and drops it where there is no arrangement", () => {
     const { rerender, props } = renderHeader();
     const picker = screen.getByRole("radiogroup", { name: "레이아웃 선택" });
     expect(picker.closest(".workspace-actions")).toBeTruthy();
 
     rerender(<WorkspaceHeader {...props} layout={null} />);
     expect(screen.queryByRole("radiogroup", { name: "레이아웃 선택" })).toBeNull();
+  });
+
+  /**
+   * A folder with no sessions yet still carries a layout of its own, so the row stays — arranging
+   * before the first session is the whole point, and 자동 must draw a preview at a count of zero
+   * rather than blowing up.
+   */
+  it("keeps the picker on a folder that holds no panes at all", () => {
+    renderHeader({ layout: { layoutId: "auto", paneCount: 0, onSelect: vi.fn() } });
+    expect(screen.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "자동" })).toBeTruthy();
   });
 
   it("reports the layout the user picked", () => {
@@ -80,7 +93,7 @@ describe("WorkspaceHeader", () => {
   it("offers 제거 for the focused pane's session, naming it", () => {
     const { props } = renderHeader({ focusedSession: { session, label: "Echo Agent" } });
     fireEvent.click(screen.getByRole("button", { name: "Echo Agent 세션 제거" }));
-    expect(props.onRemoveSession).toHaveBeenCalledWith(session, "Echo Agent");
+    expect(props.onRemoveSession).toHaveBeenCalledWith(session);
   });
 
   it("offers 제거 on a workspace too, where the focus is the only thing that says which session", () => {

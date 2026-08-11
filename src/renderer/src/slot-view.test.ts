@@ -3,6 +3,7 @@ import {
   appendSession,
   clampPage,
   clearSlot,
+  nextWorkspaceSlot,
   normalizeSlots,
   pageCount,
   pageOfSession,
@@ -271,5 +272,56 @@ describe("resolveView", () => {
     expect(view.page).toBe(1);
     expect(view.pages).toBe(2);
     expect(view.slots).toEqual(["d", null, null]);
+  });
+});
+
+describe("nextWorkspaceSlot", () => {
+  /** A full page of panes, named so a failure says which workspace the slot came from. */
+  const full = (prefix: string, count = 6): string[] =>
+    Array.from({ length: count }, (_, index) => `${prefix}${index}`);
+  const auto = (slots: (string | null)[] = []) => ({ layoutId: "auto", slots });
+
+  it("fills 작업공간1 from the first slot before it looks anywhere else", () => {
+    expect(nextWorkspaceSlot([auto(), auto(), auto()])).toEqual({ index: 0, slot: 0 });
+    expect(nextWorkspaceSlot([auto(["a", "b"]), auto(), auto()])).toEqual({ index: 0, slot: 2 });
+  });
+
+  it("steps to the next workspace once a page is full", () => {
+    expect(nextWorkspaceSlot([auto(full("a")), auto(), auto()])).toEqual({ index: 1, slot: 0 });
+    expect(nextWorkspaceSlot([auto(full("a")), auto(full("b")), auto()])).toEqual({ index: 2, slot: 0 });
+  });
+
+  it("opens 작업공간1's second page only once all three first pages are full", () => {
+    const shelf = [auto(full("a")), auto(full("b")), auto(full("c"))];
+    expect(nextWorkspaceSlot(shelf)).toEqual({ index: 0, slot: 6 });
+    // That second page fills its own six before 작업공간2's second page opens.
+    expect(nextWorkspaceSlot([auto([...full("a"), "a6"]), shelf[1], shelf[2]])).toEqual({
+      index: 0,
+      slot: 7,
+    });
+    expect(nextWorkspaceSlot([auto(full("a", 12)), shelf[1], shelf[2]])).toEqual({
+      index: 1,
+      slot: 6,
+    });
+  });
+
+  it("reuses the hole a removed pane left behind before opening a new page", () => {
+    const shelf = [
+      { layoutId: "6-grid", slots: ["a", null, "c", "d", "e", "f"] },
+      { layoutId: "6-grid", slots: full("b") },
+      { layoutId: "6-grid", slots: full("c") },
+    ];
+    expect(nextWorkspaceSlot(shelf)).toEqual({ index: 0, slot: 1 });
+  });
+
+  it("counts a page by the workspace's own layout rather than a fixed six", () => {
+    expect(nextWorkspaceSlot([{ layoutId: "2-col", slots: ["a", "b"] }, auto(), auto()])).toEqual({
+      index: 1,
+      slot: 0,
+    });
+  });
+
+  it("has nowhere to shelve a pane when there are no workspaces", () => {
+    expect(nextWorkspaceSlot([])).toBeNull();
   });
 });

@@ -2,7 +2,7 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import { FolderOpen, LayoutGrid, MonitorDot, PanelsTopLeft, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FolderOpen, LayoutGrid, MonitorDot, PanelsTopLeft, Trash2 } from "lucide-react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { LayoutPicker } from "./LayoutPicker";
 import { newSessionLabel, projectName, statusLabels } from "./session-labels";
@@ -15,6 +15,12 @@ interface WorkspaceHeaderProps {
    * rather than above the grid so choosing a layout costs no terminal height.
    */
   layout: { layoutId: string; paneCount: number; onSelect(layoutId: string): void } | null;
+  /**
+   * Which page of the arrangement is showing. Panes that do not fit the layout paginate rather than
+   * disappear, so this row is the only way back to them — it rides beside the picker that decides
+   * how many fit in the first place.
+   */
+  pages: { page: number; count: number; onChange(page: number): void } | null;
   selectedProject: SharedProject | null;
   selectedSession: TerminalSessionView | null;
   selectedSessionLabel: string | null;
@@ -24,7 +30,7 @@ interface WorkspaceHeaderProps {
    * the 제거 button follows the focus instead, and works on both surfaces.
    */
   focusedSession: { session: TerminalSessionView; label: string } | null;
-  onRemoveSession(session: TerminalSessionView, label: string): void;
+  onRemoveSession(session: TerminalSessionView): void;
   projectMissing: boolean;
   agents: AgentView[];
   pendingAction: boolean;
@@ -48,6 +54,7 @@ interface WorkspaceHeaderProps {
 export function WorkspaceHeader({
   workspace,
   layout,
+  pages,
   selectedProject,
   selectedSession,
   selectedSessionLabel,
@@ -72,7 +79,7 @@ export function WorkspaceHeader({
         : "선택된 폴더 없음";
   const subtitle = workspace
     ? workspace.paneCount === 0
-      ? "탭을 끌어다 놓아 이 작업공간을 채우세요"
+      ? "사이드바의 세션·문서를 끌어다 놓아 이 작업공간을 채우세요"
       : `패인 ${workspace.paneCount}개 · 폴더 ${workspace.folderCount}곳`
     : selectedSession?.tool
       ? selectedSession.cwd
@@ -102,6 +109,33 @@ export function WorkspaceHeader({
         {/* A workspace hides the folder controls, so on that surface the picker is the whole row. */}
         {layout ? (
           <LayoutPicker layoutId={layout.layoutId} paneCount={layout.paneCount} onSelect={layout.onSelect} />
+        ) : null}
+        {pages && pages.count > 1 ? (
+          <div className="workspace-page-nav">
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => pages.onChange(pages.page - 1)}
+              disabled={pages.page <= 0}
+              aria-label="이전 페이지"
+              title="이전 페이지"
+            >
+              <ChevronLeft size={13} />
+            </button>
+            <span className="workspace-page-count" aria-label={`${pages.count}페이지 중 ${pages.page + 1}페이지`}>
+              {pages.page + 1}/{pages.count}
+            </span>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => pages.onChange(pages.page + 1)}
+              disabled={pages.page >= pages.count - 1}
+              aria-label="다음 페이지"
+              title="다음 페이지"
+            >
+              <ChevronRight size={13} />
+            </button>
+          </div>
         ) : null}
         {workspace ? null : selectedSession ? (
           <span className={`active-status status-${selectedSession.status}`}>
@@ -168,7 +202,7 @@ export function WorkspaceHeader({
           <button
             className="icon-button danger-button"
             type="button"
-            onClick={() => onRemoveSession(focusedSession.session, focusedSession.label)}
+            onClick={() => onRemoveSession(focusedSession.session)}
             disabled={pendingAction}
             aria-label={`${focusedSession.label} 세션 제거`}
             title={`${focusedSession.label} 세션 제거 (스크롤백까지 삭제)`}

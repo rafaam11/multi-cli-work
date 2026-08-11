@@ -66,15 +66,16 @@ async function attachScreenshot(name: string): Promise<void> {
 const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`);
 
 /**
- * A pane's tab. Every pane the view holds has one whatever page it sits on, and the accessible name
- * carries the status the dot reports before the label — so the label is matched at the end of it.
+ * A session's row in the sidebar tree. Every session has one whatever page its pane sits on — or
+ * whether it has a pane at all — and the accessible name may carry an unread suffix after the
+ * label, so the label is matched at the start of it.
  */
-const paneTab = (label: string) => page.getByRole("tab", { name: new RegExp(`${label}$`) });
+const paneRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 세션 열기`) });
 
 /**
  * Leaves a single pane on screen. Opening a folder brings up every session it has, so a test that
  * drives one terminal empties the other slots first — a slot emptied here keeps its session running
- * and keeps its tab, so nothing is lost by it.
+ * and keeps its sidebar row, so nothing is lost by it.
  */
 async function soloPane(label: string): Promise<void> {
   const others = page.locator(`.grid-pane:not([aria-label="${label}"])`);
@@ -86,23 +87,23 @@ async function soloPane(label: string): Promise<void> {
 }
 
 /**
- * Drops a pane's tab on a sidebar row. Electron hands Playwright no real HTML5 drag, so the
+ * Drops a pane's sidebar row on a 작업공간 row. Electron hands Playwright no real HTML5 drag, so the
  * platform's own drag machinery cannot carry this one: the three events a drop is made of are
  * dispatched here instead, sharing a single DataTransfer exactly as the platform would. What the app
  * does with them — the payload type, the drop handler, the workspace it lands in — is untouched.
  */
-async function dragTabOnto(label: string, targetLabelPrefix: string): Promise<void> {
+async function dragPaneOnto(label: string, targetLabelPrefix: string): Promise<void> {
   await page.evaluate(
     ({ label, targetLabelPrefix }) => {
-      const tab = [...document.querySelectorAll<HTMLElement>(".session-tab")].find(
-        (candidate) => candidate.querySelector(".session-tab-label")?.textContent?.trim() === label,
+      const row = [...document.querySelectorAll<HTMLElement>(".session-row")].find(
+        (candidate) => candidate.querySelector(".session-name")?.textContent?.trim() === label,
       );
       const target = document.querySelector<HTMLElement>(`[aria-label^="${targetLabelPrefix}"]`);
-      if (!tab || !target) throw new Error(`drag ${label} → ${targetLabelPrefix}: source or target missing`);
+      if (!row || !target) throw new Error(`drag ${label} → ${targetLabelPrefix}: source or target missing`);
       const dataTransfer = new DataTransfer();
       const fire = (element: HTMLElement, type: string) =>
         element.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer }));
-      fire(tab, "dragstart");
+      fire(row, "dragstart");
       fire(target, "dragover");
       // Dispatching the events by hand skips the effect negotiation a real drag goes through, and a
       // dropEffect the drag never allowed is one the browser answers by cancelling the drop outright
@@ -119,17 +120,16 @@ async function dragTabOnto(label: string, targetLabelPrefix: string): Promise<vo
         throw new Error(`drop rejected: dropEffect "${wanted}" is not in effectAllowed "${allowed}"`);
       }
       fire(target, "drop");
-      fire(tab, "dragend");
+      fire(row, "dragend");
     },
     { label, targetLabelPrefix },
   );
 }
 
-/** Deleting a session for good now goes through the pane header's context menu. */
+/** Deleting a session for good goes through the pane header's context menu, and takes effect at once. */
 async function removeSessionFromPane(label: string): Promise<void> {
   await pane(label).locator(".pane-header").click({ button: "right" });
   await page.getByRole("menu", { name: `${label} 작업` }).getByRole("menuitem", { name: "제거" }).click();
-  await page.getByRole("dialog", { name: "세션 제거" }).getByRole("button", { name: "제거" }).click();
   await expect(pane(label)).toBeHidden();
 }
 
@@ -233,7 +233,19 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   test("@smoke runs a real native PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+
+    // A folder opened before it has a single session: the start page stands in for the grid, and the
+    // layout row stays put so the arrangement can be chosen before the first session exists.
+    const startPage = page.getByRole("region", { name: "Sample Project 시작" });
+    await expect(startPage.getByRole("heading", { name: "Sample Project에서 시작" })).toBeVisible();
+    await expect(page.locator(".layout-bar")).toBeVisible();
+    await expect(page.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeVisible();
+    await expect(startPage.getByText(/첫 세션은 .+ 배치로 열립니다/)).toBeVisible();
+    await expect(startPage.locator(".git-branch")).toHaveText("main");
+    await attachScreenshot("folder-start");
+
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await expect(startPage).toBeHidden();
     // The launchers stay exposed after the folder has a session.
     await expect(page.getByRole("button", { name: "새 Claude Code 세션" })).toBeVisible();
 
@@ -774,37 +786,37 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       .click();
     await expect(pane("Echo Agent")).toBeVisible();
 
-    // Emptying a slot only takes the pane off screen: the session keeps running and keeps its tab,
-    // and the tab puts it back — with everything it went on saying while it was away, and without
-    // displacing the pane that stayed.
+    // Emptying a slot only takes the pane off screen: the session keeps running and keeps its
+    // sidebar row, and the row puts it back — with everything it went on saying while it was away,
+    // and without displacing the pane that stayed.
     await pane(SHELL_LABEL).getByRole("button", { name: "슬롯 비우기" }).click();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "1");
     await expect(pane(SHELL_LABEL)).toBeHidden();
-    await paneTab(SHELL_LABEL).click();
+    await paneRow(SHELL_LABEL).click();
     await expect(pane(SHELL_LABEL).locator(".xterm-rows")).toContainText("MCW_PANE_SHELL");
     await expect(pane("Echo Agent")).toBeVisible();
   });
 
   /**
-   * The three ways a pane is put where the user wants it: the tab bar reaches one on any page, the
-   * layout row decides how many fit at once (the rest paginate rather than disappear), and a tab
+   * The three ways a pane is put where the user wants it: the sidebar reaches one on any page, the
+   * layout row decides how many fit at once (the rest paginate rather than disappear), and a row
    * dragged onto a workspace row builds a screen out of panes picked by hand.
    */
-  test("moves panes by tab, layout and page, and fills a workspace by dragging a tab", async () => {
+  test("moves panes by sidebar row, layout and page, and fills a workspace by dragging one", async () => {
     const layoutBar = page.locator(".layout-bar");
-    const workspaceRow = page.getByRole("button", { name: /작업공간1 열기/ });
+    const workspaceRow = page.getByRole("button", { name: /작업공간2 열기/ });
 
-    // A tab click moves the focus; it rearranges nothing.
-    await paneTab(SHELL_LABEL).click();
+    // A row click moves the focus; it rearranges nothing.
+    await paneRow(SHELL_LABEL).click();
     await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", SHELL_LABEL);
 
     // The layout is what says how many panes a page holds. Down to one, and the second session is
-    // not gone — it is on page two, still running, still a tab.
+    // not gone — it is on page two, still running, still a row in the tree.
     await layoutBar.getByRole("radio", { name: "전체 (1칸)" }).click();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "solo");
     await expect(page.locator(".grid-pane")).toHaveCount(1);
     await expect(pane("Echo Agent")).toBeVisible();
-    await expect(paneTab(SHELL_LABEL)).toBeVisible();
+    await expect(paneRow(SHELL_LABEL)).toBeVisible();
     await expect(page.getByLabel("2페이지 중 1페이지")).toBeVisible();
 
     await page.getByRole("button", { name: "다음 페이지" }).click();
@@ -812,13 +824,23 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(pane(SHELL_LABEL)).toBeVisible();
     await expect(pane("Echo Agent")).toBeHidden();
 
-    // Dragging a tab onto 작업공간1 copies a reference: the pane keeps its place in the folder too.
-    await dragTabOnto("Echo Agent", "작업공간1 열기");
-    await expect(page.getByRole("button", { name: "작업공간1 열기 (패인 1개)" })).toBeVisible();
+    // Every pane shelved itself in 작업공간1 the moment it was created, so that row is already busy.
+    await expect(page.getByRole("button", { name: /작업공간1 열기 \(패인 [1-9]\d*개\)/ })).toBeVisible();
+
+    // 작업공간2 is untouched, which is what makes it the honest target for a hand-built screen.
+    // Dragging a row onto it copies a reference: the pane keeps its place in the folder too.
+    await expect(page.getByRole("button", { name: "작업공간2 열기 (패인 0개)" })).toBeVisible();
+    await dragPaneOnto("Echo Agent", "작업공간2 열기");
+    await expect(page.getByRole("button", { name: "작업공간2 열기 (패인 1개)" })).toBeVisible();
     await workspaceRow.click();
-    await expect(page.locator(".workspace-title")).toHaveText("작업공간1");
+    await expect(page.locator(".workspace-title")).toHaveText("작업공간2");
     await expect(pane("Echo Agent")).toBeVisible();
     await expect(pane(SHELL_LABEL)).toBeHidden();
+
+    // Expanding the row is how a workspace says what it holds, now that panes have no tabs.
+    await page.getByRole("button", { name: "작업공간2 펼치기" }).click();
+    const shelfPanes = page.getByRole("group", { name: "작업공간2 패인" });
+    await expect(shelfPanes.getByRole("button", { name: "Echo Agent 패인 열기" })).toBeVisible();
     await attachScreenshot("workspace-shelf");
 
     // Back to the folder, which kept both panes and the layout it was left on.

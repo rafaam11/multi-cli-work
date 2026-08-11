@@ -472,17 +472,35 @@ body.sidebar-resizing {
   border-bottom: 1px solid var(--line);
 }
 
+/*
+ * The row is a wrapper, not a button: the caret opens the pane list and the rest opens the
+ * workspace, and a button inside a button is invalid HTML (the trap `.brand-block` hit first).
+ * Both live here so the drop target and the hover tint stay one rectangle.
+ */
 .workspace-shelf-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
   min-height: 26px;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px;
+  gap: 2px;
+  padding: 0 8px 0 2px;
   border: 1px solid transparent;
   border-radius: 5px;
   color: var(--muted);
   background: transparent;
+}
+
+.workspace-shelf-select {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -519,6 +537,14 @@ body.sidebar-resizing {
   background: var(--surface);
   font-size: 9px;
   text-align: center;
+}
+
+/*
+ * What a workspace holds, in slot order. Without this list a pane on the workspace's second page
+ * could not be named at all — the tab bar that used to name it is gone.
+ */
+.workspace-shelf-panes {
+  margin: 1px 0 3px 20px;
 }
 
 .rail-workspaces {
@@ -1580,7 +1606,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
-.project-tree {
+.project-tree,
+.session-tree {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1835,6 +1862,22 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
+/*
+ * How many sessions the folder holds, worktrees included — readable with the folder collapsed, which
+ * is the point: it says there is something in there without asking anyone to expand it first.
+ */
+.folder-session-count {
+  min-width: 15px;
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 8px;
+  color: var(--quiet);
+  background: var(--surface);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .project-status {
   max-width: 48px;
   overflow: hidden;
@@ -1970,46 +2013,213 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 /* The same accent variable drives every status-tinted row across the app (home dashboard, project
    detail, pane headers), so the colour mapping lives in one place. */
+.session-row.status-starting,
 .monitor-row.status-starting,
 .session-card.status-starting,
 .activity-row.status-starting {
   --session-accent: var(--blue);
 }
 
+.session-row.status-working,
 .monitor-row.status-working,
 .session-card.status-working,
 .activity-row.status-working {
   --session-accent: var(--teal);
 }
 
+.session-row.status-awaiting-input,
 .monitor-row.status-awaiting-input,
 .session-card.status-awaiting-input,
 .activity-row.status-awaiting-input {
   --session-accent: var(--violet);
 }
 
+.session-row.status-awaiting-approval,
 .monitor-row.status-awaiting-approval,
 .session-card.status-awaiting-approval,
 .activity-row.status-awaiting-approval {
   --session-accent: var(--amber);
 }
 
+.session-row.status-idle,
 .monitor-row.status-idle,
 .session-card.status-idle,
 .activity-row.status-idle {
   --session-accent: var(--green);
 }
 
+.session-row.status-exited,
 .monitor-row.status-exited,
 .session-card.status-exited,
 .activity-row.status-exited {
   --session-accent: var(--quiet);
 }
 
+.session-row.status-error,
 .monitor-row.status-error,
 .session-card.status-error,
 .activity-row.status-error {
   --session-accent: var(--red);
+}
+
+/*
+ * A pane's row in the tree: a session, or a document opened from that folder. The left bar carries
+ * the session's status colour; documents keep the neutral default. `current` is the focused pane and
+ * `on-screen` the ones the grid is drawing right now — everything else reads as merely open.
+ */
+.session-tree {
+  position: relative;
+  margin: 1px 0 4px 25px;
+  padding-left: 10px;
+}
+
+/* One guide line down the group, so a long list still reads as belonging to the folder above it. */
+.session-tree::before {
+  position: absolute;
+  inset: 0 auto 3px 0;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.worktree-sessions {
+  padding-left: 14px;
+}
+
+/* Flex, not the grid this row used to be: the unread dot is optional, and a fixed column count made
+   its presence push the status text onto a second line. */
+.session-row {
+  --session-accent: var(--quiet);
+
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--session-accent) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--session-accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-row > svg,
+.file-tab-open > svg {
+  flex: 0 0 auto;
+}
+
+.session-row:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 18%, var(--surface-hover));
+}
+
+.session-row.on-screen {
+  color: var(--text);
+}
+
+.session-row.current {
+  color: var(--text);
+  background: color-mix(in srgb, var(--session-accent) 24%, var(--surface-hover));
+  box-shadow:
+    inset 3px 0 0 var(--session-accent),
+    inset 0 0 0 1px var(--line-strong);
+}
+
+.session-name,
+.session-detail,
+.session-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 11px;
+}
+
+/* A workspace gathers panes from several folders, so its rows say which one each came from. */
+.session-detail {
+  max-width: 64px;
+  flex: 0 1 auto;
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.session-status {
+  flex: 0 0 auto;
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 8px;
+}
+
+/* A document row needs a 닫기 of its own, so it splits into two sibling buttons instead of one. */
+.file-tab-row {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+}
+
+.file-tab-open {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 7px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-tab-close {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  align-self: center;
+  margin-right: 6px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--quiet);
+  background: transparent;
+  cursor: pointer;
+  place-items: center;
+}
+
+.file-tab-close:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.file-tab-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.file-tab-dot.dirty {
+  background: var(--amber);
+}
+
+/* Maintenance sessions belong to no folder, so they get their own group at the foot of the tree. */
+.tools-group {
+  margin-top: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.tools-group .session-tree {
+  margin-left: 14px;
 }
 
 .session-rename {
@@ -2317,77 +2527,10 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * Every session of the view on one line, whether or not it has a pane right now. It scrolls rather
- * than wrapping so the grid below keeps its height as sessions pile up.
+ * Panes past the layout's capacity paginate instead of disappearing, so this row rides beside the
+ * picker that decides the capacity — it is the only way back to the ones that did not fit.
  */
-.session-tab-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.session-tabs {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.session-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.session-tab {
-  display: inline-flex;
-  min-height: 24px;
-  max-width: 190px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 5px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: var(--muted);
-  background: transparent;
-  cursor: grab;
-  font-size: 11px;
-}
-
-.session-tab:hover {
-  background: var(--surface-hover);
-}
-
-.session-tab.current {
-  border-color: color-mix(in srgb, var(--teal) 55%, var(--line));
-  color: var(--text);
-  background: var(--surface-raised);
-}
-
-/* A session on another page keeps its tab — dimmed, because clicking it is how you get back to it. */
-.session-tab.offscreen {
-  opacity: 0.55;
-}
-
-.session-tab-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-tab-detail {
-  flex: 0 0 auto;
-  color: var(--quiet);
-  font-size: 9px;
-}
-
-.session-tab-pages {
+.workspace-page-nav {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -2396,7 +2539,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: 10px;
 }
 
-.session-tab-page-count {
+.workspace-page-count {
   font-variant-numeric: tabular-nums;
 }
 
@@ -4048,6 +4191,225 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Folder start page (a folder with no sessions yet)                       */
+/* ---------------------------------------------------------------------- */
+
+.folder-start {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+
+/* The launchers are the one thing this page exists for, so they get the width and the eye. */
+.folder-start-hero {
+  max-width: 1120px;
+  margin: 0 auto 18px;
+  padding: 26px 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.folder-start-hero h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.folder-start-path {
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: var(--quiet);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-start-warning {
+  margin: 10px 0 0;
+  color: #f09595;
+  font-size: 11px;
+}
+
+.folder-start-launchers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.folder-start-launcher {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 108px;
+  min-height: 84px;
+  padding: 12px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.folder-start-launcher:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.folder-start-launcher:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.folder-start-launcher-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.folder-start-launcher-note {
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+/* Picking a layout here changes nothing until the first session opens — so say what it will do. */
+.folder-start-layout-hint {
+  margin: 16px 0 0;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.folder-start-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.folder-start-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.folder-start-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  margin-bottom: 10px;
+}
+
+.folder-start-card-header h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.folder-start-empty {
+  margin: 0;
+  color: var(--quiet);
+  font-size: 11px;
+}
+
+.folder-start-card .git-status-row {
+  margin-bottom: 0;
+}
+
+.folder-start-worktrees {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folder-start-worktree {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text);
+  background: none;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-start-worktree:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.folder-start-worktree.current {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+  cursor: default;
+}
+
+.folder-start-worktree-branch {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-start-worktree-note {
+  flex: 0 0 auto;
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.folder-start-shortcuts {
+  display: grid;
+  gap: 6px;
+}
+
+.folder-start-shortcuts button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-size: 10px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.folder-start-shortcuts button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.folder-start-shortcuts button:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* ---------------------------------------------------------------------- */

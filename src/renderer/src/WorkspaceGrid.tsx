@@ -39,7 +39,7 @@ interface WorkspaceGridProps {
   onStopSession(session: TerminalSessionView): void;
   /** Empties the slot only — the session keeps running, the document stays open, both keep a tab. */
   onClearSlot(index: number): void;
-  /** Asks to end the session and delete its scrollback. The caller confirms before anything happens. */
+  /** Ends the session and deletes its scrollback right away — there is no confirmation step. */
   onRemoveSession(session: TerminalSessionView): void;
   /** A pane was dropped on this slot: one from another slot, or a tab from the bar. */
   onDropPane(index: number, paneId: string): void;

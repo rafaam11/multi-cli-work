@@ -9,6 +9,7 @@ import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { SESSION_DRAG_TYPE } from "./session-drag";
 
 const terminalHarness = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -809,6 +810,55 @@ describe("folder workspace", () => {
     expect((await screen.findAllByText("시작 중")).length).toBeGreaterThan(0);
   });
 
+  it("shelves a new session in 작업공간1 without taking the grid off the folder", async () => {
+    const harness = createApi({ sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    expect(screen.getByRole("button", { name: "작업공간1 열기 (패인 0개)" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "새 PowerShell 세션" }));
+
+    await screen.findByRole("button", { name: "작업공간1 열기 (패인 1개)" });
+    // Shelving is silent: the folder's own grid is still what the workspace body draws.
+    expect(screen.getByRole("button", { name: "작업공간2 열기 (패인 0개)" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "PowerShell" })).toBeInTheDocument();
+  });
+
+  /**
+   * The picker used to vanish along with the grid, which took it away at the one moment arranging is
+   * a decision rather than a correction — before the first session exists. The folder keeps its own
+   * layoutId either way, so the row stays and the start page reports what that choice will do.
+   */
+  it("keeps the layout picker on a folder with no sessions, and says what it will do", async () => {
+    const harness = createApi({ sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    expect(await screen.findByText("Atlas에서 시작")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeInTheDocument();
+    expect(screen.getByText("첫 세션은 전체 배치로 열립니다")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "좌우 (2칸)" }));
+    expect(screen.getByText("첫 세션은 좌우 배치로 열립니다")).toBeInTheDocument();
+  });
+
+  /** The start page reads the folder's branch, which is the thing the old empty state never said. */
+  it("shows the folder's git state and shortcuts before any session exists", async () => {
+    const harness = createApi({ sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(harness.api.projects.gitStatus).toHaveBeenCalledWith(atlas.id));
+    expect(await screen.findByText("main")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "파일 탐색기에서 열기" }));
+    await waitFor(() => expect(harness.api.projects.reveal).toHaveBeenCalledWith(atlas.id));
+  });
+
   it("lists a session announced by a created event even though this window never started it", async () => {
     const harness = createApi({ sessions: [powershellSession] });
     window.multiCliWork = harness.api;
@@ -824,13 +874,13 @@ describe("folder workspace", () => {
       });
     });
 
-    // It gets a tab straight away, but no slot: nothing already on screen is pushed off for it.
-    const tab = await screen.findByRole("tab", { name: /스폰된 세션/ });
-    expect(tab).toHaveClass("offscreen");
+    // It gets a sidebar row straight away, but no slot: nothing on screen is pushed off for it.
+    const row = await screen.findByRole("button", { name: /스폰된 세션 세션 열기/ });
+    expect(row).not.toHaveClass("on-screen");
     expect(screen.queryByRole("region", { name: "스폰된 세션" })).not.toBeInTheDocument();
 
-    // Clicking the tab is what gives it one.
-    fireEvent.click(tab);
+    // Clicking the row is what gives it one.
+    fireEvent.click(row);
     expect(await screen.findByRole("region", { name: "스폰된 세션" })).toBeInTheDocument();
   });
 
@@ -1021,15 +1071,14 @@ describe("folder workspace", () => {
     await act(async () => {
       harness.emit({ type: "exit", sessionId: claudeSession.id, exitCode: 0 });
     });
-    // Removal is a confirm-first action, so it lives in the pane's context menu, not on a button.
+    // Removal takes effect on the click itself — no confirmation dialog stands in between.
     fireEvent.contextMenu(document.querySelector(".pane-header")!);
     fireEvent.click(screen.getByRole("menuitem", { name: "제거" }));
-    const dialog = await screen.findByRole("dialog", { name: "세션 제거" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "제거" }));
+    expect(screen.queryByRole("dialog", { name: "세션 제거" })).not.toBeInTheDocument();
 
     await waitFor(() => expect(harness.api.terminals.remove).toHaveBeenCalledWith(claudeSession.id));
     expect(harness.api.terminals.select).toHaveBeenLastCalledWith(atlas.id, null);
-    expect(screen.getByText("Atlas에 세션이 없습니다")).toBeInTheDocument();
+    expect(screen.getByText("Atlas에서 시작")).toBeInTheDocument();
   });
 
   it("keeps the terminal grid in a dedicated flexible workspace body", async () => {
@@ -1614,15 +1663,18 @@ describe("file viewer", () => {
       "docs/guide.md",
     );
 
-    // Back to README through its pane tab — the one place an open document is listed now that the
-    // folder tree no longer draws file rows. A tab click focuses the pane it already has; it must
-    // not read the file off disk a second time.
-    fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
+    // Back to README through its sidebar row, where every open document is listed. The row focuses
+    // the pane the document already has; it must not read the file off disk a second time.
+    fireEvent.click(screen.getByRole("button", { name: "README.md 문서 열기" }));
     fireEvent.click(await screen.findByRole("link", { name: "Guide" }));
     expect(harness.api.workspaceFiles.readFile).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps an opened document out of the folder tree, where only folders live", async () => {
+  /**
+   * A document is a pane like any other, so it is listed where panes are listed — under the folder
+   * it was opened from. Closing it from that row is the same close the pane header does.
+   */
+  it("hangs an opened document under its folder in the tree, and closes it from there", async () => {
     const harness = createApi({ sessions: [] });
     vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
     vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
@@ -1636,9 +1688,13 @@ describe("file viewer", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
-    // The pane and its tab are how the document is reached; the tree gets no row for it.
-    expect(await screen.findByRole("tab", { name: "README.md" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "README.md 파일 열기" })).not.toBeInTheDocument();
+    const row = await screen.findByRole("button", { name: "README.md 문서 열기" });
+    expect(row.closest(".session-tree")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "README.md 닫기" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "README.md 문서 열기" })).not.toBeInTheDocument(),
+    );
   });
 
   it("saves ordinary UTF-8 text with the shared dirty and saving states", async () => {
@@ -1708,7 +1764,7 @@ describe("quick open palette", () => {
     fireEvent.change(input, { target: { value: "dash" } });
     fireEvent.keyDown(input, { key: "Enter" });
     // A folder opens into its grid, which is empty here — every session belongs to Atlas.
-    expect(await screen.findByText("Dashboard에 세션이 없습니다")).toBeInTheDocument();
+    expect(await screen.findByText("Dashboard에서 시작")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "p", ctrlKey: true });
     const reopened = await screen.findByRole("dialog", { name: "빠른 열기" });
@@ -1883,7 +1939,7 @@ describe("workspace grid", () => {
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(claudeSession.id));
   });
 
-  it("empties a slot without ending the session, and the tab puts it back", async () => {
+  it("empties a slot without ending the session, and the sidebar row puts it back", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
@@ -1898,8 +1954,8 @@ describe("workspace grid", () => {
     expect(harness.api.terminals.stop).not.toHaveBeenCalled();
     expect(harness.api.terminals.remove).not.toHaveBeenCalled();
 
-    // The tab outlives the slot, so one click is the whole way back — no swap menu in between.
-    fireEvent.click(screen.getByRole("tab", { name: /Claude Code/ }));
+    // The sidebar row outlives the slot, so one click is the whole way back — no swap menu between.
+    fireEvent.click(screen.getByRole("button", { name: /Claude Code 세션 열기/ }));
 
     expect(await screen.findByRole("region", { name: "claude 터미널" })).toBeInTheDocument();
     expect(harness.api.terminals.setVisibleSessions).toHaveBeenLastCalledWith([
@@ -1908,7 +1964,7 @@ describe("workspace grid", () => {
     ]);
   });
 
-  it("points the sidebar at the folder a clicked tab belongs to, then lets go of it", async () => {
+  it("points the sidebar at the folder a revealed session belongs to, then lets go of it", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
@@ -1918,10 +1974,11 @@ describe("workspace grid", () => {
     const row = screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")!;
     expect(row).not.toHaveClass("flash");
 
-    // A workspace mixes folders, so a tab says where its pane came from — briefly, then quietly.
+    // Reaching a session — from here, 빠른 열기 or the tray — says which folder it landed in,
+    // briefly, then quietly.
     vi.useFakeTimers();
     try {
-      fireEvent.click(screen.getByRole("tab", { name: /PowerShell/ }));
+      fireEvent.click(screen.getByRole("button", { name: /PowerShell 세션 열기/ }));
       expect(row).toHaveClass("flash");
 
       act(() => {
@@ -2016,6 +2073,100 @@ describe("workspace grid", () => {
     expect(button).toBeDisabled();
     expect(await screen.findByRole("alert")).toHaveTextContent("refresh unavailable");
     await waitFor(() => expect(button).toBeEnabled());
+  });
+});
+
+/**
+ * The sidebar is the one place every pane is listed, so these cover the paths that used to belong to
+ * the tab bar: reaching a pane, moving one into a workspace, and taking it back out.
+ */
+describe("sidebar panes", () => {
+  /** Drag payloads are plain objects here — jsdom has no DataTransfer of its own. */
+  const dragPayload = () => {
+    const values = new Map<string, string>();
+    return {
+      types: [SESSION_DRAG_TYPE],
+      effectAllowed: "none",
+      dropEffect: "none",
+      setData: (type: string, value: string) => values.set(type, value),
+      getData: (type: string) => values.get(type) ?? "",
+    };
+  };
+
+  it("counts a folder's sessions beside its name, and says nothing for a folder with none", async () => {
+    const harness = createApi({ projects: [atlas, dashboard] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const atlasRow = (await screen.findByRole("button", { name: "Atlas 폴더 선택" })).closest(".project-row")!;
+    expect(atlasRow.querySelector(".folder-session-count")).toHaveTextContent("2");
+
+    const dashboardRow = screen.getByRole("button", { name: "Dashboard 폴더 선택" }).closest(".project-row")!;
+    expect(dashboardRow.querySelector(".folder-session-count")).toBeNull();
+  });
+
+  it("fills a workspace with a session dragged out of the tree", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    const row = screen.getByRole("button", { name: /PowerShell 세션 열기/ });
+    const shelf = screen.getByRole("button", { name: "작업공간2 열기 (패인 0개)" }).closest(".workspace-shelf-row")!;
+
+    const dataTransfer = dragPayload();
+    fireEvent.dragStart(row, { dataTransfer });
+    fireEvent.dragOver(shelf, { dataTransfer });
+    fireEvent.drop(shelf, { dataTransfer });
+
+    expect(await screen.findByRole("button", { name: "작업공간2 열기 (패인 1개)" })).toBeInTheDocument();
+    // A workspace copies the pane; the folder keeps its own grid, untouched.
+    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
+  });
+
+  it("adds a session to a chosen workspace from its context menu, and stays where it is", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: /PowerShell 세션 열기/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "작업공간2 (0)" }));
+
+    expect(await screen.findByRole("button", { name: "작업공간2 열기 (패인 1개)" })).toBeInTheDocument();
+    // Adding is not opening: the folder's own grid is still what the body draws.
+    expect(screen.getByRole("region", { name: "claude 터미널" })).toBeInTheDocument();
+
+    // The same workspace cannot take it twice.
+    fireEvent.contextMenu(screen.getByRole("button", { name: /PowerShell 세션 열기/ }));
+    expect(screen.getByRole("menuitem", { name: "작업공간2 (1)" })).toBeDisabled();
+  });
+
+  it("lists a workspace's panes in slot order and frees one place without ending it", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    for (const name of [/PowerShell 세션 열기/, /Claude Code 세션 열기/]) {
+      fireEvent.contextMenu(screen.getByRole("button", { name }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /^작업공간2 \(/ }));
+    }
+    await screen.findByRole("button", { name: "작업공간2 열기 (패인 2개)" });
+
+    fireEvent.click(screen.getByRole("button", { name: "작업공간2 펼치기" }));
+    const panes = screen.getByRole("group", { name: "작업공간2 패인" });
+    expect(within(panes).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.textContent)).toEqual([
+      "PowerShellAtlas",
+      "Claude CodeAtlas",
+    ]);
+
+    fireEvent.click(within(panes).getByRole("button", { name: "작업공간2에서 PowerShell 빼기" }));
+
+    // The slot is emptied, not the session: it is still running in its own folder.
+    expect(await screen.findByRole("button", { name: "작업공간2 열기 (패인 1개)" })).toBeInTheDocument();
+    expect(harness.api.terminals.remove).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
   });
 });
 

@@ -272,6 +272,7 @@ describe("WorkspaceGrid", () => {
             label: "README.md",
             detail: "atlas",
             dirty: true,
+            owner: { kind: "project", id: "project-atlas" },
           },
           content: <div data-testid="document-body" />,
         },

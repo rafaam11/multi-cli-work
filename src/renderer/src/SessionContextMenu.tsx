@@ -1,4 +1,4 @@
-import { Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { LayoutGrid, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 
 export interface SessionContextMenuProps {
@@ -7,6 +7,13 @@ export interface SessionContextMenuProps {
   y: number;
   /** A session that only carries its provider's fallback label has no custom name to clear. */
   canResetName: boolean;
+  /**
+   * 작업공간1/2/3 as targets for this session. Dragging a row onto the shelf does the same thing;
+   * this is the path for anyone who would rather not drag. `contains` greys out a workspace that
+   * already holds the session, because adding it twice is not a thing a workspace can do.
+   */
+  workspaces: { index: number; paneCount: number; contains: boolean }[];
+  onAddToWorkspace(index: number): void;
   onRefresh(): void;
   onRename(): void;
   onResetName(): void;
@@ -19,6 +26,8 @@ export function SessionContextMenu({
   x,
   y,
   canResetName,
+  workspaces,
+  onAddToWorkspace,
   onRefresh,
   onRename,
   onResetName,
@@ -67,6 +76,27 @@ export function SessionContextMenu({
         <RotateCcw size={15} />
         <span>제공자 제목 사용</span>
       </button>
+      {workspaces.length > 0 ? (
+        <>
+          <div className="context-menu-separator" role="separator" />
+          <span className="context-menu-label">작업공간에 추가</span>
+          {workspaces.map((workspace) => (
+            <button
+              key={workspace.index}
+              type="button"
+              role="menuitem"
+              disabled={workspace.contains}
+              onClick={run(() => onAddToWorkspace(workspace.index))}
+              title={workspace.contains ? `작업공간${workspace.index + 1}에 이미 있습니다` : undefined}
+            >
+              <LayoutGrid size={15} />
+              <span>
+                작업공간{workspace.index + 1} ({workspace.paneCount})
+              </span>
+            </button>
+          ))}
+        </>
+      ) : null}
       <div className="context-menu-separator" role="separator" />
       <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
         <Trash2 size={15} />

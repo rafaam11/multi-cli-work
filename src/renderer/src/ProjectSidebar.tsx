@@ -1,3 +1,4 @@
+import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
@@ -20,6 +21,8 @@ import {
   RefreshCw,
   SquareTerminal,
   TriangleAlert,
+  Wrench,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -32,10 +35,12 @@ import {
 } from "react";
 import { reorderIds, type DropPosition } from "./project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
+import { SessionNameInput } from "./SessionNameInput";
 import { UpdateBadge } from "./UpdateBadge";
-import { GitHubIcon, TeamsIcon } from "./brand-icons";
-import { projectName } from "./session-labels";
-import { isSessionDrag, readSessionDrag } from "./session-drag";
+import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
+import { DocumentPaneIcon, type DocumentPane, type PaneRow } from "./pane-items";
+import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
+import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
 import { folderActivityClass } from "./folder-status";
 
@@ -52,8 +57,23 @@ interface ProjectSidebarProps {
   onCreateWorkProject(): void;
   /** Null moves the folder back to 미분류. Also the drop action for cross-group drags. */
   onMoveProjectToWorkProject(projectId: string, workProjectId: string | null): void;
-  /** Sessions never get rows of their own any more — they feed the folder and worktree badges. */
+  /** Every session, tool sessions included: the tree gives each one a row under the folder it runs in. */
   sessions: TerminalSessionView[];
+  agents: AgentView[];
+  /** Every open document, listed under the folder or worktree it was opened from. */
+  documentPanes: DocumentPane[];
+  /** The pane with the focus, wherever it sits — the row drawn as current. */
+  focusedPaneId: string | null;
+  /** Panes the grid is drawing right now; the rest are one click from coming back. */
+  onScreenPaneIds: Set<string>;
+  onSelectSession(session: TerminalSessionView): void;
+  onSelectDocument(pane: DocumentPane): void;
+  onCloseDocument(pane: DocumentPane): void;
+  onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
+  /** Set only while the rename started here — the pane header runs its own input off the same state. */
+  renamingSessionId: string | null;
+  onRenameSession(sessionId: string, name: string | null): void;
+  onCancelRename(): void;
   /** Sessions that started waiting while off screen — the sidebar's dot badges. */
   unread: Record<string, SessionAttention>;
   worktrees: SharedWorktree[];
@@ -82,15 +102,20 @@ interface ProjectSidebarProps {
   onCloseEditor(): void;
   onRestoreBackup(): void;
   /**
-   * 작업공간1/2/3 are fixed in number, so the shelf takes only how full each one is — the views
+   * What each of 작업공간1/2/3 holds, in slot order. A workspace gathers panes from several folders,
+   * so only App can say what an id refers to — the shelf draws the rows it is handed. The views
    * themselves stay in App, which is the single writer for slots.
    */
-  workspacePaneCounts: number[];
+  workspacePaneRows: PaneRow[][];
   selectedWorkspaceIndex: number | null;
   onSelectWorkspace(index: number): void;
-  /** A tab or pane dropped on 작업공간N. The pane stays in its folder view too — this is a reference. */
+  /** A row dropped on 작업공간N. The pane stays in its folder view too — this is a reference. */
   onDropPaneOnWorkspace(index: number, paneId: string): void;
-  /** The folder a tab click just pointed at. It pulses for a moment, then App clears this. */
+  /** A pane picked from an expanded 작업공간 row: show that workspace, on the page holding the pane. */
+  onSelectWorkspacePane(index: number, paneId: string): void;
+  /** Takes the pane off that workspace's grid and leaves the slot open. The session keeps running. */
+  onRemoveFromWorkspace(index: number, paneId: string): void;
+  /** The folder a jump just pointed at. It pulses for a moment, then App clears this. */
   flashProjectId: string | null;
   isHome: boolean;
   onOpenHome(): void;
@@ -104,6 +129,28 @@ interface ProjectSidebarProps {
  */
 function byCreation(left: TerminalSessionView, right: TerminalSessionView): number {
   return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+}
+
+/**
+ * Which tree nodes are folded away, and which 작업공간 rows are unfolded. The two are stored in one
+ * record because they are one thing to the user — how much of the sidebar is showing.
+ *
+ * The polarities differ on purpose: a worktree node in `expandedWorkspaces` is *collapsed* (so a
+ * worktree created later starts open, showing its sessions), while a shelf index in `openShelves`
+ * is *expanded* (so the shelf stays a three-line summary until asked otherwise).
+ */
+const SIDEBAR_STATE_KEY = "multi-cli-work.sidebar.v1";
+
+function readSidebarState(): { expandedWorkspaces: string[]; openShelves: number[] } {
+  try {
+    const value = JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) ?? "{}") as {
+      expandedWorkspaces?: string[];
+      openShelves?: number[];
+    };
+    return { expandedWorkspaces: value.expandedWorkspaces ?? [], openShelves: value.openShelves ?? [] };
+  } catch {
+    return { expandedWorkspaces: [], openShelves: [] };
+  }
 }
 
 /**
@@ -133,6 +180,17 @@ export function ProjectSidebar({
   onCreateWorkProject,
   onMoveProjectToWorkProject,
   sessions,
+  agents,
+  documentPanes,
+  focusedPaneId,
+  onScreenPaneIds,
+  onSelectSession,
+  onSelectDocument,
+  onCloseDocument,
+  onSessionContextMenu,
+  renamingSessionId,
+  onRenameSession,
+  onCancelRename,
   unread,
   worktrees,
   activeReviews,
@@ -158,10 +216,12 @@ export function ProjectSidebar({
   onProjectSaved,
   onCloseEditor,
   onRestoreBackup,
-  workspacePaneCounts,
+  workspacePaneRows,
   selectedWorkspaceIndex,
   onSelectWorkspace,
   onDropPaneOnWorkspace,
+  onSelectWorkspacePane,
+  onRemoveFromWorkspace,
   flashProjectId,
   isHome,
   onOpenHome,
@@ -172,16 +232,29 @@ export function ProjectSidebar({
   const [drag, setDrag] = useState<{ id: string; over: { id: string; position: DropPosition } | null } | null>(null);
   const [workspaceDropIndex, setWorkspaceDropIndex] = useState<number | null>(null);
   const flashRow = useRef<HTMLDivElement | null>(null);
-  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(() => {
+  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(
+    () => new Set(readSidebarState().expandedWorkspaces),
+  );
+  const [openShelves, setOpenShelves] = useState<Set<number>>(() => new Set(readSidebarState().openShelves));
+  // Both toggles write the whole record, so neither can drop the other's half of it.
+  const persist = (workspaces: Set<string>, shelves: Set<number>) => {
     try {
-      const value = JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}") as { expandedWorkspaces?: string[] };
-      return new Set(value.expandedWorkspaces ?? []);
-    } catch { return new Set(); }
-  });
+      localStorage.setItem(
+        SIDEBAR_STATE_KEY,
+        JSON.stringify({ version: 1, expandedWorkspaces: [...workspaces], openShelves: [...shelves] }),
+      );
+    } catch { /* unavailable storage */ }
+  };
   const toggleWorkspace = (key: string) => setExpandedWorkspaces((current) => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key); else next.add(key);
-    localStorage.setItem("multi-cli-work.sidebar.v1", JSON.stringify({ version: 1, expandedWorkspaces: [...next] }));
+    persist(next, openShelves);
+    return next;
+  });
+  const toggleShelf = (index: number) => setOpenShelves((current) => {
+    const next = new Set(current);
+    if (next.has(index)) next.delete(index); else next.add(index);
+    persist(expandedWorkspaces, next);
     return next;
   });
 
@@ -258,6 +331,156 @@ export function ProjectSidebar({
 
   const attentionOf = (candidates: TerminalSessionView[]) => rollUpAttention(candidates, unread);
 
+  /** Sessions with no folder behind them — the 업데이트 commands, which run against the CLIs themselves. */
+  const toolSessions = useMemo(
+    () => sessions.filter((session) => session.projectId === null).sort(byCreation),
+    [sessions],
+  );
+
+  /** Documents hang under the folder or worktree they were opened from, beside that place's sessions. */
+  const documentsOf = (kind: "project" | "worktree", id: string) =>
+    documentPanes.filter((pane) => pane.owner?.kind === kind && pane.owner.id === id);
+
+  /**
+   * Every row standing for a pane can be dragged onto a 작업공간 row or onto a slot in the grid. The
+   * payload is the pane id — a session id or a document id — which is all any drop target needs.
+   * Folder rows drag too, for reordering, so the event is stopped rather than left to bubble.
+   */
+  const paneDragProps = (paneId: string) => ({
+    draggable: true,
+    onDragStart: (event: ReactDragEvent<HTMLElement>) => {
+      event.stopPropagation();
+      startSessionDrag(event, paneId);
+    },
+  });
+
+  /** `current` is the focused pane, `on-screen` the ones the grid is drawing; the rest read as dim. */
+  const rowClass = (paneId: string, ...extra: string[]) =>
+    [
+      "session-row",
+      ...extra,
+      focusedPaneId === paneId ? "current" : "",
+      onScreenPaneIds.has(paneId) ? "on-screen" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+  const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
+    const agent = findAgent(agents, session.kind);
+    const label = sessionLabel(session, peers, agents);
+    const sessionUnread = unread[session.id];
+    if (renamingSessionId === session.id) {
+      return (
+        <li key={session.id}>
+          <SessionNameInput
+            initialName={session.name ?? label}
+            onSubmit={(name) => onRenameSession(session.id, name)}
+            onCancel={onCancelRename}
+          />
+        </li>
+      );
+    }
+    return (
+      <li key={session.id}>
+        <button
+          className={rowClass(session.id, `status-${session.status}`)}
+          type="button"
+          onClick={() => onSelectSession(session)}
+          onContextMenu={(event) => onSessionContextMenu(session, event)}
+          aria-label={`${label} 세션 열기${sessionUnread ? " (읽지 않음)" : ""}`}
+          {...paneDragProps(session.id)}
+        >
+          <span className={`status-dot status-${session.status}`} aria-hidden="true" />
+          {session.tool ? <Wrench size={14} /> : <AgentIcon agent={agent} size={14} />}
+          <span className="session-name" title={label}>
+            {label}
+          </span>
+          {sessionUnread ? (
+            <span className={`unread-dot unread-${sessionUnread}`} title="응답 대기" aria-hidden="true" />
+          ) : null}
+          <span className="session-status">{statusLabels[session.status]}</span>
+        </button>
+      </li>
+    );
+  };
+
+  /**
+   * A file, diff, commit graph or pull request. A sibling pair of buttons inside the row, not a
+   * button nesting a button (invalid HTML — the trap `.brand-block`'s toggle hit before), so 닫기
+   * can sit on the same line as 열기.
+   */
+  const renderDocument = (pane: DocumentPane) => (
+    <li key={pane.id}>
+      <div className={rowClass(pane.id, "file-tab-row")} {...paneDragProps(pane.id)}>
+        <button
+          type="button"
+          className="file-tab-open"
+          onClick={() => onSelectDocument(pane)}
+          aria-label={`${pane.label} 문서 열기${pane.dirty ? " (저장 안 됨)" : ""}`}
+        >
+          <span className={`file-tab-dot ${pane.dirty ? "dirty" : ""}`} aria-hidden="true" />
+          <DocumentPaneIcon kind={pane.kind} size={13} />
+          <span className="session-name" title={pane.detail ? `${pane.label} · ${pane.detail}` : pane.label}>
+            {pane.label}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="file-tab-close"
+          onClick={() => onCloseDocument(pane)}
+          aria-label={`${pane.label} 닫기`}
+          title="닫기"
+        >
+          <X size={12} />
+        </button>
+      </div>
+    </li>
+  );
+
+  /**
+   * A pane inside an expanded 작업공간 row. It is the same row as in the tree, but it answers to the
+   * workspace: clicking goes to the page of *that* workspace holding it, and ✕ takes it off that
+   * grid — leaving the slot open for the next pane the app shelves — rather than closing anything.
+   */
+  const renderShelfPane = (index: number, row: PaneRow) => (
+    <li key={row.id}>
+      <div
+        className={rowClass(row.id, "file-tab-row", row.kind === "session" ? `status-${row.status}` : "")}
+        {...paneDragProps(row.id)}
+      >
+        <button
+          type="button"
+          className="file-tab-open"
+          onClick={() => onSelectWorkspacePane(index, row.id)}
+          aria-label={`${row.label} 패인 열기`}
+          title={row.detail ? `${row.label} · ${row.detail}` : row.label}
+        >
+          {row.kind === "session" ? (
+            <span className={`status-dot status-${row.status}`} aria-hidden="true" />
+          ) : (
+            <span className={`file-tab-dot ${row.dirty ? "dirty" : ""}`} aria-hidden="true" />
+          )}
+          {row.kind === "session" ? (
+            <AgentIcon agent={findAgent(agents, row.agent)} size={13} />
+          ) : (
+            <DocumentPaneIcon kind={row.document} size={13} />
+          )}
+          <span className="session-name">{row.label}</span>
+          {row.detail ? <span className="session-detail">{row.detail}</span> : null}
+        </button>
+        <button
+          type="button"
+          className="file-tab-close"
+          onClick={() => onRemoveFromWorkspace(index, row.id)}
+          aria-label={`작업공간${index + 1}에서 ${row.label} 빼기`}
+          title="이 작업공간에서 빼기"
+        >
+          <X size={12} />
+        </button>
+      </div>
+    </li>
+  );
+
   /**
    * The collapsed rail switches between folders, not sessions: with the grid showing a folder's
    * terminals at once, the folder is the unit worth one click of a 44px-wide strip.
@@ -311,11 +534,12 @@ export function ProjectSidebar({
         </button>
       </div>
 
-      {/* 작업공간1/2/3 sit above the tree because they are screens, not folders: a workspace is a
-          hand-picked set of panes from anywhere, so it belongs to no group in the tree below. */}
+      {/* 작업공간1/2/3 sit above the tree because they are screens, not folders: a workspace gathers
+          panes from anywhere — new ones shelve themselves, and any tab can be dropped in by hand — so
+          it belongs to no group in the tree below. */}
       {collapsed ? (
         <ul className="rail-workspaces" role="list" aria-label="작업공간">
-          {workspacePaneCounts.map((count, index) => (
+          {workspacePaneRows.map((rows, index) => (
             <li key={index}>
               <button
                 type="button"
@@ -327,7 +551,7 @@ export function ProjectSidebar({
                   .filter(Boolean)
                   .join(" ")}
                 onClick={() => onSelectWorkspace(index)}
-                aria-label={workspaceLabel(index, count)}
+                aria-label={workspaceLabel(index, rows.length)}
                 title={`작업공간${index + 1}`}
                 {...workspaceDropProps(index)}
               >
@@ -341,26 +565,49 @@ export function ProjectSidebar({
         </ul>
       ) : (
         <div className="workspace-shelf" aria-label="작업공간">
-          {workspacePaneCounts.map((count, index) => (
-            <button
-              key={index}
-              type="button"
-              className={[
-                "workspace-shelf-row",
-                selectedWorkspaceIndex === index ? "selected" : "",
-                workspaceDropIndex === index ? "drop-target" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() => onSelectWorkspace(index)}
-              aria-label={workspaceLabel(index, count)}
-              {...workspaceDropProps(index)}
-            >
-              <LayoutGrid size={14} />
-              <span className="workspace-shelf-name">작업공간{index + 1}</span>
-              {count > 0 ? <span className="workspace-shelf-count">{count}</span> : null}
-            </button>
-          ))}
+          {workspacePaneRows.map((rows, index) => {
+            const open = openShelves.has(index) && rows.length > 0;
+            return (
+              <div className="workspace-shelf-node" key={index}>
+                <div
+                  className={[
+                    "workspace-shelf-row",
+                    selectedWorkspaceIndex === index ? "selected" : "",
+                    workspaceDropIndex === index ? "drop-target" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  {...workspaceDropProps(index)}
+                >
+                  <button
+                    className="tree-toggle"
+                    type="button"
+                    onClick={() => toggleShelf(index)}
+                    disabled={rows.length === 0}
+                    aria-label={`작업공간${index + 1} ${open ? "접기" : "펼치기"}`}
+                    title={`작업공간${index + 1} ${open ? "접기" : "펼치기"}`}
+                  >
+                    {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  </button>
+                  <button
+                    className="workspace-shelf-select"
+                    type="button"
+                    onClick={() => onSelectWorkspace(index)}
+                    aria-label={workspaceLabel(index, rows.length)}
+                  >
+                    <LayoutGrid size={14} />
+                    <span className="workspace-shelf-name">작업공간{index + 1}</span>
+                    {rows.length > 0 ? <span className="workspace-shelf-count">{rows.length}</span> : null}
+                  </button>
+                </div>
+                {open ? (
+                  <ul className="session-tree workspace-shelf-panes" role="group" aria-label={`작업공간${index + 1} 패인`}>
+                    {rows.map((row) => renderShelfPane(index, row))}
+                  </ul>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -627,6 +874,13 @@ export function ProjectSidebar({
                       <span className="project-copy">
                         <span className="folder-status-dot" aria-hidden="true" />
                         <span className="project-name">{name}</span>
+                        {/* Its worktrees' sessions count too: the folder answers "how much is
+                            running here", and each worktree row already breaks that down. */}
+                        {projectSessions.length > 0 ? (
+                          <span className="folder-session-count" title={`세션 ${projectSessions.length}개`}>
+                            {projectSessions.length}
+                          </span>
+                        ) : null}
                       </span>
                       {projectAttention ? (
                         <span
@@ -642,8 +896,16 @@ export function ProjectSidebar({
                   {editingProjectId === project.id ? (
                     <ProjectMetadataEditor project={project} onSaved={onProjectSaved} onClose={onCloseEditor} />
                   ) : null}
-                  {/* The tree stops at the folder: sessions and documents are the grid's business,
-                      so a git folder opens onto its worktrees and a plain one onto nothing. */}
+                  {/* A plain folder opens straight onto its work; a git folder puts a worktree
+                      layer in between, because there a session belongs to a checkout, not a path. */}
+                  {expanded && !isGitProject ? (
+                    <ul className="session-tree" role="group" aria-label={`${name} 패인`}>
+                      {projectSessions
+                        .filter((session) => session.worktreeId === undefined)
+                        .map((session) => renderSession(session, projectSessions))}
+                      {documentsOf("project", project.id).map(renderDocument)}
+                    </ul>
+                  ) : null}
                   {expanded && isGitProject ? (
                         <ul className="worktree-tree" role="group" aria-label={`${name} worktree`}>
                           {mainWorkspace ? <li className="worktree-node main-workspace-node" key={mainWorkspace.workspaceKey}>
@@ -655,6 +917,16 @@ export function ProjectSidebar({
                                 <GitBranch size={13} /><span className="workspace-copy"><span className="worktree-branch">메인 · {mainWorkspace.branch ?? `detached @ ${mainWorkspace.head?.slice(0, 7) ?? "unknown"}`}</span><span className="workspace-meta">변경 {mainWorkspace.changedFileCount} · 세션 {projectSessions.filter((session) => session.worktreeId === undefined).length}</span></span>
                               </button>
                             </div>
+                            {/* A node the user folded stays folded unless it is the one on screen —
+                                the selected place always shows what it holds. */}
+                            {!expandedWorkspaces.has(mainWorkspace.workspaceKey) || (selectedProjectId === project.id && selectedWorktreeId === null) ? (
+                              <ul className="session-tree worktree-sessions" role="group" aria-label={`${name} 메인 패인`}>
+                                {projectSessions
+                                  .filter((session) => session.worktreeId === undefined)
+                                  .map((session) => renderSession(session, projectSessions))}
+                                {documentsOf("project", project.id).map(renderDocument)}
+                              </ul>
+                            ) : null}
                           </li> : null}
                           {projectWorktrees.sort((left, right) => {
                             const leftReview = activeReviews.find((review) => review.worktreeId === left.id);
@@ -670,6 +942,7 @@ export function ProjectSidebar({
                               (session) => session.worktreeId === worktree.id,
                             );
                             const worktreeAttention = attentionOf(worktreeSessions);
+                            const worktreeDocuments = documentsOf("worktree", worktree.id);
                             return (
                               <li className="worktree-node" key={worktree.id}>
                                 <div className={`worktree-row two-line ${selectedWorktreeId === worktree.id ? "selected" : ""}`} onContextMenu={(event) => onWorktreeContextMenu(worktree, event)}>
@@ -688,6 +961,13 @@ export function ProjectSidebar({
                                     ) : null}
                                   </button>
                                 </div>
+                                {(!expandedWorkspaces.has(`worktree:${worktree.id}`) || selectedWorktreeId === worktree.id) &&
+                                (worktreeSessions.length > 0 || worktreeDocuments.length > 0) ? (
+                                  <ul className="session-tree worktree-sessions" role="group" aria-label={`${worktree.branch} 패인`}>
+                                    {worktreeSessions.map((session) => renderSession(session, projectSessions))}
+                                    {worktreeDocuments.map(renderDocument)}
+                                  </ul>
+                                ) : null}
                               </li>
                             );
                           })}
@@ -706,6 +986,18 @@ export function ProjectSidebar({
           </ul>
         )}
 
+        {/* Maintenance sessions belong to no folder, so they get a group of their own at the foot
+            of the tree rather than being hidden until something goes wrong. */}
+        {toolSessions.length > 0 ? (
+          <div className="tools-group">
+            <div className="section-heading">
+              <span>도구</span>
+            </div>
+            <ul className="session-tree" role="group" aria-label="유지보수 세션">
+              {toolSessions.map((session) => renderSession(session, toolSessions))}
+            </ul>
+          </div>
+        ) : null}
       </nav>
       )}
 

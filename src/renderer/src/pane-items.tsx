@@ -1,4 +1,6 @@
+import type { AgentId } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
+import type { TerminalStatus } from "@shared/terminal-types";
 import { FileText, GitCompare, GitPullRequest, Network } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -13,6 +15,16 @@ import type { ReactNode } from "react";
  */
 export type DocumentKind = "file" | "diff" | "graph" | "pull-request";
 
+/**
+ * The tree node a document hangs under. Every document knows the folder or worktree it was opened
+ * from — that is what lets the sidebar list it beside the sessions of the same place instead of
+ * pooling every open file in one bucket.
+ */
+export interface PaneOwner {
+  kind: "project" | "worktree";
+  id: string;
+}
+
 export interface DocumentPane {
   /** `${kind}:${...}` — unique across everything a slot can hold. */
   id: string;
@@ -20,9 +32,28 @@ export interface DocumentPane {
   label: string;
   /** The folder it came from, shown where panes from several folders meet. */
   detail: string | null;
-  /** Unsaved edits, marked on the tab the way an editor marks one. */
+  /** Unsaved edits, marked on the row the way an editor marks a tab. */
   dirty: boolean;
+  owner: PaneOwner | null;
 }
+
+/**
+ * One line in a pane list. The sidebar's 작업공간 rows draw these directly, because a workspace
+ * gathers panes from several folders and only App can say what each id refers to.
+ */
+interface PaneRowBase {
+  /** The pane id: a session id, or a document id. */
+  id: string;
+  label: string;
+  /** The folder a pane belongs to, shown where a list mixes several. */
+  detail: string | null;
+  /** False while the pane sits on another page; the row dims to say so. */
+  onScreen: boolean;
+}
+
+export type PaneRow =
+  | (PaneRowBase & { kind: "session"; status: TerminalStatus; agent: AgentId })
+  | (PaneRowBase & { kind: "document"; document: DocumentKind; dirty: boolean });
 
 /** What a slot draws. `content` is built by App: the grid stays ignorant of viewers. */
 export type PaneContent =

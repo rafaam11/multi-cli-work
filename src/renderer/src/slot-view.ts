@@ -190,6 +190,33 @@ export function visibleSessionsOf(
   return pageSlots(slots, pageSize, page).filter((id): id is string => id !== null);
 }
 
+/**
+ * Where a pane the app shelves by itself should land. The workspaces read as one shelf: page 1 of
+ * 작업공간1 fills before page 1 of 작업공간2, and only once every workspace's first page is full does
+ * 작업공간1 open a second page. A hole left behind by a pane that went away counts as free, so the
+ * shelf closes up instead of only ever growing.
+ *
+ * A page holds as many panes as that workspace's own layout draws — six on 자동, which is the default
+ * and the ceiling for every preset.
+ */
+export function nextWorkspaceSlot(
+  views: readonly SlotViewState[],
+): { index: number; slot: number } | null {
+  if (views.length === 0) return null;
+  const sizes = views.map(viewPageSize);
+  const pages = Math.max(...views.map((view, index) => pageCount(view.slots, sizes[index])));
+  // One page past the fullest workspace is empty by definition, so the scan always finds a slot.
+  for (let page = 0; page <= pages; page += 1) {
+    for (let index = 0; index < views.length; index += 1) {
+      const start = page * sizes[index];
+      for (let slot = start; slot < start + sizes[index]; slot += 1) {
+        if ((views[index].slots[slot] ?? null) === null) return { index, slot };
+      }
+    }
+  }
+  return null;
+}
+
 export interface ResolvedView {
   /** The grid to draw: the chosen preset, or 자동's pick for this page's session count. */
   layout: GridLayout;
