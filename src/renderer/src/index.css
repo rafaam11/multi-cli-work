@@ -1634,10 +1634,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /* Selection cannot use an inset left bar any more — that is where the group rail already is, and
-   the two would read as one doubled line. A denser wash plus a ring instead. */
+   the two would read as one doubled line. A denser wash plus a ring instead. Both carry the
+   category colour: a grey ring over a hover-coloured wash was too close to plain hover to read as
+   the current selection. */
 .work-project-row.selected {
-  background: color-mix(in srgb, var(--category-accent, transparent) 16%, var(--surface-hover));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--category-accent, transparent) 45%, var(--line-strong));
+  background: color-mix(in srgb, var(--category-accent, transparent) 28%, var(--surface-hover));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--category-accent, transparent) 75%, var(--line-strong));
 }
 
 .work-project-select {
@@ -1718,10 +1720,22 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface-hover);
 }
 
-/* Selection adds a ring rather than its own bar, so it cannot hide the status — the trade-off
-   `.session-row.selected` already settled. */
+/*
+ * Selection adds a ring rather than its own bar, so it cannot hide the status. Ring and wash are
+ * both tinted with --folder-accent, which is what keeps the two states apart: selection used to
+ * share hover's background and differ only by a grey ring, so the current folder looked no
+ * different from whichever one the pointer happened to be over.
+ */
 .project-row.selected {
-  box-shadow: inset 4px 0 0 var(--folder-accent), inset 0 0 0 1px var(--line-strong);
+  background: color-mix(in srgb, var(--folder-accent) 20%, var(--surface-hover));
+  box-shadow: inset 4px 0 0 var(--folder-accent), inset 0 0 0 2px color-mix(in srgb, var(--folder-accent) 60%, transparent);
+}
+
+/* The name is already --text; this lifts the rest of the row to match so the whole selected row
+   reads as active, not just its frame. */
+.project-row.selected .project-select,
+.project-row.selected .project-select > svg {
+  color: var(--text);
 }
 
 .project-row.missing .project-select > svg,
@@ -2219,6 +2233,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .grid-pane {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -2226,8 +2241,20 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--bg);
 }
 
-.workspace-grid:not([data-slots="1"]) .grid-pane.pane-focused {
-  box-shadow: inset 0 0 0 1px var(--teal);
+/*
+ * The focus ring rides on an overlay rather than the pane's own inset shadow: the terminal surface
+ * paints its background over the pane box, so a shadow drawn under it survives only along the
+ * header, and the pane reads as top-edge-only. The overlay sits above the content and takes no
+ * pointer events, which keeps clicks and text selection reaching the terminal underneath.
+ */
+.workspace-grid:not([data-slots="1"]) .grid-pane.pane-focused::after {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--teal);
+  box-shadow: inset 0 0 9px color-mix(in srgb, var(--teal) 20%, transparent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
 }
 
 /* A slot the user left open. It is a drop target, so it says so instead of looking broken. */
