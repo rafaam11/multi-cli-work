@@ -73,6 +73,21 @@ const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`
 const paneRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 세션 열기`) });
 
 /**
+ * Puts a folder's grid on screen and leaves its subtree open. The row click alone no longer does
+ * both: on the folder whose grid is already up it folds the subtree instead of re-selecting it, and
+ * the rows under it are what the callers came for.
+ */
+async function openFolder(name = "Sample Project"): Promise<void> {
+  const row = page.getByRole("button", { name: `${name} 폴더 선택` });
+  await row.click();
+  const node = page.locator(".project-node").filter({ has: row });
+  if ((await node.getAttribute("aria-expanded")) === "false") {
+    await page.getByRole("button", { name: `${name} 펼치기` }).click();
+  }
+  await expect(node).toHaveAttribute("aria-expanded", "true");
+}
+
+/**
  * Leaves a single pane on screen. Opening a folder brings up every session it has, so a test that
  * drives one terminal empties the other slots first — a slot emptied here keeps its session running
  * and keeps its sidebar row, so nothing is lost by it.
@@ -232,7 +247,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
   test("@smoke runs a real native PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
 
     // A folder opened before it has a single session: the start page stands in for the grid, and the
     // layout row stays put so the arrangement can be chosen before the first session exists.
@@ -362,7 +377,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   });
 
   test("pastes each Ctrl+V shortcut exactly once from Electron's native clipboard", async () => {
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
     // The new session joins the folder's grid, and this test drives a single PTY — solo it.
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
@@ -426,7 +441,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await fs.writeFile(path.join(longParent, "a-very-long-file-name-that-still-shows-its-status.ts"), "export const changed = true;\n");
     await execFileAsync("git", ["checkout", "-b", "feature/a-very-long-branch-name-for-responsive-layout"], { cwd: projectRoot });
 
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await page.getByRole("tab", { name: "Git" }).click();
     await expect(page.getByText("a-very-long-file-name-that-still-shows-its-status.ts")).toBeVisible();
     await page.evaluate(() => {
@@ -496,9 +511,20 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("region", { name: "세션 모니터" })).toBeVisible();
 
     // A folder click opens its work — the terminals — and the 상세 page is a header click away.
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await expect(page.locator(".workspace-grid")).toBeVisible();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeHidden();
+
+    // The same row clicked again has nothing left to open, so it folds its subtree away instead —
+    // the grid it already brought up stays exactly where it is.
+    const folderNode = page
+      .locator(".project-node")
+      .filter({ has: page.getByRole("button", { name: "Sample Project 폴더 선택" }) });
+    await expect(folderNode).toHaveAttribute("aria-expanded", "true");
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await expect(folderNode).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(".workspace-grid")).toBeVisible();
+    await openFolder();
 
     await page.getByRole("button", { name: "폴더 상세" }).click();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeVisible();
@@ -564,7 +590,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
    * `agents.json`, and it stands next to the built-ins rather than behind them.
    */
   test("@smoke runs an agent the user added in agents.json", async () => {
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await expect(page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` })).toBeVisible();
 
     await page.getByRole("button", { name: "새 Echo Agent 세션" }).click();
@@ -638,7 +664,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await attachScreenshot("worktree-session");
 
     // Fan one prompt out to every live session of the project (worktree + Echo Agent).
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     // The folder's grid holds every session it has, the worktree's included — nothing was pushed off
     // to make room for the new one. Two unnamed shells of one project are numbered, so the first
     // session takes the "1" suffix from here until the worktree is removed again.
@@ -656,7 +682,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await fanOut.getByRole("button", { name: "2개 세션에 전송" }).click();
     await expect(fanOut).toBeHidden();
     // Both recipients are panes of the same grid, so one look shows what each of them received.
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await expect(pane(`${SHELL_LABEL} 2`).locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
     await expect(pane("Echo Agent").locator(".xterm-rows")).toContainText("MCW_FANOUT_OK");
 
@@ -732,7 +758,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // Playwright's app.close() follows Electron's before-quit path. Stop the remaining live test
     // agent first so the product's native destructive-quit confirmation does not block automation.
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await pane("Echo Agent").getByRole("button", { name: "세션 중지" }).click();
     await expect(page.locator(".active-status")).toHaveText("종료됨");
     await app.close();
@@ -844,7 +870,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await attachScreenshot("workspace-shelf");
 
     // Back to the folder, which kept both panes and the layout it was left on.
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "solo");
     await layoutBar.getByRole("radio", { name: "자동" }).click();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
@@ -861,7 +887,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
    */
   test("@smoke keeps terminal scrollback intact after leaving the session and coming back", async () => {
     await page.setViewportSize({ width: 1400, height: 900 });
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await openFolder();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
     // The replay is measured in columns, so this one keeps the full width to itself. Emptying the
     // other slots is not enough: a folder view refills itself every time it is opened, so the layout
