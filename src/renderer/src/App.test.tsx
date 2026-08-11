@@ -1944,7 +1944,7 @@ describe("workspace grid", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    // The app boots into Atlas's own grid, so its tree row is already open and showing.
     await screen.findByRole("region", { name: "claude 터미널" });
 
     // The first pane is the most recent session — Claude Code.
@@ -1969,7 +1969,6 @@ describe("workspace grid", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
     await screen.findByRole("region", { name: "claude 터미널" });
     const row = screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")!;
     expect(row).not.toHaveClass("flash");
@@ -2041,9 +2040,9 @@ describe("workspace grid", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
     await screen.findByRole("region", { name: "claude 터미널" });
-    // The first pane is the most recent session — Claude Code — and it holds the focus.
+    // Hand the focus to Claude Code, so the refresh below acts on the pane that does not have it.
+    fireEvent.click(screen.getByRole("button", { name: /Claude Code 세션 열기/ }));
     const focused = await xtermFor(claudeSession.id);
     const other = await xtermFor(powershellSession.id);
 
@@ -2110,7 +2109,8 @@ describe("sidebar panes", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    // Atlas boots open, so its session rows are already in the tree to drag out of.
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
     const row = screen.getByRole("button", { name: /PowerShell 세션 열기/ });
     const shelf = screen.getByRole("button", { name: "작업공간2 열기 (패인 0개)" }).closest(".workspace-shelf-row")!;
 
@@ -2129,7 +2129,7 @@ describe("sidebar panes", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
     fireEvent.contextMenu(screen.getByRole("button", { name: /PowerShell 세션 열기/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: "작업공간2 (0)" }));
 
@@ -2147,7 +2147,7 @@ describe("sidebar panes", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
     for (const name of [/PowerShell 세션 열기/, /Claude Code 세션 열기/]) {
       fireEvent.contextMenu(screen.getByRole("button", { name }));
       fireEvent.click(screen.getByRole("menuitem", { name: /^작업공간2 \(/ }));
@@ -2551,5 +2551,51 @@ describe("folder colour", () => {
     await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "true"));
     expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
     expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  /**
+   * Clicking the row of the place already on screen used to re-select what was selected, which
+   * showed nothing. It now folds that row away, so the click that cannot open anything closes it.
+   */
+  it("folds the row already on screen instead of opening it again, on both layers", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession],
+      workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0)],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    // Atlas's grid is what the app boots into, so its row is the one with nothing left to open.
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "false"));
+    // Folding the tree row does not take the folder's work off the grid.
+    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true"));
+
+    // Another folder is not on screen, so its row still opens — and unfolds — as before.
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true"));
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
+
+    // The group layer answers the same way: its page opens with the group unfolded, and the next
+    // click on it folds the group without leaving the page.
+    const group = () =>
+      within(screen.getByRole("navigation", { name: "프로젝트" })).getByRole("button", {
+        name: "진행 과제 프로젝트 열기",
+      });
+    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 접기"));
+    await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
+
+    fireEvent.click(group());
+    await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "true"));
+
+    fireEvent.click(group());
+    await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
   });
 });

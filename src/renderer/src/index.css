@@ -1817,7 +1817,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .project-select {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-width: 0;
   align-items: center;
   gap: 8px;
@@ -1842,6 +1842,15 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   align-items: center;
   gap: 6px;
   overflow: hidden;
+}
+
+/* The row's right rail. Everything here is pinned to the card's edge rather than to the name, so the
+   session count of every folder lines up in one column no matter how long the names are. */
+.project-signals {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 6px;
 }
 
 .folder-status-dot {

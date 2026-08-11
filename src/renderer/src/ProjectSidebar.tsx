@@ -81,6 +81,8 @@ interface ProjectSidebarProps {
   workspaceViews: GitWorkspaceView[];
   worktreeWarnings: Record<string, string>;
   selectedProjectId: string | null;
+  /** The folder whose grid is on screen; its row folds on click instead of re-selecting. */
+  gridProjectId: string | null;
   selectedWorktreeId: string | null;
   onSelectWorktree(worktree: SharedWorktree): void;
   onWorktreeContextMenu(worktree: SharedWorktree, event: ReactMouseEvent): void;
@@ -197,6 +199,7 @@ export function ProjectSidebar({
   workspaceViews,
   worktreeWarnings,
   selectedProjectId,
+  gridProjectId,
   selectedWorktreeId,
   onSelectWorktree,
   onWorktreeContextMenu,
@@ -699,6 +702,8 @@ export function ProjectSidebar({
             {treeSections.map((section) => {
               const workProject = section.workProject;
               const sectionExpanded = workProject ? expandedWorkProjects.has(workProject.id) : true;
+              // Its page is already on screen, so the row has nothing left to open — it folds instead.
+              const sectionShowing = workProject !== null && selectedWorkProjectId === workProject.id;
               // With no work projects at all the single unassigned section has no header either,
               // so it takes no rail — the tree stays exactly as it was before grouping existed.
               const railed = workProject !== null || workProjects.length > 0;
@@ -745,7 +750,11 @@ export function ProjectSidebar({
                       <button
                         className="work-project-select"
                         type="button"
-                        onClick={() => onSelectWorkProject(workProject.id)}
+                        onClick={() =>
+                          sectionShowing
+                            ? onToggleWorkProject(workProject.id)
+                            : onSelectWorkProject(workProject.id)
+                        }
                         aria-label={`${workProject.name} 프로젝트 열기`}
                       >
                         <Briefcase size={15} />
@@ -785,6 +794,8 @@ export function ProjectSidebar({
             {section.projects.map((project) => {
               const name = projectName(project);
               const expanded = expandedProjects.has(project.id);
+              // Its grid is already on screen, so the row folds rather than re-selecting the folder.
+              const showing = gridProjectId === project.id;
               const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
               const projectSessions = sessions
                 .filter((session) => session.projectId === project.id)
@@ -854,7 +865,7 @@ export function ProjectSidebar({
                     <button
                       className="project-select"
                       type="button"
-                      onClick={() => onSelectProject(project.id)}
+                      onClick={() => (showing ? onToggleProject(project.id) : onSelectProject(project.id))}
                       aria-label={`${name} 폴더 선택`}
                       title={project.rootPath}
                     >
@@ -874,6 +885,20 @@ export function ProjectSidebar({
                       <span className="project-copy">
                         <span className="folder-status-dot" aria-hidden="true" />
                         <span className="project-name">{name}</span>
+                      </span>
+                      {/* The row's right edge is a rail: the count lands on the same spot for every
+                          folder instead of trailing a name of whatever length, and the rarer
+                          signals queue up to its left. */}
+                      <span className="project-signals">
+                        {projectAttention ? (
+                          <span
+                            className={`unread-dot unread-${projectAttention}`}
+                            role="status"
+                            aria-label="응답 대기 세션 있음"
+                            title="응답 대기 세션 있음"
+                          />
+                        ) : null}
+                        {rootMissing ? <span className="project-status missing-status">없음</span> : null}
                         {/* Its worktrees' sessions count too: the folder answers "how much is
                             running here", and each worktree row already breaks that down. */}
                         {projectSessions.length > 0 ? (
@@ -882,15 +907,6 @@ export function ProjectSidebar({
                           </span>
                         ) : null}
                       </span>
-                      {projectAttention ? (
-                        <span
-                          className={`unread-dot unread-${projectAttention}`}
-                          role="status"
-                          aria-label="응답 대기 세션 있음"
-                          title="응답 대기 세션 있음"
-                        />
-                      ) : null}
-                      {rootMissing ? <span className="project-status missing-status">없음</span> : null}
                     </button>
                   </div>
                   {editingProjectId === project.id ? (

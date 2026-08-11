@@ -1258,6 +1258,14 @@ export function App() {
   const selectWorkProject = (workProjectId: string) => {
     setSelectedWorkProjectId(workProjectId);
     setActiveView("work-project");
+    // Opening a group is also a request to see what it holds, so it unfolds.
+    setCollapsedWorkProjectIds((current) => {
+      if (!current.has(workProjectId)) return current;
+      const next = new Set(current);
+      next.delete(workProjectId);
+      persistCollapsed(COLLAPSED_WORK_PROJECTS_KEY, next);
+      return next;
+    });
     setActionError(null);
   };
 
@@ -1956,6 +1964,16 @@ export function App() {
   const headerSessionLabel = activeView === "home" ? null : selectedSessionLabel;
 
   /**
+   * The folder the grid is actually showing. Narrower than the highlighted row — that stays lit
+   * behind a 상세 page, a worktree or a 작업공간 — and it is the only case where clicking the row
+   * again says "I am already here", which the tree answers by folding it away.
+   */
+  const gridProjectId =
+    activeView === "terminal" && workspaceIndex === null && selectedWorktreeId === null
+      ? selectedProjectId
+      : null;
+
+  /**
    * A workspace on screen replaces the folder identity in the header: it belongs to no single folder,
    * so it is named by what it gathers instead. Documents count toward the panes but not the folders —
    * the folder tally is about how many places the work in view comes from.
@@ -2408,6 +2426,7 @@ export function App() {
         workspaceViews={workspaceViews}
         worktreeWarnings={worktreeWarnings}
         selectedProjectId={activeView === "home" ? null : selectedProjectId}
+        gridProjectId={gridProjectId}
         selectedWorktreeId={activeView === "home" ? null : selectedWorktreeId}
         onSelectWorktree={selectWorktree}
         onWorktreeContextMenu={(worktree, event) => {
