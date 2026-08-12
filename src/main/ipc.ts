@@ -260,11 +260,10 @@ function integer(value: unknown, label: string): number {
  */
 function slotViewsInput(value: unknown, label = "Slot views"): SlotViewsInput {
   if (typeof value !== "object" || value === null) throw new Error(`${label} must be an object`);
-  const { folderViews, workspaces } = value as Record<string, unknown>;
+  const { folderViews, workspace, hiddenPanes } = value as Record<string, unknown>;
   if (typeof folderViews !== "object" || folderViews === null || Array.isArray(folderViews)) {
     throw new Error(`${label} folderViews must be an object`);
   }
-  if (!Array.isArray(workspaces)) throw new Error(`${label} workspaces must be an array`);
   const view = (candidate: unknown, viewLabel: string) => {
     if (typeof candidate !== "object" || candidate === null) throw new Error(`${viewLabel} must be an object`);
     const { layoutId, slots } = candidate as Record<string, unknown>;
@@ -283,7 +282,8 @@ function slotViewsInput(value: unknown, label = "Slot views"): SlotViewsInput {
         view(entry, `${label} folderViews.${projectId}`),
       ]),
     ),
-    workspaces: workspaces.map((entry, index) => view(entry, `${label} workspaces[${index}]`)),
+    workspace: view(workspace, `${label} workspace`),
+    hiddenPanes: view(hiddenPanes, `${label} hiddenPanes`),
   };
 }
 

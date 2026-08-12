@@ -229,11 +229,13 @@ export interface ResumeTerminalInput {
 
 /**
  * Every saved grid in one write. They travel together because a single drag can touch both — a tab
- * dragged out of a folder view and into a workspace — and two writes would let a crash split them.
+ * dragged out of a folder view and into the workspace, or a pane moved between the workspace and
+ * the hidden shelf — and two writes would let a crash split them.
  */
 export interface SlotViewsInput {
   folderViews: Record<string, SlotViewState>;
-  workspaces: SlotViewState[];
+  workspace: SlotViewState;
+  hiddenPanes: SlotViewState;
 }
 
 export interface TerminalAttachResult {

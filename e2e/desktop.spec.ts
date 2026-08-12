@@ -830,11 +830,12 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   /**
    * The three ways a pane is put where the user wants it: the sidebar reaches one on any page, the
    * layout row decides how many fit at once (the rest paginate rather than disappear), and a row
-   * dragged onto a workspace row builds a screen out of panes picked by hand.
+   * dragged onto 숨김 takes a pane off 작업공간 — which, collecting everything the app holds, is
+   * otherwise the one screen a pane cannot be left out of.
    */
-  test("moves panes by sidebar row, layout and page, and fills a workspace by dragging one", async () => {
+  test("moves panes by sidebar row, layout and page, and puts one away on 숨김", async () => {
     const layoutBar = page.locator(".layout-bar");
-    const workspaceRow = page.getByRole("button", { name: /작업공간2 열기/ });
+    const hiddenRow = page.getByRole("button", { name: /숨김 열기/ });
 
     // A row click moves the focus; it rearranges nothing.
     await paneRow(SHELL_LABEL).click();
@@ -854,24 +855,41 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(pane(SHELL_LABEL)).toBeVisible();
     await expect(pane("Echo Agent")).toBeHidden();
 
-    // Every pane shelved itself in 작업공간1 the moment it was created, so that row is already busy.
-    await expect(page.getByRole("button", { name: /작업공간1 열기 \(패인 [1-9]\d*개\)/ })).toBeVisible();
+    // Every session collected itself into 작업공간 as it was created — nothing was dragged for that
+    // — and 숨김 stays empty until something is put there on purpose. The exact count is whatever the
+    // tests before this one left running, so what is asserted is the move, not the number.
+    const activeCount = async () => {
+      const label = await page.getByRole("button", { name: /작업공간 열기/ }).getAttribute("aria-label");
+      const count = Number(/패인 (\d+)개/.exec(label ?? "")?.[1]);
+      expect(count).toBeGreaterThan(0);
+      return count;
+    };
+    const collected = await activeCount();
+    await expect(page.getByRole("button", { name: "숨김 열기 (패인 0개)" })).toBeVisible();
 
-    // 작업공간2 is untouched, which is what makes it the honest target for a hand-built screen.
-    // Dragging a row onto it copies a reference: the pane keeps its place in the folder too.
-    await expect(page.getByRole("button", { name: "작업공간2 열기 (패인 0개)" })).toBeVisible();
-    await dragPaneOnto("Echo Agent", "작업공간2 열기");
-    await expect(page.getByRole("button", { name: "작업공간2 열기 (패인 1개)" })).toBeVisible();
-    await workspaceRow.click();
-    await expect(page.locator(".workspace-title")).toHaveText("작업공간2");
+    // The drop moves the pane rather than copying it: a pane sits on exactly one of the two shelves,
+    // and it keeps its place in the folder's own grid either way.
+    await dragPaneOnto("Echo Agent", "숨김 열기");
+    await expect(page.getByRole("button", { name: "숨김 열기 (패인 1개)" })).toBeVisible();
+    await expect(page.getByRole("button", { name: `작업공간 열기 (패인 ${collected - 1}개)` })).toBeVisible();
+
+    // 숨김 is a grid of its own, so a pane taken off 작업공간 can still be looked at.
+    await hiddenRow.click();
+    await expect(page.locator(".workspace-title")).toHaveText("숨김");
     await expect(pane("Echo Agent")).toBeVisible();
     await expect(pane(SHELL_LABEL)).toBeHidden();
 
-    // Expanding the row is how a workspace says what it holds, now that panes have no tabs.
-    await page.getByRole("button", { name: "작업공간2 펼치기" }).click();
-    const shelfPanes = page.getByRole("group", { name: "작업공간2 패인" });
+    // Expanding the row is how a shelf says what it holds, now that panes have no tabs.
+    await page.getByRole("button", { name: "숨김 펼치기" }).click();
+    const shelfPanes = page.getByRole("group", { name: "숨김 패인" });
     await expect(shelfPanes.getByRole("button", { name: "Echo Agent 패인 열기" })).toBeVisible();
     await attachScreenshot("workspace-shelf");
+
+    // The ✕ on a shelf row is the way back, and it ends nothing: the session is still running when
+    // it lands on 작업공간 again.
+    await shelfPanes.getByRole("button", { name: "Echo Agent 작업공간에 다시 표시" }).click();
+    await expect(page.getByRole("button", { name: "숨김 열기 (패인 0개)" })).toBeVisible();
+    await expect(page.getByRole("button", { name: `작업공간 열기 (패인 ${collected}개)` })).toBeVisible();
 
     // Back to the folder, which kept both panes and the layout it was left on.
     await openFolder();

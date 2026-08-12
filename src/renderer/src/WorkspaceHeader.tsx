@@ -2,14 +2,15 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import { ChevronLeft, ChevronRight, FolderOpen, LayoutGrid, MonitorDot, PanelsTopLeft, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, EyeOff, FolderOpen, LayoutGrid, MonitorDot, PanelsTopLeft, Trash2 } from "lucide-react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { LayoutPicker } from "./LayoutPicker";
 import { newSessionLabel, projectName, statusLabels } from "./session-labels";
+import { SHELF_TEXT, type ShelfKind } from "./shelves";
 
 interface WorkspaceHeaderProps {
-  /** Set when one of the three workspaces is on screen; the folder controls step aside for it. */
-  workspace: { index: number; paneCount: number; folderCount: number } | null;
+  /** Set when a shelf is on screen rather than a folder; the folder controls step aside for it. */
+  workspace: { kind: ShelfKind; paneCount: number; folderCount: number } | null;
   /**
    * The grid's arrangement, or null on a surface that has no grid to arrange. The picker rides here
    * rather than above the grid so choosing a layout costs no terminal height.
@@ -26,7 +27,7 @@ interface WorkspaceHeaderProps {
   selectedSessionLabel: string | null;
   /**
    * The session in the pane that has the focus, wherever that pane came from. `selectedSession`
-   * belongs to the folder on screen and is null on a workspace, which holds panes from several — so
+   * belongs to the folder on screen and is null on a shelf, which holds panes from several — so
    * the 제거 button follows the focus instead, and works on both surfaces.
    */
   focusedSession: { session: TerminalSessionView; label: string } | null;
@@ -47,9 +48,9 @@ interface WorkspaceHeaderProps {
  * headers instead — with a grid of terminals, only the pane itself says which session a button
  * would act on.
  *
- * A workspace holds panes from several folders at once, so there is no folder for 상세 to open and
- * no folder for a launcher to start a session in. Those controls are for folder surfaces only; the
- * workspace gets a title saying how much it holds and where from.
+ * A shelf holds panes from several folders at once, so there is no folder for 상세 to open and no
+ * folder for a launcher to start a session in. Those controls are for folder surfaces only; a shelf
+ * gets a title saying how much it holds and where from.
  */
 export function WorkspaceHeader({
   workspace,
@@ -71,7 +72,7 @@ export function WorkspaceHeader({
 }: WorkspaceHeaderProps) {
   const canLaunch = Boolean(selectedProject) && !projectMissing && !pendingAction;
   const title = workspace
-    ? `작업공간${workspace.index + 1}`
+    ? SHELF_TEXT[workspace.kind].name
     : selectedSession?.tool
       ? "도구"
       : selectedProject
@@ -79,7 +80,7 @@ export function WorkspaceHeader({
         : "선택된 폴더 없음";
   const subtitle = workspace
     ? workspace.paneCount === 0
-      ? "사이드바의 세션·문서를 끌어다 놓아 이 작업공간을 채우세요"
+      ? SHELF_TEXT[workspace.kind].subtitle
       : `패인 ${workspace.paneCount}개 · 폴더 ${workspace.folderCount}곳`
     : selectedSession?.tool
       ? selectedSession.cwd
@@ -88,7 +89,15 @@ export function WorkspaceHeader({
   return (
     <header className="workspace-header">
       <div className="workspace-identity">
-        {workspace ? <LayoutGrid size={16} aria-hidden="true" /> : <MonitorDot size={16} aria-hidden="true" />}
+        {/* The two shelves take different icons: with the same title bar for both, the mark is what
+            says at a glance which of them is on screen. */}
+        {workspace?.kind === "hidden" ? (
+          <EyeOff size={16} aria-hidden="true" />
+        ) : workspace ? (
+          <LayoutGrid size={16} aria-hidden="true" />
+        ) : (
+          <MonitorDot size={16} aria-hidden="true" />
+        )}
         <div className="workspace-copy">
           <span className="workspace-title">
             {title}
@@ -106,7 +115,7 @@ export function WorkspaceHeader({
       </div>
 
       <div className="workspace-actions">
-        {/* A workspace hides the folder controls, so on that surface the picker is the whole row. */}
+        {/* A shelf hides the folder controls, so on that surface the picker is the whole row. */}
         {layout ? (
           <LayoutPicker layoutId={layout.layoutId} paneCount={layout.paneCount} onSelect={layout.onSelect} />
         ) : null}

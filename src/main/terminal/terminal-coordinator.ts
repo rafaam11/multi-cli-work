@@ -1,7 +1,6 @@
 import type { AgentDefinition, AgentId } from "../../shared/agent-types";
 import {
   MAX_VISIBLE_SESSIONS,
-  WORKSPACE_COUNT,
   type AppStateV1,
   type PersistedTerminalSession,
   type SlotViewState,
@@ -10,6 +9,7 @@ import type {
   CreateTerminalInput,
   CreateToolTerminalInput,
   ResumeTerminalInput,
+  SlotViewsInput,
   TerminalAttachResult,
   TerminalSessionView,
 } from "../../shared/api-types";
@@ -66,7 +66,8 @@ function clearSessionFromViews(state: AppStateV1, sessionId: string): Partial<Ap
           ),
         }
       : {}),
-    ...(state.workspaces ? { workspaces: state.workspaces.map(clear) } : {}),
+    ...(state.workspace ? { workspace: clear(state.workspace) } : {}),
+    ...(state.hiddenPanes ? { hiddenPanes: clear(state.hiddenPanes) } : {}),
   };
 }
 
@@ -496,11 +497,11 @@ export class TerminalCoordinator {
   }
 
   /**
-   * The saved arrangements — each folder's grid and the curated workspaces. Unlike the visible
-   * list, these outlive the sessions in them: a slot holding a session that has since gone is
-   * cleared rather than rejected, so a stale renderer save cannot fail the whole write.
+   * The saved arrangements — each folder's grid, the workspace, and the hidden shelf. Unlike the
+   * visible list, these outlive the sessions in them: a slot holding a session that has since gone
+   * is cleared rather than rejected, so a stale renderer save cannot fail the whole write.
    */
-  async setSlotViews(input: { folderViews: Record<string, SlotViewState>; workspaces: SlotViewState[] }) {
+  async setSlotViews(input: SlotViewsInput) {
     const known = (slots: readonly (string | null)[]) =>
       slots.map((id) => (id !== null && this.views.has(id) ? id : null));
     const folderViews = Object.fromEntries(
@@ -509,14 +510,13 @@ export class TerminalCoordinator {
         { layoutId: view.layoutId, slots: known(view.slots) },
       ]),
     );
-    const workspaces = input.workspaces
-      .slice(0, WORKSPACE_COUNT)
-      .map((view) => ({ layoutId: view.layoutId, slots: known(view.slots) }));
+    const shelf = (view: SlotViewState) => ({ layoutId: view.layoutId, slots: known(view.slots) });
     const state = await updateAppState(
       (current) => ({
         ...current,
         folderViews: Object.keys(folderViews).length > 0 ? folderViews : undefined,
-        workspaces: workspaces.length > 0 ? workspaces : undefined,
+        workspace: shelf(input.workspace),
+        hiddenPanes: shelf(input.hiddenPanes),
       }),
       { statePath: this.options.statePath },
     );

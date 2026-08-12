@@ -76,6 +76,7 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
     refreshRequests: {},
     refreshingSessionIds: new Set(),
     pendingAction: false,
+    clearAction: null,
     isProjectMissing: () => false,
     onAttached: vi.fn(),
     onRefreshComplete: vi.fn(),

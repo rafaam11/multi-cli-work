@@ -7,7 +7,7 @@ const EDGE_MARGIN = 8;
  * Keeps a context menu inside the window. The menus open at the pointer, so one opened near an edge
  * hangs past it — and what hangs past the bottom is the end of the list, where the destructive items
  * live. Measuring after mount is what makes this work for menus whose height depends on their
- * content: the agent list and the 작업공간 list both differ per folder.
+ * content: the agent list differs per folder, and a worktree menu carries rows a folder's does not.
  *
  * A menu taller than the window cannot be moved into it; `.context-menu` scrolls in that case.
  */

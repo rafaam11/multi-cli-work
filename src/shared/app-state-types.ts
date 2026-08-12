@@ -34,9 +34,6 @@ export interface PersistedTerminalSession {
  */
 export const MAX_VISIBLE_SESSIONS = 12;
 
-/** How many workspaces the sidebar offers. Fixed at three; naming and resizing them are later work. */
-export const WORKSPACE_COUNT = 3;
-
 /**
  * One grid's arrangement: the layout preset it uses, and which session sits in each slot.
  * `slots` may run longer than the layout has slots — the overflow is the next page. A `null` is a
@@ -62,8 +59,14 @@ export interface AppStateV1 {
   visibleSessionIds?: string[];
   /** Each folder's saved grid, keyed by project id. Omitted while no folder has one. */
   folderViews?: Record<string, SlotViewState>;
-  /** The curated workspaces, in sidebar order (at most WORKSPACE_COUNT). Omitted while unused. */
-  workspaces?: SlotViewState[];
+  /**
+   * The workspace grid: every session and document the app holds, minus the hidden ones. Omitted
+   * while empty. Files written up to v1.19 carry an array of three `workspaces` instead; parsing
+   * folds that legacy key into this one, so nothing downstream ever sees the array.
+   */
+  workspace?: SlotViewState;
+  /** The hidden grid: panes still running or open, but kept out of the workspace. Omitted while empty. */
+  hiddenPanes?: SlotViewState;
   sessions: Record<string, PersistedTerminalSession>;
 }
 

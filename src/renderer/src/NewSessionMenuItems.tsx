@@ -11,7 +11,7 @@ export interface NewSessionMenuItemsProps {
 
 /**
  * The 새 세션 block the sidebar's folder and worktree menus share. There is no submenu machinery in
- * these menus, so the agents sit flat under a label — the same shape 작업공간에 추가 already uses.
+ * these menus, so the agents sit flat under a label rather than behind one more click.
  *
  * The list is never hard-coded: an agent the user added to `agents.json` belongs here as much as
  * PowerShell does, and one whose executable is missing stays visible but says so.

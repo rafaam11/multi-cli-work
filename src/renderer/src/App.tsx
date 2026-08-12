@@ -1,5 +1,5 @@
 import type { AgentView } from "@shared/agent-types";
-import { WORKSPACE_COUNT, type SlotViewState } from "@shared/app-state-types";
+import type { SlotViewState } from "@shared/app-state-types";
 import type {
   GitChangeEntry,
   GitDiffResult,
@@ -66,11 +66,11 @@ import {
   type PaneContent,
   type PaneRow,
 } from "./pane-items";
+import { OTHER_SHELF, SHELF_TEXT, type ShelfKind, type Shelves } from "./shelves";
 import {
   appendSession,
   clampPage,
   clearSlot,
-  nextWorkspaceSlot,
   normalizeSlots,
   pageOfSession,
   placeInSlot,
@@ -87,8 +87,8 @@ type ActiveView = "home" | "detail" | "work-project" | "terminal";
 
 /**
  * A grid belongs to a surface, and a surface is either a folder (a project, or one of its
- * worktrees, or the tool sessions that belong to none) or one of the three workspaces. Folder
- * surfaces are keyed by a string so they can all live in one persisted record; the prefixes keep a
+ * worktrees, or the tool sessions that belong to none) or one of the two shelves. Folder surfaces
+ * are keyed by a string so they can all live in one persisted record; the prefixes keep a
  * worktree's grid from colliding with a project id.
  */
 const TOOLS_VIEW_KEY = "@tools";
@@ -100,32 +100,38 @@ function folderViewKeyOf(projectId: string | null, worktreeId: string | null): s
 
 const EMPTY_VIEW: SlotViewState = { layoutId: DEFAULT_LAYOUT_ID, slots: [] };
 
-/** 작업공간1/2/3 always exist, even before anything has been dropped into them. */
-function emptyWorkspaces(): SlotViewState[] {
-  return Array.from({ length: WORKSPACE_COUNT }, () => ({ layoutId: DEFAULT_LAYOUT_ID, slots: [] }));
+/** 작업공간 and 숨김 always exist, even before anything has been put on either. */
+function emptyShelves(): Shelves {
+  return {
+    active: { layoutId: DEFAULT_LAYOUT_ID, slots: [] },
+    hidden: { layoutId: DEFAULT_LAYOUT_ID, slots: [] },
+  };
 }
 
 /**
- * Restores the saved workspaces, padded to the fixed three. A state file written before v1.14.0
- * has no workspaces at all but does carry `visibleSessionIds` — the panes that were on screen when
- * the app last closed. Those become 작업공간1, so the arrangement survives the upgrade instead of
- * vanishing into a version the user never asked for.
+ * Restores the two shelves. Main has already folded a pre-v1.20 file's 작업공간1/2/3 into the single
+ * `workspace`, and a file from before v1.14.0 has neither but does carry `visibleSessionIds` — the
+ * panes that were on screen when the app last closed. Those become the 작업공간, so an upgrade never
+ * opens on an arrangement the user never asked for.
+ *
+ * Coming back short is safe: what matters is which panes were hidden, and the reconciler collects
+ * everything else into 작업공간 on the first pass.
  */
-function restoreWorkspaces(
-  saved: readonly SlotViewState[] | undefined,
+function restoreShelves(
+  savedWorkspace: SlotViewState | undefined,
+  savedHiddenPanes: SlotViewState | undefined,
   legacyVisibleSessionIds: readonly string[] | undefined,
   paneIds: readonly string[],
-): SlotViewState[] {
-  const restored = emptyWorkspaces();
-  const source = saved && saved.length > 0
-    ? saved
-    : legacyVisibleSessionIds && legacyVisibleSessionIds.length > 0
-      ? [{ layoutId: DEFAULT_LAYOUT_ID, slots: [...legacyVisibleSessionIds] }]
-      : [];
-  source.slice(0, WORKSPACE_COUNT).forEach((view, index) => {
-    restored[index] = normalizeSlots(view, [], { keep: paneIds });
-  });
-  return restored;
+): Shelves {
+  const source =
+    savedWorkspace ??
+    (legacyVisibleSessionIds && legacyVisibleSessionIds.length > 0
+      ? { layoutId: DEFAULT_LAYOUT_ID, slots: [...legacyVisibleSessionIds] }
+      : undefined);
+  return {
+    active: normalizeSlots(source, [], { keep: paneIds }),
+    hidden: normalizeSlots(savedHiddenPanes, [], { keep: paneIds }),
+  };
 }
 
 function restoreFolderViews(
@@ -323,10 +329,10 @@ export function App() {
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   /** Each folder's saved grid, keyed by `folderViewKeyOf`. */
   const [folderViews, setFolderViews] = useState<Record<string, SlotViewState>>({});
-  /** 작업공간1/2/3, always three entries. */
-  const [workspaces, setWorkspaces] = useState<SlotViewState[]>(emptyWorkspaces);
-  /** Which workspace the grid is showing, or null while it shows a folder. */
-  const [workspaceIndex, setWorkspaceIndex] = useState<number | null>(null);
+  /** 작업공간 and 숨김. Every session and document the app holds sits in exactly one of them. */
+  const [shelves, setShelves] = useState<Shelves>(emptyShelves);
+  /** Which shelf the grid is showing, or null while it shows a folder. */
+  const [shelfKind, setShelfKind] = useState<ShelfKind | null>(null);
   const [page, setPage] = useState(0);
   /** The pane the keyboard and the outline follow — a session id or a document id. */
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
@@ -477,11 +483,9 @@ export function App() {
         document.kind === "pull-request" && document.id === focusedPaneId,
     ) ?? null;
   const folderViewKey = folderViewKeyOf(selectedProjectId, selectedWorktreeId);
-  /** The grid on screen: one of the three workspaces, or the folder the sidebar has selected. */
+  /** The grid on screen: one of the two shelves, or the folder the sidebar has selected. */
   const currentView =
-    workspaceIndex !== null
-      ? (workspaces[workspaceIndex] ?? EMPTY_VIEW)
-      : (folderViews[folderViewKey] ?? EMPTY_VIEW);
+    shelfKind !== null ? shelves[shelfKind] : (folderViews[folderViewKey] ?? EMPTY_VIEW);
   const resolvedView = useMemo(() => resolveView(currentView, page), [currentView, page]);
 
   // Closing panes or picking a roomier layout can leave the last page behind; the grid already
@@ -621,8 +625,15 @@ export function App() {
           const restored = restoreFolderViews(appState.state.folderViews, paneIds);
           restored[key] = normalizeSlots(restored[key], sessionIds, { autoAppend: true, keep: paneIds });
           setFolderViews(restored);
-          setWorkspaces(restoreWorkspaces(appState.state.workspaces, appState.state.visibleSessionIds, paneIds));
-          setWorkspaceIndex(null);
+          setShelves(
+            restoreShelves(
+              appState.state.workspace,
+              appState.state.hiddenPanes,
+              appState.state.visibleSessionIds,
+              paneIds,
+            ),
+          );
+          setShelfKind(null);
           setPage(0);
           slotViewsRestored.current = true;
         };
@@ -859,11 +870,32 @@ export function App() {
       }
       return changed ? next : current;
     });
-    setWorkspaces((current) => {
-      const next = current.map(prune);
-      return next.some((view, index) => view !== current[index]) ? next : current;
+    setShelves((current) => {
+      const active = prune(current.active);
+      const hidden = prune(current.hidden);
+      return active === current.active && hidden === current.hidden ? current : { active, hidden };
     });
   }, [sessions]);
+
+  /**
+   * 작업공간 shows everything the app is holding, so it catches up rather than being filled by hand:
+   * a session started from anywhere, a session restored at launch, a document just opened. A pane
+   * the user has moved to 숨김 is already accounted for and stays there — that shelf is the exception
+   * list this pass reads, and without it "take this off 작업공간" could not exist at all.
+   *
+   * This is an effect rather than a call at each birth because the sessions restored on startup and
+   * the ones another window starts have no call site here to hang off.
+   */
+  useEffect(() => {
+    const paneIds = [...sessions.map((session) => session.id), ...documentPaneIds];
+    setShelves((current) => {
+      const missing = paneIds.filter(
+        (id) => !current.active.slots.includes(id) && !current.hidden.slots.includes(id),
+      );
+      if (missing.length === 0) return current;
+      return { ...current, active: missing.reduce((view, id) => appendSession(view, id), current.active) };
+    });
+  }, [sessions, documentPaneIds]);
 
   // The single writer for "what is on screen": the sessions the current page draws. Notification
   // policy in main reads this, so it has to follow every slot, page and layout change.
@@ -880,8 +912,10 @@ export function App() {
   // Arrangements are persisted whole, so a restart brings back the same slots and the same layouts.
   useEffect(() => {
     if (!slotViewsRestored.current) return;
-    void window.multiCliWork.terminals.setSlotViews({ folderViews, workspaces }).catch(() => undefined);
-  }, [folderViews, workspaces]);
+    void window.multiCliWork.terminals
+      .setSlotViews({ folderViews, workspace: shelves.active, hiddenPanes: shelves.hidden })
+      .catch(() => undefined);
+  }, [folderViews, shelves]);
 
   useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
 
@@ -943,11 +977,43 @@ export function App() {
   }, []);
 
   const updateCurrentView = (mutate: (view: SlotViewState) => SlotViewState) => {
-    if (workspaceIndex !== null) {
-      setWorkspaces((current) => current.map((view, index) => (index === workspaceIndex ? mutate(view) : view)));
+    if (shelfKind !== null) {
+      const kind = shelfKind;
+      setShelves((current) => ({ ...current, [kind]: mutate(current[kind]) }));
       return;
     }
     updateFolderView(folderViewKey, mutate);
+  };
+
+  /**
+   * Puts a pane on one shelf and takes it off the other in a single update, because the rule the two
+   * writes keep is "exactly one shelf holds this pane" — split apart, there would be a paint in
+   * between where both do, and the sidebar would draw the pane twice.
+   */
+  const placePaneOnShelf = (
+    kind: ShelfKind,
+    paneId: string,
+    place: (view: SlotViewState) => SlotViewState,
+  ) => {
+    setShelves((current) => {
+      const other = OTHER_SHELF[kind];
+      const next: Shelves = { ...current };
+      next[kind] = place(current[kind]);
+      next[other] = removeSession(current[other], paneId);
+      return next[kind] === current[kind] && next[other] === current[other] ? current : next;
+    });
+  };
+
+  /**
+   * A drop that puts a pane on the grid in front of the user. On a shelf it is also a move between
+   * the two: whatever the drop does to this shelf, the pane leaves the other one.
+   */
+  const placePaneOnCurrentView = (paneId: string, place: (view: SlotViewState) => SlotViewState) => {
+    if (shelfKind === null) {
+      updateFolderView(folderViewKey, place);
+      return;
+    }
+    placePaneOnShelf(shelfKind, paneId, place);
   };
 
   /**
@@ -978,7 +1044,7 @@ export function App() {
       folderSessionIds((session) => session.projectId === projectId),
     );
     const first = view.slots.find((id): id is string => id !== null && !isDocumentPaneId(id)) ?? null;
-    setWorkspaceIndex(null);
+    setShelfKind(null);
     setPage(0);
     setSelectedProjectId(projectId);
     setSelectedSessionId(first);
@@ -1029,7 +1095,7 @@ export function App() {
     session?: TerminalSessionView;
   }) => {
     const view = placeInFolderView(target);
-    setWorkspaceIndex(null);
+    setShelfKind(null);
     setPage(pageOfSession(view.slots, viewPageSize(view), target.paneId) ?? 0);
     setSelectedProjectId(target.projectId);
     setSelectedWorktreeId(target.worktreeId);
@@ -1087,11 +1153,19 @@ export function App() {
   const absoluteSlot = (index: number) => resolvedView.page * viewPageSize(currentView) + index;
 
   /**
-   * Emptying a slot only takes the pane off screen — the session keeps running, the file stays
-   * open — and the panes behind it move forward so the grid is never left with a gap.
+   * The ✕ on a pane. On a folder's grid it empties the slot — the session keeps running, the file
+   * stays open, and the panes behind it move forward so the grid is never left with a gap.
+   *
+   * On a shelf it moves the pane to the other one instead. Emptying a slot of 작업공간 would say
+   * nothing, since that shelf collects everything the app holds and would take the pane back on the
+   * next pass; 숨김 is where "not on 작업공간" is recorded, so that is where the pane goes.
    */
   const clearSlotAt = (index: number) => {
     const paneId = resolvedView.slots[index] ?? null;
+    if (shelfKind !== null) {
+      if (paneId !== null) movePaneToOtherShelf(shelfKind, paneId);
+      return;
+    }
     updateCurrentView((view) => clearSlot(view, absoluteSlot(index)));
     if (paneId !== null && paneId === focusedPaneId) setFocusedPaneId(null);
   };
@@ -1119,13 +1193,15 @@ export function App() {
   const snapPaneToZone = (zone: SnapZone, paneId: string) => {
     // The zone's slot index is absolute, so the drop lands where the preview drew it.
     setPage(0);
-    updateCurrentView((view) => placeInSlot(setLayout(view, zone.layoutId), zone.slotIndex, paneId));
+    placePaneOnCurrentView(paneId, (view) =>
+      placeInSlot(setLayout(view, zone.layoutId), zone.slotIndex, paneId),
+    );
     focusPane(paneId);
   };
 
   /** Dropping onto a slot inserts the pane there; whoever held it slides back one place. */
   const dropPaneOnSlot = (index: number, paneId: string) => {
-    updateCurrentView((view) => placeInSlot(view, absoluteSlot(index), paneId));
+    placePaneOnCurrentView(paneId, (view) => placeInSlot(view, absoluteSlot(index), paneId));
     focusPane(paneId);
   };
 
@@ -1139,69 +1215,44 @@ export function App() {
     setPage(0);
   };
 
-  const selectWorkspace = (index: number) => {
-    const view = workspaces[index] ?? EMPTY_VIEW;
-    setWorkspaceIndex(index);
+  const selectShelf = (kind: ShelfKind) => {
+    const view = shelves[kind];
+    setShelfKind(kind);
     setPage(0);
     setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
     setActionError(null);
   };
 
-  /** A hand-dropped pane takes the first free slot of the workspace it was dropped on, or a new page. */
-  const dropPaneOnWorkspace = (index: number, paneId: string) => {
-    setWorkspaces((current) => current.map((view, at) => (at === index ? appendSession(view, paneId) : view)));
+  /**
+   * Moves a pane onto a shelf: it takes the first free slot there, or a new one at the end, and
+   * leaves the other shelf. This is the one road between the two, so a drag onto a sidebar row, the
+   * 세션 menu and the ✕ on a pane all end up here and all mean the same thing.
+   */
+  const movePaneToShelf = (kind: ShelfKind, paneId: string) => {
+    placePaneOnShelf(kind, paneId, (view) => appendSession(view, paneId));
+    // The pane has just left the grid on screen, so the focus cannot stay on it.
+    if (shelfKind !== null && shelfKind !== kind) {
+      setFocusedPaneId((current) => (current === paneId ? null : current));
+    }
   };
 
+  /** One press of ✕: 작업공간 → 숨김, 숨김 → 작업공간. The session keeps running either way. */
+  const movePaneToOtherShelf = (from: ShelfKind, paneId: string) =>
+    movePaneToShelf(OTHER_SHELF[from], paneId);
+
   /**
-   * A pane picked from an expanded 작업공간 row. Unlike `selectWorkspace` it knows which pane was
-   * meant, so it turns to the page holding it — that is how a pane on the workspace's second page
-   * gets on screen now that there is no tab bar to click.
+   * A pane picked from an expanded shelf row. Unlike `selectShelf` it knows which pane was meant, so
+   * it turns to the page holding it — that is how a pane on the shelf's second page gets on screen
+   * now that there is no tab bar to click.
    */
-  const revealWorkspacePane = (index: number, paneId: string) => {
-    const view = workspaces[index] ?? EMPTY_VIEW;
-    setWorkspaceIndex(index);
+  const revealShelfPane = (kind: ShelfKind, paneId: string) => {
+    const view = shelves[kind];
+    setShelfKind(kind);
     setPage(pageOfSession(view.slots, viewPageSize(view), paneId) ?? 0);
     setFocusedPaneId(paneId);
     setActiveView("terminal");
     setActionError(null);
-  };
-
-  /**
-   * Takes a pane off one workspace's grid — the session keeps running and its folder keeps its own
-   * copy. The panes behind it move forward, and the shelf's next free slot is the end of the row.
-   */
-  const removeFromWorkspace = (index: number, paneId: string) => {
-    setWorkspaces((current) => current.map((view, at) => (at === index ? removeSession(view, paneId) : view)));
-    if (workspaceIndex === index) setFocusedPaneId((current) => (current === paneId ? null : current));
-  };
-
-  /**
-   * Shelves a pane the moment it comes into being — a session that was just started, a document that
-   * was just opened — without disturbing the grid on screen. The three workspaces fill as one shelf
-   * (작업공간1's page, then 2's, then 3's, then 작업공간1's next page), so panes pile up in an order
-   * the user can predict instead of all landing in one place. A pane already shelved stays where it
-   * is: this never moves what the user arranged by hand.
-   */
-  const collectIntoWorkspace = (paneId: string) => {
-    setWorkspaces((current) => {
-      if (current.some((view) => view.slots.includes(paneId))) return current;
-      const target = nextWorkspaceSlot(current);
-      if (!target) return current;
-      return current.map((view, index) =>
-        index === target.index ? placeInSlot(view, target.slot, paneId) : view,
-      );
-    });
-  };
-
-  /**
-   * A document opened while a workspace is on screen needs no shelving: the open itself puts it on
-   * the grid the user is looking at. Collecting it as well would leave the same document sitting in
-   * two workspaces, so the shelf only steps in behind a folder's grid.
-   */
-  const collectDocumentIntoWorkspace = (paneId: string) => {
-    if (workspaceIndex !== null) return;
-    collectIntoWorkspace(paneId);
   };
 
   useEffect(() => {
@@ -1225,7 +1276,7 @@ export function App() {
       folderSessionIds((session) => session.worktreeId === worktree.id),
     );
     const first = view.slots.find((id): id is string => id !== null && !isDocumentPaneId(id)) ?? null;
-    setWorkspaceIndex(null);
+    setShelfKind(null);
     setPage(0);
     setSelectedProjectId(worktree.projectId);
     setSelectedSessionId(first);
@@ -1416,9 +1467,8 @@ export function App() {
       });
       setSessions((current) => replaceSession(current, created));
       // The new pane takes the next free slot of its folder's grid — nothing already on screen is
-      // pushed off, which is the whole point of this release. The workspaces get it too, silently.
+      // pushed off. 작업공간 picks it up on its own; nothing has to say so here.
       revealSession(created);
-      collectIntoWorkspace(created.id);
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -1446,7 +1496,6 @@ export function App() {
       });
       setSessions((current) => replaceSession(current, created));
       placeInFolderView({ paneId: created.id, projectId: project.id, worktreeId: worktreeId ?? null });
-      collectIntoWorkspace(created.id);
       flashFolder(project.id);
     } catch (error) {
       setActionError(errorMessage(error));
@@ -1478,7 +1527,6 @@ export function App() {
       const created = await window.multiCliWork.terminals.createTool({ tool, ...DEFAULT_TERMINAL_SIZE });
       setSessions((current) => replaceSession(current, created));
       revealSession(created);
-      collectIntoWorkspace(created.id);
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -1592,24 +1640,36 @@ export function App() {
   };
 
   /**
-   * Puts a pane on the grid being viewed — the first free slot, or a new one at the end. A document
-   * opened from the right sidebar lands here exactly as a session does, which is what makes the two
-   * interchangeable in a slot.
+   * Puts a pane on one named surface — a shelf, or the selected folder — taking the first free slot
+   * or a new one at the end, and goes to it. A document opened from the right sidebar lands here
+   * exactly as a session does, which is what makes the two interchangeable in a slot.
    */
-  const openPane = (paneId: string) => {
-    const next = appendSession(currentView, paneId);
-    updateCurrentView(() => next);
+  const openPaneOn = (target: ShelfKind | null, paneId: string) => {
+    const view = target === null ? (folderViews[folderViewKey] ?? EMPTY_VIEW) : shelves[target];
+    const next = appendSession(view, paneId);
+    if (target === null) updateFolderView(folderViewKey, () => next);
+    else placePaneOnShelf(target, paneId, () => next);
+    setShelfKind(target);
     setPage(pageOfSession(next.slots, viewPageSize(next), paneId) ?? 0);
     setFocusedPaneId(paneId);
     setActiveView("terminal");
   };
+
+  /**
+   * Opening something onto 숨김 would be a contradiction — a pane the user just asked for is not one
+   * they are putting away — so that one case steps across to 작업공간 and opens there.
+   */
+  const openPane = (paneId: string) => openPaneOn(shelfKind === "hidden" ? "active" : shelfKind, paneId);
 
   /** A closed document leaves every arrangement — unlike a session, it has no life off the grid. */
   const dropPaneEverywhere = (paneId: string) => {
     setFolderViews((current) =>
       Object.fromEntries(Object.entries(current).map(([key, view]) => [key, removeSession(view, paneId)])),
     );
-    setWorkspaces((current) => current.map((view) => removeSession(view, paneId)));
+    setShelves((current) => ({
+      active: removeSession(current.active, paneId),
+      hidden: removeSession(current.hidden, paneId),
+    }));
     setFocusedPaneId((current) => (current === paneId ? null : current));
   };
 
@@ -1620,7 +1680,6 @@ export function App() {
     }
     const id = fileTabId(target, entry.relativePath);
     const paneId = documentPaneId("file", id);
-    collectDocumentIntoWorkspace(paneId);
     if (openFileTabs.some((tab) => tab.id === id)) {
       openPane(paneId);
       return id;
@@ -1842,7 +1901,7 @@ export function App() {
     setFolderViews((current) =>
       Object.fromEntries(Object.entries(current).map(([key, view]) => [key, applyRenames(view)])),
     );
-    setWorkspaces((current) => current.map(applyRenames));
+    setShelves((current) => ({ active: applyRenames(current.active), hidden: applyRenames(current.hidden) }));
     setFocusedPaneId((current) => renames.find((rename) => rename.from === current)?.to ?? current);
   };
 
@@ -2125,25 +2184,25 @@ export function App() {
    * again says "I am already here", which the tree answers by folding it away.
    */
   const gridProjectId =
-    activeView === "terminal" && workspaceIndex === null && selectedWorktreeId === null
+    activeView === "terminal" && shelfKind === null && selectedWorktreeId === null
       ? selectedProjectId
       : null;
 
   /**
-   * A workspace on screen replaces the folder identity in the header: it belongs to no single folder,
-   * so it is named by what it gathers instead. Documents count toward the panes but not the folders —
+   * A shelf on screen replaces the folder identity in the header: it belongs to no single folder, so
+   * it is named by what it gathers instead. Documents count toward the panes but not the folders —
    * the folder tally is about how many places the work in view comes from.
    */
   const headerWorkspace = useMemo(() => {
-    if (activeView !== "terminal" || workspaceIndex === null) return null;
+    if (activeView !== "terminal" || shelfKind === null) return null;
     const paneIds = currentView.slots.filter((id): id is string => id !== null);
     const folders = new Set(
       paneIds
         .map((id) => sessions.find((session) => session.id === id)?.projectId ?? null)
         .filter((projectId): projectId is string => projectId !== null),
     );
-    return { index: workspaceIndex, paneCount: paneIds.length, folderCount: folders.size };
-  }, [activeView, workspaceIndex, currentView, sessions]);
+    return { kind: shelfKind, paneCount: paneIds.length, folderCount: folders.size };
+  }, [activeView, shelfKind, currentView, sessions]);
 
   /**
    * What the header's 제거 button acts on: the session behind the focused pane. A document pane has
@@ -2205,7 +2264,6 @@ export function App() {
   /** Opening a document twice moves the focus to the pane already holding it. */
   const openDocument = (document: OpenDocument) => {
     setDocuments((current) => (current.some((item) => item.id === document.id) ? current : [...current, document]));
-    collectDocumentIntoWorkspace(document.id);
     openPane(document.id);
   };
 
@@ -2296,18 +2354,18 @@ export function App() {
   );
 
   /**
-   * What each 작업공간 holds, in slot order — the rows its sidebar entry draws when expanded. A
-   * workspace gathers panes from several folders, so every row carries the folder it came from and
-   * only this side can say what an id refers to. `onScreen` is true only for the workspace actually
-   * being viewed: a pane is on screen once, wherever else it may also be filed.
+   * What each shelf holds, in slot order — the rows its sidebar entry draws when expanded. A shelf
+   * gathers panes from several folders, so every row carries the folder it came from and only this
+   * side can say what an id refers to. `onScreen` is true only for the shelf actually being viewed:
+   * a pane is on screen once, wherever else it may also be filed.
    */
-  const workspacePaneRows = useMemo<PaneRow[][]>(() => {
+  const shelfPaneRows = useMemo<Record<ShelfKind, PaneRow[]>>(() => {
     const nameById = new Map(projects.map((project) => [project.id, projectName(project)]));
-    return workspaces.map((view, index) =>
-      view.slots
+    const rowsOf = (kind: ShelfKind): PaneRow[] =>
+      shelves[kind].slots
         .filter((id): id is string => id !== null)
         .map<PaneRow | null>((id) => {
-          const onScreen = workspaceIndex === index && onScreenPaneIds.has(id);
+          const onScreen = shelfKind === kind && onScreenPaneIds.has(id);
           const pane = documentPanes.find((candidate) => candidate.id === id);
           if (pane) {
             return {
@@ -2332,9 +2390,9 @@ export function App() {
             agent: session.kind,
           };
         })
-        .filter((row): row is PaneRow => row !== null),
-    );
-  }, [workspaces, workspaceIndex, onScreenPaneIds, documentPanes, sessions, projects, agents]);
+        .filter((row): row is PaneRow => row !== null);
+    return { active: rowsOf("active"), hidden: rowsOf("hidden") };
+  }, [shelves, shelfKind, onScreenPaneIds, documentPanes, sessions, projects, agents]);
 
   /** Builds what a slot draws. The grid knows nothing about viewers; this is where they are chosen. */
   const paneContentFor = (paneId: string): PaneContent | null => {
@@ -2610,12 +2668,12 @@ export function App() {
         onProjectSaved={handleProjectSaved}
         onCloseEditor={() => setEditingProjectId(null)}
         onRestoreBackup={() => void restoreFromBackup()}
-        workspacePaneRows={workspacePaneRows}
-        selectedWorkspaceIndex={activeView === "terminal" ? workspaceIndex : null}
-        onSelectWorkspace={selectWorkspace}
-        onDropPaneOnWorkspace={dropPaneOnWorkspace}
-        onSelectWorkspacePane={revealWorkspacePane}
-        onRemoveFromWorkspace={removeFromWorkspace}
+        shelfPaneRows={shelfPaneRows}
+        selectedShelf={activeView === "terminal" ? shelfKind : null}
+        onSelectShelf={selectShelf}
+        onDropPaneOnShelf={movePaneToShelf}
+        onSelectShelfPane={revealShelfPane}
+        onMovePaneToOtherShelf={movePaneToOtherShelf}
         flashProjectId={flashProjectId}
       />
 
@@ -2730,6 +2788,11 @@ export function App() {
                 onRefreshSession={(sessionId) => void refreshSession(sessionId)}
                 onStopSession={(session) => void stopSession(session)}
                 onClearSlot={clearSlotAt}
+                clearAction={
+                  shelfKind === null
+                    ? null
+                    : { label: SHELF_TEXT[shelfKind].move, title: SHELF_TEXT[shelfKind].moveTitle }
+                }
                 onSplitColumn={splitColumn}
                 onMergeColumn={mergeColumn}
                 onRemoveSession={(session) => void removeSessionById(session)}
@@ -2754,11 +2817,11 @@ export function App() {
                 onCancelRename={() => setRenameTarget(null)}
               />
             </div>
-          ) : activeView === "terminal" && workspaceIndex !== null ? (
+          ) : activeView === "terminal" && shelfKind !== null ? (
             <section className="terminal-empty">
               <SquareTerminal size={22} />
-              <h2>작업공간{workspaceIndex + 1}이 비어 있습니다</h2>
-              <p>사이드바의 세션이나 문서를 이 작업공간 행으로 끌어다 놓으세요.</p>
+              <h2>{SHELF_TEXT[shelfKind].empty}</h2>
+              <p>{SHELF_TEXT[shelfKind].emptyHint}</p>
             </section>
           ) : activeView === "terminal" && selectedProject ? (
             <FolderStartPage
@@ -2991,12 +3054,13 @@ export function App() {
           x={sessionMenu.x}
           y={sessionMenu.y}
           canResetName={Boolean(sessionMenu.session.name)}
-          workspaces={workspaces.map((view, index) => ({
-            index,
-            paneCount: view.slots.filter((id) => id !== null).length,
-            contains: view.slots.includes(sessionMenu.session.id),
-          }))}
-          onAddToWorkspace={(index) => dropPaneOnWorkspace(index, sessionMenu.session.id)}
+          hidden={shelves.hidden.slots.includes(sessionMenu.session.id)}
+          onToggleHidden={() =>
+            movePaneToShelf(
+              shelves.hidden.slots.includes(sessionMenu.session.id) ? "active" : "hidden",
+              sessionMenu.session.id,
+            )
+          }
           onRefresh={() => void refreshSession(sessionMenu.session.id)}
           onRename={() => setRenameTarget({ sessionId: sessionMenu.session.id, surface: sessionMenu.surface })}
           onResetName={() => void renameSession(sessionMenu.session.id, null)}

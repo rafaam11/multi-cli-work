@@ -1,5 +1,6 @@
-import { LayoutGrid, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
+import { SHELF_TEXT } from "./shelves";
 
 export interface SessionContextMenuProps {
   sessionLabel: string;
@@ -8,12 +9,11 @@ export interface SessionContextMenuProps {
   /** A session that only carries its provider's fallback label has no custom name to clear. */
   canResetName: boolean;
   /**
-   * 작업공간1/2/3 as targets for this session. Dragging a row onto the shelf does the same thing;
-   * this is the path for anyone who would rather not drag. `contains` greys out a workspace that
-   * already holds the session, because adding it twice is not a thing a workspace can do.
+   * Whether this session sits on 숨김 rather than 작업공간. Every session is on one of the two, so
+   * the menu offers the move as a single toggle rather than a list of places to add it to.
    */
-  workspaces: { index: number; paneCount: number; contains: boolean }[];
-  onAddToWorkspace(index: number): void;
+  hidden: boolean;
+  onToggleHidden(): void;
   onRefresh(): void;
   onRename(): void;
   onResetName(): void;
@@ -26,8 +26,8 @@ export function SessionContextMenu({
   x,
   y,
   canResetName,
-  workspaces,
-  onAddToWorkspace,
+  hidden,
+  onToggleHidden,
   onRefresh,
   onRename,
   onResetName,
@@ -76,27 +76,16 @@ export function SessionContextMenu({
         <RotateCcw size={15} />
         <span>제공자 제목 사용</span>
       </button>
-      {workspaces.length > 0 ? (
-        <>
-          <div className="context-menu-separator" role="separator" />
-          <span className="context-menu-label">작업공간에 추가</span>
-          {workspaces.map((workspace) => (
-            <button
-              key={workspace.index}
-              type="button"
-              role="menuitem"
-              disabled={workspace.contains}
-              onClick={run(() => onAddToWorkspace(workspace.index))}
-              title={workspace.contains ? `작업공간${workspace.index + 1}에 이미 있습니다` : undefined}
-            >
-              <LayoutGrid size={15} />
-              <span>
-                작업공간{workspace.index + 1} ({workspace.paneCount})
-              </span>
-            </button>
-          ))}
-        </>
-      ) : null}
+      <div className="context-menu-separator" role="separator" />
+      <button
+        type="button"
+        role="menuitem"
+        onClick={run(onToggleHidden)}
+        title={SHELF_TEXT[hidden ? "hidden" : "active"].moveTitle}
+      >
+        {hidden ? <Eye size={15} /> : <EyeOff size={15} />}
+        <span>{SHELF_TEXT[hidden ? "hidden" : "active"].move}</span>
+      </button>
       <div className="context-menu-separator" role="separator" />
       <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
         <Trash2 size={15} />

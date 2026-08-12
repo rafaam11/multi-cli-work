@@ -40,6 +40,12 @@ interface WorkspaceGridProps {
   onResumeSession(session: TerminalSessionView): void;
   onRefreshSession(sessionId: string): void;
   onStopSession(session: TerminalSessionView): void;
+  /**
+   * What ✕ means on this surface. A folder grid empties the slot; a shelf hands the pane to the
+   * other shelf, because a grid that fills itself would only take an emptied slot back. Null leaves
+   * the folder wording in place. Session and document panes read the same two strings.
+   */
+  clearAction: { label: string; title: string } | null;
   /** Empties the slot only — the session keeps running, the document stays open, both keep a tab. */
   onClearSlot(index: number): void;
   /** Gives this slot's column a second row; every other column keeps its full height. */
@@ -89,6 +95,7 @@ export function WorkspaceGrid({
   onResumeSession,
   onRefreshSession,
   onStopSession,
+  clearAction,
   onClearSlot,
   onSplitColumn,
   onMergeColumn,
@@ -256,8 +263,8 @@ export function WorkspaceGrid({
                       className="icon-button"
                       type="button"
                       onClick={() => onClearSlot(index)}
-                      aria-label="슬롯 비우기"
-                      title="슬롯 비우기 (문서는 탭에 남습니다)"
+                      aria-label={clearAction?.label ?? "슬롯 비우기"}
+                      title={clearAction?.title ?? "슬롯 비우기 (문서는 탭에 남습니다)"}
                     >
                       <X size={13} />
                     </button>
@@ -290,6 +297,7 @@ export function WorkspaceGrid({
               refreshing={refreshingSessionIds.has(session.id)}
               resumeBlocked={!session.tool && isProjectMissing(session.projectId)}
               columnSplit={columnSplitFor(index)}
+              clearAction={clearAction}
               onStartRename={() => onStartRename(session.id)}
               onRename={(name) => onRenameSession(session.id, name)}
               onCancelRename={onCancelRename}

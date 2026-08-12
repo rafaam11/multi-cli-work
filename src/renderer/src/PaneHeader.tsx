@@ -120,6 +120,11 @@ interface PaneHeaderProps {
   onResume(): void;
   onRefresh(): void;
   onStop(): void;
+  /**
+   * What ✕ does here, in words. On a folder grid it frees the slot; on a shelf it moves the pane to
+   * the other one — same button, so the surface has to say which. Null keeps the folder wording.
+   */
+  clearAction: { label: string; title: string } | null;
   /** Frees the slot for another session; this one keeps running and keeps its tab. */
   onClearSlot(): void;
   /** Ends the session and deletes its scrollback — asks first. The one irreversible button here. */
@@ -144,6 +149,7 @@ export function PaneHeader({
   refreshing,
   resumeBlocked,
   columnSplit,
+  clearAction,
   onStartRename,
   onRename,
   onCancelRename,
@@ -231,8 +237,8 @@ export function PaneHeader({
             className="icon-button"
             type="button"
             onClick={onClearSlot}
-            aria-label="슬롯 비우기"
-            title="슬롯 비우기 (세션은 유지)"
+            aria-label={clearAction?.label ?? "슬롯 비우기"}
+            title={clearAction?.title ?? "슬롯 비우기 (세션은 유지)"}
           >
             <X size={13} />
           </button>

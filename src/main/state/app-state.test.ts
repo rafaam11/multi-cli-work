@@ -118,63 +118,100 @@ describe("session agent ids", () => {
     expect(() => parseAppState(state)).toThrow(/visibleSessionIds/);
   });
 
-  it("round-trips the saved grids and omits both keys while unused", () => {
+  it("round-trips the saved grids and omits every key while unused", () => {
     const plain = parseAppState(stateWithKind("powershell"));
     expect(Object.keys(plain)).not.toContain("folderViews");
-    expect(Object.keys(plain)).not.toContain("workspaces");
+    expect(Object.keys(plain)).not.toContain("workspace");
+    expect(Object.keys(plain)).not.toContain("hiddenPanes");
 
     const state = stateWithKind("powershell") as Record<string, unknown>;
     state.folderViews = { "project-1": { layoutId: "3-main-right", slots: ["a", null, "b"] } };
-    state.workspaces = [
-      { layoutId: "6-grid", slots: ["a"] },
-      { layoutId: "solo", slots: [] },
-    ];
+    state.workspace = { layoutId: "6-grid", slots: ["a", "b"] };
+    state.hiddenPanes = { layoutId: "solo", slots: ["c"] };
     const parsed = parseAppState(state);
     expect(parsed.folderViews).toEqual({ "project-1": { layoutId: "3-main-right", slots: ["a", null, "b"] } });
-    expect(parsed.workspaces).toEqual([
-      { layoutId: "6-grid", slots: ["a"] },
-      { layoutId: "solo", slots: [] },
-    ]);
+    expect(parsed.workspace).toEqual({ layoutId: "6-grid", slots: ["a", "b"] });
+    expect(parsed.hiddenPanes).toEqual({ layoutId: "solo", slots: ["c"] });
     expect(parseAppState(parsed)).toEqual(parsed);
+  });
+
+  it("drops a shelf that has nothing on it, so an empty grid costs no key", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspace = { layoutId: "6-grid", slots: [] };
+    state.hiddenPanes = { layoutId: "solo", slots: [] };
+    const parsed = parseAppState(state);
+    expect(Object.keys(parsed)).not.toContain("workspace");
+    expect(Object.keys(parsed)).not.toContain("hiddenPanes");
+  });
+
+  it("folds the 작업공간1/2/3 of a file written up to v1.19 into the one workspace", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspaces = [
+      { layoutId: "6-grid", slots: ["a", null, "b"] },
+      { layoutId: "solo", slots: ["b", "c"] },
+      { layoutId: "2-col", slots: [] },
+    ];
+    const parsed = parseAppState(state);
+    // Holes go: three grids' worth of deliberately-empty slots say nothing about where the panes
+    // belong in the one grid that replaces them. A pane in two of them is still one pane.
+    expect(parsed.workspace).toEqual({ layoutId: "6-grid", slots: ["a", "b", "c"] });
+    expect(Object.keys(parsed)).not.toContain("hiddenPanes");
+    // The legacy key is gone from the parsed state, so the next write drops it from the file.
+    expect(Object.keys(parsed)).not.toContain("workspaces");
+  });
+
+  it("ignores the legacy key once the file has a workspace of its own", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspace = { layoutId: "solo", slots: ["a"] };
+    state.workspaces = [{ layoutId: "6-grid", slots: ["b"] }];
+    expect(parseAppState(state).workspace).toEqual({ layoutId: "solo", slots: ["a"] });
+  });
+
+  it("reads no more legacy workspaces than the sidebar ever offered", () => {
+    const state = stateWithKind("powershell") as Record<string, unknown>;
+    state.workspaces = Array.from({ length: 5 }, (_, index) => ({ layoutId: "solo", slots: [`s${index}`] }));
+    expect(parseAppState(state).workspace).toEqual({ layoutId: "solo", slots: ["s0", "s1", "s2"] });
   });
 
   it("keeps a layout id it has never heard of, because the catalog lives in the renderer", () => {
     const state = stateWithKind("powershell") as Record<string, unknown>;
-    state.workspaces = [{ layoutId: "layout-from-a-future-version", slots: [] }];
-    expect(parseAppState(state).workspaces).toEqual([{ layoutId: "layout-from-a-future-version", slots: [] }]);
+    state.workspace = { layoutId: "layout-from-a-future-version", slots: ["a"] };
+    expect(parseAppState(state).workspace).toEqual({ layoutId: "layout-from-a-future-version", slots: ["a"] });
   });
 
   it("keeps the holes the user left but drops the ones the layout already implies", () => {
     const state = stateWithKind("powershell") as Record<string, unknown>;
-    state.workspaces = [{ layoutId: "6-grid", slots: [null, "a", null, null] }];
-    expect(parseAppState(state).workspaces).toEqual([{ layoutId: "6-grid", slots: [null, "a"] }]);
+    state.workspace = { layoutId: "6-grid", slots: [null, "a", null, null] };
+    expect(parseAppState(state).workspace).toEqual({ layoutId: "6-grid", slots: [null, "a"] });
   });
 
   it("lets a session sit in one slot per view, and in more than one view", () => {
     const state = stateWithKind("powershell") as Record<string, unknown>;
     state.folderViews = { "project-1": { layoutId: "2-col", slots: ["a", "b"] } };
-    state.workspaces = [{ layoutId: "2-col", slots: ["a", "a", "b"] }];
+    state.workspace = { layoutId: "2-col", slots: ["a", "a", "b"] };
     const parsed = parseAppState(state);
-    expect(parsed.workspaces).toEqual([{ layoutId: "2-col", slots: ["a", null, "b"] }]);
+    expect(parsed.workspace).toEqual({ layoutId: "2-col", slots: ["a", null, "b"] });
     expect(parsed.folderViews?.["project-1"].slots).toEqual(["a", "b"]);
-  });
-
-  it("never keeps more workspaces than the sidebar offers", () => {
-    const state = stateWithKind("powershell") as Record<string, unknown>;
-    state.workspaces = Array.from({ length: 5 }, (_, index) => ({ layoutId: "solo", slots: [`s${index}`] }));
-    expect(parseAppState(state).workspaces).toHaveLength(3);
   });
 
   it("rejects saved grids that are the wrong shape", () => {
     const state = stateWithKind("powershell") as Record<string, unknown>;
-    state.workspaces = [{ layoutId: "solo", slots: "a" }];
-    expect(() => parseAppState(state)).toThrow(/workspaces\[0\]\.slots/i);
+    state.workspace = { layoutId: "solo", slots: "a" };
+    expect(() => parseAppState(state)).toThrow(/workspace\.slots/i);
 
-    state.workspaces = [{ layoutId: "", slots: [] }];
+    state.workspace = { layoutId: "", slots: [] };
     expect(() => parseAppState(state)).toThrow(/layoutId/i);
 
-    state.workspaces = [{ layoutId: "solo", slots: [], extra: 1 }];
+    state.workspace = { layoutId: "solo", slots: [], extra: 1 };
     expect(() => parseAppState(state)).toThrow(/unknown fields/i);
+
+    delete state.workspace;
+    state.hiddenPanes = { layoutId: "solo", slots: [42] };
+    expect(() => parseAppState(state)).toThrow(/hiddenPanes\.slots\[0\]/i);
+
+    delete state.hiddenPanes;
+    state.workspaces = { layoutId: "solo", slots: [] };
+    expect(() => parseAppState(state)).toThrow(/workspaces must be an array/i);
 
     delete state.workspaces;
     state.folderViews = { "project-1": { slots: [] } };

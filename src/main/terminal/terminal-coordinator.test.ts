@@ -1213,18 +1213,21 @@ describe("worktree sessions", () => {
 
     await instance.setSlotViews({
       folderViews: { [project.id]: { layoutId: "3-main-right", slots: [first.id, null, second.id] } },
-      workspaces: [{ layoutId: "6-grid", slots: [second.id] }],
+      workspace: { layoutId: "6-grid", slots: [first.id] },
+      hiddenPanes: { layoutId: "solo", slots: [second.id] },
     });
     const saved = (await readAppState({ statePath })).state;
     expect(saved.folderViews).toEqual({
       [project.id]: { layoutId: "3-main-right", slots: [first.id, null, second.id] },
     });
-    expect(saved.workspaces).toEqual([{ layoutId: "6-grid", slots: [second.id] }]);
+    expect(saved.workspace).toEqual({ layoutId: "6-grid", slots: [first.id] });
+    expect(saved.hiddenPanes).toEqual({ layoutId: "solo", slots: [second.id] });
 
     // A stale save naming a session that has since gone clears that slot instead of failing.
     await instance.setSlotViews({
       folderViews: { [project.id]: { layoutId: "2-col", slots: ["missing", first.id] } },
-      workspaces: [],
+      workspace: { layoutId: "solo", slots: [] },
+      hiddenPanes: { layoutId: "solo", slots: [] },
     });
     expect((await readAppState({ statePath })).state.folderViews).toEqual({
       [project.id]: { layoutId: "2-col", slots: [null, first.id] },
@@ -1232,12 +1235,13 @@ describe("worktree sessions", () => {
 
     await instance.setSlotViews({
       folderViews: { [project.id]: { layoutId: "2-col", slots: [first.id, second.id] } },
-      workspaces: [{ layoutId: "2-col", slots: [first.id, second.id] }],
+      workspace: { layoutId: "2-col", slots: [first.id, second.id] },
+      hiddenPanes: { layoutId: "solo", slots: [] },
     });
     await instance.remove(first.id);
     const afterRemoval = (await readAppState({ statePath })).state;
     expect(afterRemoval.folderViews?.[project.id].slots).toEqual([null, second.id]);
-    expect(afterRemoval.workspaces?.[0].slots).toEqual([null, second.id]);
+    expect(afterRemoval.workspace?.slots).toEqual([null, second.id]);
   });
 
   it("removes only the worktree's sessions, leaving root sessions alone", async () => {

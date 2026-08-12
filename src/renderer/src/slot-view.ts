@@ -121,7 +121,11 @@ export function clearSlot(view: SlotViewState, index: number): SlotViewState {
   return { ...view, slots: tidySlots(view.layoutId, slots) };
 }
 
-/** Adds a session to the first open slot, or to the end — a drop onto a workspace row. */
+/**
+ * Adds a session to the first open slot, or to the end — a drop onto the 작업공간 row, and how the
+ * workspace picks up a pane the app has just started holding. A hole a drop reached past counts as
+ * free, so a shelf fills the gaps in front of it before it grows another page.
+ */
 export function appendSession(view: SlotViewState, sessionId: string): SlotViewState {
   if (view.slots.includes(sessionId)) return view;
   const slots: (string | null)[] = [...view.slots];
@@ -271,33 +275,6 @@ export function visibleSessionsOf(
   page: number,
 ): string[] {
   return pageSlots(slots, pageSize, page).filter((id): id is string => id !== null);
-}
-
-/**
- * Where a pane the app shelves by itself should land. The workspaces read as one shelf: page 1 of
- * 작업공간1 fills before page 1 of 작업공간2, and only once every workspace's first page is full does
- * 작업공간1 open a second page. A hole a drop reached past counts as free, so the shelf fills the
- * gaps in front of it before it grows.
- *
- * A page holds as many panes as that workspace's own layout draws — six on 자동, which is the default
- * and the ceiling for every preset.
- */
-export function nextWorkspaceSlot(
-  views: readonly SlotViewState[],
-): { index: number; slot: number } | null {
-  if (views.length === 0) return null;
-  const sizes = views.map(viewPageSize);
-  const pages = Math.max(...views.map((view, index) => pageCount(view.slots, sizes[index])));
-  // One page past the fullest workspace is empty by definition, so the scan always finds a slot.
-  for (let page = 0; page <= pages; page += 1) {
-    for (let index = 0; index < views.length; index += 1) {
-      const start = page * sizes[index];
-      for (let slot = start; slot < start + sizes[index]; slot += 1) {
-        if ((views[index].slots[slot] ?? null) === null) return { index, slot };
-      }
-    }
-  }
-  return null;
 }
 
 export interface ResolvedView {

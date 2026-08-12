@@ -10,6 +10,8 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Eye,
+  EyeOff,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -43,6 +45,7 @@ import { findAgent, projectName, sessionLabel, statusLabels } from "./session-la
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
 import { folderActivityClass, isFolderActive } from "./folder-status";
+import { SHELF_KINDS, SHELF_TEXT, type ShelfKind } from "./shelves";
 
 interface ProjectSidebarProps {
   snapshot: ProjectWorkspaceSnapshot | null;
@@ -104,19 +107,19 @@ interface ProjectSidebarProps {
   onCloseEditor(): void;
   onRestoreBackup(): void;
   /**
-   * What each of 작업공간1/2/3 holds, in slot order. A workspace gathers panes from several folders,
-   * so only App can say what an id refers to — the shelf draws the rows it is handed. The views
-   * themselves stay in App, which is the single writer for slots.
+   * What each shelf holds, in slot order. A shelf gathers panes from several folders, so only App
+   * can say what an id refers to — the sidebar draws the rows it is handed. The views themselves
+   * stay in App, which is the single writer for slots.
    */
-  workspacePaneRows: PaneRow[][];
-  selectedWorkspaceIndex: number | null;
-  onSelectWorkspace(index: number): void;
-  /** A row dropped on 작업공간N. The pane stays in its folder view too — this is a reference. */
-  onDropPaneOnWorkspace(index: number, paneId: string): void;
-  /** A pane picked from an expanded 작업공간 row: show that workspace, on the page holding the pane. */
-  onSelectWorkspacePane(index: number, paneId: string): void;
-  /** Takes the pane off that workspace's grid and leaves the slot open. The session keeps running. */
-  onRemoveFromWorkspace(index: number, paneId: string): void;
+  shelfPaneRows: Record<ShelfKind, PaneRow[]>;
+  selectedShelf: ShelfKind | null;
+  onSelectShelf(kind: ShelfKind): void;
+  /** A row dropped on a shelf row. It leaves the other shelf — a pane belongs to exactly one. */
+  onDropPaneOnShelf(kind: ShelfKind, paneId: string): void;
+  /** A pane picked from an expanded shelf row: show that shelf, on the page holding the pane. */
+  onSelectShelfPane(kind: ShelfKind, paneId: string): void;
+  /** Hands the pane to the other shelf. The session keeps running and the document stays open. */
+  onMovePaneToOtherShelf(kind: ShelfKind, paneId: string): void;
   /** The folder a jump just pointed at. It pulses for a moment, then App clears this. */
   flashProjectId: string | null;
   isHome: boolean;
@@ -134,22 +137,31 @@ function byCreation(left: TerminalSessionView, right: TerminalSessionView): numb
 }
 
 /**
- * Which tree nodes are folded away, and which 작업공간 rows are unfolded. The two are stored in one
+ * Which tree nodes are folded away, and which shelf rows are unfolded. The two are stored in one
  * record because they are one thing to the user — how much of the sidebar is showing.
  *
  * The polarities differ on purpose: a worktree node in `expandedWorkspaces` is *collapsed* (so a
- * worktree created later starts open, showing its sessions), while a shelf index in `openShelves`
- * is *expanded* (so the shelf stays a three-line summary until asked otherwise).
+ * worktree created later starts open, showing its sessions), while a shelf in `openShelves` is
+ * *expanded* (so the shelf stays a one-line summary until asked otherwise).
  */
 const SIDEBAR_STATE_KEY = "multi-cli-work.sidebar.v1";
 
-function readSidebarState(): { expandedWorkspaces: string[]; openShelves: number[] } {
+/**
+ * Up to v1.19 `openShelves` held the indexes of 작업공간1/2/3. Those numbers name nothing now, so a
+ * file written back then simply arrives with no shelves open — the same state a new install has.
+ */
+function readSidebarState(): { expandedWorkspaces: string[]; openShelves: ShelfKind[] } {
   try {
     const value = JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) ?? "{}") as {
       expandedWorkspaces?: string[];
-      openShelves?: number[];
+      openShelves?: unknown[];
     };
-    return { expandedWorkspaces: value.expandedWorkspaces ?? [], openShelves: value.openShelves ?? [] };
+    return {
+      expandedWorkspaces: value.expandedWorkspaces ?? [],
+      openShelves: (value.openShelves ?? []).filter((kind): kind is ShelfKind =>
+        SHELF_KINDS.includes(kind as ShelfKind),
+      ),
+    };
   } catch {
     return { expandedWorkspaces: [], openShelves: [] };
   }
@@ -223,12 +235,12 @@ export function ProjectSidebar({
   onProjectSaved,
   onCloseEditor,
   onRestoreBackup,
-  workspacePaneRows,
-  selectedWorkspaceIndex,
-  onSelectWorkspace,
-  onDropPaneOnWorkspace,
-  onSelectWorkspacePane,
-  onRemoveFromWorkspace,
+  shelfPaneRows,
+  selectedShelf,
+  onSelectShelf,
+  onDropPaneOnShelf,
+  onSelectShelfPane,
+  onMovePaneToOtherShelf,
   flashProjectId,
   isHome,
   onOpenHome,
@@ -237,14 +249,14 @@ export function ProjectSidebar({
 }: ProjectSidebarProps) {
   const readOnly = Boolean(snapshot && !snapshot.writable);
   const [drag, setDrag] = useState<{ id: string; over: { id: string; position: DropPosition } | null } | null>(null);
-  const [workspaceDropIndex, setWorkspaceDropIndex] = useState<number | null>(null);
+  const [shelfDropKind, setShelfDropKind] = useState<ShelfKind | null>(null);
   const flashRow = useRef<HTMLDivElement | null>(null);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(
     () => new Set(readSidebarState().expandedWorkspaces),
   );
-  const [openShelves, setOpenShelves] = useState<Set<number>>(() => new Set(readSidebarState().openShelves));
+  const [openShelves, setOpenShelves] = useState<Set<ShelfKind>>(() => new Set(readSidebarState().openShelves));
   // Both toggles write the whole record, so neither can drop the other's half of it.
-  const persist = (workspaces: Set<string>, shelves: Set<number>) => {
+  const persist = (workspaces: Set<string>, shelves: Set<ShelfKind>) => {
     try {
       localStorage.setItem(
         SIDEBAR_STATE_KEY,
@@ -258,9 +270,9 @@ export function ProjectSidebar({
     persist(next, openShelves);
     return next;
   });
-  const toggleShelf = (index: number) => setOpenShelves((current) => {
+  const toggleShelf = (kind: ShelfKind) => setOpenShelves((current) => {
     const next = new Set(current);
-    if (next.has(index)) next.delete(index); else next.add(index);
+    if (next.has(kind)) next.delete(kind); else next.add(kind);
     persist(expandedWorkspaces, next);
     return next;
   });
@@ -275,31 +287,36 @@ export function ProjectSidebar({
   const endDrag = () => setDrag(null);
 
   /**
-   * 작업공간 rows accept panes, not folders — folder drags carry only `text/plain`, so the session
-   * type is what tells the two apart. The drop copies a reference: the pane keeps its folder tab.
+   * Shelf rows accept panes, not folders — folder drags carry only `text/plain`, so the session type
+   * is what tells the two apart. The drop moves the pane: it leaves whichever shelf it was on, and
+   * keeps its folder tab either way.
    */
-  const workspaceDropProps = (index: number) => ({
+  const shelfDropProps = (kind: ShelfKind) => ({
     onDragOver: (event: ReactDragEvent<HTMLElement>) => {
       if (!isSessionDrag(event)) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-      setWorkspaceDropIndex(index);
+      event.dataTransfer.dropEffect = "move";
+      setShelfDropKind(kind);
     },
     onDragLeave: (event: ReactDragEvent<HTMLElement>) => {
       if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-      setWorkspaceDropIndex((current) => (current === index ? null : current));
+      setShelfDropKind((current) => (current === kind ? null : current));
     },
     onDrop: (event: ReactDragEvent<HTMLElement>) => {
       if (!isSessionDrag(event)) return;
       event.preventDefault();
-      setWorkspaceDropIndex(null);
+      setShelfDropKind(null);
       const paneId = readSessionDrag(event);
-      if (paneId) onDropPaneOnWorkspace(index, paneId);
+      if (paneId) onDropPaneOnShelf(kind, paneId);
     },
   });
 
-  const workspaceLabel = (index: number, count: number) =>
-    `작업공간${index + 1} 열기 (패인 ${count}개)`;
+  const shelfLabel = (kind: ShelfKind, count: number) =>
+    `${SHELF_TEXT[kind].name} 열기 (패인 ${count}개)`;
+
+  /** 작업공간 gets the grid mark, 숨김 the crossed eye — the same pairing as the ✕ on its rows. */
+  const ShelfIcon = ({ kind, size }: { kind: ShelfKind; size: number }) =>
+    kind === "hidden" ? <EyeOff size={size} /> : <LayoutGrid size={size} />;
 
   const dropOn = (targetId: string, position: DropPosition) => {
     if (!drag) return;
@@ -445,11 +462,11 @@ export function ProjectSidebar({
   );
 
   /**
-   * A pane inside an expanded 작업공간 row. It is the same row as in the tree, but it answers to the
-   * workspace: clicking goes to the page of *that* workspace holding it, and ✕ takes it off that
-   * grid — leaving the slot open for the next pane the app shelves — rather than closing anything.
+   * A pane inside an expanded shelf row. It is the same row as in the tree, but it answers to the
+   * shelf: clicking goes to the page of *that* shelf holding it, and ✕ hands it to the other shelf
+   * rather than closing anything — 작업공간 puts it away, 숨김 brings it back.
    */
-  const renderShelfPane = (index: number, row: PaneRow) => (
+  const renderShelfPane = (kind: ShelfKind, row: PaneRow) => (
     <li key={row.id}>
       <div
         className={rowClass(row.id, "file-tab-row", row.kind === "session" ? `status-${row.status}` : "")}
@@ -458,7 +475,7 @@ export function ProjectSidebar({
         <button
           type="button"
           className="file-tab-open"
-          onClick={() => onSelectWorkspacePane(index, row.id)}
+          onClick={() => onSelectShelfPane(kind, row.id)}
           aria-label={`${row.label} 패인 열기`}
           title={row.detail ? `${row.label} · ${row.detail}` : row.label}
         >
@@ -478,11 +495,11 @@ export function ProjectSidebar({
         <button
           type="button"
           className="file-tab-close"
-          onClick={() => onRemoveFromWorkspace(index, row.id)}
-          aria-label={`작업공간${index + 1}에서 ${row.label} 빼기`}
-          title="이 작업공간에서 빼기"
+          onClick={() => onMovePaneToOtherShelf(kind, row.id)}
+          aria-label={`${row.label} ${SHELF_TEXT[kind].move}`}
+          title={SHELF_TEXT[kind].moveTitle}
         >
-          <X size={12} />
+          {kind === "hidden" ? <Eye size={12} /> : <EyeOff size={12} />}
         </button>
       </div>
     </li>
@@ -556,75 +573,74 @@ export function ProjectSidebar({
         </button>
       </div>
 
-      {/* 작업공간1/2/3 sit above the tree because they are screens, not folders: a workspace gathers
-          panes from anywhere — new ones shelve themselves, and any tab can be dropped in by hand — so
-          it belongs to no group in the tree below. */}
+      {/* The two shelves sit above the tree because they are screens, not folders: 작업공간 gathers
+          every pane the app holds no matter which folder it came from, and 숨김 is the exception
+          list that keeps that screen usable. Neither belongs to a group in the tree below. */}
       {collapsed ? (
         <ul className="rail-workspaces" role="list" aria-label="작업공간">
-          {workspacePaneRows.map((rows, index) => (
-            <li key={index}>
+          {SHELF_KINDS.map((kind) => (
+            <li key={kind}>
               <button
                 type="button"
                 className={[
                   "rail-workspace-button",
-                  selectedWorkspaceIndex === index ? "selected" : "",
-                  workspaceDropIndex === index ? "drop-target" : "",
+                  selectedShelf === kind ? "selected" : "",
+                  shelfDropKind === kind ? "drop-target" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
-                onClick={() => onSelectWorkspace(index)}
-                aria-label={workspaceLabel(index, rows.length)}
-                title={`작업공간${index + 1}`}
-                {...workspaceDropProps(index)}
+                onClick={() => onSelectShelf(kind)}
+                aria-label={shelfLabel(kind, shelfPaneRows[kind].length)}
+                title={SHELF_TEXT[kind].name}
+                {...shelfDropProps(kind)}
               >
-                <LayoutGrid size={14} />
-                <span className="rail-workspace-index" aria-hidden="true">
-                  {index + 1}
-                </span>
+                <ShelfIcon kind={kind} size={14} />
               </button>
             </li>
           ))}
         </ul>
       ) : (
         <div className="workspace-shelf" aria-label="작업공간">
-          {workspacePaneRows.map((rows, index) => {
-            const open = openShelves.has(index) && rows.length > 0;
+          {SHELF_KINDS.map((kind) => {
+            const rows = shelfPaneRows[kind];
+            const open = openShelves.has(kind) && rows.length > 0;
+            const name = SHELF_TEXT[kind].name;
             return (
-              <div className="workspace-shelf-node" key={index}>
+              <div className="workspace-shelf-node" key={kind}>
                 <div
                   className={[
                     "workspace-shelf-row",
-                    selectedWorkspaceIndex === index ? "selected" : "",
-                    workspaceDropIndex === index ? "drop-target" : "",
+                    selectedShelf === kind ? "selected" : "",
+                    shelfDropKind === kind ? "drop-target" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
-                  {...workspaceDropProps(index)}
+                  {...shelfDropProps(kind)}
                 >
                   <button
                     className="tree-toggle"
                     type="button"
-                    onClick={() => toggleShelf(index)}
+                    onClick={() => toggleShelf(kind)}
                     disabled={rows.length === 0}
-                    aria-label={`작업공간${index + 1} ${open ? "접기" : "펼치기"}`}
-                    title={`작업공간${index + 1} ${open ? "접기" : "펼치기"}`}
+                    aria-label={`${name} ${open ? "접기" : "펼치기"}`}
+                    title={`${name} ${open ? "접기" : "펼치기"}`}
                   >
                     {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </button>
                   <button
                     className="workspace-shelf-select"
                     type="button"
-                    onClick={() => onSelectWorkspace(index)}
-                    aria-label={workspaceLabel(index, rows.length)}
+                    onClick={() => onSelectShelf(kind)}
+                    aria-label={shelfLabel(kind, rows.length)}
                   >
-                    <LayoutGrid size={14} />
-                    <span className="workspace-shelf-name">작업공간{index + 1}</span>
+                    <ShelfIcon kind={kind} size={14} />
+                    <span className="workspace-shelf-name">{name}</span>
                     {rows.length > 0 ? <span className="workspace-shelf-count">{rows.length}</span> : null}
                   </button>
                 </div>
                 {open ? (
-                  <ul className="session-tree workspace-shelf-panes" role="group" aria-label={`작업공간${index + 1} 패인`}>
-                    {rows.map((row) => renderShelfPane(index, row))}
+                  <ul className="session-tree workspace-shelf-panes" role="group" aria-label={`${name} 패인`}>
+                    {rows.map((row) => renderShelfPane(kind, row))}
                   </ul>
                 ) : null}
               </div>

@@ -78,12 +78,22 @@ describe("WorkspaceHeader", () => {
     expect(props.layout?.onSelect).toHaveBeenCalledWith("cols:1-1");
   });
 
-  /** A workspace holds panes from several folders, so it has no folder controls — but it has a grid. */
-  it("keeps the picker on a workspace, where every other control steps aside", () => {
-    renderHeader({ workspace: { index: 0, paneCount: 2, folderCount: 2 } });
+  /** A shelf holds panes from several folders, so it has no folder controls — but it has a grid. */
+  it("keeps the picker on a shelf, where every other control steps aside", () => {
+    renderHeader({ workspace: { kind: "active", paneCount: 2, folderCount: 2 } });
     expect(screen.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "폴더 상세" })).toBeNull();
-    expect(screen.getByText("작업공간1")).toBeTruthy();
+    expect(screen.getByText("작업공간")).toBeTruthy();
+  });
+
+  it("names 숨김 as itself, and says what an empty one is waiting for", () => {
+    const { rerender, props } = renderHeader({ workspace: { kind: "hidden", paneCount: 0, folderCount: 0 } });
+    expect(screen.getByText("숨김")).toBeTruthy();
+    expect(screen.getByText("숨긴 세션이나 문서가 없습니다")).toBeTruthy();
+
+    rerender(<WorkspaceHeader {...props} workspace={{ kind: "active", paneCount: 0, folderCount: 0 }} />);
+    expect(screen.getByText("작업공간")).toBeTruthy();
+    expect(screen.getByText("실행 중인 세션이나 열린 문서가 없습니다")).toBeTruthy();
   });
 
   /**
@@ -96,9 +106,9 @@ describe("WorkspaceHeader", () => {
     expect(props.onRemoveSession).toHaveBeenCalledWith(session);
   });
 
-  it("offers 제거 on a workspace too, where the focus is the only thing that says which session", () => {
+  it("offers 제거 on a shelf too, where the focus is the only thing that says which session", () => {
     renderHeader({
-      workspace: { index: 0, paneCount: 2, folderCount: 2 },
+      workspace: { kind: "active", paneCount: 2, folderCount: 2 },
       focusedSession: { session, label: "Echo Agent" },
     });
     expect(screen.getByRole("button", { name: "Echo Agent 세션 제거" })).toBeTruthy();

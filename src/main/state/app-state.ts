@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   MAX_VISIBLE_SESSIONS,
-  WORKSPACE_COUNT,
   type AppStateSnapshot,
   type AppStateV1,
   type PersistedTerminalSession,
@@ -176,13 +175,36 @@ function folderViewsOf(value: Record<string, unknown>): Record<string, SlotViewS
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-function workspacesOf(value: Record<string, unknown>): SlotViewState[] | undefined {
+/** How many shelves the sidebar offered up to v1.19, and so how many a legacy file may carry. */
+const LEGACY_WORKSPACE_COUNT = 3;
+
+/**
+ * The workspace grid. Files up to v1.19 have an array of three curated workspaces here instead;
+ * those fold into one grid, panes in sidebar order, so the user finds everything they had rather
+ * than only the first shelf. Folding at parse time means the legacy key never reaches the rest of
+ * the app, and the first write drops it from the file.
+ */
+function workspaceOf(value: Record<string, unknown>): SlotViewState | undefined {
+  if (value.workspace !== undefined && value.workspace !== null) {
+    const view = parseSlotView(value.workspace, "App state workspace");
+    return view.slots.length > 0 ? view : undefined;
+  }
   if (value.workspaces === undefined || value.workspaces === null) return undefined;
   if (!Array.isArray(value.workspaces)) throw new AppStateError("App state workspaces must be an array");
   const views = value.workspaces
-    .slice(0, WORKSPACE_COUNT)
+    .slice(0, LEGACY_WORKSPACE_COUNT)
     .map((view, index) => parseSlotView(view, `App state workspaces[${index}]`));
-  return views.length > 0 ? views : undefined;
+  if (views.length === 0) return undefined;
+  // Holes are dropped: three grids' worth of deliberately-empty slots say nothing about where the
+  // panes belong in the single grid that replaces them.
+  const slots = [...new Set(views.flatMap((view) => view.slots.filter((id): id is string => id !== null)))];
+  return slots.length > 0 ? { layoutId: views[0].layoutId, slots } : undefined;
+}
+
+function hiddenPanesOf(value: Record<string, unknown>): SlotViewState | undefined {
+  if (value.hiddenPanes === undefined || value.hiddenPanes === null) return undefined;
+  const view = parseSlotView(value.hiddenPanes, "App state hiddenPanes");
+  return view.slots.length > 0 ? view : undefined;
 }
 
 export function parseAppState(value: unknown): AppStateV1 {
@@ -197,6 +219,8 @@ export function parseAppState(value: unknown): AppStateV1 {
       "splitSessionId",
       "visibleSessionIds",
       "folderViews",
+      "workspace",
+      "hiddenPanes",
       "workspaces",
       "sessions",
     ],
@@ -206,7 +230,8 @@ export function parseAppState(value: unknown): AppStateV1 {
   if (!isRecord(value.sessions)) throw new AppStateError("App state sessions must be an object");
   const visibleSessionIds = visibleSessionIdsOf(value);
   const folderViews = folderViewsOf(value);
-  const workspaces = workspacesOf(value);
+  const workspace = workspaceOf(value);
+  const hiddenPanes = hiddenPanesOf(value);
   return {
     schemaVersion: 1,
     updatedAt: iso(value.updatedAt, "App state updatedAt"),
@@ -214,7 +239,8 @@ export function parseAppState(value: unknown): AppStateV1 {
     selectedSessionId: nullableString(value.selectedSessionId, "App state selectedSessionId"),
     ...(visibleSessionIds !== undefined ? { visibleSessionIds } : {}),
     ...(folderViews !== undefined ? { folderViews } : {}),
-    ...(workspaces !== undefined ? { workspaces } : {}),
+    ...(workspace !== undefined ? { workspace } : {}),
+    ...(hiddenPanes !== undefined ? { hiddenPanes } : {}),
     sessions: Object.fromEntries(Object.entries(value.sessions).map(([key, session]) => [key, parseSession(session, key)])),
   };
 }
