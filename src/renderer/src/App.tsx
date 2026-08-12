@@ -2926,12 +2926,6 @@ export function App() {
           agents={agents}
           newSessionDisabledReason={newSessionDisabledReason(contextMenu.project.id)}
           onStartSession={(agentId) => void startSessionInBackground(contextMenu.project, agentId)}
-          workProjectOptions={workProjects.map((workProject) => ({
-            id: workProject.id,
-            name: workProject.name,
-            current: projectMembership[contextMenu.project.id]?.workProjectId === workProject.id,
-          }))}
-          onMoveToWorkProject={(workProjectId) => void moveProjectToWorkProject(contextMenu.project.id, workProjectId)}
           onReveal={() => void runProjectAction(() => window.multiCliWork.projects.reveal(contextMenu.project.id))}
           onOpenInEditor={() =>
             void runProjectAction(() => window.multiCliWork.projects.openInEditor(contextMenu.project.id))
