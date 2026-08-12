@@ -10,7 +10,9 @@ import { TerminalPane } from "./TerminalPane";
  * records the order the pane drives it in, which is what the replay corruption hinges on.
  */
 const terminalHarness = vi.hoisted(() => ({
-  instances: [] as Array<{ options: { linkHandler?: ILinkHandler | null } }>,
+  instances: [] as Array<{
+    options: { fontSize?: number; lineHeight?: number; linkHandler?: ILinkHandler | null };
+  }>,
   events: [] as string[],
   resizeObservers: [] as ResizeObserverCallback[],
   fittedCols: 200,
@@ -27,7 +29,11 @@ vi.mock("@xterm/xterm", () => ({
       terminalHarness.events.push(`write:${this.cols}x${this.rows}:${data}`);
     });
 
-    constructor(readonly options: { linkHandler?: ILinkHandler | null }) {
+    constructor(readonly options: {
+      fontSize?: number;
+      lineHeight?: number;
+      linkHandler?: ILinkHandler | null;
+    }) {
       terminalHarness.instances.push(this);
     }
 
@@ -152,6 +158,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TerminalPane replay sizing", () => {
+  it("uses the shared 13px content size and 1.25 terminal line height", () => {
+    renderPane();
+
+    expect(terminalHarness.instances.at(-1)?.options).toMatchObject({
+      fontSize: 13,
+      lineHeight: 1.25,
+    });
+  });
+
   it("sizes the terminal before writing the replay so scrollback is not re-wrapped", async () => {
     renderPane();
 

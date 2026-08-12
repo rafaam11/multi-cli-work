@@ -62,6 +62,10 @@ async function attachScreenshot(name: string): Promise<void> {
   await test.info().attach(name, { path: screenshotPath, contentType: "image/png" });
 }
 
+async function computedFontSize(selector: string): Promise<string> {
+  return page.locator(selector).first().evaluate((element) => getComputedStyle(element).fontSize);
+}
+
 /** One pane of the terminal grid, addressed by the session label its header shows. */
 const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`);
 
@@ -442,8 +446,35 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await execFileAsync("git", ["checkout", "-b", "feature/a-very-long-branch-name-for-responsive-layout"], { cwd: projectRoot });
 
     await openFolder();
+    if ((await page.locator(".session-name").count()) === 0) {
+      await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+      const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
+      await terminal.click();
+      await page.keyboard.type("exit");
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".active-status")).toHaveText("종료됨");
+    }
     await page.getByRole("tab", { name: "Git" }).click();
     await expect(page.getByText("a-very-long-file-name-that-still-shows-its-status.ts")).toBeVisible();
+
+    expect(await computedFontSize("body")).toBe("13px");
+    expect(await computedFontSize(".project-name")).toBe("13px");
+    expect(await computedFontSize(".session-name")).toBe("13px");
+    expect(await computedFontSize(".workspace-title")).toBe("14px");
+    expect(await computedFontSize(".pane-context-folder")).toBe("13px");
+    expect(await computedFontSize(".pane-title")).toBe("13px");
+    expect(await computedFontSize(".right-sidebar-tab")).toBe("13px");
+    expect(await computedFontSize(".git-panel-tabs button")).toBe("13px");
+    expect(await computedFontSize(".git-panel .section-heading")).toBe("12px");
+    expect(await computedFontSize(".git-change-path")).toBe("11px");
+    expect(await computedFontSize(".git-status-badge")).toBe("11px");
+
+    await page.getByRole("tab", { name: "파일" }).click();
+    await expect(page.getByText("readme.md", { exact: true })).toBeVisible();
+    expect(await computedFontSize(".file-tree-row")).toBe("13px");
+    await page.getByRole("tab", { name: "Git" }).click();
+    await expect(page.getByText("a-very-long-file-name-that-still-shows-its-status.ts")).toBeVisible();
+
     await page.evaluate(() => {
       const heading = document.querySelector<HTMLElement>(".git-panel .section-heading > span");
       const worktree = document.querySelector<HTMLElement>(".git-toolbar-secondary .git-dropdown-label");
@@ -468,6 +499,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       }, width);
       expect(result.panel.scrollWidth).toBeLessThanOrEqual(result.panel.clientWidth);
       expect(result.controlsVisible).toBe(true);
+      await attachScreenshot(`git-sidebar-${width}`);
     }
 
     await page.evaluate(() => document.querySelector<HTMLElement>(".app-shell")!.style.setProperty("--right-sidebar-width", "280px"));

@@ -1,6 +1,26 @@
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  --font-family-ui: "Segoe UI Variable", "Segoe UI", sans-serif;
+  --font-family-mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+  --type-page-title-size: 16px;
+  --type-page-title-line-height: 22px;
+  --type-panel-title-size: 14px;
+  --type-panel-title-line-height: 20px;
+  --type-ui-size: 13px;
+  --type-ui-line-height: 18px;
+  --type-secondary-size: 12px;
+  --type-secondary-line-height: 16px;
+  --type-caption-size: 11px;
+  --type-caption-line-height: 14px;
+  --type-page-title: 600 16px/22px var(--font-family-ui);
+  --type-panel-title: 600 14px/20px var(--font-family-ui);
+  --type-ui: 400 13px/18px var(--font-family-ui);
+  --type-ui-semibold: 600 13px/18px var(--font-family-ui);
+  --type-secondary: 400 12px/16px var(--font-family-ui);
+  --type-secondary-semibold: 600 12px/16px var(--font-family-ui);
+  --type-caption: 400 11px/14px var(--font-family-ui);
+  --type-caption-semibold: 600 11px/14px var(--font-family-ui);
+  font-family: var(--font-family-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --bg: #161918;
@@ -64,8 +84,7 @@
   border-radius: 999px;
   color: var(--category-accent, var(--muted));
   background: color-mix(in srgb, var(--category-accent, var(--muted)) 12%, transparent);
-  font-size: 9px;
-  font-weight: 650;
+  font: var(--type-caption-semibold);
   white-space: nowrap;
 }
 
@@ -123,9 +142,13 @@ body,
 
 body {
   background: var(--bg);
+  font: var(--type-ui);
 }
 
-button {
+button,
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -199,7 +222,7 @@ button:focus-visible {
   border-radius: 4px;
   color: var(--text);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   white-space: nowrap;
   cursor: pointer;
   -webkit-app-region: no-drag;
@@ -241,7 +264,7 @@ button:focus-visible {
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: 28px;
   gap: 18px;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
 }
 
 .title-bar-item-label {
@@ -252,7 +275,7 @@ button:focus-visible {
 
 .title-bar-shortcut {
   color: var(--quiet);
-  font-size: 10.5px;
+  font-size: var(--type-caption-size);
 }
 
 .title-bar-separator {
@@ -282,7 +305,7 @@ button:focus-visible {
   border-radius: 5px;
   color: var(--muted);
   background: var(--surface);
-  font-size: 11.5px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
@@ -304,7 +327,7 @@ button:focus-visible {
 .command-centre-attention {
   flex: 0 0 auto;
   min-width: 14px;
-  font-size: 12px;
+  font-size: var(--type-secondary-size);
   font-weight: 700;
   line-height: 1;
   text-align: center;
@@ -524,8 +547,7 @@ body.sidebar-resizing {
 
 .workspace-shelf-name {
   overflow: hidden;
-  font-size: 12px;
-  font-weight: 560;
+  font: var(--type-ui-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -536,7 +558,7 @@ body.sidebar-resizing {
   border-radius: 8px;
   color: var(--quiet);
   background: var(--surface);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   text-align: center;
 }
 
@@ -745,8 +767,7 @@ body.sidebar-resizing {
   border-radius: 5px;
   color: var(--muted);
   background: transparent;
-  font-size: 12px;
-  font-weight: 550;
+  font: var(--type-ui-semibold);
   cursor: pointer;
 }
 
@@ -829,7 +850,7 @@ body.sidebar-resizing {
   border-radius: 5px;
   color: var(--red);
   background: color-mix(in srgb, var(--red) 12%, transparent);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .git-error-banner span {
@@ -871,7 +892,7 @@ body.sidebar-resizing {
   border-radius: 5px;
   color: var(--text);
   background: var(--surface);
-  font-size: 11.5px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -898,7 +919,7 @@ body.sidebar-resizing {
   right: auto;
   left: 0;
   width: 232px;
-  font-size: 11.5px;
+  font-size: var(--type-ui-size);
 }
 
 .git-menu-scroll {
@@ -911,7 +932,7 @@ body.sidebar-resizing {
 .git-menu-empty {
   padding: 8px 10px;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .git-menu-filter,
@@ -924,7 +945,7 @@ body.sidebar-resizing {
   color: var(--text);
   background: transparent;
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .git-menu-filter {
@@ -956,7 +977,7 @@ body.sidebar-resizing {
   flex: 1 1 auto;
   min-height: 26px;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .git-ahead-behind {
@@ -966,7 +987,7 @@ body.sidebar-resizing {
   gap: 2px;
   padding-right: 2px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .git-changes-heading {
@@ -976,8 +997,7 @@ body.sidebar-resizing {
   padding: 4px 10px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
+  font: var(--type-secondary-semibold);
 }
 
 .git-check-all {
@@ -1002,7 +1022,7 @@ body.sidebar-resizing {
   gap: 7px;
   min-height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--type-caption-size);
   min-width: 0;
 }
 
@@ -1022,12 +1042,11 @@ body.sidebar-resizing {
   border: 0;
   color: var(--muted);
   background: transparent;
-  font-size: 12px;
+  font: var(--type-caption);
   text-align: left;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
 }
 
 .git-change-path strong,
@@ -1040,7 +1059,7 @@ body.sidebar-resizing {
 }
 
 .git-change-path strong { color: var(--text); font-weight: 600; }
-.git-change-path span { margin-top: 2px; color: var(--quiet); font-size: 10px; }
+.git-change-path span { margin-top: 2px; color: var(--quiet); font-size: var(--type-caption-size); }
 
 .git-change-row:hover .git-change-path {
   color: var(--text);
@@ -1050,7 +1069,7 @@ body.sidebar-resizing {
   flex: 0 0 auto;
   width: 16px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   font-weight: 700;
   text-align: center;
 }
@@ -1089,7 +1108,7 @@ body.sidebar-resizing {
   color: var(--text);
   background: transparent;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--type-ui-size);
   resize: vertical;
 }
 
@@ -1124,7 +1143,7 @@ body.sidebar-resizing {
 .git-diff-path {
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--type-ui-size);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1133,7 +1152,7 @@ body.sidebar-resizing {
 .git-diff-caption {
   flex: 0 0 auto;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .git-diff-notice {
@@ -1143,7 +1162,7 @@ body.sidebar-resizing {
   padding: 5px 12px;
   border-bottom: 1px solid var(--line);
   color: var(--amber);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .git-diff-state {
@@ -1154,7 +1173,7 @@ body.sidebar-resizing {
   justify-content: center;
   gap: 9px;
   color: var(--quiet);
-  font-size: 12px;
+  font-size: var(--type-secondary-size);
 }
 
 .git-diff-editor {
@@ -1189,8 +1208,8 @@ body.sidebar-resizing {
 }
 
 .native-graph-header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.native-graph-header strong { font-size: 13px; }
-.native-graph-header span { min-width: 0; overflow: hidden; color: var(--quiet); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.native-graph-header strong { font-size: var(--type-ui-size); }
+.native-graph-header span { min-width: 0; overflow: hidden; color: var(--quiet); font-size: var(--type-caption-size); text-overflow: ellipsis; white-space: nowrap; }
 .native-graph-error { margin: 7px 10px; }
 .native-graph-list { position: relative; min-width: 0; min-height: 0; overflow: auto; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
 /* Rows sit absolutely inside this box so a single SVG can span the whole graph and stay aligned
@@ -1200,7 +1219,7 @@ body.sidebar-resizing {
 .graph-edge { fill: none; stroke-width: 1.6; stroke-linecap: round; }
 .graph-edge-truncated, .graph-edge-pending { stroke-dasharray: 2 3; }
 .graph-node-pending { fill: var(--bg); stroke-width: 1.6; }
-.native-graph-row { position: absolute; left: 0; right: 0; display: grid; grid-template-columns: minmax(0, 1fr) 92px minmax(70px, 132px) 66px 26px; gap: 10px; align-items: center; height: 26px; padding-right: 8px; color: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.native-graph-row { position: absolute; left: 0; right: 0; display: grid; grid-template-columns: minmax(0, 1fr) 92px minmax(70px, 132px) 66px 26px; gap: 10px; align-items: center; height: 26px; padding-right: 8px; color: inherit; font-size: var(--type-ui-size); text-align: left; cursor: pointer; }
 .native-graph-row:hover, .native-graph-row.selected { background: var(--surface-hover); }
 .native-graph-row.matched { background: color-mix(in srgb, var(--amber) 14%, transparent); }
 .native-graph-row.active-match { background: color-mix(in srgb, var(--amber) 28%, transparent); }
@@ -1208,21 +1227,21 @@ body.sidebar-resizing {
 .native-graph-pending { color: var(--quiet); font-style: italic; cursor: default; }
 .native-graph-subject { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; }
 .native-graph-subject > span:last-child { overflow: hidden; text-overflow: ellipsis; }
-.native-graph-ref { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; max-width: 150px; padding: 1px 5px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 9.5px; text-overflow: ellipsis; }
+.native-graph-ref { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; max-width: 150px; padding: 1px 5px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: var(--type-caption-size); text-overflow: ellipsis; }
 .native-graph-ref.ref-head { color: var(--green); border-color: color-mix(in srgb, var(--green) 50%, var(--line)); }
 .native-graph-ref.ref-tag { color: var(--amber); }
 .native-graph-ref.ref-remote { color: var(--violet); }
 button.native-graph-ref { background: transparent; font-family: inherit; cursor: pointer; }
 button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-color: var(--teal); outline: none; }
-.native-graph-date, .native-graph-author, .native-graph-hash { overflow: hidden; color: var(--quiet); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.native-graph-date, .native-graph-author, .native-graph-hash { overflow: hidden; color: var(--quiet); font-size: var(--type-caption-size); text-overflow: ellipsis; white-space: nowrap; }
 .native-graph-hash { color: var(--muted); }
 /* Revealed on hover so a dense list is not a wall of icons. */
 .native-graph-more { width: 22px; height: 22px; color: var(--quiet); opacity: 0; }
 .native-graph-row:hover .native-graph-more, .native-graph-more:focus-visible { opacity: 1; }
 .native-graph-details-slot { position: absolute; left: 0; right: 0; }
 .native-graph-details { padding: 10px 18px 12px max(32px, 5%); background: color-mix(in srgb, var(--surface) 70%, transparent); }
-.native-graph-message { margin: 0 0 9px; color: var(--text); font: 12px/1.45 inherit; white-space: pre-wrap; }
-.native-graph-details dl { display: grid; gap: 3px; margin: 0 0 10px; color: var(--muted); font-size: 10.5px; }
+.native-graph-message { margin: 0 0 9px; color: var(--text); font: var(--type-secondary); white-space: pre-wrap; }
+.native-graph-details dl { display: grid; gap: 3px; margin: 0 0 10px; color: var(--muted); font-size: var(--type-caption-size); }
 .native-graph-details dl > div { display: grid; grid-template-columns: 58px minmax(0, 1fr); }
 .native-graph-details dt { color: var(--quiet); }
 .native-graph-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
@@ -1232,20 +1251,20 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .native-graph-files button:hover, .native-graph-files button.active { color: var(--text); background: var(--surface-hover); }
 .native-graph-files button span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .native-graph-diff { height: 360px; margin-top: 8px; border: 1px solid var(--line); }
-.native-graph-inline-state, .native-graph-warning { display: flex; align-items: center; gap: 6px; padding: 10px; color: var(--quiet); font-size: 11px; }
+.native-graph-inline-state, .native-graph-warning { display: flex; align-items: center; gap: 6px; padding: 10px; color: var(--quiet); font-size: var(--type-caption-size); }
 .native-graph-warning { padding-bottom: 0; color: var(--amber); }
 .native-graph-find { display: flex; flex: 0 1 auto; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--quiet); }
-.native-graph-find input { width: 150px; padding: 2px 0; border: 0; color: var(--text); background: transparent; font-size: 11.5px; outline: none; }
-.native-graph-find-count { flex: 0 0 auto; font-size: 10.5px; font-variant-numeric: tabular-nums; }
-.native-graph-find-note { margin: 0; padding: 5px 12px 0; color: var(--quiet); font-size: 10.5px; }
+.native-graph-find input { width: 150px; padding: 2px 0; border: 0; color: var(--text); background: transparent; font-size: var(--type-ui-size); outline: none; }
+.native-graph-find-count { flex: 0 0 auto; font-size: var(--type-caption-size); font-variant-numeric: tabular-nums; }
+.native-graph-find-note { margin: 0; padding: 5px 12px 0; color: var(--quiet); font-size: var(--type-caption-size); }
 .native-graph-menu { position: fixed; z-index: 80; width: 210px; }
 .native-graph-dialog { width: min(420px, calc(100vw - 32px)); padding: 14px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--text); background: var(--surface); box-shadow: 0 18px 60px #0008; }
 .native-graph-dialog header, .native-graph-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.native-graph-dialog h2 { margin: 0; font-size: 14px; }
-.native-graph-dialog p { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.native-graph-dialog > label:not(.native-graph-check) { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11px; }
+.native-graph-dialog h2 { margin: 0; font-size: var(--type-panel-title-size); }
+.native-graph-dialog p { color: var(--muted); font-size: var(--type-secondary-size); overflow-wrap: anywhere; }
+.native-graph-dialog > label:not(.native-graph-check) { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: var(--type-caption-size); }
 .native-graph-dialog input[type="text"], .native-graph-dialog label > input:not([type]) { padding: 7px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--bg); }
-.native-graph-check { display: flex; align-items: center; gap: 7px; margin: 10px 0; font-size: 11px; }
+.native-graph-check { display: flex; align-items: center; gap: 7px; margin: 10px 0; font-size: var(--type-caption-size); }
 .native-graph-dialog footer { justify-content: flex-end; margin-top: 14px; }
 
 /* The native WebContentsView is drawn over this hole by the main process; it must keep filling the
@@ -1271,14 +1290,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .git-graph-status p {
   margin: 0;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--type-panel-title-size);
   font-weight: 600;
 }
 
 .git-graph-status span {
   max-width: 420px;
   color: var(--quiet);
-  font-size: 12px;
+  font-size: var(--type-secondary-size);
 }
 
 .git-graph-hint {
@@ -1343,7 +1362,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: none;
   color: var(--muted);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   font-weight: 600;
   cursor: pointer;
 }
@@ -1411,7 +1430,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: color-mix(in srgb, var(--text) 72%, var(--muted));
   background: transparent;
-  font-size: 12px;
+  font: var(--type-ui);
   text-align: left;
   gap: 6px;
   cursor: pointer;
@@ -1450,7 +1469,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: var(--surface);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   outline: none;
 }
 
@@ -1517,7 +1536,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   gap: 6px;
   padding: 4px 8px;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .file-tree-error {
@@ -1555,8 +1574,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .brand-block h1 {
   margin: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 650;
+  font: var(--type-panel-title);
   letter-spacing: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1567,7 +1585,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin-top: 2px;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   letter-spacing: 0;
 }
 
@@ -1586,8 +1604,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   height: 34px;
   padding: 0 4px 0 8px;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
+  font: var(--type-secondary-semibold);
   text-transform: uppercase;
 }
 
@@ -1610,7 +1627,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--quiet);
   background: var(--surface-hover);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   cursor: pointer;
 }
 
@@ -1659,7 +1676,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: 1px dashed var(--line);
   border-radius: 5px;
   color: var(--quiet);
-  font-size: 12px;
+  font-size: var(--type-secondary-size);
 }
 
 .sidebar-failure {
@@ -1671,7 +1688,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-left: 2px solid var(--red);
   color: var(--muted);
   background: rgb(212 106 106 / 7%);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .sidebar-failure svg {
@@ -1786,8 +1803,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .unassigned-label {
   padding: 0 8px;
   color: var(--quiet);
-  font-size: 11px;
-  font-weight: 650;
+  font: var(--type-secondary-semibold);
   text-transform: uppercase;
 }
 
@@ -1805,7 +1821,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: 1px dashed var(--line);
   border-radius: 5px;
   color: var(--quiet);
-  font-size: 12px;
+  font-size: var(--type-secondary-size);
 }
 
 /*
@@ -1942,8 +1958,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   display: block;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
-  font-weight: 580;
+  font: var(--type-ui-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1959,7 +1974,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 8px;
   color: var(--quiet);
   background: var(--surface);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -1968,7 +1983,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   max-width: 48px;
   overflow: hidden;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2043,7 +2058,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .project-editor-field label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   font-weight: 600;
   text-transform: uppercase;
 }
@@ -2057,7 +2072,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: transparent;
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   resize: vertical;
 }
 
@@ -2069,7 +2084,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .project-editor-error {
   color: #f09595;
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 .project-editor-actions {
@@ -2084,7 +2099,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -2227,7 +2242,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .session-name {
   min-width: 0;
   flex: 1 1 auto;
-  font-size: 11px;
+  font: var(--type-ui);
 }
 
 /* A workspace gathers panes from several folders, so its rows say which one each came from. */
@@ -2235,14 +2250,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   max-width: 64px;
   flex: 0 1 auto;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .session-status {
   flex: 0 0 auto;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 8px;
+  font-size: var(--type-caption-size);
 }
 
 /* A document row needs a 닫기 of its own, so it splits into two sibling buttons instead of one. */
@@ -2323,7 +2338,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: var(--surface);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .status-dot {
@@ -2365,33 +2380,36 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   text-align: left;
   cursor: pointer;
 }
 
 .git-panel-tabs, .pr-detail-tabs { display: flex; gap: 2px; padding: 7px 8px 0; border-bottom: 1px solid var(--line); }
-.git-panel-tabs button, .pr-detail-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 6px 9px; color: var(--muted); background: transparent; cursor: pointer; }
+.git-panel-tabs button,
+.pr-detail-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 6px 9px; color: var(--muted); background: transparent; cursor: pointer; }
+.git-panel-tabs button { font: var(--type-ui); }
+.pr-detail-tabs button { font: var(--type-ui); }
 .git-panel-tabs button[aria-selected="true"], .pr-detail-tabs button[aria-selected="true"] { color: var(--teal); border-bottom-color: var(--teal); }
 .pr-panel-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .pr-filter-row { display: flex; gap: 5px; padding: 8px; }
 .pr-filter-row select { min-width: 0; flex: 1 1 0; }
 .pr-search { display: flex; align-items: center; gap: 5px; margin: 0 8px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; }
 .pr-search input { min-width: 0; width: 100%; border: 0; background: transparent; color: var(--text); outline: none; }
-.pr-review-filter { padding: 6px 9px; font-size: 11px; color: var(--muted); }
+.pr-review-filter { padding: 6px 9px; font-size: var(--type-ui-size); color: var(--muted); }
 .pr-list { min-height: 0; overflow: auto; }
 .pr-row { position: relative; display: flex; width: 100%; flex-direction: column; gap: 5px; padding: 9px; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--line); text-align: left; color: var(--text); background: transparent; cursor: pointer; }
 .pr-row:hover { background: var(--surface-hover); }
 .pr-row.active { border-left-color: var(--teal); background: color-mix(in srgb, var(--teal) 12%, transparent); }
 .pr-row-title { display: flex; align-items: flex-start; gap: 5px; }.pr-row-title > span:last-child { min-width: 0; overflow-wrap: anywhere; }
-.pr-badges { display: flex; flex-wrap: wrap; gap: 4px; }.pr-badge, .pr-state-badge { display: inline-flex; align-items: center; gap: 3px; width: fit-content; border: 1px solid currentColor; border-radius: 999px; padding: 1px 6px; font-size: 10px; }
+.pr-badges { display: flex; flex-wrap: wrap; gap: 4px; }.pr-badge, .pr-state-badge { display: inline-flex; align-items: center; gap: 3px; width: fit-content; border: 1px solid currentColor; border-radius: 999px; padding: 1px 6px; font-size: var(--type-caption-size); }
 .pr-badge.open, .pr-badge.success, .pr-state-badge.open { color: #3fb950; }.pr-badge.merged, .pr-state-badge.merged { color: #a371f7; }.pr-badge.closed, .pr-badge.failure, .pr-state-badge.closed { color: #f85149; }.pr-badge.pending { color: #d29922; }.pr-badge.none, .pr-badge.muted, .pr-state-badge.muted { color: var(--muted); }
-.pr-row-meta, .pr-row small { color: var(--muted); font-size: 10.5px; }
+.pr-row-meta, .pr-row small { color: var(--muted); font-size: var(--type-caption-size); }
 .pr-more { margin: 8px; }
 
 .pr-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .pr-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
-.pr-detail-header h2 { margin: 3px 0; font-size: 18px; }
+.pr-detail-header h2 { margin: 3px 0; font: var(--type-page-title); }
 .pr-detail-header span, .pr-detail-header small { color: var(--muted); }
 .pr-heading { min-width: 0; }.pr-heading h2 { overflow-wrap: anywhere; }.pr-heading .pr-state-badge { color: inherit; }.pr-heading code { color: var(--text); }
 .pr-detail-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
@@ -2399,20 +2417,20 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .pr-review-actions { display: flex; gap: 4px; padding: 3px; border: 1px solid color-mix(in srgb, var(--teal) 55%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--teal) 8%, transparent); }
 .pr-detail-body { min-height: 0; overflow: auto; padding: 16px 20px 40px; }
 .pr-detail-empty { padding: 24px; color: var(--muted); }
-.pr-labels { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }.pr-labels span { padding: 2px 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 11px; }
+.pr-labels { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }.pr-labels span { padding: 2px 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: var(--type-caption-size); }
 .pr-commit, .pr-check { padding: 8px 0; border-bottom: 1px solid var(--line); }.pr-check { display: flex; justify-content: space-between; }
 .pr-comment-form, .pr-timeline-item form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }.pr-comment-form textarea, .pr-timeline-item textarea { min-height: 70px; resize: vertical; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 8px; }
-.pr-timeline-item { margin-bottom: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; }.pr-timeline-item header { color: var(--muted); font-size: 11px; }
-.pr-diff-file { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }.pr-diff-file h3 { margin: 0; padding: 8px 10px; background: var(--surface); font-size: 12px; }.pr-diff-file pre { margin: 0; padding: 10px; overflow: auto; font-size: 11px; line-height: 1.45; }
-.pr-summary-grid { display: grid; grid-template-columns: repeat(6, minmax(80px, 1fr)); gap: 8px; margin-bottom: 14px; }.pr-summary-grid > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }.pr-summary-grid strong { overflow: hidden; text-overflow: ellipsis; }.pr-summary-grid span { color: var(--muted); font-size: 10px; }
+.pr-timeline-item { margin-bottom: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; }.pr-timeline-item header { color: var(--muted); font-size: var(--type-caption-size); }
+.pr-diff-file { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }.pr-diff-file h3 { margin: 0; padding: 8px 10px; background: var(--surface); font-size: var(--type-secondary-size); }.pr-diff-file pre { margin: 0; padding: 10px; overflow: auto; font-size: var(--type-ui-size); line-height: var(--type-ui-line-height); }
+.pr-summary-grid { display: grid; grid-template-columns: repeat(6, minmax(80px, 1fr)); gap: 8px; margin-bottom: 14px; }.pr-summary-grid > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }.pr-summary-grid strong { overflow: hidden; text-overflow: ellipsis; }.pr-summary-grid span { color: var(--muted); font-size: var(--type-caption-size); }
 .add { color: #3fb950; }.del { color: #f85149; }
 .pr-card { margin-bottom: 14px; border: 1px solid var(--line); border-left: 3px solid color-mix(in srgb, var(--teal) 65%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--surface) 85%, transparent); overflow: hidden; }.pr-card > header { display: flex; align-items: center; gap: 6px; padding: 9px 11px; border-bottom: 1px solid var(--line); font-weight: 600; }.pr-card > :not(header) { margin-left: 11px; margin-right: 11px; }
 .pr-check { align-items: center; gap: 8px; width: 100%; padding: 10px; border: 0; border-left: 3px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text); text-align: left; background: var(--surface); }.pr-check strong { margin-right: auto; }.pr-check.success { border-left-color: #3fb950; }.pr-check.success > svg:first-child { color: #3fb950; }.pr-check.failure { border-left-color: #f85149; }.pr-check.failure > svg:first-child { color: #f85149; }.pr-check.pending { border-left-color: #d29922; }.pr-check:disabled { opacity: 1; }
 .pr-files-split { display: grid; grid-template-columns: var(--pr-file-list-width) 5px minmax(0, 1fr); min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
 .pr-file-list { min-width: 0; overflow: auto; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 65%, transparent); }.pr-file-search { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 5px; padding: 8px; border-bottom: 1px solid var(--line); background: var(--surface); }.pr-file-search input { min-width: 0; width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; }.pr-file-list button { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 8px; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--line); color: var(--text); text-align: left; background: transparent; }.pr-file-list button:hover { background: var(--surface-hover); }.pr-file-list button.active { border-left-color: var(--teal); background: color-mix(in srgb, var(--teal) 12%, transparent); }.pr-file-list button > span { display: flex; gap: 5px; align-items: flex-start; min-width: 0; }.pr-file-list button strong { min-width: 0; overflow-wrap: anywhere; }.pr-file-list button small { color: var(--muted); }
 .pr-file-separator { cursor: col-resize; background: transparent; outline: none; }.pr-file-separator:hover, .pr-file-separator:focus { background: var(--teal); }
-.pr-selected-diff { min-width: 0; min-height: 0; overflow: auto; background: var(--bg); }.pr-selected-file-header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--line); background: var(--surface); }.pr-selected-file-header > div { display: flex; flex-direction: column; min-width: 0; }.pr-selected-file-header strong { overflow-wrap: anywhere; }.pr-selected-file-header span { color: var(--muted); font-size: 11px; }.pr-selected-file-header nav { display: flex; gap: 4px; }.pr-selected-file-header button { border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; }
-.pr-unified-diff { min-width: max-content; width: 100%; font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }.pr-diff-line { display: grid; grid-template-columns: 48px 48px 24px minmax(max-content, 1fr); min-height: 18px; white-space: pre; }.pr-diff-line.add { color: var(--text); background: color-mix(in srgb, #238636 20%, transparent); }.pr-diff-line.del { color: var(--text); background: color-mix(in srgb, #da3633 20%, transparent); }.pr-diff-line.hunk { color: #58a6ff; background: color-mix(in srgb, #1f6feb 15%, transparent); }.pr-diff-line.meta { color: var(--muted); }.pr-diff-line.highlighted { outline: 2px solid #d29922; outline-offset: -2px; animation: pr-line-flash 1.4s ease-out; }.pr-diff-gutter { padding: 0 7px; border-right: 1px solid var(--line); color: var(--muted); text-align: right; user-select: none; }.pr-diff-marker { text-align: center; user-select: none; }.pr-diff-line.add .pr-diff-marker { color: #3fb950; }.pr-diff-line.del .pr-diff-marker { color: #f85149; }.pr-diff-line code { padding-right: 14px; color: inherit; font: inherit; }.pr-diff-notice { display: flex; align-items: center; gap: 5px; padding: 8px 11px; color: #d29922; border-top: 1px solid var(--line); }
+.pr-selected-diff { min-width: 0; min-height: 0; overflow: auto; background: var(--bg); }.pr-selected-file-header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--line); background: var(--surface); }.pr-selected-file-header > div { display: flex; flex-direction: column; min-width: 0; }.pr-selected-file-header strong { overflow-wrap: anywhere; }.pr-selected-file-header span { color: var(--muted); font-size: var(--type-caption-size); }.pr-selected-file-header nav { display: flex; gap: 4px; }.pr-selected-file-header button { border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; }
+.pr-unified-diff { min-width: max-content; width: 100%; font: 400 var(--type-ui-size)/var(--type-ui-line-height) var(--font-family-mono); }.pr-diff-line { display: grid; grid-template-columns: 48px 48px 24px minmax(max-content, 1fr); min-height: 18px; white-space: pre; }.pr-diff-line.add { color: var(--text); background: color-mix(in srgb, #238636 20%, transparent); }.pr-diff-line.del { color: var(--text); background: color-mix(in srgb, #da3633 20%, transparent); }.pr-diff-line.hunk { color: #58a6ff; background: color-mix(in srgb, #1f6feb 15%, transparent); }.pr-diff-line.meta { color: var(--muted); }.pr-diff-line.highlighted { outline: 2px solid #d29922; outline-offset: -2px; animation: pr-line-flash 1.4s ease-out; }.pr-diff-gutter { padding: 0 7px; border-right: 1px solid var(--line); color: var(--muted); text-align: right; user-select: none; }.pr-diff-marker { text-align: center; user-select: none; }.pr-diff-line.add .pr-diff-marker { color: #3fb950; }.pr-diff-line.del .pr-diff-marker { color: #f85149; }.pr-diff-line code { padding-right: 14px; color: inherit; font: inherit; }.pr-diff-notice { display: flex; align-items: center; gap: 5px; padding: 8px 11px; color: #d29922; border-top: 1px solid var(--line); }
 .pr-selected-diff { position: relative; display: flex; flex-direction: column; overflow: hidden; }
 .pr-selected-diff-scroll { min-width: 0; min-height: 0; flex: 1; overflow: auto; }
 .pr-diff-line { grid-template-columns: 48px 48px 24px 24px minmax(max-content, 1fr); }
@@ -2422,20 +2440,20 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .pr-diff-line:hover .pr-annotation-gutter button, .pr-diff-line.annotated .pr-annotation-gutter button, .pr-annotation-gutter button:focus-visible { opacity: 1; }
 .pr-annotation-gutter button:hover:not(:disabled) { color: var(--bg); background: var(--teal); }
 .pr-inline-note-editor { display: grid; gap: 8px; width: min(680px, calc(100% - 28px)); margin: 8px 14px; padding: 10px; border: 1px solid color-mix(in srgb, var(--teal) 60%, var(--line)); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); white-space: normal; }
-.pr-inline-note-editor > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
-.pr-inline-note-editor textarea { min-height: 74px; resize: vertical; padding: 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--bg); font: 12px/1.5 inherit; }
+.pr-inline-note-editor > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: var(--type-caption-size); }
+.pr-inline-note-editor textarea { min-height: 74px; resize: vertical; padding: 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--bg); font: var(--type-ui); }
 .pr-inline-note-editor > div:last-child { justify-content: flex-end; }
 .pr-inline-note-editor button, .pr-annotation-sticky button, .pr-annotation-drawer button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: var(--surface-2); }
 .pr-annotation-sticky { z-index: 5; display: grid; grid-template-columns: auto auto minmax(140px, 1fr) auto; align-items: center; gap: 10px; min-height: 48px; padding: 7px 10px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); }
-.pr-annotation-sticky > span { display: flex; gap: 7px; font-size: 11px; }.pr-annotation-sticky > span b:first-child { color: #d29922; }.pr-annotation-sticky > span b:last-child { color: #3fb950; }
+.pr-annotation-sticky > span { display: flex; gap: 7px; font-size: var(--type-caption-size); }.pr-annotation-sticky > span b:first-child { color: #d29922; }.pr-annotation-sticky > span b:last-child { color: #3fb950; }
 .pr-annotation-sticky small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .pr-annotation-sticky .primary { border-color: color-mix(in srgb, var(--teal) 65%, var(--line)); background: color-mix(in srgb, var(--teal) 18%, var(--surface-2)); }
 .pr-annotation-drawer { position: absolute; z-index: 7; right: 12px; bottom: 56px; display: flex; flex-direction: column; width: min(430px, calc(100% - 24px)); max-height: min(520px, calc(100% - 80px)); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
 .pr-annotation-drawer > header { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid var(--line); }.pr-annotation-drawer > header > div { display: flex; align-items: center; gap: 7px; }
 .pr-annotation-drawer > div { overflow: auto; padding: 8px; }.pr-annotation-drawer article { display: grid; gap: 7px; margin-bottom: 7px; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }.pr-annotation-drawer article.stale { opacity: .66; }
-.pr-annotation-drawer article > header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; }.pr-annotation-drawer article > header button { overflow: hidden; border: 0; background: transparent; text-overflow: ellipsis; white-space: nowrap; }.pr-annotation-drawer article > header span { padding: 1px 5px; border-radius: 10px; font-size: 10px; }.pr-annotation-drawer article > header span.draft { color: #d29922; background: color-mix(in srgb, #d29922 14%, transparent); }.pr-annotation-drawer article > header span.sent { color: #3fb950; background: color-mix(in srgb, #3fb950 14%, transparent); }
+.pr-annotation-drawer article > header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; }.pr-annotation-drawer article > header button { overflow: hidden; border: 0; background: transparent; text-overflow: ellipsis; white-space: nowrap; }.pr-annotation-drawer article > header span { padding: 1px 5px; border-radius: 10px; font-size: var(--type-caption-size); }.pr-annotation-drawer article > header span.draft { color: #d29922; background: color-mix(in srgb, #d29922 14%, transparent); }.pr-annotation-drawer article > header span.sent { color: #3fb950; background: color-mix(in srgb, #3fb950 14%, transparent); }
 .pr-annotation-drawer pre { overflow: hidden; margin: 0; padding: 6px; color: var(--muted); background: var(--bg); text-overflow: ellipsis; white-space: pre; }.pr-annotation-drawer p { margin: 0; white-space: pre-wrap; }.pr-annotation-drawer footer { display: flex; justify-content: flex-end; gap: 5px; }
-.pr-stale-review-banner { display: flex; align-items: center; gap: 7px; padding: 7px 10px; color: #d29922; border-bottom: 1px solid color-mix(in srgb, #d29922 35%, var(--line)); background: color-mix(in srgb, #d29922 8%, transparent); font-size: 12px; }
+.pr-stale-review-banner { display: flex; align-items: center; gap: 7px; padding: 7px 10px; color: #d29922; border-bottom: 1px solid color-mix(in srgb, #d29922 35%, var(--line)); background: color-mix(in srgb, #d29922 8%, transparent); font-size: var(--type-secondary-size); }
 @keyframes pr-line-flash { from { background-color: color-mix(in srgb, #d29922 45%, transparent); } }
 @media (max-width: 760px) { .pr-detail-header { flex-direction: column; }.pr-summary-grid { grid-template-columns: repeat(3, 1fr); }.pr-review-actions { flex-wrap: wrap; } }
 
@@ -2466,7 +2484,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .workspace-meta {
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2476,7 +2494,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   gap: 5px;
   padding: 5px 8px;
   color: var(--amber);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 .worktree-create-dialog form,
@@ -2613,12 +2631,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: 1px dashed var(--line-strong);
   color: var(--quiet);
   background: var(--bg);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .grid-slot-number {
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 15px;
+  font-size: var(--type-page-title-size);
 }
 
 /* Nothing moves during a drag — only the outline under the cursor — because resizing a pane walks
@@ -2656,7 +2674,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--bg);
   background: var(--teal);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
   font-weight: 600;
 }
 
@@ -2670,7 +2688,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   align-items: center;
   gap: 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 .workspace-page-count {
@@ -2718,7 +2736,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-left: 2px solid var(--category-accent, transparent);
   color: var(--muted);
   cursor: grab;
-  font-size: 11px;
+  font: var(--type-ui);
 }
 
 .pane-header-main {
@@ -2741,8 +2759,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   min-width: 0;
   padding: 3px 6px 0 8px;
   color: var(--quiet);
-  font-size: 10px;
-  line-height: 1.3;
+  font: var(--type-caption);
 }
 
 .pane-context svg {
@@ -2758,8 +2775,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--type-ui-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2787,8 +2803,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .pane-context-project {
   flex: 0 10000 auto;
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--type-ui-semibold);
 }
 
 .pane-header .icon-button {
@@ -2802,6 +2817,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .pane-title {
   min-width: 0;
   overflow: hidden;
+  font: var(--type-ui-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2828,7 +2844,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .pane-header .session-rename input {
   min-height: 20px;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .status-starting .status-dot,
@@ -2875,7 +2891,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-top: 1px solid var(--line);
   color: #d9b36f;
   background: rgb(216 162 74 / 7%);
-  font-size: 10px;
+  font-size: var(--type-secondary-size);
 }
 
 .registry-warning svg {
@@ -2897,7 +2913,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: inherit;
   background: transparent;
-  font-size: 10px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -2913,7 +2929,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 7px 12px;
   border-top: 1px solid var(--line);
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-secondary-size);
 }
 
 .update-badge svg {
@@ -2959,7 +2975,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: transparent;
-  font-size: 10px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -2982,7 +2998,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-top: 1px solid var(--line);
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .connection-dot {
@@ -3029,7 +3045,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-bottom: 1px solid rgb(216 162 74 / 28%);
   color: #e3c081;
   background: rgb(216 162 74 / 8%);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .missing-root-notice span {
@@ -3090,8 +3106,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .workspace-title {
   color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
+  font: var(--type-panel-title);
 }
 
 .workspace-path {
@@ -3099,7 +3114,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin-top: 2px;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .breadcrumb-separator {
@@ -3123,7 +3138,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin-right: 5px;
   color: var(--muted);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   white-space: nowrap;
 }
 
@@ -3194,7 +3209,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .provider-unavailable {
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 8px;
+  font-size: var(--type-caption-size);
 }
 
 /*
@@ -3257,7 +3272,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 1px;
   color: transparent;
   background: var(--bg);
-  font-size: 6px;
+  font-size: var(--type-caption-size);
   line-height: 1;
 }
 
@@ -3270,7 +3285,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   overflow: hidden;
   padding-right: 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-secondary-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3310,7 +3325,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   color: var(--text);
   background: var(--surface-raised);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -3354,7 +3369,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   text-align: left;
   cursor: pointer;
 }
@@ -3381,8 +3396,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .context-menu-label {
   padding: 4px 10px 2px;
   color: var(--quiet);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: var(--type-caption-size);
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -3419,7 +3434,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--type-ui-size);
 }
 
 .quick-open-input:focus {
@@ -3430,7 +3445,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin: 0;
   padding: 14px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .quick-open-list {
@@ -3451,7 +3466,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   text-align: left;
   cursor: pointer;
 }
@@ -3466,7 +3481,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .quick-open-label {
@@ -3481,7 +3496,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin-left: auto;
   overflow: hidden;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3496,7 +3511,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
 }
 
 .fan-out-dialog {
@@ -3525,14 +3540,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
 .fan-out-target-detail {
   margin-left: auto;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 .diff-view {
@@ -3557,7 +3572,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .diff-view-header h2 {
   margin: 0;
-  font-size: 13px;
+  font: var(--type-panel-title);
 }
 
 .diff-view-body {
@@ -3567,7 +3582,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .diff-truncated {
   color: var(--amber);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .diff-file {
@@ -3578,7 +3593,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .diff-file summary {
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -3588,8 +3603,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-top: 1px solid var(--line);
   overflow-x: auto;
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-line-height);
 }
 
 .diff-line {
@@ -3619,14 +3634,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .diff-untracked h3 {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--type-secondary-size);
 }
 
 .diff-untracked ul {
   margin: 0;
   padding-left: 18px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .confirm-dialog {
@@ -3640,14 +3655,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .confirm-dialog h2 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font: var(--type-panel-title);
 }
 
 .confirm-dialog p {
   margin: 0 0 16px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.55;
+  font: var(--type-secondary);
 }
 
 .confirm-dialog-actions {
@@ -3662,7 +3676,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   color: var(--text);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -3690,7 +3704,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-bottom: 1px solid rgb(212 106 106 / 28%);
   color: #e9a2a2;
   background: rgb(212 106 106 / 8%);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .action-error span {
@@ -3748,7 +3762,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--quiet);
   background: var(--surface);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   pointer-events: none;
 }
 
@@ -3777,15 +3791,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .empty-glyph span {
   color: var(--teal);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 15px;
+  font-size: var(--type-page-title-size);
 }
 
 .terminal-empty h2 {
   max-width: min(100%, 420px);
   margin: 12px 0 0;
   color: var(--muted);
-  font-size: 14px;
-  font-weight: 500;
+  font: var(--type-panel-title);
   text-align: center;
   letter-spacing: 0;
 }
@@ -3835,8 +3848,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .file-viewer-name {
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--type-ui-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3868,7 +3880,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   justify-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-secondary-size);
 }
 
 .file-viewer-error {
@@ -3878,7 +3890,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .file-viewer-notice {
   margin: 0 0 10px;
   color: var(--amber);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .file-viewer-notice.file-viewer-error {
@@ -3896,8 +3908,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: var(--surface);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-line-height);
   resize: none;
 }
 
@@ -3905,8 +3917,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin: 0;
   color: var(--text);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--type-ui-size);
+  line-height: var(--type-ui-line-height);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -3924,7 +3936,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .file-viewer-markdown {
   max-width: 780px;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--type-panel-title-size);
   line-height: 1.65;
 }
 
@@ -3939,8 +3951,25 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .file-viewer-markdown h5,
 .file-viewer-markdown h6 {
   color: var(--text);
-  line-height: 1.3;
   scroll-margin-top: 16px;
+}
+
+.file-viewer-markdown h1 {
+  font: var(--type-page-title);
+}
+
+.file-viewer-markdown h2 {
+  font: var(--type-panel-title);
+}
+
+.file-viewer-markdown h3 {
+  font: var(--type-ui-semibold);
+}
+
+.file-viewer-markdown h4,
+.file-viewer-markdown h5,
+.file-viewer-markdown h6 {
+  font: var(--type-secondary-semibold);
 }
 
 .file-viewer-markdown .task-list-item > input[type="checkbox"] {
@@ -3957,7 +3986,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   background: var(--surface);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 0.9em;
+  font-size: var(--type-ui-size);
 }
 
 .file-viewer-markdown pre {
@@ -4077,8 +4106,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .work-project-card-name {
   overflow: hidden;
-  font-size: 12px;
-  font-weight: 600;
+  font: var(--type-ui-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4089,15 +4117,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   align-items: center;
   gap: 5px;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 
 .home-card h2 {
   margin: 0 0 10px;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
+  font: var(--type-secondary-semibold);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -4106,7 +4133,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin: 0;
   padding: 10px 0;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: var(--type-caption-size);
 }
 
 .monitor-list,
@@ -4154,7 +4181,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .monitor-name {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4162,7 +4189,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .monitor-project {
   overflow: hidden;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4171,7 +4198,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   flex: 0 0 auto;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   white-space: nowrap;
 }
 
@@ -4190,7 +4217,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   gap: 8px;
   padding: 4px 2px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .cli-status-list li.missing {
@@ -4200,7 +4227,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .cli-status-value {
   margin-left: auto;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .cli-status-list li.installed .cli-status-value {
@@ -4231,7 +4258,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   color: var(--text);
   background: var(--surface-raised);
-  font-size: 10px;
+  font-size: var(--type-ui-size);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -4261,7 +4288,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   min-width: 0;
   overflow: hidden;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4278,7 +4305,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: transparent;
-  font-size: 10px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -4297,7 +4324,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .quick-launch-name {
   overflow: hidden;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4368,7 +4395,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .activity-name {
   overflow: hidden;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4376,7 +4403,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .activity-transition {
   overflow: hidden;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4385,7 +4412,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   flex: 0 0 auto;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--type-caption-size);
   white-space: nowrap;
 }
 
@@ -4396,7 +4423,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin: 0 0 10px;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -4424,8 +4451,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .folder-start-hero h2 {
   margin: 0;
   color: var(--text);
-  font-size: 16px;
-  font-weight: 600;
+  font: var(--type-page-title);
 }
 
 .folder-start-path {
@@ -4433,7 +4459,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   overflow: hidden;
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4441,7 +4467,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .folder-start-warning {
   margin: 10px 0 0;
   color: #f09595;
-  font-size: 11px;
+  font-size: var(--type-secondary-size);
 }
 
 .folder-start-launchers {
@@ -4479,20 +4505,19 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .folder-start-launcher-label {
-  font-size: 12px;
-  font-weight: 500;
+  font: var(--type-ui-semibold);
 }
 
 .folder-start-launcher-note {
   color: var(--quiet);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 /* Picking a layout here changes nothing until the first session opens — so say what it will do. */
 .folder-start-layout-hint {
   margin: 16px 0 0;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 .folder-start-cards {
@@ -4522,8 +4547,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .folder-start-card-header h3 {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
+  font: var(--type-secondary-semibold);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -4531,7 +4555,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .folder-start-empty {
   margin: 0;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: var(--type-secondary-size);
 }
 
 .folder-start-card .git-status-row {
@@ -4557,7 +4581,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   color: var(--text);
   background: none;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   text-align: left;
   cursor: pointer;
 }
@@ -4576,7 +4600,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   flex: 1 1 auto;
   overflow: hidden;
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--type-secondary-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4584,7 +4608,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .folder-start-worktree-note {
   flex: 0 0 auto;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .folder-start-shortcuts {
@@ -4602,7 +4626,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   color: var(--text);
   background: var(--surface-raised);
-  font-size: 10px;
+  font-size: var(--type-ui-size);
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -4653,8 +4677,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .detail-card h2 {
   margin: 0 0 10px;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
+  font: var(--type-secondary-semibold);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -4673,7 +4696,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .detail-empty {
   margin: 0;
   color: var(--quiet);
-  font-size: 11px;
+  font-size: var(--type-secondary-size);
 }
 
 .detail-empty-sessions {
@@ -4684,8 +4707,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .detail-empty-sessions h3 {
   margin: 0 0 12px;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 500;
+  font: var(--type-ui-semibold);
 }
 
 .detail-launcher-row {
@@ -4705,7 +4727,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   color: var(--text);
   background: var(--surface-raised);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -4754,7 +4776,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .session-card-name {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--type-ui-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4763,7 +4785,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .session-card-updated {
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .git-status-row {
@@ -4779,26 +4801,25 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: var(--surface-raised);
   font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--type-secondary-size);
 }
 
 .git-changes {
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 .detail-save-error {
   margin: 0 0 8px;
   color: #f09595;
-  font-size: 10px;
+  font-size: var(--type-caption-size);
 }
 
 .detail-memo-label {
   display: block;
   margin-bottom: 4px;
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 600;
+  font: var(--type-secondary-semibold);
   text-transform: uppercase;
 }
 
@@ -4812,7 +4833,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: var(--surface-raised);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   resize: vertical;
 }
 
@@ -4826,8 +4847,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .work-project-form > label {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 600;
+  font: var(--type-secondary-semibold);
   text-transform: uppercase;
 }
 
@@ -4856,7 +4876,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: var(--surface-raised);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 /* 노션 링크 목록과 참고 로컬 폴더 목록은 같은 행 레이아웃을 공유한다 — 라벨 칸 + 값 칸 + 아이콘들. */
@@ -4896,7 +4916,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 5px;
   color: var(--muted);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -4955,7 +4975,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--type-ui-size);
 }
 
 .member-role {
@@ -4963,13 +4983,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: 1px solid var(--line);
   border-radius: 4px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--type-caption-size);
 }
 
 .member-path {
   overflow: hidden;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4980,7 +5000,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   gap: 6px;
   margin: 10px 0 0;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: var(--type-secondary-size);
 }
 
 .work-project-teams-root > span {
@@ -4996,7 +5016,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: transparent;
-  font-size: 10px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 
@@ -5019,8 +5039,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   justify-content: space-between;
   margin-bottom: 6px;
   color: var(--text);
-  font-size: 11px;
-  font-weight: 600;
+  font: var(--type-secondary-semibold);
 }
 
 .detail-track-header button {
@@ -5057,7 +5076,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   align-items: center;
   gap: 6px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .detail-track-items label span.done {
@@ -5093,7 +5112,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
   background: transparent;
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--type-ui-size);
 }
 
 .detail-new-track button,
@@ -5104,7 +5123,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: var(--surface-raised);
-  font-size: 10px;
+  font-size: var(--type-ui-size);
   cursor: pointer;
 }
 

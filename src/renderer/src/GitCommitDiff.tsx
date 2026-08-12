@@ -3,6 +3,7 @@ import type { FileExplorerTarget } from "@shared/file-explorer-types";
 import { FileWarning, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { monaco } from "./monaco-setup";
+import { MONACO_DIFF_TYPOGRAPHY } from "./renderer-typography";
 
 function key(target: FileExplorerTarget) { return `${target.kind}:${target.id}`; }
 function message(error: unknown) { return error instanceof Error ? error.message : String(error); }
@@ -21,7 +22,7 @@ export function GitCommitDiff({ target, hash, path }: { target: FileExplorerTarg
     if (!diff || diff.binary || !ref.current) return;
     const original = monaco.editor.createModel(diff.original, undefined, monaco.Uri.parse(`mcw-commit://${hash}/old/${encodeURIComponent(diff.oldPath ?? diff.path)}`));
     const modified = monaco.editor.createModel(diff.modified, undefined, monaco.Uri.parse(`mcw-commit://${hash}/new/${encodeURIComponent(diff.path)}`));
-    const editor = monaco.editor.createDiffEditor(ref.current, { automaticLayout: true, readOnly: true, theme: "mcw-dark", minimap: { enabled: false }, renderSideBySide: true, useInlineViewWhenSpaceIsLimited: false, renderOverviewRuler: false, scrollBeyondLastLine: false, fontSize: 12 });
+    const editor = monaco.editor.createDiffEditor(ref.current, { automaticLayout: true, readOnly: true, theme: "mcw-dark", minimap: { enabled: false }, renderSideBySide: true, useInlineViewWhenSpaceIsLimited: false, renderOverviewRuler: false, scrollBeyondLastLine: false, ...MONACO_DIFF_TYPOGRAPHY });
     editor.setModel({ original, modified });
     return () => { editor.dispose(); original.dispose(); modified.dispose(); };
   }, [diff, hash]);

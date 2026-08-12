@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
 import { useEffect, useRef, useState } from "react";
 import { droppedPathsAsPromptText } from "./drop-paths";
+import { CONTENT_TYPOGRAPHY } from "./renderer-typography";
 import { createTerminalOutputFilter } from "./terminal-output-filter";
 import "@xterm/xterm/css/xterm.css";
 
@@ -101,8 +102,8 @@ export function TerminalPane({
       cursorBlink: false,
       cursorStyle: "bar",
       fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
-      fontSize: 13,
-      lineHeight: 1.25,
+      fontSize: CONTENT_TYPOGRAPHY.codeFontSize,
+      lineHeight: CONTENT_TYPOGRAPHY.terminalLineHeight,
       // Without a handler, xterm confirms the click and then calls window.open(), which
       // secureBrowserWindow() denies, so the link never opens. Hand the URL to the OS browser
       // through the main process instead. allowNonHttpProtocols stays off, so only http(s) links

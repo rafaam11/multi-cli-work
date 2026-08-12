@@ -3,6 +3,7 @@ import type { FileExplorerTarget } from "@shared/file-explorer-types";
 import { FileWarning, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { monaco } from "./monaco-setup";
+import { MONACO_DIFF_TYPOGRAPHY } from "./renderer-typography";
 
 export interface GitDiffFile {
   target: FileExplorerTarget;
@@ -89,7 +90,7 @@ export function GitDiffPane({ file, onClose }: GitDiffPaneProps) {
       theme: "mcw-dark",
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
-      fontSize: 12,
+      ...MONACO_DIFF_TYPOGRAPHY,
       renderOverviewRuler: false,
       // VS Code's default look: two panes, without the width heuristic collapsing them to inline.
       renderSideBySide: true,
