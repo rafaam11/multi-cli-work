@@ -4,9 +4,9 @@
  * geometry to give — a view is a preset plus its slots — so a snap is expressed in the only terms
  * the grid has: pick the preset that draws that region as a slot, and put the pane in it.
  *
- * The pane counts follow from the regions themselves. Half of the screen is 좌우, a quarter is 2×2,
- * and the whole of it is 전체 — every one of them a preset the picker already offers, so a snap
- * never leaves the view somewhere the user could not have chosen by hand.
+ * The layouts follow from the regions themselves. The whole screen is one column, a half is two,
+ * and a quarter is two columns with both split — the one arrangement here the picker has no tile
+ * for, but still nothing the user could not have built by hand from the pane headers.
  */
 
 export type SnapZoneId =
@@ -43,11 +43,13 @@ function band(length: number): number {
   return Math.min(Math.max(length * BAND_SHARE, MIN_BAND), MAX_BAND);
 }
 
-/** `4-quad` reads `"s1 s2" "s3 s4"`, so its slots are the quarters in this order. */
+/** Two columns split in two. Slots are numbered column first, so the left pair comes before the right. */
+const QUAD_COLUMNS = "cols:2-2";
+
 const CORNERS: Record<string, { id: SnapZoneId; slotIndex: number; label: string }> = {
   "left-top": { id: "top-left", slotIndex: 0, label: "좌상 (4칸)" },
-  "right-top": { id: "top-right", slotIndex: 1, label: "우상 (4칸)" },
-  "left-bottom": { id: "bottom-left", slotIndex: 2, label: "좌하 (4칸)" },
+  "left-bottom": { id: "bottom-left", slotIndex: 1, label: "좌하 (4칸)" },
+  "right-top": { id: "top-right", slotIndex: 2, label: "우상 (4칸)" },
   "right-bottom": { id: "bottom-right", slotIndex: 3, label: "우하 (4칸)" },
 };
 
@@ -81,18 +83,18 @@ export function resolveSnapZone(rect: SnapRect, clientX: number, clientY: number
     const corner = CORNERS[`${side}-${end}`];
     return {
       ...corner,
-      layoutId: "4-quad",
+      layoutId: QUAD_COLUMNS,
       rect: { left: side === "left" ? 0 : 0.5, top: end === "top" ? 0 : 0.5, width: 0.5, height: 0.5 },
     };
   }
   if (end === "top") {
-    return { id: "top", layoutId: "solo", slotIndex: 0, label: "전체", rect: { left: 0, top: 0, width: 1, height: 1 } };
+    return { id: "top", layoutId: "cols:1", slotIndex: 0, label: "전체", rect: { left: 0, top: 0, width: 1, height: 1 } };
   }
   if (side === "left") {
-    return { id: "left", layoutId: "2-col", slotIndex: 0, label: "좌측 (2칸)", rect: { left: 0, top: 0, width: 0.5, height: 1 } };
+    return { id: "left", layoutId: "cols:1-1", slotIndex: 0, label: "좌측 (2칸)", rect: { left: 0, top: 0, width: 0.5, height: 1 } };
   }
   if (side === "right") {
-    return { id: "right", layoutId: "2-col", slotIndex: 1, label: "우측 (2칸)", rect: { left: 0.5, top: 0, width: 0.5, height: 1 } };
+    return { id: "right", layoutId: "cols:1-1", slotIndex: 1, label: "우측 (2칸)", rect: { left: 0.5, top: 0, width: 0.5, height: 1 } };
   }
   return null;
 }

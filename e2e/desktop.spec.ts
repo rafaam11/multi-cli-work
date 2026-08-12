@@ -838,8 +838,8 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // The layout is what says how many panes a page holds. Down to one, and the second session is
     // not gone — it is on page two, still running, still a row in the tree.
-    await layoutBar.getByRole("radio", { name: "전체 (1칸)" }).click();
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "solo");
+    await layoutBar.getByRole("radio", { name: "1열" }).click();
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "cols:1");
     await expect(page.locator(".grid-pane")).toHaveCount(1);
     await expect(pane("Echo Agent")).toBeVisible();
     await expect(paneRow(SHELL_LABEL)).toBeVisible();
@@ -871,7 +871,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // Back to the folder, which kept both panes and the layout it was left on.
     await openFolder();
-    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "solo");
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "cols:1");
     await layoutBar.getByRole("radio", { name: "자동" }).click();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
     await expect(pane(SHELL_LABEL)).toBeVisible();
@@ -894,7 +894,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // — which is what actually decides how many panes a page holds — is pinned to one as well.
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "3");
     await soloPane(`${SHELL_LABEL} 2`);
-    await page.locator(".layout-bar").getByRole("radio", { name: "전체 (1칸)" }).click();
+    await page.locator(".layout-bar").getByRole("radio", { name: "1열" }).click();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "1");
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
@@ -951,6 +951,34 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.press("Enter");
     await expect(page.locator(".active-status")).toHaveText("종료됨");
     await removeSessionFromPane(`${SHELL_LABEL} 2`);
+  });
+
+  /**
+   * Adding work is not switching to it. The session really starts and really gets its row, but the
+   * screen the user was reading — here the home dashboard — and the keyboard focus stay put.
+   */
+  test("starts a session from the folder's context menu without leaving the screen", async () => {
+    await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
+    const dashboard = page.getByRole("region", { name: "홈 대시보드" });
+    await expect(dashboard).toBeVisible();
+
+    const rows = page.locator(".session-row");
+    const before = await rows.count();
+    // The row the focus is on, if any — the session that quietly starts must not take it over.
+    const focusedRowLabels = () =>
+      page.locator(".session-row.current").evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")));
+    const focusedBefore = await focusedRowLabels();
+
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Sample Project 작업" });
+    await expect(menu.getByText("새 세션")).toBeVisible();
+    await menu.getByRole("menuitem", { name: SHELL_LABEL, exact: true }).click();
+    await expect(menu).toBeHidden();
+
+    await expect(rows).toHaveCount(before + 1);
+    await expect(dashboard).toBeVisible();
+    await expect(page.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeHidden();
+    expect(await focusedRowLabels()).toEqual(focusedBefore);
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {

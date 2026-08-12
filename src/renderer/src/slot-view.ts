@@ -1,8 +1,12 @@
 import type { SlotViewState } from "@shared/app-state-types";
 import {
   DEFAULT_LAYOUT_ID,
+  MAX_COLUMNS,
   MAX_LAYOUT_SLOTS,
+  MAX_ROWS_PER_COLUMN,
   autoLayoutFor,
+  buildLayout,
+  columnOfSlot,
   defaultLayoutFor,
   isAutoLayout,
   layoutById,
@@ -154,11 +158,77 @@ export function setLayout(view: SlotViewState, layoutId: string): SlotViewState 
 }
 
 /**
+ * Splitting and merging are addressed the way the user sees them: the slot on the page they are
+ * looking at. Both take the layout the grid is actually drawing rather than re-deriving it, because
+ * a 자동 view's arrangement is a decision `resolveView` has already made — making it twice is how the
+ * two would drift apart.
+ *
+ * A split on a 자동 view pins it to a fixed layout. 자동 means "one column per session", which has no
+ * room for a stacked pair; asking for one is picking an arrangement by hand.
+ */
+/**
+ * Where a slot on the page in front of the user sits in the flat array. The stride is the view's
+ * page size and not the drawn layout's slot count: a 자동 page draws only as many columns as it has
+ * panes, so its last page is narrower than the stride that got the user there.
+ */
+function absoluteSlotOf(view: SlotViewState, page: number, slotIndex: number): number {
+  return Math.max(page, 0) * viewPageSize(view) + slotIndex;
+}
+
+/**
+ * Gives this slot's column a second row, leaving every other column at full height. The new row
+ * opens empty directly below the pane that asked for it, and the panes after it each move back one
+ * slot — the same rule a drop follows.
+ */
+export function splitColumnAt(
+  view: SlotViewState,
+  layout: GridLayout,
+  page: number,
+  slotIndex: number,
+): SlotViewState {
+  const found = columnOfSlot(layout.columnRows, slotIndex);
+  if (!found || found.rows >= MAX_ROWS_PER_COLUMN || layout.slots >= MAX_LAYOUT_SLOTS) return view;
+  const columnRows = [...layout.columnRows];
+  columnRows[found.column] = found.rows + 1;
+  const next = buildLayout(columnRows);
+  const at = absoluteSlotOf(view, page, found.start + found.rows);
+  const slots: (string | null)[] = [...view.slots];
+  while (slots.length < at) slots.push(null);
+  slots.splice(at, 0, null);
+  return { layoutId: next.id, slots: tidySlots(next.id, slots) };
+}
+
+/**
+ * Puts this slot's column back to one full-height pane. The column's top pane is the one that
+ * stays, whichever of the two the user pressed the button on. The lower pane leaves the grid the
+ * way `clearSlot` takes one off — the entry is spliced out and the panes behind it move forward —
+ * so it is off the arrangement but not closed: its session keeps running and its tab is still there
+ * to drag back in.
+ */
+export function mergeColumnAt(
+  view: SlotViewState,
+  layout: GridLayout,
+  page: number,
+  slotIndex: number,
+): SlotViewState {
+  const found = columnOfSlot(layout.columnRows, slotIndex);
+  if (!found || found.rows <= 1) return view;
+  const columnRows = [...layout.columnRows];
+  columnRows[found.column] = 1;
+  const next = buildLayout(columnRows);
+  const at = absoluteSlotOf(view, page, found.start + 1);
+  const slots = [...view.slots];
+  if (at < slots.length) slots.splice(at, found.rows - 1);
+  return { layoutId: next.id, slots: tidySlots(next.id, slots) };
+}
+
+/**
  * How many slots one page holds. A preset says so itself; 자동 has no fixed answer, so it takes the
- * ceiling and lets the page's own session count choose the arrangement.
+ * ceiling and lets the page's own session count choose the arrangement. That ceiling is the column
+ * cap, not the slot cap — 자동 draws plain columns and never splits one, so it cannot reach twelve.
  */
 export function viewPageSize(view: SlotViewState): number {
-  if (isAutoLayout(view.layoutId)) return MAX_LAYOUT_SLOTS;
+  if (isAutoLayout(view.layoutId)) return MAX_COLUMNS;
   const known = layoutById(view.layoutId);
   if (known) return known.slots;
   return defaultLayoutFor(view.slots.filter((id) => id !== null).length).slots;

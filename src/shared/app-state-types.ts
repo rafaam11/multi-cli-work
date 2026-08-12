@@ -28,11 +28,11 @@ export interface PersistedTerminalSession {
 }
 
 /**
- * One page of the workspace grid never shows more panes than this — no layout has more slots.
- * The cap lives here because it guards the `terminals:set-visible-sessions` contract in main,
- * which cannot see the renderer's layout catalog.
+ * One page of the workspace grid never shows more panes than this — six columns, each split at
+ * most once. The cap lives here because it guards the `terminals:set-visible-sessions` contract in
+ * main, which cannot see the renderer's layout model.
  */
-export const MAX_VISIBLE_SESSIONS = 6;
+export const MAX_VISIBLE_SESSIONS = 12;
 
 /** How many workspaces the sidebar offers. Fixed at three; naming and resizing them are later work. */
 export const WORKSPACE_COUNT = 3;

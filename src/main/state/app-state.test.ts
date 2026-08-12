@@ -105,10 +105,11 @@ describe("session agent ids", () => {
     expect(parseAppState(splitOnly).visibleSessionIds).toEqual(["session-2"]);
   });
 
-  it("deduplicates and caps the visible grid sessions at six panes", () => {
+  it("deduplicates and caps the visible grid sessions at twelve panes", () => {
     const state = stateWithKind("powershell") as Record<string, unknown>;
-    state.visibleSessionIds = ["a", "b", "a", "c", "d", "e", "f", "g"];
-    expect(parseAppState(state).visibleSessionIds).toEqual(["a", "b", "c", "d", "e", "f"]);
+    const rest = Array.from({ length: 12 }, (_, index) => `s${index}`);
+    state.visibleSessionIds = ["a", "b", "a", ...rest];
+    expect(parseAppState(state).visibleSessionIds).toEqual(["a", "b", ...rest.slice(0, 10)]);
 
     state.visibleSessionIds = [];
     expect(Object.keys(parseAppState(state))).not.toContain("visibleSessionIds");

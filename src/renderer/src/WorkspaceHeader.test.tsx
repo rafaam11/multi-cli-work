@@ -74,8 +74,8 @@ describe("WorkspaceHeader", () => {
 
   it("reports the layout the user picked", () => {
     const { props } = renderHeader();
-    fireEvent.click(screen.getByRole("radio", { name: "좌우 (2칸)" }));
-    expect(props.layout?.onSelect).toHaveBeenCalledWith("2-col");
+    fireEvent.click(screen.getByRole("radio", { name: "2열" }));
+    expect(props.layout?.onSelect).toHaveBeenCalledWith("cols:1-1");
   });
 
   /** A workspace holds panes from several folders, so it has no folder controls — but it has a grid. */

@@ -847,10 +847,10 @@ describe("folder workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
     expect(await screen.findByText("Atlas에서 시작")).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeInTheDocument();
-    expect(screen.getByText("첫 세션은 전체 배치로 열립니다")).toBeInTheDocument();
+    expect(screen.getByText("첫 세션은 1열 배치로 열립니다")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("radio", { name: "좌우 (2칸)" }));
-    expect(screen.getByText("첫 세션은 좌우 배치로 열립니다")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "2열" }));
+    expect(screen.getByText("첫 세션은 2열 배치로 열립니다")).toBeInTheDocument();
   });
 
   /** The start page reads the folder's branch, which is the thing the old empty state never said. */

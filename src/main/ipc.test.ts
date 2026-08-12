@@ -362,6 +362,24 @@ describe("main IPC boundary", () => {
     expect(coordinator.create).not.toHaveBeenCalled();
   });
 
+  it("keeps the restored selection when the sidebar starts a session in the background", async () => {
+    const { handlers, coordinator } = setup();
+    const input = { projectId: "project-1", kind: "codex", cols: 80, rows: 24 };
+
+    await handlers.get("terminals:create")!({}, { ...input, background: true });
+    expect(coordinator.create).toHaveBeenLastCalledWith(
+      { ...input, background: true },
+      { updateSelection: false },
+    );
+
+    // Every other launcher still takes the user to the session, so it stays the one that reopens.
+    await handlers.get("terminals:create")!({}, input);
+    expect(coordinator.create).toHaveBeenLastCalledWith(input, { updateSelection: true });
+
+    await expect(handlers.get("terminals:create")!({}, { ...input, background: "yes" }))
+      .rejects.toThrow(/background/i);
+  });
+
   it("rejects unknown project metadata fields", async () => {
     const { handlers, projectService } = setup();
 

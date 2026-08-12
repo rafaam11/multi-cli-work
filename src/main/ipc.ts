@@ -68,7 +68,7 @@ interface WorkProjectServiceGateway {
 interface TerminalCoordinatorGateway {
   list(): unknown;
   state(): Promise<unknown>;
-  create(input: CreateTerminalInput): Promise<unknown>;
+  create(input: CreateTerminalInput, options?: { updateSelection?: boolean }): Promise<unknown>;
   createTool(input: CreateToolTerminalInput): Promise<unknown>;
   /** The renderer-facing attach: it may lazily auto-resume a session interrupted by app shutdown. */
   attachForRenderer(sessionId: string): Promise<unknown>;
@@ -293,12 +293,19 @@ function slotViewsInput(value: unknown, label = "Slot views"): SlotViewsInput {
  * back as "Unknown agent" from the coordinator.
  */
 function validateCreateInput(value: unknown): CreateTerminalInput {
-  const input = exactObject(value, ["projectId", "kind", "worktreeId", "cols", "rows"], "Terminal create input");
+  const input = exactObject(
+    value,
+    ["projectId", "kind", "worktreeId", "cols", "rows", "background"],
+    "Terminal create input",
+  );
   if (typeof input.kind !== "string" || !AGENT_ID_PATTERN.test(input.kind)) {
     throw new Error("Terminal kind is invalid");
   }
   if (input.worktreeId !== undefined && (typeof input.worktreeId !== "string" || input.worktreeId.length === 0)) {
     throw new Error("Worktree id is invalid");
+  }
+  if (input.background !== undefined && typeof input.background !== "boolean") {
+    throw new Error("Terminal background flag must be a boolean");
   }
   return {
     projectId: nonEmptyString(input.projectId, "Project id"),
@@ -306,6 +313,7 @@ function validateCreateInput(value: unknown): CreateTerminalInput {
     ...(input.worktreeId !== undefined ? { worktreeId: input.worktreeId } : {}),
     cols: integer(input.cols, "Terminal columns"),
     rows: integer(input.rows, "Terminal rows"),
+    ...(input.background !== undefined ? { background: input.background } : {}),
   };
 }
 
@@ -884,7 +892,12 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("attention:state", () => dependencies.attentionState());
   ipc.handle("terminals:list", () => dependencies.coordinator.list());
   ipc.handle("terminals:state", () => dependencies.coordinator.state());
-  ipc.handle("terminals:create", async (_event, input: unknown) => dependencies.coordinator.create(validateCreateInput(input)));
+  ipc.handle("terminals:create", async (_event, input: unknown) => {
+    // A background start puts a session in a folder's grid without going to it, so it must leave
+    // the saved selection — what the next launch reopens — pointing wherever the user actually is.
+    const created = validateCreateInput(input);
+    return dependencies.coordinator.create(created, { updateSelection: created.background !== true });
+  });
   ipc.handle("terminals:create-tool", async (_event, input: unknown) =>
     dependencies.coordinator.createTool(validateCreateToolInput(input)),
   );

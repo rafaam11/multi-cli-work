@@ -592,6 +592,41 @@ describe("TerminalCoordinator", () => {
     expect(stored.state).toMatchObject({ selectedProjectId: "project-1", selectedSessionId: "session-1" });
   });
 
+  it("keeps the persisted selection when a new session is created in the background", async () => {
+    const root = await tempRoot();
+    let created = 0;
+    const instance = new TerminalCoordinator({
+      worker: new FakeWorker(),
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async (id) => (id === project.id ? project : null),
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: "code.cmd",
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: { SYSTEMROOT: "C:\\Windows" },
+      idFactory: () => `session-${++created}`,
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+    });
+    await instance.initialize();
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    // The sidebar's context menu starts a second session without going to it, so the next launch
+    // must still reopen the one the user was actually working in.
+    await instance.create(
+      { projectId: "project-1", kind: "codex", cols: 80, rows: 24 },
+      { updateSelection: false },
+    );
+
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(instance.list().map((view) => view.id)).toEqual(["session-1", "session-2"]);
+    expect(stored.state).toMatchObject({ selectedProjectId: "project-1", selectedSessionId: "session-1" });
+  });
+
   it("never forwards resize requests for exited or errored sessions", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
@@ -1157,8 +1192,8 @@ describe("worktree sessions", () => {
     await instance.setVisibleSessions([first.id, second.id]);
     expect((await readAppState({ statePath })).state.visibleSessionIds).toEqual([first.id, second.id]);
     await expect(instance.setVisibleSessions(["missing"])).rejects.toThrow(/unknown terminal session/i);
-    const tooMany = Array.from({ length: 7 }, (_, index) => `session-${index}`);
-    await expect(instance.setVisibleSessions(tooMany)).rejects.toThrow(/at most 6/i);
+    const tooMany = Array.from({ length: 13 }, (_, index) => `session-${index}`);
+    await expect(instance.setVisibleSessions(tooMany)).rejects.toThrow(/at most 12/i);
 
     await instance.remove(first.id);
     expect((await readAppState({ statePath })).state.visibleSessionIds).toEqual([second.id]);

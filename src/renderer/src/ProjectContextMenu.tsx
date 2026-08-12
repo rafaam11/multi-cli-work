@@ -1,5 +1,8 @@
+import type { AgentId, AgentView } from "@shared/agent-types";
 import { Briefcase, FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
 import { GitHubIcon, VSCodeIcon } from "./brand-icons";
+import { NewSessionMenuItems } from "./NewSessionMenuItems";
+import { useClampedMenuPosition } from "./context-menu-position";
 import { useEffect, useRef, type CSSProperties } from "react";
 
 export interface ProjectContextMenuProps {
@@ -7,6 +10,11 @@ export interface ProjectContextMenuProps {
   x: number;
   y: number;
   vscodeAvailable: boolean;
+  agents: readonly AgentView[];
+  /** Why this folder cannot start anything, or null when it can. */
+  newSessionDisabledReason: string | null;
+  /** Starts the session in the folder's root without going to it. */
+  onStartSession(agentId: AgentId): void;
   /** Every work project the folder could move to; `current` marks where it already belongs. */
   workProjectOptions: Array<{ id: string; name: string; current: boolean }>;
   onMoveToWorkProject(workProjectId: string | null): void;
@@ -24,6 +32,9 @@ export function ProjectContextMenu({
   x,
   y,
   vscodeAvailable,
+  agents,
+  newSessionDisabledReason,
+  onStartSession,
   workProjectOptions,
   onMoveToWorkProject,
   onReveal,
@@ -35,6 +46,7 @@ export function ProjectContextMenu({
   onClose,
 }: ProjectContextMenuProps) {
   const menu = useRef<HTMLDivElement>(null);
+  const position = useClampedMenuPosition(x, y, menu);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -62,8 +74,13 @@ export function ProjectContextMenu({
       role="menu"
       aria-label={`${projectName} 작업`}
       ref={menu}
-      style={{ "--context-menu-x": `${x}px`, "--context-menu-y": `${y}px` } as CSSProperties}
+      style={{ "--context-menu-x": `${position.x}px`, "--context-menu-y": `${position.y}px` } as CSSProperties}
     >
+      <NewSessionMenuItems
+        agents={agents}
+        disabledReason={newSessionDisabledReason}
+        onStart={(agentId) => run(() => onStartSession(agentId))()}
+      />
       <button type="button" role="menuitem" onClick={run(onReveal)}>
         <FolderOpen size={15} />
         <span>파일 탐색기에서 열기</span>

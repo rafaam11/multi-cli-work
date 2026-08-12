@@ -44,7 +44,7 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
   const slots = overrides.slots ?? [sessionSlot(makeSession("session-1"))];
   const sessions = sessionsOf(slots);
   const props: Parameters<typeof WorkspaceGrid>[0] = {
-    layout: layoutById("solo")!,
+    layout: layoutById("cols:1")!,
     slots,
     allSessions: sessions,
     agents: [],
@@ -64,6 +64,8 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
     onRefreshSession: vi.fn(),
     onStopSession: vi.fn(),
     onClearSlot: vi.fn(),
+    onSplitColumn: vi.fn(),
+    onMergeColumn: vi.fn(),
     onRemoveSession: vi.fn(),
     onDropPane: vi.fn(),
     onSnapPane: vi.fn(),
@@ -80,7 +82,7 @@ afterEach(cleanup);
 
 describe("WorkspaceGrid", () => {
   it("draws the layout it is given and puts each pane in its own area", () => {
-    const layout = layoutById("4-thirds-right")!;
+    const layout = layoutById("cols:1-1-2")!;
     const sessions = [makeSession("session-1"), makeSession("session-2"), makeSession("session-3")];
     const { container } = renderGrid({ layout, slots: [...sessions.map(sessionSlot), null] });
 
@@ -98,7 +100,7 @@ describe("WorkspaceGrid", () => {
 
   it("leaves an open slot as a labelled drop target instead of collapsing the layout", () => {
     const { container } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: [null, sessionSlot(makeSession("session-2"))],
     });
     const empty = screen.getByLabelText("빈 슬롯 1 — 세션을 끌어다 놓기");
@@ -108,7 +110,7 @@ describe("WorkspaceGrid", () => {
 
   it("reports the slot a dropped pane landed on, ignoring drags that carry no pane", () => {
     const { props } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: [sessionSlot(makeSession("session-1")), null],
     });
     const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
@@ -124,7 +126,7 @@ describe("WorkspaceGrid", () => {
 
   it("outlines the slot under the cursor while a pane drag is in flight", () => {
     const { container } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: [sessionSlot(makeSession("session-1")), null],
     });
     const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
@@ -164,7 +166,7 @@ describe("WorkspaceGrid", () => {
 
   it("previews the region an edge drop would fill, and snaps the pane into it", () => {
     const { container, props } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: [sessionSlot(makeSession("session-1")), null],
     });
     const grid = gridSized(container);
@@ -182,14 +184,14 @@ describe("WorkspaceGrid", () => {
     dragAt(empty, "drop", 4, 4);
     expect(props.onDropPane).not.toHaveBeenCalled();
     expect(props.onSnapPane).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "top-left", layoutId: "4-quad", slotIndex: 0 }),
+      expect.objectContaining({ id: "top-left", layoutId: "cols:2-2", slotIndex: 0 }),
       "session-7",
     );
   });
 
   it("leaves the middle of the grid to the ordinary slot-for-slot drop", () => {
     const { container, props } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: [sessionSlot(makeSession("session-1")), null],
     });
     gridSized(container);
@@ -206,7 +208,7 @@ describe("WorkspaceGrid", () => {
 
   it("clears the snap preview when the drag leaves the grid", () => {
     const { container } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: [sessionSlot(makeSession("session-1")), null],
     });
     const grid = gridSized(container);
@@ -243,7 +245,7 @@ describe("WorkspaceGrid", () => {
   it("marks only the focused pane and moves focus when another pane is pressed", () => {
     const sessions = [makeSession("session-1"), makeSession("session-2")];
     const { container, props } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: sessions.map(sessionSlot),
       focusedPaneId: "session-1",
     });
@@ -261,7 +263,7 @@ describe("WorkspaceGrid", () => {
 
   it("gives a document the same slot, header and close button a terminal gets", () => {
     const { props } = renderGrid({
-      layout: layoutById("2-col")!,
+      layout: layoutById("cols:1-1")!,
       slots: [
         sessionSlot(makeSession("session-1")),
         {
@@ -287,7 +289,7 @@ describe("WorkspaceGrid", () => {
 
   it("empties the slot by index, renames inline, and offers resume for a finished session", () => {
     const sessions = [makeSession("session-1", { status: "exited" }), makeSession("session-2")];
-    const { props, rerender } = renderGrid({ layout: layoutById("2-col")!, slots: sessions.map(sessionSlot) });
+    const { props, rerender } = renderGrid({ layout: layoutById("cols:1-1")!, slots: sessions.map(sessionSlot) });
 
     fireEvent.click(screen.getAllByRole("button", { name: "슬롯 비우기" })[0]!);
     expect(props.onClearSlot).toHaveBeenCalledWith(0);
@@ -303,6 +305,80 @@ describe("WorkspaceGrid", () => {
     fireEvent.change(input, { target: { value: "새 이름" } });
     fireEvent.submit(input.closest("form")!);
     expect(props.onRenameSession).toHaveBeenCalledWith("session-2", "새 이름");
+  });
+
+  it("splits the column a pane's own button names, and only that column", () => {
+    const sessions = [makeSession("session-1"), makeSession("session-2"), makeSession("session-3")];
+    const { props } = renderGrid({
+      layout: layoutById("cols:1-1-1")!,
+      slots: sessions.map(sessionSlot),
+    });
+
+    const buttons = screen.getAllByRole("button", { name: "열 세로분할" });
+    expect(buttons).toHaveLength(3);
+    fireEvent.click(buttons[1]!);
+    expect(props.onSplitColumn).toHaveBeenCalledWith(1);
+    expect(props.onMergeColumn).not.toHaveBeenCalled();
+  });
+
+  it("offers the merge instead once a column holds two rows, from either of its panes", () => {
+    const sessions = [makeSession("session-1"), makeSession("session-2"), makeSession("session-3")];
+    const { props } = renderGrid({
+      layout: layoutById("cols:1-2-1")!,
+      slots: [...sessions.map(sessionSlot), null],
+    });
+
+    // Only the middle column's pair is stacked, so only those two say 해제.
+    expect(screen.getAllByRole("button", { name: "열 세로분할" })).toHaveLength(1);
+    const merges = screen.getAllByRole("button", { name: "열 분할 해제" });
+    expect(merges).toHaveLength(2);
+
+    fireEvent.click(merges[1]!);
+    expect(props.onMergeColumn).toHaveBeenCalledWith(2);
+    expect(props.onSplitColumn).not.toHaveBeenCalled();
+  });
+
+  /** A column with nothing in it is not one anybody wants to split further. */
+  it("leaves an empty slot without a split button", () => {
+    renderGrid({ layout: layoutById("cols:1-1")!, slots: [sessionSlot(makeSession("session-1")), null] });
+    expect(screen.getAllByRole("button", { name: "열 세로분할" })).toHaveLength(1);
+  });
+
+  it("gives a document pane the same button — splitting a column is not a terminal's privilege", () => {
+    const { props } = renderGrid({
+      layout: layoutById("cols:1-1")!,
+      slots: [
+        sessionSlot(makeSession("session-1")),
+        {
+          kind: "document",
+          document: {
+            id: "file:project:atlas:README.md",
+            kind: "file",
+            label: "README.md",
+            detail: "atlas",
+            dirty: false,
+            owner: { kind: "project", id: "project-atlas" },
+          },
+          content: <div />,
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "열 세로분할" })[1]!);
+    expect(props.onSplitColumn).toHaveBeenCalledWith(1);
+  });
+
+  /**
+   * Twelve is the cap, and with two rows per column it is reached exactly when every column is
+   * already split — so a full page offers merges rather than a row of dead buttons. The disabled
+   * state the button can render is the guard for a taller column, not for this arrangement.
+   */
+  it("offers no split at all on a full twelve-pane page", () => {
+    const sessions = Array.from({ length: 12 }, (_, index) => makeSession(`session-${index}`));
+    renderGrid({ layout: layoutById("cols:2-2-2-2-2-2")!, slots: sessions.map(sessionSlot) });
+
+    expect(screen.queryAllByRole("button", { name: "열 세로분할" })).toHaveLength(0);
+    expect(screen.getAllByRole("button", { name: "열 분할 해제" })).toHaveLength(12);
   });
 
   it("blocks resume while the session's folder is missing", () => {

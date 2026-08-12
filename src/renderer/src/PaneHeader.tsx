@@ -1,11 +1,61 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import { CircleStop, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
+import { CircleStop, RefreshCw, RotateCcw, Square, SquareSplitVertical, Trash2, X } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
+import { MAX_LAYOUT_SLOTS } from "./grid-layouts";
 import { SessionNameInput } from "./SessionNameInput";
 import { startSessionDrag } from "./session-drag";
 import { findAgent, statusLabels } from "./session-labels";
+
+/** What a pane needs to know about its own column to offer the split. */
+export interface ColumnSplitControls {
+  /** True when this pane's column already holds two rows. */
+  split: boolean;
+  /** False once the column is at its row cap, or the page is at its slot cap. */
+  canSplit: boolean;
+  onSplit(): void;
+  onMerge(): void;
+}
+
+/**
+ * Stacking is a per-column decision, so the button that makes it rides on the pane rather than in
+ * the layout picker — with several columns on screen only the pane itself says which column a click
+ * means. It is a toggle: a full-height column splits in two, a split one goes back to full height.
+ *
+ * Both panes of a split column carry the undo, and the top one is what survives it either way.
+ */
+export function ColumnSplitButton({ split, canSplit, onSplit, onMerge }: ColumnSplitControls) {
+  if (split) {
+    return (
+      <button
+        className="icon-button"
+        type="button"
+        onClick={onMerge}
+        aria-label="열 분할 해제"
+        title="열 분할 해제 (위쪽 패인이 열을 차지합니다)"
+      >
+        <Square size={13} />
+      </button>
+    );
+  }
+  return (
+    <button
+      className="icon-button"
+      type="button"
+      onClick={onSplit}
+      disabled={!canSplit}
+      aria-label="열 세로분할"
+      title={
+        canSplit
+          ? "열 세로분할 (이 열만 위아래로 나눕니다)"
+          : `열을 더 나눌 수 없습니다 (한 페이지 최대 ${MAX_LAYOUT_SLOTS}칸)`
+      }
+    >
+      <SquareSplitVertical size={13} />
+    </button>
+  );
+}
 
 interface PaneHeaderProps {
   session: TerminalSessionView;
@@ -16,6 +66,8 @@ interface PaneHeaderProps {
   refreshing: boolean;
   /** A missing folder blocks resume until it is relinked; tool sessions never are. */
   resumeBlocked: boolean;
+  /** This pane's column, and what splitting it would do. */
+  columnSplit: ColumnSplitControls;
   onStartRename(): void;
   onRename(name: string | null): void;
   onCancelRename(): void;
@@ -44,6 +96,7 @@ export function PaneHeader({
   pendingAction,
   refreshing,
   resumeBlocked,
+  columnSplit,
   onStartRename,
   onRename,
   onCancelRename,
@@ -78,6 +131,7 @@ export function PaneHeader({
         </span>
       )}
       <div className="pane-actions">
+        <ColumnSplitButton {...columnSplit} />
         {finished ? (
           <button
             className="icon-button"

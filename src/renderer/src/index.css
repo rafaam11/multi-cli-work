@@ -3182,9 +3182,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface-hover);
 }
 
+/* Wide enough that six columns still read as six strips rather than a smear: 1px gaps leave each
+   cell about 6px, which is the narrowest a tile column can be and still be counted at a glance. */
 .layout-preview {
   display: grid;
-  width: 34px;
+  width: 44px;
   height: 24px;
   gap: 1px;
 }
@@ -3271,7 +3273,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   top: var(--context-menu-y);
   left: var(--context-menu-x);
   width: 212px;
+  /* The menus are moved back inside the window before they paint; one taller than the window is the
+     case that cannot be moved, so it scrolls rather than losing its last items off the bottom. */
+  max-height: calc(100vh - 16px);
   padding: 5px;
+  overflow-y: auto;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: var(--surface-raised);

@@ -1,4 +1,4 @@
-import { AUTO_LAYOUT_ID, GRID_LAYOUTS, autoLayoutFor, isAutoLayout, type GridLayout } from "./grid-layouts";
+import { AUTO_LAYOUT_ID, GRID_LAYOUTS, autoLayoutFor, isAutoLayout, layoutById, type GridLayout } from "./grid-layouts";
 
 interface LayoutPickerProps {
   layoutId: string;
@@ -29,16 +29,23 @@ function LayoutPreview({ layout }: { layout: GridLayout }) {
 }
 
 /**
- * Every arrangement in one row, riding in the workspace header beside the launchers rather than
+ * How many columns, in one row, riding in the workspace header beside the launchers rather than
  * costing the grid a row of its own — a terminal's height is the scarce thing on this screen.
- * Switching is a routine move, so it stays one click: no popup, no per-count sections. The tiles
- * read as the catalog does, 자동 first and then the presets in ascending slot count, and since the
- * layout decides how many slots exist this is also where a user says how many panes they want at
- * once. Sessions past that count move to the next page rather than disappearing, which the tile's
- * own tooltip says out loud.
+ * Switching is a routine move, so it stays one click: no popup, no per-count sections.
+ *
+ * Only whole columns are offered. Splitting one is a decision about a single column, and the pane
+ * that owns it carries that button; putting all sixty-four combinations in this row would say the
+ * same thing far worse.
+ *
+ * A view whose columns are split still marks the tile for its column count, and pressing that tile
+ * clears the splits — the tile is a picture of what the grid will draw, and it would be lying if
+ * pressing it left stacked panes behind. The tooltip says so before the click.
  */
 export function LayoutPicker({ layoutId, paneCount, onSelect }: LayoutPickerProps) {
   const auto = isAutoLayout(layoutId);
+  const current = auto ? null : layoutById(layoutId);
+  const currentColumns = current?.columnRows.length ?? 0;
+  const currentSplit = current?.columnRows.some((rows) => rows > 1) ?? false;
 
   return (
     <div className="layout-bar" role="radiogroup" aria-label="레이아웃 선택">
@@ -55,20 +62,27 @@ export function LayoutPicker({ layoutId, paneCount, onSelect }: LayoutPickerProp
         <span className="layout-option-label">자동</span>
       </button>
       <span className="layout-bar-divider" aria-hidden="true" />
-      {GRID_LAYOUTS.map((layout) => (
-        <button
-          key={layout.id}
-          type="button"
-          role="radio"
-          aria-checked={!auto && layout.id === layoutId}
-          aria-label={`${layout.label} (${layout.slots}칸)`}
-          title={`${layout.label} — ${layout.slots}칸. 넘치는 패인은 다음 페이지로 갑니다`}
-          className={`layout-option ${!auto && layout.id === layoutId ? "current" : ""}`}
-          onClick={() => onSelect(layout.id)}
-        >
-          <LayoutPreview layout={layout} />
-        </button>
-      ))}
+      {GRID_LAYOUTS.map((layout) => {
+        const isCurrent = layout.columnRows.length === currentColumns;
+        return (
+          <button
+            key={layout.id}
+            type="button"
+            role="radio"
+            aria-checked={isCurrent}
+            aria-label={layout.label}
+            title={
+              isCurrent && currentSplit
+                ? `${layout.label} — 분할 해제`
+                : `${layout.label}. 넘치는 패인은 다음 페이지로 갑니다`
+            }
+            className={`layout-option ${isCurrent ? "current" : ""}`}
+            onClick={() => onSelect(layout.id)}
+          >
+            <LayoutPreview layout={layout} />
+          </button>
+        );
+      })}
     </div>
   );
 }

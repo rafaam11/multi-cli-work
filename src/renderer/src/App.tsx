@@ -77,6 +77,8 @@ import {
   renamePaneId,
   resolveView,
   setLayout,
+  splitColumnAt,
+  mergeColumnAt,
   viewPageSize,
 } from "./slot-view";
 
@@ -974,6 +976,31 @@ export function App() {
   };
 
   /**
+   * Gives a pane its slot in the folder grid it belongs to: the grid catches up on the sessions it
+   * does not list yet, and the pane takes the next free slot if it has none. Nothing on screen
+   * moves — going to the pane is a separate step, and only some callers want it.
+   */
+  const placeInFolderView = (target: {
+    paneId: string;
+    projectId: string | null;
+    worktreeId: string | null;
+  }): SlotViewState => {
+    const key = folderViewKeyOf(target.projectId, target.worktreeId);
+    const caughtUp = catchUpFolder(
+      key,
+      folderSessionIds((candidate) =>
+        target.worktreeId
+          ? candidate.worktreeId === target.worktreeId
+          : candidate.projectId === target.projectId,
+      ),
+    );
+    if (caughtUp.slots.includes(target.paneId)) return caughtUp;
+    const view = appendSession(caughtUp, target.paneId);
+    setFolderViews((current) => ({ ...current, [key]: view }));
+    return view;
+  };
+
+  /**
    * Shows a pane in the folder grid it belongs to: switch to that folder, let its grid catch up,
    * give the pane a slot if it has none, and turn to the page holding it. Nothing else is rearranged.
    *
@@ -986,19 +1013,7 @@ export function App() {
     worktreeId: string | null;
     session?: TerminalSessionView;
   }) => {
-    const key = folderViewKeyOf(target.projectId, target.worktreeId);
-    let view = catchUpFolder(
-      key,
-      folderSessionIds((candidate) =>
-        target.worktreeId
-          ? candidate.worktreeId === target.worktreeId
-          : candidate.projectId === target.projectId,
-      ),
-    );
-    if (!view.slots.includes(target.paneId)) {
-      view = appendSession(view, target.paneId);
-      setFolderViews((current) => ({ ...current, [key]: view }));
-    }
+    const view = placeInFolderView(target);
     setWorkspaceIndex(null);
     setPage(pageOfSession(view.slots, viewPageSize(view), target.paneId) ?? 0);
     setSelectedProjectId(target.projectId);
@@ -1064,6 +1079,20 @@ export function App() {
     const paneId = resolvedView.slots[index] ?? null;
     updateCurrentView((view) => clearSlot(view, absoluteSlot(index)));
     if (paneId !== null && paneId === focusedPaneId) setFocusedPaneId(null);
+  };
+
+  /**
+   * Splitting is the one arrangement move made from the pane rather than the header, because it is
+   * the one that concerns a single column. Both handlers hand over the layout the grid is drawing —
+   * on 자동 that is a shape nothing has stored yet — so the slot index means the same thing on both
+   * sides. A split pins a 자동 view to that shape; 자동 has no room for a stacked pair.
+   */
+  const splitColumn = (index: number) => {
+    updateCurrentView((view) => splitColumnAt(view, resolvedView.layout, resolvedView.page, index));
+  };
+
+  const mergeColumn = (index: number) => {
+    updateCurrentView((view) => mergeColumnAt(view, resolvedView.layout, resolvedView.page, index));
   };
 
   /**
@@ -1381,6 +1410,51 @@ export function App() {
       setPendingAction(false);
     }
   };
+
+  /**
+   * The sidebar's context menus start a session without going to it. The pane still takes its slot
+   * in the folder's grid and still gets shelved, so it shows up wherever it belongs — but the page,
+   * the selection and the keyboard focus stay where the user left them, and the folder row's flash
+   * is the only thing that says where the session landed. Adding work is not switching to it.
+   */
+  const startSessionInBackground = async (project: SharedProject, kind: TerminalKind, worktreeId?: string) => {
+    if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
+    setPendingAction(true);
+    setActionError(null);
+    try {
+      const created = await window.multiCliWork.terminals.create({
+        projectId: project.id,
+        kind,
+        ...(worktreeId !== undefined ? { worktreeId } : {}),
+        ...DEFAULT_TERMINAL_SIZE,
+        background: true,
+      });
+      setSessions((current) => replaceSession(current, created));
+      placeInFolderView({ paneId: created.id, projectId: project.id, worktreeId: worktreeId ?? null });
+      collectIntoWorkspace(created.id);
+      flashFolder(project.id);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setPendingAction(false);
+    }
+  };
+
+  /**
+   * Why the sidebar menus' 새 세션 block cannot run right now, or null when it can. A folder whose
+   * root went missing has nowhere to start a shell, and a launch already in flight would be lost to
+   * the `pendingAction` guard — the menu says which it is instead of going quiet.
+   */
+  const newSessionDisabledReason = (projectId: string): string | null => {
+    if (isProjectMissing(projectId)) return "폴더를 찾을 수 없습니다";
+    if (pendingAction) return "다른 작업이 끝난 뒤에 시작할 수 있습니다";
+    return null;
+  };
+
+  /** The folder a worktree belongs to — a session needs it, since the worktree only narrows the cwd. */
+  const worktreeMenuProject = worktreeMenu
+    ? (projects.find((project) => project.id === worktreeMenu.worktree.projectId) ?? null)
+    : null;
 
   const startTool = async (tool: ToolCommand) => {
     setPendingAction(true);
@@ -2640,6 +2714,8 @@ export function App() {
                 onRefreshSession={(sessionId) => void refreshSession(sessionId)}
                 onStopSession={(session) => void stopSession(session)}
                 onClearSlot={clearSlotAt}
+                onSplitColumn={splitColumn}
+                onMergeColumn={mergeColumn}
                 onRemoveSession={(session) => void removeSessionById(session)}
                 onDropPane={dropPaneOnSlot}
                 onSnapPane={snapPaneToZone}
@@ -2831,6 +2907,9 @@ export function App() {
           x={contextMenu.x}
           y={contextMenu.y}
           vscodeAvailable={availability.vscode}
+          agents={agents}
+          newSessionDisabledReason={newSessionDisabledReason(contextMenu.project.id)}
+          onStartSession={(agentId) => void startSessionInBackground(contextMenu.project, agentId)}
           workProjectOptions={workProjects.map((workProject) => ({
             id: workProject.id,
             name: workProject.name,
@@ -2860,6 +2939,19 @@ export function App() {
           x={worktreeMenu.x}
           y={worktreeMenu.y}
           vscodeAvailable={availability.vscode}
+          agents={agents}
+          newSessionDisabledReason={
+            // A worktree without its folder in the list has no project to start from — the same
+            // dead end a missing root is, so it reads the same way.
+            worktreeMenuProject
+              ? newSessionDisabledReason(worktreeMenuProject.id)
+              : "폴더를 찾을 수 없습니다"
+          }
+          onStartSession={(agentId) => {
+            if (worktreeMenuProject) {
+              void startSessionInBackground(worktreeMenuProject, agentId, worktreeMenu.worktree.id);
+            }
+          }}
           onReveal={() =>
             void runProjectAction(() => window.multiCliWork.worktrees.reveal(worktreeMenu.worktree.id))
           }

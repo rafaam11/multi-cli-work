@@ -26,6 +26,20 @@ describe("resolveSnapZone", () => {
     expect(zoneAt(500, 596)).toBeNull();
   });
 
+  it("takes a half-screen edge to two whole columns", () => {
+    expect(zoneAt(500, 4)).toMatchObject({ layoutId: "cols:1", slotIndex: 0 });
+    expect(zoneAt(4, 300)).toMatchObject({ layoutId: "cols:1-1", slotIndex: 0 });
+    expect(zoneAt(996, 300)).toMatchObject({ layoutId: "cols:1-1", slotIndex: 1 });
+  });
+
+  /** Slots are numbered column first, so the left column's pair comes before the right column's. */
+  it("puts a corner in the quarter that corner covers", () => {
+    expect(zoneAt(4, 4)).toMatchObject({ layoutId: "cols:2-2", slotIndex: 0 });
+    expect(zoneAt(4, 596)).toMatchObject({ layoutId: "cols:2-2", slotIndex: 1 });
+    expect(zoneAt(996, 4)).toMatchObject({ layoutId: "cols:2-2", slotIndex: 2 });
+    expect(zoneAt(996, 596)).toMatchObject({ layoutId: "cols:2-2", slotIndex: 3 });
+  });
+
   /** A snap has to land somewhere the picker could also have gone, or the view is left off-catalog. */
   it("names a real preset and a slot that preset actually draws", () => {
     for (const [x, y] of [[500, 4], [4, 300], [996, 300], [4, 4], [996, 4], [4, 596], [996, 596]]) {

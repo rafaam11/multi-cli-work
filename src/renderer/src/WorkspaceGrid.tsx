@@ -3,9 +3,9 @@ import { SHIFT_ENTER_BYTES } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import { X } from "lucide-react";
 import { useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
-import type { GridLayout } from "./grid-layouts";
+import { canSplitColumn, columnOfSlot, type GridLayout } from "./grid-layouts";
 import { DocumentPaneIcon, paneContentId, type PaneContent } from "./pane-items";
-import { PaneHeader } from "./PaneHeader";
+import { ColumnSplitButton, PaneHeader, type ColumnSplitControls } from "./PaneHeader";
 import { TerminalPane, type TerminalCommands } from "./TerminalPane";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { sessionLabel } from "./session-labels";
@@ -39,6 +39,10 @@ interface WorkspaceGridProps {
   onStopSession(session: TerminalSessionView): void;
   /** Empties the slot only — the session keeps running, the document stays open, both keep a tab. */
   onClearSlot(index: number): void;
+  /** Gives this slot's column a second row; every other column keeps its full height. */
+  onSplitColumn(index: number): void;
+  /** Puts this slot's column back to one full-height pane. */
+  onMergeColumn(index: number): void;
   /** Ends the session and deletes its scrollback right away — there is no confirmation step. */
   onRemoveSession(session: TerminalSessionView): void;
   /** A pane was dropped on this slot: one from another slot, or a tab from the bar. */
@@ -82,6 +86,8 @@ export function WorkspaceGrid({
   onRefreshSession,
   onStopSession,
   onClearSlot,
+  onSplitColumn,
+  onMergeColumn,
   onRemoveSession,
   onDropPane,
   onSnapPane,
@@ -145,6 +151,18 @@ export function WorkspaceGrid({
     setDropIndex(null);
     setSnapZone(null);
   };
+
+  /**
+   * A slot's own column, in the terms the header button needs. The layout already records how tall
+   * each column is, so nothing here has to count panes. Empty slots get no button — a column with
+   * nothing in it is not one anybody wants to split further.
+   */
+  const columnSplitFor = (index: number): ColumnSplitControls => ({
+    split: (columnOfSlot(layout.columnRows, index)?.rows ?? 1) > 1,
+    canSplit: canSplitColumn(layout, index),
+    onSplit: () => onSplitColumn(index),
+    onMerge: () => onMergeColumn(index),
+  });
 
   const paneClass = (paneId: string, index: number, extra?: string): string =>
     ["grid-pane", extra ?? "", paneId === focusedPaneId ? "pane-focused" : "", dropIndex === index ? "drop-target" : ""]
@@ -226,6 +244,7 @@ export function WorkspaceGrid({
                 {document.dirty ? <span className="pane-dirty" title="저장하지 않은 변경" /> : null}
                 {document.detail ? <span className="pane-detail">{document.detail}</span> : null}
                 <div className="pane-actions">
+                  <ColumnSplitButton {...columnSplitFor(index)} />
                   <button
                     className="icon-button"
                     type="button"
@@ -261,6 +280,7 @@ export function WorkspaceGrid({
               pendingAction={pendingAction}
               refreshing={refreshingSessionIds.has(session.id)}
               resumeBlocked={!session.tool && isProjectMissing(session.projectId)}
+              columnSplit={columnSplitFor(index)}
               onStartRename={() => onStartRename(session.id)}
               onRename={(name) => onRenameSession(session.id, name)}
               onCancelRename={onCancelRename}

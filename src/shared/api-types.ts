@@ -208,6 +208,11 @@ export interface CreateTerminalInput {
   worktreeId?: string;
   cols: number;
   rows: number;
+  /**
+   * A session started from the sidebar's context menus, which never takes the user to it. It must
+   * not become the selection the next launch restores either: the user has not been there.
+   */
+  background?: boolean;
 }
 
 export interface CreateToolTerminalInput {

@@ -80,7 +80,7 @@ function baseProps() {
     vscodeAvailable: true,
     pendingAction: false,
     projectMissing: false,
-    layoutLabel: "전체",
+    layoutLabel: "1열",
     onStartSession: vi.fn(),
     onSelectWorktree: vi.fn(),
     onCreateWorktree: vi.fn(),
@@ -123,8 +123,8 @@ describe("FolderStartPage", () => {
   /** Choosing a layout with no grid on screen has no visible effect — the caption is the effect. */
   it("says which arrangement the first session will open into", async () => {
     installApi();
-    renderPage({ layoutLabel: "2×2" });
-    expect(screen.getByText("첫 세션은 2×2 배치로 열립니다")).toBeTruthy();
+    renderPage({ layoutLabel: "3열" });
+    expect(screen.getByText("첫 세션은 3열 배치로 열립니다")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("main")).toBeTruthy());
   });
 
