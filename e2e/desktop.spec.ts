@@ -446,14 +446,17 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await execFileAsync("git", ["checkout", "-b", "feature/a-very-long-branch-name-for-responsive-layout"], { cwd: projectRoot });
 
     await openFolder();
-    if ((await page.locator(".session-name").count()) === 0) {
+    if ((await page.locator(".session-row").count()) === 0) {
       await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
       const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
       await terminal.click();
       await page.keyboard.type("exit");
       await page.keyboard.press("Enter");
       await expect(page.locator(".active-status")).toHaveText("종료됨");
+    } else if ((await page.locator(".pane-context-folder").count()) === 0) {
+      await page.locator(".session-row").first().click();
     }
+    await expect(page.locator(".pane-context-folder").first()).toBeVisible();
     await page.getByRole("tab", { name: "Git" }).click();
     await expect(page.getByText("a-very-long-file-name-that-still-shows-its-status.ts")).toBeVisible();
 
