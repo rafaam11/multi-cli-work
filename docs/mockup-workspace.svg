@@ -1,201 +1,402 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" width="960" height="600" font-family="Segoe UI, system-ui, sans-serif" role="img" aria-label="멀티 터미널 작업기 메인 화면 (와이어프레임 목업)">
-  <rect width="960" height="600" rx="12" fill="#161918" stroke="#343b38"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Segoe UI, system-ui, sans-serif" role="img" aria-label="멀티 터미널 작업기 메인 화면 — 사이드바, 세로 열 그리드, 문서 패인 (와이어프레임 목업)">
+  <defs>
+    <!-- 12×12 line icons, reused across panes -->
+    <g id="ic-folder" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linejoin="round">
+      <path d="M1.2 3.6a1 1 0 0 1 1-1h2.4l1.2 1.5H9.8a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1H2.2a1 1 0 0 1-1-1z"/>
+    </g>
+    <g id="ic-branch" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linecap="round">
+      <circle cx="3" cy="2.8" r="1.5"/><circle cx="3" cy="9.2" r="1.5"/><circle cx="9" cy="3.6" r="1.5"/>
+      <path d="M3 4.3v3.4M9 5.1v.6a2 2 0 0 1-2 2H4.9"/>
+    </g>
+    <g id="ic-briefcase" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linejoin="round">
+      <rect x="1.2" y="3.8" width="9.6" height="6.4" rx="1"/>
+      <path d="M4.4 3.8V2.6a.9.9 0 0 1 .9-.9h1.4a.9.9 0 0 1 .9.9v1.2"/>
+    </g>
+    <g id="ic-wrench" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linejoin="round">
+      <path d="M9.6 2.4a2.8 2.8 0 0 1-3.6 3.6L2.6 9.4a1.1 1.1 0 0 1-1.6-1.6l3.4-3.4A2.8 2.8 0 0 1 8 .8z"/>
+    </g>
+    <g id="ic-doc" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linejoin="round">
+      <path d="M3 1.4h3.9L9.8 4.3V10a.8.8 0 0 1-.8.8H3a.8.8 0 0 1-.8-.8V2.2a.8.8 0 0 1 .8-.8z"/>
+      <path d="M6.9 1.4v3h2.9M4.3 6.8h3.4M4.3 8.5h3.4"/>
+    </g>
+    <g id="ic-split" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linejoin="round">
+      <rect x="1.4" y="1.4" width="9.2" height="9.2" rx="1.4"/><path d="M1.4 6h9.2"/>
+    </g>
+    <g id="ic-refresh" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.2 6a4.2 4.2 0 1 1-1.4-3.1"/><path d="M10.4 1.4v2.6H7.8"/>
+    </g>
+    <g id="ic-stop" fill="none" stroke="#717b76" stroke-width="1.1" stroke-linejoin="round">
+      <circle cx="6" cy="6" r="4.7"/><rect x="4.2" y="4.2" width="3.6" height="3.6" rx="0.7"/>
+    </g>
+    <g id="ic-trash" fill="none" stroke="#a97070" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 3.2h8M4.6 3.2V2.3a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v.9"/>
+      <path d="M3.3 3.2l.5 6.3a1 1 0 0 0 1 .9h2.4a1 1 0 0 0 1-.9l.5-6.3"/>
+    </g>
+    <g id="ic-close" fill="none" stroke="#717b76" stroke-width="1.2" stroke-linecap="round">
+      <path d="M3.2 3.2l5.6 5.6M8.8 3.2L3.2 8.8"/>
+    </g>
+    <!-- agent marks -->
+    <g id="ic-claude" fill="none" stroke="#d97757" stroke-width="1.4" stroke-linecap="round">
+      <path d="M3.4 9.4L6 2.6l2.6 6.8M4.4 7.4h3.2"/>
+    </g>
+    <g id="ic-codex" fill="none" stroke="#9aa49f" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.6 3.6L1.8 6l2.8 2.4M7.4 3.6L10.2 6 7.4 8.4"/>
+    </g>
+    <g id="ic-powershell" fill="none" stroke="#5391fe" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.6 3.2L6.2 6l-3.6 2.8M6.6 8.8h3"/>
+    </g>
+  </defs>
 
-  <!-- ══ sidebar ══ -->
-  <path d="M1 13a12 12 0 0 1 12-12h251v598H13a12 12 0 0 1-12-12z" fill="#1c201f"/>
-  <line x1="264" y1="1" x2="264" y2="599" stroke="#343b38"/>
+  <rect x="0.5" y="0.5" width="1279" height="719" rx="12" fill="#161918" stroke="#343b38"/>
+
+  <!-- ═══════════════ sidebar ═══════════════ -->
+  <path d="M1 13a12 12 0 0 1 12-12h267v718H13a12 12 0 0 1-12-12z" fill="#1c201f"/>
+  <line x1="280" y1="1" x2="280" y2="719" stroke="#343b38"/>
 
   <!-- brand -->
-  <g transform="translate(18,20) scale(0.8)">
-    <rect x="1.32" y="1.32" width="21.36" height="21.36" rx="5.4" fill="#252b29"/>
-    <g fill="none" stroke="#4fb7a4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="6.6,6.8 12.2,12.1 6.6,17.4"/>
-      <line x1="13.4" y1="17.4" x2="18.4" y2="17.4"/>
+  <g transform="translate(16,18)">
+    <rect x="1" y="1" width="22" height="22" rx="6" fill="#252b29"/>
+    <g fill="none" stroke="#4fb7a4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6.8,7 12.2,12.2 6.8,17.4"/><line x1="13.6" y1="17.4" x2="18.4" y2="17.4"/>
     </g>
   </g>
-  <text x="44" y="36" font-size="13" font-weight="700" fill="#e7ebe8">멀티 터미널 작업기</text>
-
-  <!-- projects heading + actions -->
-  <text x="18" y="72" font-size="10" font-weight="600" fill="#717b76" letter-spacing="1">PROJECTS</text>
-  <g stroke="#9aa49f" stroke-width="1.3" fill="none" stroke-linecap="round">
-    <path d="M215 66a6 6 0 1 0 1.8-4.3M215.8 58v4h4" transform="translate(0,4)"/>
-    <path d="M243 68v-10M238 63h10"/>
+  <text x="48" y="32" font-size="13" font-weight="700" fill="#e7ebe8">멀티 터미널 작업기</text>
+  <text x="48" y="46" font-size="9.5" fill="#717b76">로컬 워크스페이스</text>
+  <g fill="none" stroke="#717b76" stroke-width="1.2" stroke-linejoin="round">
+    <rect x="252" y="24" width="14" height="12" rx="2"/><path d="M257 24v12"/>
   </g>
 
-  <!-- layer 1: 업무 프로젝트 (taller row) -->
-  <rect x="8" y="84" width="248" height="36" rx="6" fill="#22282b"/>
-  <text x="22" y="106" font-size="10" fill="#717b76">▾</text>
-  <text x="36" y="107" font-size="12" fill="#e7ebe8">🗂</text>
-  <text x="56" y="102" font-size="12.5" font-weight="600" fill="#e7ebe8">Nova · 연구소</text>
-  <text x="56" y="115" font-size="9.5" fill="#717b76">폴더 3</text>
-  <text x="240" y="107" font-size="11" fill="#717b76">✎</text>
+  <!-- ── 작업공간 · 숨김 : every pane is in exactly one of these ── -->
+  <rect x="8" y="62" width="264" height="26" rx="6" fill="#22282b"/>
+  <path d="M22 71.5l3 3 3-3" fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linecap="round"/>
+  <g fill="none" stroke="#4fb7a4" stroke-width="1.2">
+    <rect x="38" y="69" width="5" height="5" rx="1"/><rect x="45.5" y="69" width="5" height="5" rx="1"/>
+    <rect x="38" y="76.5" width="5" height="5" rx="1"/><rect x="45.5" y="76.5" width="5" height="5" rx="1"/>
+  </g>
+  <text x="60" y="79" font-size="12" font-weight="600" fill="#e7ebe8">작업공간</text>
+  <rect x="118" y="68" width="18" height="14" rx="7" fill="#252b29"/>
+  <text x="127" y="78.5" font-size="9.5" fill="#9aa49f" text-anchor="middle">4</text>
 
-  <!-- layer 2: 폴더들 (indented under the work project) -->
-  <rect x="20" y="126" width="236" height="30" rx="6" fill="#252b29"/>
-  <rect x="20" y="126" width="3" height="30" rx="1.5" fill="#4fb7a4"/>
-  <text x="36" y="139" font-size="12" fill="#e7ebe8">📂</text>
-  <text x="56" y="139" font-size="12.5" font-weight="600" fill="#e7ebe8">atlas</text>
-  <text x="56" y="151" font-size="9.5" font-family="Consolas, monospace" fill="#717b76">C:\work\atlas</text>
-  <circle cx="240" cy="141" r="4" fill="#aa8ccc"/>
+  <rect x="8" y="92" width="264" height="26" rx="6" fill="none"/>
+  <path d="M23 99.5l3 3-3 3" fill="none" stroke="#717b76" stroke-width="1.2" stroke-linecap="round"/>
+  <g fill="none" stroke="#717b76" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M39 105c1.2-1.8 3.4-3.6 6-3.6s4.8 1.8 6 3.6c-1.2 1.8-3.4 3.6-6 3.6s-4.8-1.8-6-3.6z"/>
+    <circle cx="45" cy="105" r="1.4"/>
+    <path d="M38.6 99.6l12.8 10.8"/>
+  </g>
+  <text x="60" y="109" font-size="12" fill="#9aa49f">숨김</text>
+  <rect x="103" y="98" width="18" height="14" rx="7" fill="#252b29"/>
+  <text x="112" y="108.5" font-size="9.5" fill="#717b76" text-anchor="middle">3</text>
 
-  <!-- worktree under the selected folder -->
-  <text x="52" y="177" font-size="11" fill="#717b76">⑂</text>
-  <text x="70" y="177" font-size="11.5" fill="#9aa49f">feature-x</text>
+  <!-- ── 프로젝트 트리 ── -->
+  <text x="18" y="142" font-size="10" font-weight="700" fill="#717b76" letter-spacing="1">프로젝트</text>
+  <g fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M209 142a5.5 5.5 0 1 1-1.8-4.1M209.4 132.6v3.4h-3.4"/>
+    <rect x="228" y="132.5" width="11" height="7.5" rx="1.2"/><path d="M231.6 132.5v-1.4h4v1.4"/>
+    <path d="M252 132v-5.5M252 132v6M246.5 132h11"/>
+  </g>
 
-  <rect x="20" y="188" width="236" height="30" rx="6" fill="none"/>
-  <text x="36" y="201" font-size="12" fill="#9aa49f">📁</text>
-  <text x="56" y="201" font-size="12.5" fill="#9aa49f">dashboard</text>
-  <text x="56" y="213" font-size="9.5" font-family="Consolas, monospace" fill="#717b76">C:\work\dashboard</text>
-  <circle cx="240" cy="203" r="4" fill="#d8a24a"/>
+  <g font-size="10" fill="#9aa49f">
+    <rect x="16" y="152" width="46" height="18" rx="5" fill="#22282b"/>
+    <text x="39" y="165" text-anchor="middle">모두</text>
+    <rect x="68" y="152" width="46" height="18" rx="5" fill="#22282b"/>
+    <text x="91" y="165" text-anchor="middle">접기</text>
+  </g>
 
-  <rect x="20" y="222" width="236" height="30" rx="6" fill="none"/>
-  <text x="36" y="235" font-size="12" fill="#9aa49f">📁</text>
-  <text x="56" y="235" font-size="12.5" fill="#9aa49f">navi</text>
-  <text x="56" y="247" font-size="9.5" font-family="Consolas, monospace" fill="#717b76">C:\work\navi</text>
+  <!-- 업무 프로젝트: category colour, the same tint the pane header band uses -->
+  <rect x="8" y="180" width="264" height="34" rx="6" fill="none"/>
+  <rect x="8" y="184" width="3" height="26" rx="1.5" fill="#aa8ccc"/>
+  <path d="M22 193.5l3 3 3-3" fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linecap="round"/>
+  <use href="#ic-briefcase" x="37" y="191"/>
+  <text x="56" y="196" font-size="12.5" font-weight="600" fill="#e7ebe8">Nova · 연구소</text>
+  <text x="56" y="208" font-size="9.5" fill="#717b76">폴더 3곳 · 세션 6개</text>
 
-  <!-- another work project, collapsed -->
-  <rect x="8" y="262" width="248" height="36" rx="6" fill="none"/>
-  <text x="22" y="284" font-size="10" fill="#717b76">▸</text>
-  <text x="36" y="285" font-size="12" fill="#9aa49f">🗂</text>
-  <text x="56" y="285" font-size="12.5" fill="#9aa49f">미분류</text>
-  <text x="240" y="285" font-size="11" fill="#717b76">✎</text>
+  <!-- 폴더 (selected) -->
+  <rect x="20" y="218" width="252" height="30" rx="6" fill="#252b29"/>
+  <rect x="20" y="218" width="3" height="30" rx="1.5" fill="#4fb7a4"/>
+  <path d="M36 229.5l3 3 3-3" fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linecap="round"/>
+  <use href="#ic-folder" x="52" y="227"/>
+  <text x="70" y="232" font-size="12.5" font-weight="600" fill="#e7ebe8">atlas</text>
+  <text x="70" y="244" font-size="9.5" font-family="Consolas, monospace" fill="#717b76">C:\work\atlas</text>
+  <circle cx="256" cy="233" r="4" fill="#aa8ccc"/>
 
-  <!-- hidden toggle -->
-  <rect x="18" y="516" width="11" height="11" rx="2.5" fill="none" stroke="#46504c"/>
-  <text x="38" y="526" font-size="10.5" fill="#9aa49f">Show hidden projects</text>
+  <!-- worktree under the open folder -->
+  <use href="#ic-branch" x="68" y="257"/>
+  <text x="86" y="267" font-size="11" fill="#9aa49f">feature-x</text>
+  <text x="256" y="267" font-size="9" fill="#717b76" text-anchor="middle">2</text>
+
+  <rect x="20" y="278" width="252" height="30" rx="6" fill="none"/>
+  <path d="M37 288.5l3 3-3 3" fill="none" stroke="#717b76" stroke-width="1.2" stroke-linecap="round"/>
+  <use href="#ic-folder" x="52" y="287"/>
+  <text x="70" y="292" font-size="12.5" fill="#9aa49f">dashboard</text>
+  <text x="70" y="304" font-size="9.5" font-family="Consolas, monospace" fill="#717b76">C:\work\dashboard</text>
+  <circle cx="256" cy="293" r="4" fill="#d8a24a"/>
+
+  <rect x="20" y="312" width="252" height="30" rx="6" fill="none"/>
+  <path d="M37 322.5l3 3-3 3" fill="none" stroke="#717b76" stroke-width="1.2" stroke-linecap="round"/>
+  <use href="#ic-folder" x="52" y="321"/>
+  <text x="70" y="326" font-size="12.5" fill="#9aa49f">navi</text>
+  <text x="70" y="338" font-size="9.5" font-family="Consolas, monospace" fill="#717b76">C:\work\navi</text>
+
+  <!-- collapsed work project -->
+  <rect x="8" y="350" width="264" height="34" rx="6" fill="none"/>
+  <path d="M23 363.5l3 3-3 3" fill="none" stroke="#717b76" stroke-width="1.2" stroke-linecap="round"/>
+  <use href="#ic-briefcase" x="37" y="361"/>
+  <text x="56" y="366" font-size="12.5" fill="#9aa49f">미분류</text>
+  <text x="56" y="378" font-size="9.5" fill="#717b76">폴더 2곳</text>
 
   <!-- update badge -->
-  <line x1="1" y1="542" x2="264" y2="542" stroke="#343b38"/>
-  <g fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linecap="round">
-    <path d="M18 561a6 6 0 1 0 1.8-4.3M18.8 553v4h4"/>
+  <line x1="1" y1="640" x2="280" y2="640" stroke="#343b38"/>
+  <g fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M28 661a5.5 5.5 0 1 1-1.8-4.1M28.4 651.6v3.4H25"/>
   </g>
-  <text x="36" y="562" font-size="10" font-family="Consolas, monospace" fill="#9aa49f">v1.13.0</text>
-  <text x="82" y="562" font-size="10" fill="#717b76">Up to date</text>
-  <rect x="205" y="550" width="46" height="18" rx="4" fill="none" stroke="#46504c"/>
-  <text x="228" y="563" font-size="10" fill="#e7ebe8" text-anchor="middle">Check</text>
+  <text x="44" y="664" font-size="10" font-family="Consolas, monospace" fill="#9aa49f">v1.20.1</text>
+  <text x="94" y="664" font-size="10" fill="#717b76">최신 버전</text>
+  <rect x="216" y="652" width="46" height="19" rx="5" fill="#252b29" stroke="#46504c"/>
+  <text x="239" y="665.5" font-size="10" fill="#e7ebe8" text-anchor="middle">확인</text>
 
   <!-- footer -->
-  <line x1="1" y1="576" x2="264" y2="576" stroke="#343b38"/>
-  <circle cx="21" cy="589" r="3.5" fill="#4fb7a4"/>
-  <text x="34" y="592" font-size="9" font-family="Consolas, monospace" fill="#717b76">3 projects  /  6 sessions</text>
+  <line x1="1" y1="682" x2="280" y2="682" stroke="#343b38"/>
+  <circle cx="21" cy="701" r="3.5" fill="#4fb7a4"/>
+  <text x="34" y="704" font-size="9" font-family="Consolas, monospace" fill="#717b76">폴더 5곳  /  세션 9개</text>
 
-  <!-- ══ workspace header ══ -->
-  <line x1="264" y1="55" x2="959" y2="55" stroke="#343b38"/>
-  <text x="284" y="27" font-size="13.5" font-weight="600" fill="#e7ebe8">atlas</text>
-  <text x="322" y="27" font-size="13.5" fill="#717b76">/</text>
-  <text x="334" y="27" font-size="13.5" fill="#9aa49f">Claude Code 1</text>
-  <text x="284" y="44" font-size="10" font-family="Consolas, monospace" fill="#717b76">C:\work\atlas</text>
+  <!-- ═══════════════ workspace header ═══════════════ -->
+  <line x1="280" y1="64" x2="1279" y2="64" stroke="#343b38"/>
+  <g fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linejoin="round">
+    <rect x="294" y="20" width="14" height="10" rx="1.6"/><path d="M298 34h6"/>
+  </g>
+  <text x="318" y="29" font-size="13.5" font-weight="600" fill="#e7ebe8">atlas</text>
+  <text x="356" y="29" font-size="13.5" fill="#717b76">/</text>
+  <text x="368" y="29" font-size="13.5" fill="#9aa49f">Claude Code 1</text>
+  <text x="318" y="47" font-size="10" font-family="Consolas, monospace" fill="#717b76">C:\work\atlas</text>
 
-  <!-- status pill of the focused pane -->
-  <rect x="450" y="18" width="128" height="21" rx="10.5" fill="#2b2416" stroke="#d8a24a"/>
-  <circle cx="465" cy="28.5" r="3.5" fill="#d8a24a"/>
-  <text x="476" y="32" font-size="10.5" font-weight="600" fill="#d8a24a">awaiting-approval</text>
+  <!-- layout picker: 자동 + 1~6 columns. 3 columns is current. -->
+  <rect x="557" y="16" width="34" height="32" rx="5" fill="none" stroke="#343b38"/>
+  <g fill="none" stroke="#717b76" stroke-width="0.9">
+    <rect x="562.5" y="20.5" width="10.5" height="5" rx="1"/><rect x="575" y="20.5" width="10.5" height="5" rx="1"/>
+    <rect x="562.5" y="27" width="10.5" height="5" rx="1"/><rect x="575" y="27" width="10.5" height="5" rx="1"/>
+  </g>
+  <text x="574" y="43" font-size="7.5" fill="#9aa49f" text-anchor="middle">자동</text>
+  <line x1="597" y1="20" x2="597" y2="44" stroke="#343b38"/>
+  <g stroke-width="0.9" fill="none">
+    <rect x="605" y="22" width="14" height="20" rx="3" stroke="#343b38"/>
+    <rect x="607.5" y="25" width="9" height="14" rx="1" fill="#2a302e" stroke="none"/>
 
-  <!-- relink + 상세 + launchers -->
+    <rect x="622" y="22" width="14" height="20" rx="3" stroke="#343b38"/>
+    <rect x="624.5" y="25" width="4" height="14" rx="1" fill="#2a302e" stroke="none"/>
+    <rect x="629.5" y="25" width="4" height="14" rx="1" fill="#2a302e" stroke="none"/>
+
+    <rect x="639" y="22" width="14" height="20" rx="3" fill="#22282b" stroke="#4fb7a4"/>
+    <rect x="641.5" y="25" width="2.7" height="14" rx="0.8" fill="#4fb7a4" stroke="none"/>
+    <rect x="644.9" y="25" width="2.7" height="14" rx="0.8" fill="#4fb7a4" stroke="none"/>
+    <rect x="648.3" y="25" width="2.7" height="14" rx="0.8" fill="#4fb7a4" stroke="none"/>
+
+    <rect x="656" y="22" width="14" height="20" rx="3" stroke="#343b38"/>
+    <rect x="658.5" y="25" width="1.9" height="14" rx="0.6" fill="#2a302e" stroke="none"/>
+    <rect x="661.1" y="25" width="1.9" height="14" rx="0.6" fill="#2a302e" stroke="none"/>
+    <rect x="663.7" y="25" width="1.9" height="14" rx="0.6" fill="#2a302e" stroke="none"/>
+    <rect x="666.3" y="25" width="1.9" height="14" rx="0.6" fill="#2a302e" stroke="none"/>
+
+    <rect x="673" y="22" width="14" height="20" rx="3" stroke="#343b38"/>
+    <rect x="675.5" y="25" width="1.4" height="14" rx="0.5" fill="#2a302e" stroke="none"/>
+    <rect x="677.6" y="25" width="1.4" height="14" rx="0.5" fill="#2a302e" stroke="none"/>
+    <rect x="679.7" y="25" width="1.4" height="14" rx="0.5" fill="#2a302e" stroke="none"/>
+    <rect x="681.8" y="25" width="1.4" height="14" rx="0.5" fill="#2a302e" stroke="none"/>
+    <rect x="683.9" y="25" width="1.4" height="14" rx="0.5" fill="#2a302e" stroke="none"/>
+
+    <rect x="690" y="22" width="14" height="20" rx="3" stroke="#343b38"/>
+    <rect x="692.5" y="25" width="1.1" height="14" rx="0.4" fill="#2a302e" stroke="none"/>
+    <rect x="694.3" y="25" width="1.1" height="14" rx="0.4" fill="#2a302e" stroke="none"/>
+    <rect x="696.1" y="25" width="1.1" height="14" rx="0.4" fill="#2a302e" stroke="none"/>
+    <rect x="697.9" y="25" width="1.1" height="14" rx="0.4" fill="#2a302e" stroke="none"/>
+    <rect x="699.7" y="25" width="1.1" height="14" rx="0.4" fill="#2a302e" stroke="none"/>
+    <rect x="701.5" y="25" width="1.1" height="14" rx="0.4" fill="#2a302e" stroke="none"/>
+  </g>
+
+  <!-- page nav: panes past the layout's slots paginate, they do not vanish -->
+  <g fill="none" stroke="#717b76" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M722 27l-4 5 4 5"/>
+  </g>
+  <text x="744" y="36" font-size="10.5" fill="#9aa49f" text-anchor="middle" font-family="Consolas, monospace">1/2</text>
   <g fill="none" stroke="#9aa49f" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M596 23h14v9h-14zM596 23l3-4h4l2 4"/>
+    <path d="M766 27l4 5-4 5"/>
   </g>
-  <rect x="622" y="16" width="58" height="25" rx="6" fill="#252b29" stroke="#46504c"/>
-  <text x="651" y="33" font-size="11" fill="#e7ebe8" text-anchor="middle">▤ 상세</text>
-  <rect x="688" y="16" width="84" height="25" rx="6" fill="#252b29" stroke="#46504c"/>
-  <text x="730" y="33" font-size="10.5" fill="#e7ebe8" text-anchor="middle">⌨ PowerShell</text>
-  <rect x="780" y="16" width="88" height="25" rx="6" fill="#252b29" stroke="#46504c"/>
-  <text x="824" y="33" font-size="10.5" fill="#e7ebe8" text-anchor="middle">🤖 Claude Code</text>
-  <rect x="876" y="16" width="64" height="25" rx="6" fill="#252b29" stroke="#46504c"/>
-  <text x="908" y="33" font-size="10.5" fill="#e7ebe8" text-anchor="middle">◆ Codex</text>
 
-  <!-- ══ terminal grid (2×2) ══ -->
-  <!-- pane 1 — focused, awaiting approval -->
-  <rect x="276" y="68" width="331" height="254" rx="8" fill="#101312" stroke="#4fb7a4"/>
-  <path d="M276 76a8 8 0 0 1 8-8h315a8 8 0 0 1 8 8v16H276z" fill="#1c201f"/>
-  <line x1="276" y1="92" x2="607" y2="92" stroke="#343b38"/>
-  <circle cx="292" cy="80" r="3.5" fill="#d8a24a"/>
-  <text x="303" y="84" font-size="11" fill="#9aa49f">🤖</text>
-  <text x="321" y="84" font-size="11" fill="#e7ebe8">Claude Code 1</text>
-  <rect x="519" y="73" width="22" height="14" rx="3" fill="none" stroke="#46504c"/>
-  <text x="530" y="84" font-size="9.5" fill="#9aa49f" text-anchor="middle">+2</text>
-  <text x="551" y="84" font-size="10" fill="#717b76">⟳</text>
-  <text x="570" y="84" font-size="10" fill="#717b76">⏹</text>
-  <text x="589" y="84" font-size="10" fill="#717b76">✕</text>
+  <!-- focused pane's status -->
+  <rect x="784" y="21" width="106" height="22" rx="11" fill="#2b2416" stroke="#d8a24a"/>
+  <circle cx="800" cy="32" r="3.5" fill="#d8a24a"/>
+  <text x="812" y="36" font-size="10.5" font-weight="600" fill="#d8a24a">승인 대기</text>
+
+  <!-- relink -->
+  <g fill="none" stroke="#9aa49f" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M903 28h8.6l1.4 1.8h8.6v8.4a1 1 0 0 1-1 1h-16.6a1 1 0 0 1-1-1z"/>
+  </g>
+
+  <!-- 상세 -->
+  <rect x="934" y="19" width="54" height="26" rx="6" fill="#252b29" stroke="#46504c"/>
+  <g fill="none" stroke="#9aa49f" stroke-width="1.2" stroke-linejoin="round">
+    <rect x="944" y="27" width="11" height="10" rx="1.6"/><path d="M948.5 27v10"/>
+  </g>
+  <text x="971" y="36" font-size="11" fill="#e7ebe8" text-anchor="middle">상세</text>
+
+  <!-- launchers -->
+  <rect x="998" y="19" width="86" height="26" rx="6" fill="#252b29" stroke="#46504c"/>
+  <use href="#ic-powershell" x="1008" y="26"/>
+  <text x="1048" y="36" font-size="10.5" fill="#e7ebe8" text-anchor="middle">PowerShell</text>
+  <rect x="1092" y="19" width="96" height="26" rx="6" fill="#252b29" stroke="#46504c"/>
+  <use href="#ic-claude" x="1102" y="26"/>
+  <text x="1145" y="36" font-size="10.5" fill="#e7ebe8" text-anchor="middle">Claude Code</text>
+  <rect x="1196" y="19" width="68" height="26" rx="6" fill="#252b29" stroke="#46504c"/>
+  <use href="#ic-codex" x="1206" y="26"/>
+  <text x="1235" y="36" font-size="10.5" fill="#e7ebe8" text-anchor="middle">Codex</text>
+
+  <!-- ═══════════════ grid: three vertical columns, the middle one split ═══════════════ -->
+
+  <!-- ── column 1 · Claude Code 1 · 승인 대기 · focused (the focus ring paints over the status frame) ── -->
+  <rect x="292" y="76" width="320" height="628" rx="8" fill="#101312" stroke="#4fb7a4" stroke-width="2"/>
+  <path d="M292 84a8 8 0 0 1 8-8h304a8 8 0 0 1 8 8v30H292z" fill="#1c201f"/>
+  <rect x="293" y="82" width="3" height="26" rx="1.5" fill="#aa8ccc"/>
+  <line x1="292" y1="114" x2="612" y2="114" stroke="#343b38"/>
+  <use href="#ic-folder" x="303" y="81"/>
+  <text x="319" y="91" font-size="10" fill="#9aa49f">atlas</text>
+  <use href="#ic-branch" x="352" y="81"/>
+  <text x="367" y="91" font-size="10" fill="#717b76">main</text>
+  <use href="#ic-briefcase" x="398" y="81"/>
+  <text x="413" y="91" font-size="10" fill="#717b76">Nova</text>
+  <circle cx="308" cy="103" r="3.5" fill="#d8a24a"/>
+  <use href="#ic-claude" x="317" y="97"/>
+  <text x="335" y="107" font-size="11" fill="#e7ebe8">Claude Code 1</text>
+  <use href="#ic-split" x="510" y="97"/>
+  <use href="#ic-refresh" x="530" y="97"/>
+  <use href="#ic-stop" x="550" y="97"/>
+  <use href="#ic-trash" x="570" y="97"/>
+  <use href="#ic-close" x="590" y="97"/>
   <g font-family="Consolas, Cascadia Code, monospace" font-size="10">
-    <text x="290" y="112" fill="#717b76">$ claude --resume 3f9a…</text>
-    <text x="290" y="131" fill="#e7ebe8">● UTF-8 경계를 무시하고 자릅니다.</text>
-    <rect x="290" y="141" width="303" height="56" rx="5" fill="#1c201f" stroke="#d8a24a"/>
-    <text x="302" y="158" font-size="9.5" fill="#d8a24a">Edit  terminal-session-manager.ts</text>
-    <text x="302" y="175" fill="#d46a6a">- buffer.subarray(overflow)</text>
-    <text x="302" y="190" fill="#73b987">+ tailOnUtf8Boundary(buffer)</text>
-    <text x="290" y="219" fill="#e7ebe8">이 편집을 적용할까요?</text>
-    <text x="290" y="238" fill="#4fb7a4">❯ 1. Yes</text>
-    <text x="290" y="255" fill="#9aa49f">  2. No, tell Claude what to do</text>
-    <rect x="290" y="266" width="6" height="12" fill="#4fb7a4" opacity="0.85"/>
+    <text x="306" y="136" fill="#717b76">$ claude --resume 3f9a…</text>
+    <text x="318" y="153" fill="#717b76">resumed  atlas · main</text>
+    <text x="306" y="177" fill="#9aa49f">· 스크롤백 링버퍼를 읽는 중…</text>
+    <text x="306" y="201" fill="#e7ebe8">● 버퍼를 자를 때 멀티바이트 문자가</text>
+    <text x="318" y="218" fill="#e7ebe8">잘리는 지점을 찾았습니다.</text>
+    <text x="318" y="235" fill="#717b76">src/main/terminal/ring-buffer.ts:88</text>
+    <text x="306" y="259" fill="#9aa49f">· 수정안을 만드는 중…</text>
+    <rect x="306" y="272" width="292" height="60" rx="5" fill="#1c201f" stroke="#d8a24a"/>
+    <text x="318" y="290" font-size="9.5" fill="#d8a24a">Edit  ring-buffer.ts</text>
+    <text x="318" y="308" fill="#d46a6a">- buffer.subarray(overflow)</text>
+    <text x="318" y="324" fill="#73b987">+ tailOnUtf8Boundary(buffer)</text>
+    <text x="306" y="356" fill="#e7ebe8">이 편집을 적용할까요?</text>
+    <text x="306" y="375" fill="#4fb7a4">❯ 1. Yes</text>
+    <text x="318" y="392" fill="#9aa49f">2. No, tell Claude what to do</text>
+    <rect x="306" y="402" width="6" height="12" fill="#4fb7a4" opacity="0.85"/>
   </g>
 
-  <!-- pane 2 — codex, working -->
-  <rect x="617" y="68" width="331" height="254" rx="8" fill="#101312" stroke="#343b38"/>
-  <path d="M617 76a8 8 0 0 1 8-8h315a8 8 0 0 1 8 8v16H617z" fill="#1c201f"/>
-  <line x1="617" y1="92" x2="948" y2="92" stroke="#343b38"/>
-  <circle cx="633" cy="80" r="3.5" fill="#4fb7a4"/>
-  <text x="644" y="84" font-size="11" fill="#9aa49f">◆</text>
-  <text x="660" y="84" font-size="11" fill="#e7ebe8">Codex 1</text>
-  <text x="892" y="84" font-size="10" fill="#717b76">⟳</text>
-  <text x="911" y="84" font-size="10" fill="#717b76">⏹</text>
-  <text x="930" y="84" font-size="10" fill="#717b76">✕</text>
+  <!-- ── column 2, top · Codex 1 · 입력 대기 (violet frame) ── -->
+  <rect x="620" y="76" width="320" height="310" rx="8" fill="#101312" stroke="#aa8ccc" stroke-width="2"/>
+  <path d="M620 84a8 8 0 0 1 8-8h304a8 8 0 0 1 8 8v30H620z" fill="#1c201f"/>
+  <rect x="621" y="82" width="3" height="26" rx="1.5" fill="#aa8ccc"/>
+  <line x1="620" y1="114" x2="940" y2="114" stroke="#343b38"/>
+  <use href="#ic-folder" x="631" y="81"/>
+  <text x="647" y="91" font-size="10" fill="#9aa49f">atlas</text>
+  <use href="#ic-branch" x="680" y="81"/>
+  <text x="695" y="91" font-size="10" fill="#717b76">main</text>
+  <use href="#ic-briefcase" x="726" y="81"/>
+  <text x="741" y="91" font-size="10" fill="#717b76">Nova</text>
+  <circle cx="636" cy="103" r="3.5" fill="#aa8ccc"/>
+  <use href="#ic-codex" x="645" y="97"/>
+  <text x="663" y="107" font-size="11" fill="#e7ebe8">Codex 1</text>
+  <use href="#ic-split" x="838" y="97"/>
+  <use href="#ic-refresh" x="858" y="97"/>
+  <use href="#ic-stop" x="878" y="97"/>
+  <use href="#ic-trash" x="898" y="97"/>
+  <use href="#ic-close" x="918" y="97"/>
   <g font-family="Consolas, Cascadia Code, monospace" font-size="10">
-    <text x="631" y="112" fill="#717b76">$ codex resume</text>
-    <text x="631" y="131" fill="#9aa49f">· vitest run  src/main/terminal</text>
-    <text x="631" y="148" fill="#73b987">  ✓ 651 passed</text>
-    <text x="631" y="167" fill="#9aa49f">· 경계 보존 테스트 추가 중…</text>
-    <rect x="631" y="178" width="6" height="12" fill="#4fb7a4" opacity="0.85"/>
+    <text x="634" y="136" fill="#717b76">$ codex resume</text>
+    <text x="634" y="160" fill="#9aa49f">· vitest run src/main/terminal</text>
+    <text x="646" y="177" fill="#73b987">✓ 통과</text>
+    <text x="634" y="201" fill="#9aa49f">· 경계 보존 테스트를 추가했습니다.</text>
+    <text x="634" y="225" fill="#e7ebe8">❯ 커밋 메시지를 어떻게 쓸까요?</text>
+    <rect x="634" y="235" width="6" height="12" fill="#4fb7a4" opacity="0.85"/>
   </g>
 
-  <!-- pane 3 — powershell, idle -->
-  <rect x="276" y="332" width="331" height="254" rx="8" fill="#101312" stroke="#343b38"/>
-  <path d="M276 340a8 8 0 0 1 8-8h315a8 8 0 0 1 8 8v16H276z" fill="#1c201f"/>
-  <line x1="276" y1="356" x2="607" y2="356" stroke="#343b38"/>
-  <circle cx="292" cy="344" r="3.5" fill="#73b987"/>
-  <text x="303" y="348" font-size="11" fill="#9aa49f">⌨</text>
-  <text x="321" y="348" font-size="11" fill="#e7ebe8">PowerShell 1</text>
-  <text x="551" y="348" font-size="10" fill="#717b76">⟳</text>
-  <text x="570" y="348" font-size="10" fill="#717b76">⏹</text>
-  <text x="589" y="348" font-size="10" fill="#717b76">✕</text>
+  <!-- ── column 2, bottom · worktree session · 승인 대기 (amber frame) ── -->
+  <rect x="620" y="394" width="320" height="310" rx="8" fill="#101312" stroke="#d8a24a" stroke-width="2"/>
+  <path d="M620 402a8 8 0 0 1 8-8h304a8 8 0 0 1 8 8v30H620z" fill="#1c201f"/>
+  <rect x="621" y="400" width="3" height="26" rx="1.5" fill="#aa8ccc"/>
+  <line x1="620" y1="432" x2="940" y2="432" stroke="#343b38"/>
+  <use href="#ic-folder" x="631" y="399"/>
+  <text x="647" y="409" font-size="10" fill="#9aa49f">atlas</text>
+  <use href="#ic-branch" x="680" y="399"/>
+  <text x="695" y="409" font-size="10" fill="#717b76">feature-x</text>
+  <use href="#ic-briefcase" x="748" y="399"/>
+  <text x="763" y="409" font-size="10" fill="#717b76">Nova</text>
+  <circle cx="636" cy="421" r="3.5" fill="#d8a24a"/>
+  <use href="#ic-claude" x="645" y="415"/>
+  <text x="663" y="425" font-size="11" fill="#e7ebe8">Claude Code 2</text>
+  <use href="#ic-split" x="838" y="415"/>
+  <use href="#ic-refresh" x="858" y="415"/>
+  <use href="#ic-stop" x="878" y="415"/>
+  <use href="#ic-trash" x="898" y="415"/>
+  <use href="#ic-close" x="918" y="415"/>
   <g font-family="Consolas, Cascadia Code, monospace" font-size="10">
-    <text x="290" y="376" fill="#9aa49f">PS C:\work\atlas&gt; git status</text>
-    <text x="290" y="395" fill="#717b76">On branch main</text>
-    <text x="290" y="412" fill="#717b76">nothing to commit, working tree clean</text>
-    <text x="290" y="431" fill="#9aa49f">PS C:\work\atlas&gt;</text>
-    <rect x="404" y="421" width="6" height="12" fill="#4fb7a4" opacity="0.85"/>
+    <text x="634" y="454" fill="#717b76">$ claude</text>
+    <text x="634" y="478" fill="#e7ebe8">● 릴리스 노트를 정리했습니다.</text>
+    <rect x="634" y="490" width="292" height="42" rx="5" fill="#1c201f" stroke="#d8a24a"/>
+    <text x="646" y="507" font-size="9.5" fill="#d8a24a">Bash  git commit -m "docs: v1.20.1"</text>
+    <text x="646" y="524" fill="#9aa49f">in C:\work\atlas-feature-x</text>
+    <text x="634" y="556" fill="#e7ebe8">실행할까요?</text>
+    <text x="634" y="575" fill="#4fb7a4">❯ 1. Yes</text>
+    <rect x="634" y="585" width="6" height="12" fill="#4fb7a4" opacity="0.85"/>
   </g>
 
-  <!-- pane 4 — worktree session, awaiting input -->
-  <rect x="617" y="332" width="331" height="254" rx="8" fill="#101312" stroke="#343b38"/>
-  <path d="M617 340a8 8 0 0 1 8-8h315a8 8 0 0 1 8 8v16H617z" fill="#1c201f"/>
-  <line x1="617" y1="356" x2="948" y2="356" stroke="#343b38"/>
-  <circle cx="633" cy="344" r="3.5" fill="#aa8ccc"/>
-  <text x="644" y="348" font-size="11" fill="#9aa49f">🤖</text>
-  <text x="662" y="348" font-size="11" fill="#e7ebe8">Claude Code 2</text>
-  <text x="753" y="348" font-size="9.5" fill="#717b76">⑂ feature-x</text>
-  <text x="892" y="348" font-size="10" fill="#717b76">⟳</text>
-  <text x="911" y="348" font-size="10" fill="#717b76">⏹</text>
-  <text x="930" y="348" font-size="10" fill="#717b76">✕</text>
-  <g font-family="Consolas, Cascadia Code, monospace" font-size="10">
-    <text x="631" y="376" fill="#717b76">$ claude</text>
-    <text x="631" y="395" fill="#e7ebe8">❯ 어느 브랜치에 적용할까요?</text>
-    <rect x="631" y="406" width="6" height="12" fill="#4fb7a4" opacity="0.85"/>
-  </g>
+  <!-- ── column 3 · a document, in a slot like any other pane ── -->
+  <rect x="948" y="76" width="320" height="628" rx="8" fill="#161918" stroke="#343b38"/>
+  <path d="M948 84a8 8 0 0 1 8-8h304a8 8 0 0 1 8 8v30H948z" fill="#1c201f"/>
+  <rect x="949" y="82" width="3" height="26" rx="1.5" fill="#aa8ccc"/>
+  <line x1="948" y1="114" x2="1268" y2="114" stroke="#343b38"/>
+  <use href="#ic-folder" x="959" y="81"/>
+  <text x="975" y="91" font-size="10" fill="#9aa49f">atlas</text>
+  <use href="#ic-branch" x="1008" y="81"/>
+  <text x="1023" y="91" font-size="10" fill="#717b76">main</text>
+  <use href="#ic-briefcase" x="1054" y="81"/>
+  <text x="1069" y="91" font-size="10" fill="#717b76">Nova</text>
+  <use href="#ic-doc" x="960" y="97"/>
+  <text x="980" y="107" font-size="11" fill="#e7ebe8">README.md</text>
+  <rect x="1055" y="97" width="52" height="13" rx="3" fill="#252b29"/>
+  <text x="1081" y="107" font-size="8.5" fill="#9aa49f" text-anchor="middle">미리보기</text>
+  <use href="#ic-split" x="1226" y="97"/>
+  <use href="#ic-close" x="1246" y="97"/>
 
-  <!-- ══ Windows notification toast (a session outside the grid) ══ -->
-  <g opacity="0.97">
-    <rect x="638" y="470" width="292" height="96" rx="8" fill="#202524" stroke="#46504c"/>
-    <rect x="638" y="470" width="4" height="96" rx="2" fill="#d8a24a"/>
-    <g transform="translate(658,492) scale(0.72)">
-      <rect x="1.32" y="1.32" width="21.36" height="21.36" rx="5.4" fill="#252b29"/>
-      <g fill="none" stroke="#4fb7a4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6.6,6.8 12.2,12.1 6.6,17.4"/>
-        <line x1="13.4" y1="17.4" x2="18.4" y2="17.4"/>
+  <text x="964" y="146" font-size="15" font-weight="700" fill="#e7ebe8">멀티 터미널 작업기</text>
+  <line x1="964" y1="158" x2="1252" y2="158" stroke="#343b38"/>
+  <text x="964" y="180" font-size="11" fill="#9aa49f">CLI 에이전트 세션을 작업 폴더별로 묶어</text>
+  <text x="964" y="197" font-size="11" fill="#9aa49f">한 창에서 굴리는 데스크톱 앱이다.</text>
+  <text x="964" y="228" font-size="12.5" font-weight="700" fill="#e7ebe8">빠른 시작</text>
+  <g font-size="11" fill="#9aa49f">
+    <circle cx="970" cy="248" r="2" fill="#717b76"/>
+    <text x="982" y="252">릴리스에서 설치본을 받는다</text>
+    <circle cx="970" cy="270" r="2" fill="#717b76"/>
+    <text x="982" y="274">폴더를 열고 에이전트를 고른다</text>
+  </g>
+  <rect x="964" y="290" width="288" height="46" rx="5" fill="#101312" stroke="#343b38"/>
+  <g font-family="Consolas, Cascadia Code, monospace" font-size="10" fill="#9aa49f">
+    <text x="976" y="308">npm ci</text>
+    <text x="976" y="325">npm run dev</text>
+  </g>
+  <text x="964" y="366" font-size="12.5" font-weight="700" fill="#e7ebe8">화면</text>
+  <text x="964" y="388" font-size="11" fill="#9aa49f">모든 배치는 세로 열이다. 터미널이</text>
+  <text x="964" y="405" font-size="11" fill="#9aa49f">쏟아내는 정보는 세로로 흐른다.</text>
+
+  <!-- ═══════════════ OS notification: only for sessions outside the grid ═══════════════ -->
+  <g opacity="0.98">
+    <rect x="900" y="560" width="352" height="106" rx="8" fill="#202524" stroke="#46504c"/>
+    <rect x="900" y="560" width="4" height="106" rx="2" fill="#d8a24a"/>
+    <g transform="translate(920,582) scale(0.7)">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="#252b29"/>
+      <g fill="none" stroke="#4fb7a4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6.8,7 12.2,12.2 6.8,17.4"/><line x1="13.6" y1="17.4" x2="18.4" y2="17.4"/>
       </g>
     </g>
-    <text x="694" y="500" font-size="11.5" font-weight="600" fill="#e7ebe8">Claude · dashboard</text>
-    <text x="694" y="521" font-size="11" fill="#9aa49f">Approval required</text>
-    <text x="658" y="551" font-size="9.5" fill="#717b76">그리드에 없는 세션만 알린다 · 클릭하면 해당 세션으로</text>
+    <text x="958" y="590" font-size="11.5" font-weight="600" fill="#e7ebe8">Claude Code 3 · dashboard</text>
+    <text x="958" y="611" font-size="11" fill="#d8a24a">승인 대기</text>
+    <text x="920" y="643" font-size="9.5" fill="#717b76">그리드에 없는 세션만 알린다 · 클릭하면 그 세션으로 간다</text>
   </g>
 </svg>
