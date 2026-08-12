@@ -2639,6 +2639,27 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-page-title-size);
 }
 
+/* The empty slot's own offer: start something here, rather than only wait for a pane to be dragged
+   in. One button fits any slot the layouts can draw, so nothing collapses to an icon at twelve. */
+.grid-slot-new-session {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-size: var(--type-ui-size);
+  cursor: pointer;
+}
+
+.grid-slot-new-session:hover {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
 /* Nothing moves during a drag — only the outline under the cursor — because resizing a pane walks
    the whole xterm→PTY chain. The drop does the one rearrangement. */
 .grid-pane.drop-target,
@@ -3399,6 +3420,70 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-caption-size);
   font-weight: 600;
   text-transform: uppercase;
+}
+
+/*
+ * The empty slot's launcher. It borrows `.context-menu` for where it sits and what it looks like,
+ * but its rows are folder + agents rather than one action per line, so it is wider and its buttons
+ * are square icons instead of the menu's icon-and-label grid.
+ */
+.new-session-launcher {
+  width: 248px;
+}
+
+.new-session-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.new-session-row:hover {
+  background: var(--surface-hover);
+}
+
+.new-session-row.worktree-row {
+  padding-left: 16px;
+  color: var(--muted);
+}
+
+.new-session-row-name {
+  overflow: hidden;
+  flex: 1;
+  font-size: var(--type-ui-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-session-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+}
+
+.new-session-launcher .new-session-row-actions button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.new-session-launcher .new-session-row-actions button:disabled {
+  opacity: 0.5;
+}
+
+.new-session-empty {
+  margin: 0;
+  padding: 8px 10px 10px;
+  color: var(--quiet);
+  font-size: var(--type-ui-size);
 }
 
 .modal-backdrop {

@@ -6,6 +6,7 @@ import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import { Briefcase, Clock, Info, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, agentAccentClass } from "./brand-icons";
+import { recentProjects } from "./recent-folders";
 import {
   TOOL_AGENT_ID,
   findAgent,
@@ -40,29 +41,11 @@ const STATUS_PRIORITY: Record<TerminalStatus, number> = {
 };
 
 const TOOL_COMMANDS: ToolCommand[] = ["claude-update", "codex-update"];
-const QUICK_LAUNCH_LIMIT = 5;
 
 function sortedSessionMonitor(sessions: TerminalSessionView[]): TerminalSessionView[] {
   return [...sessions].sort(
     (left, right) => STATUS_PRIORITY[left.status] - STATUS_PRIORITY[right.status] || right.updatedAt.localeCompare(left.updatedAt),
   );
-}
-
-function projectActivityTimestamp(project: SharedProject, sessions: TerminalSessionView[]): string {
-  const projectSessions = sessions.filter((session) => session.projectId === project.id);
-  if (projectSessions.length === 0) return project.createdAt;
-  return projectSessions.reduce(
-    (latest, session) => (session.updatedAt > latest ? session.updatedAt : latest),
-    projectSessions[0].updatedAt,
-  );
-}
-
-function quickLaunchProjects(projects: SharedProject[], sessions: TerminalSessionView[]): SharedProject[] {
-  return [...projects]
-    .sort((left, right) =>
-      projectActivityTimestamp(right, sessions).localeCompare(projectActivityTimestamp(left, sessions)),
-    )
-    .slice(0, QUICK_LAUNCH_LIMIT);
 }
 
 const ACTIVE_SESSION_STATUSES = new Set<TerminalStatus>([
@@ -112,7 +95,7 @@ export function HomeDashboard({
   }, []);
 
   const monitored = sortedSessionMonitor(sessions);
-  const launchTargets = quickLaunchProjects(projects, sessions);
+  const launchTargets = recentProjects(projects, sessions);
   const updaterBusy = updaterStatus.state === "checking" || updaterStatus.state === "downloading";
   const updaterDownloaded = updaterStatus.state === "downloaded";
 

@@ -2319,6 +2319,138 @@ describe("sidebar panes", () => {
   });
 });
 
+describe("새 세션 from an empty slot", () => {
+  const EMPTY_SLOT_2 = "빈 슬롯 2 — 세션을 시작하거나 끌어다 놓기";
+
+  /** What main hands back for the launcher's create call: another folder's session, in the background. */
+  const startedInDashboard: TerminalSessionView = {
+    ...powershellSession,
+    id: "session-dashboard-claude",
+    projectId: dashboard.id,
+    kind: "claude",
+    cwd: dashboard.rootPath,
+    status: "starting",
+    pid: 4400,
+    createdAt: "2026-07-11T06:00:00.000Z",
+    updatedAt: "2026-07-11T06:00:00.000Z",
+  };
+
+  /**
+   * The pane attaches as soon as it mounts, and the attached session is what the app keeps. Stubbing
+   * create alone would leave attach answering from the harness's own fixtures, quietly replacing the
+   * session the launcher just started.
+   */
+  function answerCreateWith(harness: ReturnType<typeof createApi>, session: TerminalSessionView) {
+    vi.mocked(harness.api.terminals.create).mockResolvedValue(session);
+    const attach = vi.mocked(harness.api.terminals.attach);
+    const others = attach.getMockImplementation()!;
+    attach.mockImplementation(async (...args) =>
+      args[0] === session.id ? { session, replay: `${session.id} replay\r\n`, sequence: 0 } : others(...args),
+    );
+  }
+
+  function gridAreas(container: HTMLElement): string[] {
+    return [...container.querySelectorAll(".grid-pane")].map((pane) => (pane as HTMLElement).style.gridArea);
+  }
+
+  it("starts another folder's session in the slot that asked for it, without going there", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession],
+      savedViews: { folderViews: { [atlas.id]: { layoutId: "cols:1-1-1", slots: [powershellSession.id] } } },
+    });
+    answerCreateWith(harness, startedInDashboard);
+    window.multiCliWork = harness.api;
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(within(screen.getByLabelText(EMPTY_SLOT_2)).getByRole("button", { name: "새 세션" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Dashboard에서 Claude Code 시작" }));
+
+    await waitFor(() =>
+      expect(harness.api.terminals.create).toHaveBeenCalledWith(
+        // The session belongs to Dashboard; `background` keeps the launch from rewriting the
+        // persisted selection out from under the folder the user is still looking at.
+        expect.objectContaining({ projectId: dashboard.id, kind: "claude", background: true }),
+      ),
+    );
+
+    // Slot 2 is where it landed, and the pane that was in slot 1 has not moved.
+    await waitFor(() => expect(gridAreas(container)).toEqual(["s1", "s2"]));
+    expect((await screen.findByRole("region", { name: "Claude Code" })).style.gridArea).toBe("s2");
+    expect(screen.getByRole("region", { name: "PowerShell" }).style.gridArea).toBe("s1");
+    expect(screen.getByLabelText("빈 슬롯 3 — 세션을 시작하거나 끌어다 놓기")).toBeInTheDocument();
+
+    // And nothing navigated: this is still Atlas's grid.
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("Atlas");
+    expect(screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")).toHaveClass("selected");
+  });
+
+  it("lands on the slot the user pressed on page 2, not on the one with the same number on page 1", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession, claudeSession, codexSession],
+      savedViews: {
+        folderViews: {
+          [atlas.id]: {
+            layoutId: "cols:1-1",
+            slots: [powershellSession.id, claudeSession.id, codexSession.id],
+          },
+        },
+      },
+    });
+    answerCreateWith(harness, startedInDashboard);
+    window.multiCliWork = harness.api;
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 페이지" }));
+    await screen.findByLabelText("2페이지 중 2페이지");
+
+    fireEvent.click(within(screen.getByLabelText(EMPTY_SLOT_2)).getByRole("button", { name: "새 세션" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Dashboard에서 Claude Code 시작" }));
+
+    // Page 2's second slot is the fourth of the arrangement — the page offset is what makes it so.
+    await waitFor(() => expect(gridAreas(container)).toEqual(["s1", "s2"]));
+    expect((await screen.findByRole("region", { name: "Claude Code" })).style.gridArea).toBe("s2");
+    expect(screen.getByRole("region", { name: "Codex" }).style.gridArea).toBe("s1");
+    expect(screen.getByLabelText("2페이지 중 2페이지")).toBeInTheDocument();
+
+    // Page 1 kept the two panes it had, in the order it had them.
+    fireEvent.click(screen.getByRole("button", { name: "이전 페이지" }));
+    await screen.findByLabelText("2페이지 중 1페이지");
+    expect([...container.querySelectorAll(".grid-pane")].map((pane) => pane.getAttribute("aria-label"))).toEqual([
+      "PowerShell",
+      "Claude Code",
+    ]);
+  });
+
+  it("refuses to start in a folder whose root is gone, and says why on every one of its buttons", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession],
+      missingRootProjectIds: [dashboard.id],
+      savedViews: { folderViews: { [atlas.id]: { layoutId: "cols:1-1-1", slots: [powershellSession.id] } } },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(within(screen.getByLabelText(EMPTY_SLOT_2)).getByRole("button", { name: "새 세션" }));
+
+    const blocked = (await screen.findByRole("menuitem", {
+      name: "Dashboard에서 Claude Code 시작",
+    })) as HTMLButtonElement;
+    expect(blocked.disabled).toBe(true);
+    expect(blocked.title).toBe("폴더를 찾을 수 없습니다");
+    // Atlas is fine, so its row is still live — the reason is per folder, not per launcher.
+    expect((screen.getByRole("menuitem", { name: "Atlas에서 Claude Code 시작" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect(harness.api.terminals.create).not.toHaveBeenCalled();
+  });
+});
+
 describe("작업공간 and 숨김", () => {
   /**
    * The shelves are restored from disk, then reconciled against what the app actually holds. A

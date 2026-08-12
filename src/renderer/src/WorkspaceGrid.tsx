@@ -1,7 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import { SHIFT_ENTER_BYTES } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { canSplitColumn, columnOfSlot, type GridLayout } from "./grid-layouts";
 import type { PaneContext } from "./pane-context";
@@ -54,6 +54,11 @@ interface WorkspaceGridProps {
   onMergeColumn(index: number): void;
   /** Ends the session and deletes its scrollback right away — there is no confirmation step. */
   onRemoveSession(session: TerminalSessionView): void;
+  /**
+   * The empty slot's ＋ 새 세션 was pressed. The anchor is the button's own rect rather than the
+   * pointer, so the list opens in the same place whether it was clicked or reached by keyboard.
+   */
+  onRequestNewSession(index: number, anchor: { x: number; y: number }): void;
   /** A pane was dropped on this slot: one from another slot, or a tab from the bar. */
   onDropPane(index: number, paneId: string): void;
   /** A pane was dropped on an edge or a corner: take the zone's preset and put the pane in its slot. */
@@ -100,6 +105,7 @@ export function WorkspaceGrid({
   onSplitColumn,
   onMergeColumn,
   onRemoveSession,
+  onRequestNewSession,
   onDropPane,
   onSnapPane,
   onSessionContextMenu,
@@ -222,9 +228,21 @@ export function WorkspaceGrid({
               key={`slot-${index}`}
               {...slotProps(index)}
               className={`grid-slot empty ${dropIndex === index ? "drop-target" : ""}`.trim()}
-              aria-label={`빈 슬롯 ${index + 1} — 세션을 끌어다 놓기`}
+              aria-label={`빈 슬롯 ${index + 1} — 세션을 시작하거나 끌어다 놓기`}
             >
               <span className="grid-slot-number">{index + 1}</span>
+              <button
+                type="button"
+                className="grid-slot-new-session"
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  onRequestNewSession(index, { x: rect.left, y: rect.bottom + 4 });
+                }}
+              >
+                <Plus size={14} />
+                <span>새 세션</span>
+              </button>
+              {/* The slot is still a drop target, and losing that line would be the only sign of it. */}
               <span className="grid-slot-hint">세션 탭을 끌어다 놓기</span>
             </div>
           );

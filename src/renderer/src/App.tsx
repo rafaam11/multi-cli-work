@@ -36,6 +36,7 @@ import { categorizeFile, fileExtensionOf, fileTabId, type OpenFileTab } from "./
 import { FileViewerPane } from "./FileViewerPane";
 import { HtmlView } from "./HtmlView";
 import { HomeDashboard, type ActivityEntry } from "./HomeDashboard";
+import { NewSessionLauncher } from "./NewSessionLauncher";
 import { ProjectContextMenu } from "./ProjectContextMenu";
 import { ProjectDetailPage } from "./ProjectDetailPage";
 import { ProjectSidebar } from "./ProjectSidebar";
@@ -58,6 +59,7 @@ import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session
 import { isFolderActive } from "./folder-status";
 import { DEFAULT_LAYOUT_ID, resolveLayout } from "./grid-layouts";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
+import { recentProjects } from "./recent-folders";
 import {
   documentPaneId,
   isDocumentPaneId,
@@ -334,6 +336,8 @@ export function App() {
   /** Which shelf the grid is showing, or null while it shows a folder. */
   const [shelfKind, setShelfKind] = useState<ShelfKind | null>(null);
   const [page, setPage] = useState(0);
+  /** The empty slot whose ＋ 새 세션 is open, and where its list hangs from. */
+  const [newSessionSlot, setNewSessionSlot] = useState<{ index: number; x: number; y: number } | null>(null);
   /** The pane the keyboard and the outline follow — a session id or a document id. */
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
   /** The folder a tab click just pointed at; the sidebar pulses it for three seconds. */
@@ -1496,6 +1500,45 @@ export function App() {
       });
       setSessions((current) => replaceSession(current, created));
       placeInFolderView({ paneId: created.id, projectId: project.id, worktreeId: worktreeId ?? null });
+      flashFolder(project.id);
+    } catch (error) {
+      setActionError(errorMessage(error));
+    } finally {
+      setPendingAction(false);
+    }
+  };
+
+  /**
+   * An empty slot's ＋ 새 세션. The session is started for another folder than the one on screen,
+   * so it is placed twice: `placeInFolderView` gives it its slot in its own folder's grid — it is
+   * already there when the user goes to that folder — and the second placement moves it to the slot
+   * that was pressed on the surface in front of them. When those are the same view the second wins,
+   * because `placeInSlot` takes a pane out of its old slot before inserting it.
+   *
+   * Nothing navigates: the page, the selected folder and the active view stay put, which is the
+   * whole point of starting from a slot rather than from the sidebar.
+   */
+  const startSessionInSlot = async (
+    project: SharedProject,
+    kind: TerminalKind,
+    worktreeId: string | null,
+    slotIndex: number,
+  ) => {
+    if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
+    setPendingAction(true);
+    setActionError(null);
+    try {
+      const created = await window.multiCliWork.terminals.create({
+        projectId: project.id,
+        kind,
+        ...(worktreeId !== null ? { worktreeId } : {}),
+        ...DEFAULT_TERMINAL_SIZE,
+        background: true,
+      });
+      setSessions((current) => replaceSession(current, created));
+      placeInFolderView({ paneId: created.id, projectId: project.id, worktreeId });
+      placePaneOnCurrentView(created.id, (view) => placeInSlot(view, absoluteSlot(slotIndex), created.id));
+      focusPane(created.id);
       flashFolder(project.id);
     } catch (error) {
       setActionError(errorMessage(error));
@@ -2796,6 +2839,7 @@ export function App() {
                 onSplitColumn={splitColumn}
                 onMergeColumn={mergeColumn}
                 onRemoveSession={(session) => void removeSessionById(session)}
+                onRequestNewSession={(index, anchor) => setNewSessionSlot({ index, ...anchor })}
                 onDropPane={dropPaneOnSlot}
                 onSnapPane={snapPaneToZone}
                 onSessionContextMenu={(session, event) => {
@@ -2979,6 +3023,21 @@ export function App() {
         selectedPullRequest={focusedPullRequest ? { projectId: focusedPullRequest.projectId, remoteName: focusedPullRequest.remoteName, prNumber: focusedPullRequest.number } : null}
         onOpenPullRequest={openPullRequest}
       />
+
+      {newSessionSlot ? (
+        <NewSessionLauncher
+          x={newSessionSlot.x}
+          y={newSessionSlot.y}
+          projects={recentProjects(projects, sessions)}
+          worktrees={worktrees}
+          agents={agents}
+          disabledReasonFor={newSessionDisabledReason}
+          onStart={(project, agentId, worktreeId) =>
+            void startSessionInSlot(project, agentId, worktreeId, newSessionSlot.index)
+          }
+          onClose={() => setNewSessionSlot(null)}
+        />
+      ) : null}
 
       {contextMenu ? (
         <ProjectContextMenu

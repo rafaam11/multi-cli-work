@@ -91,6 +91,7 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
     onSplitColumn: vi.fn(),
     onMergeColumn: vi.fn(),
     onRemoveSession: vi.fn(),
+    onRequestNewSession: vi.fn(),
     onDropPane: vi.fn(),
     onSnapPane: vi.fn(),
     onSessionContextMenu: vi.fn(),
@@ -127,9 +128,28 @@ describe("WorkspaceGrid", () => {
       layout: layoutById("cols:1-1")!,
       slots: [null, sessionSlot(makeSession("session-2"))],
     });
-    const empty = screen.getByLabelText("빈 슬롯 1 — 세션을 끌어다 놓기");
+    const empty = screen.getByLabelText("빈 슬롯 1 — 세션을 시작하거나 끌어다 놓기");
     expect((empty as HTMLElement).style.gridArea).toBe("s1");
     expect(container.querySelectorAll(".grid-pane")).toHaveLength(1);
+  });
+
+  /**
+   * The empty slot offers both ways to fill itself. The anchor comes from the button's own box so a
+   * keyboard press opens the list in the same place a click does.
+   */
+  it("asks for a new session in the slot the button belongs to, without giving up the drop hint", () => {
+    const { props } = renderGrid({
+      layout: layoutById("cols:1-1")!,
+      slots: [sessionSlot(makeSession("session-1")), null],
+    });
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 시작하거나 끌어다 놓기");
+    expect(empty.querySelector(".grid-slot-hint")!.textContent).toBe("세션 탭을 끌어다 놓기");
+
+    const button = screen.getByRole("button", { name: "새 세션" });
+    button.getBoundingClientRect = () =>
+      ({ left: 120, top: 300, width: 90, height: 26, right: 210, bottom: 326, x: 120, y: 300, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.click(button);
+    expect(props.onRequestNewSession).toHaveBeenCalledWith(1, { x: 120, y: 330 });
   });
 
   it("reports the slot a dropped pane landed on, ignoring drags that carry no pane", () => {
@@ -137,7 +157,7 @@ describe("WorkspaceGrid", () => {
       layout: layoutById("cols:1-1")!,
       slots: [sessionSlot(makeSession("session-1")), null],
     });
-    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 시작하거나 끌어다 놓기");
 
     fireEvent.drop(empty, { dataTransfer: { types: ["text/plain"], getData: () => "project-atlas" } });
     expect(props.onDropPane).not.toHaveBeenCalled();
@@ -153,7 +173,7 @@ describe("WorkspaceGrid", () => {
       layout: layoutById("cols:1-1")!,
       slots: [sessionSlot(makeSession("session-1")), null],
     });
-    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 시작하거나 끌어다 놓기");
 
     fireEvent.dragOver(empty, { dataTransfer: { types: [SESSION_DRAG_TYPE] } });
     expect(empty.classList.contains("drop-target")).toBe(true);
@@ -194,7 +214,7 @@ describe("WorkspaceGrid", () => {
       slots: [sessionSlot(makeSession("session-1")), null],
     });
     const grid = gridSized(container);
-    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 시작하거나 끌어다 놓기");
 
     dragAt(empty, "dragover", 4, 4);
     const preview = grid.querySelector(".snap-preview") as HTMLElement;
@@ -219,7 +239,7 @@ describe("WorkspaceGrid", () => {
       slots: [sessionSlot(makeSession("session-1")), null],
     });
     gridSized(container);
-    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 끌어다 놓기");
+    const empty = screen.getByLabelText("빈 슬롯 2 — 세션을 시작하거나 끌어다 놓기");
 
     dragAt(empty, "dragover", 500, 300);
     expect(container.querySelector(".snap-preview")).toBeNull();
