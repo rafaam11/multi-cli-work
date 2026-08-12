@@ -4,8 +4,9 @@ import type { TerminalSessionView } from "@shared/api-types";
 import { X } from "lucide-react";
 import { useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { canSplitColumn, columnOfSlot, type GridLayout } from "./grid-layouts";
+import type { PaneContext } from "./pane-context";
 import { DocumentPaneIcon, paneContentId, type PaneContent } from "./pane-items";
-import { ColumnSplitButton, PaneHeader, type ColumnSplitControls } from "./PaneHeader";
+import { ColumnSplitButton, PaneContextLine, PaneHeader, type ColumnSplitControls } from "./PaneHeader";
 import { TerminalPane, type TerminalCommands } from "./TerminalPane";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { sessionLabel } from "./session-labels";
@@ -18,6 +19,8 @@ interface WorkspaceGridProps {
   slots: (PaneContent | null)[];
   /** Every session, for label numbering among a pane's project peers. */
   allSessions: TerminalSessionView[];
+  /** Where each pane lives, keyed by pane id — the grid never asks whether it is a session. */
+  paneContexts: ReadonlyMap<string, PaneContext>;
   agents: AgentView[];
   /** The pane keyboard input goes to; panes surface it, clicking one moves it. */
   focusedPaneId: string | null;
@@ -69,6 +72,7 @@ export function WorkspaceGrid({
   layout,
   slots,
   allSessions,
+  paneContexts,
   agents,
   focusedPaneId,
   renamingSessionId,
@@ -233,27 +237,31 @@ export function WorkspaceGrid({
               }}
             >
               <header
-                className="pane-header"
+                className={`pane-header ${paneContexts.get(paneId)?.accentClass ?? ""}`.trim()}
                 draggable
                 onDragStart={(event) => startSessionDrag(event, paneId)}
               >
-                <DocumentPaneIcon kind={document.kind} />
-                <span className="pane-title" title={document.label}>
-                  {document.label}
-                </span>
-                {document.dirty ? <span className="pane-dirty" title="저장하지 않은 변경" /> : null}
-                {document.detail ? <span className="pane-detail">{document.detail}</span> : null}
-                <div className="pane-actions">
-                  <ColumnSplitButton {...columnSplitFor(index)} />
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={() => onClearSlot(index)}
-                    aria-label="슬롯 비우기"
-                    title="슬롯 비우기 (문서는 탭에 남습니다)"
-                  >
-                    <X size={13} />
-                  </button>
+                {/* The document's own `detail` used to sit at the end of this row saying the same
+                    folder the context line now says, one line up. */}
+                <PaneContextLine context={paneContexts.get(paneId) ?? null} />
+                <div className="pane-header-main">
+                  <DocumentPaneIcon kind={document.kind} />
+                  <span className="pane-title" title={document.label}>
+                    {document.label}
+                  </span>
+                  {document.dirty ? <span className="pane-dirty" title="저장하지 않은 변경" /> : null}
+                  <div className="pane-actions">
+                    <ColumnSplitButton {...columnSplitFor(index)} />
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => onClearSlot(index)}
+                      aria-label="슬롯 비우기"
+                      title="슬롯 비우기 (문서는 탭에 남습니다)"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
                 </div>
               </header>
               <div className="grid-pane-body">{content}</div>
@@ -275,6 +283,7 @@ export function WorkspaceGrid({
             <PaneHeader
               session={session}
               label={labelFor(session)}
+              context={paneContexts.get(paneId) ?? null}
               agents={agents}
               renaming={renamingSessionId === session.id}
               pendingAction={pendingAction}

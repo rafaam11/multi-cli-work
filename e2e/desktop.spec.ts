@@ -799,6 +799,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // Pressing a pane is what moves the focus the header reports.
     await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Echo Agent");
 
+    // Every pane opens with the folder it runs in, whatever its session came to be called.
+    await expect(pane("Echo Agent").locator(".pane-context")).toHaveText("Sample Project");
+    await expect(pane(SHELL_LABEL).locator(".pane-context")).toHaveText("Sample Project");
+
     // The pane header renames its session in place, and its context menu puts the name back.
     await pane("Echo Agent").locator(".pane-title").dblclick();
     const nameField = page.getByRole("textbox", { name: "세션 이름" });

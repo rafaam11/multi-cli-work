@@ -2713,24 +2713,83 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--amber);
 }
 
-.pane-detail {
-  overflow: hidden;
+/*
+ * The header is the pane's drag handle: grab it to trade slots with another pane. It stacks two
+ * rows — where this pane's work lives, then the session itself — and wears its 업무 프로젝트's
+ * category colour down the left edge. Folders belonging to no work project keep the 2px so every
+ * header on the page starts its text at the same x.
+ */
+.pane-header {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid var(--category-accent, transparent);
+  color: var(--muted);
+  cursor: grab;
+  font-size: 11px;
+}
+
+.pane-header-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+}
+
+/*
+ * Folder, branch, work project — in the order a narrow column gives them up. The shrink factors do
+ * the eliding: the work project collapses first, the branch next, and the folder name is the last
+ * thing standing because it is the part that tells two panes apart. The whole line is in the title,
+ * so whatever gets cut is still one hover away.
+ */
+.pane-context {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 6px 0 8px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.pane-context > svg {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.pane-context-folder {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The header is the pane's drag handle: grab it to trade slots with another pane. */
-.pane-header {
+.pane-context-branch,
+.pane-context-project {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 4px 2px 10px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  cursor: grab;
-  font-size: 11px;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pane-context-branch > span,
+.pane-context-project > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-context-branch {
+  flex: 0 100 auto;
+}
+
+.pane-context-project {
+  flex: 0 10000 auto;
 }
 
 .pane-header .icon-button {
@@ -2755,7 +2814,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin-left: auto;
 }
 
-/* Six headers can be on screen at once, so everything shrinks a step from the workspace header. */
+/* Twelve headers can be on screen at once, so everything shrinks a step from the workspace header. */
 .pane-header .icon-button {
   width: 22px;
   height: 22px;

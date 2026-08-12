@@ -2,7 +2,8 @@ import type { TerminalSessionView } from "@shared/api-types";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { layoutById } from "./grid-layouts";
-import type { PaneContent } from "./pane-items";
+import type { PaneContext } from "./pane-context";
+import { paneContentId, type PaneContent } from "./pane-items";
 import { SESSION_DRAG_TYPE } from "./session-drag";
 import { WorkspaceGrid } from "./WorkspaceGrid";
 
@@ -40,6 +41,27 @@ function sessionsOf(slots: (PaneContent | null)[]): TerminalSessionView[] {
   return slots.flatMap((slot) => (slot?.kind === "session" ? [slot.session] : []));
 }
 
+function paneContext(overrides: Partial<PaneContext> = {}): PaneContext {
+  return {
+    folder: "atlas",
+    branch: null,
+    workProject: null,
+    accentClass: null,
+    title: "atlas",
+    tool: false,
+    ...overrides,
+  };
+}
+
+/** Every pane on screen knows where it lives, the way App's map always answers for an open pane. */
+function contextsFor(slots: (PaneContent | null)[]): Map<string, PaneContext> {
+  const map = new Map<string, PaneContext>();
+  for (const slot of slots) {
+    if (slot) map.set(paneContentId(slot), paneContext());
+  }
+  return map;
+}
+
 function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}) {
   const slots = overrides.slots ?? [sessionSlot(makeSession("session-1"))];
   const sessions = sessionsOf(slots);
@@ -47,6 +69,7 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
     layout: layoutById("cols:1")!,
     slots,
     allSessions: sessions,
+    paneContexts: contextsFor(slots),
     agents: [],
     focusedPaneId: sessions[0]?.id ?? null,
     renamingSessionId: null,
@@ -387,5 +410,70 @@ describe("WorkspaceGrid", () => {
       isProjectMissing: (projectId) => projectId === "project-atlas",
     });
     expect((screen.getByRole("button", { name: "세션 재개" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("opens a session header with the folder, branch and work project the pane belongs to", () => {
+    const { container } = renderGrid({
+      paneContexts: new Map([
+        [
+          "session-1",
+          paneContext({
+            branch: "feature/fix",
+            workProject: "지반 모니터링",
+            accentClass: "category-government",
+            title: "atlas · feature/fix · 지반 모니터링",
+          }),
+        ],
+      ]),
+    });
+
+    const context = container.querySelector(".pane-context") as HTMLElement;
+    expect(context.textContent).toBe("atlasfeature/fix지반 모니터링");
+    expect(context.title).toBe("atlas · feature/fix · 지반 모니터링");
+    // The colour rides on the header itself, so the stripe covers both of its rows.
+    expect(container.querySelector(".pane-header")!.classList.contains("category-government")).toBe(true);
+  });
+
+  it("names the folder alone when the pane is not on a worktree or in a work project", () => {
+    const { container } = renderGrid();
+
+    expect((container.querySelector(".pane-context") as HTMLElement).textContent).toBe("atlas");
+    expect(container.querySelector(".pane-context-branch")).toBeNull();
+    expect(container.querySelector(".pane-context-project")).toBeNull();
+    expect(container.querySelector(".pane-header")!.className).toBe("pane-header");
+  });
+
+  it("leaves the line out entirely for a pane whose folder can no longer be resolved", () => {
+    const { container } = renderGrid({ paneContexts: new Map() });
+    expect(container.querySelector(".pane-context")).toBeNull();
+  });
+
+  it("gives a document the same folder line, in place of the label it used to repeat", () => {
+    const { container } = renderGrid({
+      layout: layoutById("cols:1-1")!,
+      slots: [
+        sessionSlot(makeSession("session-1")),
+        {
+          kind: "document",
+          document: {
+            id: "file:project:atlas:README.md",
+            kind: "file",
+            label: "README.md",
+            detail: "atlas",
+            dirty: false,
+            owner: { kind: "project", id: "project-atlas" },
+          },
+          content: <div />,
+        },
+      ],
+      paneContexts: new Map([
+        ["file:project:atlas:README.md", paneContext({ workProject: "지반 모니터링", accentClass: "category-government" })],
+      ]),
+    });
+
+    const header = screen.getByLabelText("README.md").querySelector(".pane-header") as HTMLElement;
+    expect(header.querySelector(".pane-context")!.textContent).toBe("atlas지반 모니터링");
+    expect(header.classList.contains("category-government")).toBe(true);
+    expect(container.querySelector(".pane-detail")).toBeNull();
   });
 });

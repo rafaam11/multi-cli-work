@@ -57,6 +57,7 @@ import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 import { isFolderActive } from "./folder-status";
 import { DEFAULT_LAYOUT_ID, resolveLayout } from "./grid-layouts";
+import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
 import {
   documentPaneId,
   isDocumentPaneId,
@@ -455,6 +456,20 @@ export function App() {
     [openFileTabs, documents],
   );
   const documentPaneIds = useMemo(() => documentPanes.map((pane) => pane.id), [documentPanes]);
+  /**
+   * Where each pane's work lives, for the folder line its header opens with. Keyed by pane id so the
+   * grid can look one up without knowing whether the slot holds a terminal or a document.
+   */
+  const paneContexts = useMemo(() => {
+    const sources = { projects, worktrees, workProjects, membership: projectMembership };
+    const map = new Map<string, PaneContext>();
+    for (const session of sessions) map.set(session.id, paneContextOf(session, sources));
+    for (const pane of documentPanes) {
+      const context = paneContextOfOwner(pane.owner, sources);
+      if (context) map.set(pane.id, context);
+    }
+    return map;
+  }, [sessions, documentPanes, projects, worktrees, workProjects, projectMembership]);
   /** The pull request the focused pane shows, so the sidebar's list can mark it as the open one. */
   const focusedPullRequest =
     documents.find(
@@ -2697,6 +2712,7 @@ export function App() {
                 layout={resolvedView.layout}
                 slots={gridSlots}
                 allSessions={sessions}
+                paneContexts={paneContexts}
                 agents={agents}
                 focusedPaneId={focusedPaneId}
                 renamingSessionId={renameTarget?.surface === "pane" ? renameTarget.sessionId : null}

@@ -1490,6 +1490,30 @@ describe("work project categories", () => {
     expect(await groupOf("A사 관제")).toHaveClass("category-outsourcing");
   });
 
+  /** A session name says nothing about where the session lives; the line above it does. */
+  it("opens a pane header with the folder the session runs in and the work project that owns it", async () => {
+    const harness = createApi({
+      projects: [atlas],
+      sessions: [powershellSession],
+      workProjects: [
+        workProject("wp-grant", "스마트팩토리 과제", "정부지원과제", {
+          members: [{ projectId: atlas.id, role: "repo" }],
+        }),
+      ],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+
+    const header = (await screen.findByRole("region", { name: "PowerShell" })).querySelector(".pane-header")!;
+    const context = header.querySelector(".pane-context")!;
+    expect(context).toHaveTextContent("Atlas");
+    expect(context).toHaveTextContent("스마트팩토리 과제");
+    expect(context).toHaveAttribute("title", "Atlas · 스마트팩토리 과제");
+    expect(header).toHaveClass("category-government");
+  });
+
   it("marks a member folder with the brand of what it holds — Teams for 문서, GitHub for 레포", async () => {
     const harness = createApi({
       projects: [atlas, dashboard],
