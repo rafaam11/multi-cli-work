@@ -86,6 +86,7 @@ import {
   mergeColumnAt,
   viewPageSize,
 } from "./slot-view";
+import { isTypingTarget, normalizeKeyEvent, resolveKeymap } from "./keymap";
 
 type ActiveView = "home" | "detail" | "work-project" | "terminal";
 
@@ -776,57 +777,31 @@ export function App() {
     };
   }, []);
 
-  // Capture phase, because the terminal usually owns the keyboard: xterm swallows keydowns once
-  // focused, so only a listener that runs ahead of it can make Ctrl+P the app's shortcut.
+  const keymap = useMemo(() => resolveKeymap(appSettings.keybindings), [appSettings.keybindings]);
+  const keymapRef = useRef(keymap);
+  keymapRef.current = keymap;
+  const handleMenuActionRef = useRef<(id: string) => void>(() => undefined);
+  const keyActionEnabledRef = useRef<(id: string) => boolean>(() => true);
+
+  // 캡처 단계여야 한다: 포커스된 xterm이 keydown을 삼키므로, 그보다 먼저 보는 리스너만이
+  // 앱 전역 단축키가 될 수 있다. (예전의 Ctrl+P·줌·Ctrl+S 리스너 세 개를 키맵 조회 하나로 통합.)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
-      if (event.key.toLowerCase() !== "p") return;
+      if (document.querySelector("[data-key-capture]")) return; // 단축키 탭이 키를 녹화하는 중
+      const accelerator = normalizeKeyEvent(event);
+      if (!accelerator) return;
+      const matched = keymapRef.current.get(accelerator);
+      if (!matched) return;
+      if (matched.ignoreWhileTyping && isTypingTarget()) return;
+      if (!matched.terminalSafe && document.activeElement?.closest(".xterm")) return;
+      if (!keyActionEnabledRef.current(matched.id)) return; // preventDefault 없이 흘려보낸다 — 현행과 동일
       event.preventDefault();
       event.stopPropagation();
-      setQuickOpenVisible((visible) => !visible);
+      handleMenuActionRef.current(matched.id);
     };
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, []);
-
-  // Electron's default menu is gone, and its accelerators went with it. These are the few worth
-  // keeping, on the same capture-phase listener as Ctrl+P and for the same reason. Ctrl+R is
-  // deliberately absent: reloading the renderer by mistyping is far worse than one extra menu trip.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const controls = window.multiCliWork.window;
-      const run = (action: () => void) => {
-        event.preventDefault();
-        event.stopPropagation();
-        action();
-      };
-      if (event.key === "F11") return run(() => void controls.toggleFullScreen());
-      if (event.key === "F12") return run(() => void controls.toggleDevTools());
-      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-      // Shift matters only for the glyph: Ctrl+Shift+= is how "+" is typed on a US layout.
-      if (event.key === "=" || event.key === "+") return run(() => void controls.zoom("in"));
-      if (event.key === "-" || event.key === "_") return run(() => void controls.zoom("out"));
-      if (event.key === "0") return run(() => void controls.zoom("reset"));
-    };
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, []);
-
-  // Same capture-phase reasoning as Ctrl+P above, plus it has to beat the browser's own save-page
-  // dialog. Image, binary, and truncated files remain read-only.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
-      if (event.key.toLowerCase() !== "s") return;
-      if (!selectedFileTab || !["markdown", "html", "text"].includes(selectedFileTab.category) || selectedFileTab.truncated || selectedFileTab.encoding !== "utf8") return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (selectedFileTab.dirty) void saveFileTab(selectedFileTab.id);
-    };
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, [selectedFileTab]);
 
   useEffect(() => {
     if (
@@ -2598,6 +2573,28 @@ export function App() {
     !loadError &&
     activeView === "terminal" &&
     currentView.slots.some((id) => id !== null && paneContentFor(id) !== null);
+
+  /** Ctrl+N: 현재 페이지의 N번째 슬롯(그리드가 그리는 순서)으로 키보드 포커스를 옮긴다. */
+  const focusVisibleSlot = (slotNumber: number) => {
+    if (!showsGrid) return;
+    const content = gridSlots[slotNumber - 1];
+    if (!content || content.kind !== "session") return;
+    focusPane(content.session.id);
+    terminalCommands.current.get(content.session.id)?.focus();
+  };
+
+  const cycleVisibleSession = (step: number) => {
+    if (!showsGrid) return;
+    const visible = gridSlots.flatMap((slot) => (slot?.kind === "session" ? [slot.session.id] : []));
+    if (visible.length === 0) return;
+    const index = visible.indexOf(focusedPaneId ?? "");
+    const nextIndex = index === -1 ? (step > 0 ? 0 : visible.length - 1) : (index + step + visible.length) % visible.length;
+    const next = visible[nextIndex];
+    if (next) {
+      focusPane(next);
+      terminalCommands.current.get(next)?.focus();
+    }
+  };
   /**
    * The picker rides above every terminal surface, grid or no grid — it deliberately does not follow
    * `showsGrid`. A folder with nothing open yet still carries a `layoutId` of its own, so choosing an
@@ -2657,6 +2654,10 @@ export function App() {
         : null;
 
   const handleMenuAction = (id: string) => {
+    if (id.startsWith("workspace.focus-slot-")) {
+      focusVisibleSlot(Number(id.slice("workspace.focus-slot-".length)));
+      return;
+    }
     if (id.startsWith(NEW_SESSION_PREFIX) && selectedProject) {
       void startSession(selectedProject, id.slice(NEW_SESSION_PREFIX.length), selectedWorktree?.id);
       return;
@@ -2684,6 +2685,12 @@ export function App() {
       case "view.dev-tools": void window.multiCliWork.window.toggleDevTools(); break;
       case "session.resume": void resumeSession(); break;
       case "session.refresh": if (headerSession) void refreshSession(headerSession.id); break;
+      case "session.next":
+        cycleVisibleSession(1);
+        break;
+      case "session.prev":
+        cycleVisibleSession(-1);
+        break;
       case "session.stop": void stopSession(); break;
       case "session.remove":
         if (selectedSession) void removeSessionById(selectedSession);
@@ -2699,6 +2706,22 @@ export function App() {
       case "settings.open":
         setSettingsOpen(true);
         break;
+    }
+  };
+
+  handleMenuActionRef.current = handleMenuAction;
+  keyActionEnabledRef.current = (id: string): boolean => {
+    switch (id) {
+      case "file.save":
+        // 예전 Ctrl+S 리스너의 가드: 저장 불가한 탭이면 preventDefault 없이 흘려보냈다.
+        return Boolean(
+          selectedFileTab &&
+            ["markdown", "html", "text"].includes(selectedFileTab.category) &&
+            !selectedFileTab.truncated &&
+            selectedFileTab.encoding === "utf8",
+        );
+      default:
+        return true;
     }
   };
 

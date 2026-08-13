@@ -16,6 +16,7 @@ export interface TerminalCommands {
   paste(): void;
   selectAll(): void;
   clear(): void;
+  focus(): void;
 }
 
 interface TerminalPaneProps {
@@ -219,6 +220,7 @@ export function TerminalPane({
       paste: pasteFromClipboard,
       selectAll: () => terminal.selectAll(),
       clear: () => terminal.clear(),
+      focus: () => terminal.focus(),
     });
 
     const resize = () => {

@@ -2908,7 +2908,7 @@ describe("title bar", () => {
 
     fireEvent.keyDown(window, { key: "F11" });
     fireEvent.keyDown(window, { key: "F12" });
-    fireEvent.keyDown(window, { key: "=", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: "+", ctrlKey: true });
     fireEvent.keyDown(window, { key: "-", ctrlKey: true });
     fireEvent.keyDown(window, { key: "0", ctrlKey: true });
 
@@ -3212,6 +3212,56 @@ describe("settings entry points", () => {
     render(<App />);
     fireEvent.keyDown(window, { key: "p", ctrlKey: true });
     fireEvent.click(await screen.findByText("설정 열기"));
+    expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
+  });
+});
+
+describe("keymap dispatcher", () => {
+  it("F5가 선택된 세션을 새로고침한다", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await xtermFor(powershellSession.id);
+    fireEvent.keyDown(window, { key: "F5" });
+    await waitFor(() => expect(harness.api.terminals.refresh).toHaveBeenCalledWith(powershellSession.id));
+  });
+
+  it("Ctrl+1이 (두 번째가 아니라) 첫 번째 슬롯의 세션을 포커스한다", async () => {
+    const harness = createApi({
+      sessions: [{ ...powershellSession, updatedAt: "2026-07-11T03:00:00.000Z" }, claudeSession],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: claudeSession.id },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await xtermFor(powershellSession.id);
+    const before = vi.mocked(harness.api.terminals.select).mock.calls.length;
+    fireEvent.keyDown(window, { key: "1", ctrlKey: true });
+    await waitFor(() => {
+      const calls = vi.mocked(harness.api.terminals.select).mock.calls.slice(before);
+      expect(calls).toContainEqual([atlas.id, powershellSession.id]);
+    });
+  });
+
+  it("텍스트 입력이 포커스를 쥔 동안 Ctrl+1은 무시된다", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await xtermFor(powershellSession.id);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    const before = vi.mocked(harness.api.terminals.select).mock.calls.length;
+    fireEvent.keyDown(input, { key: "1", ctrlKey: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(vi.mocked(harness.api.terminals.select).mock.calls.length).toBe(before);
+    input.remove();
+  });
+
+  it("Ctrl+,가 설정을 연다", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    fireEvent.keyDown(window, { key: ",", ctrlKey: true });
     expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
   });
 });
