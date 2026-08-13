@@ -239,6 +239,7 @@ export async function createDesktopRuntime(
     env: sessionEnvironment,
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
+    autoResumeEnabled: () => settingsService.current().general.autoResumeSessions,
   });
   const controlContext: ControlCommandContext = {
     sessions: () => coordinator.list(),

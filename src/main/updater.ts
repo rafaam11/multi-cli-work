@@ -25,7 +25,7 @@ export function updaterStatus(): UpdaterStatus {
  * Wires autoUpdater and starts one silent check.
  * Development builds have no update feed, so every entry point is a no-op that reports "idle".
  */
-export function initUpdater(): void {
+export function initUpdater(options: { autoCheck?: boolean } = {}): void {
   if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -37,7 +37,7 @@ export function initUpdater(): void {
   );
   autoUpdater.on("update-downloaded", (info: UpdateInfo) => publish({ state: "downloaded", version: info.version }));
   autoUpdater.on("error", (error: Error) => publish({ state: "error", message: String(error?.message ?? error) }));
-  void autoUpdater.checkForUpdatesAndNotify();
+  if (options.autoCheck !== false) void autoUpdater.checkForUpdatesAndNotify();
 }
 
 export async function checkForUpdates(): Promise<void> {

@@ -119,6 +119,8 @@ interface TerminalCoordinatorOptions {
   titlePollMs?: number;
   appendLog?: typeof appendSessionLog;
   logFlushMs?: number;
+  /** 없으면 켬 — 설정 도입 전과 동일. 꺼지면 lazy auto-resume만 죽고 수동 재개는 그대로다. */
+  autoResumeEnabled?(): boolean;
 }
 
 const DEFAULT_TITLE_POLL_MS = 2_000;
@@ -319,6 +321,7 @@ export class TerminalCoordinator {
   private maybeAutoResume(sessionId: string, size?: { cols: number; rows: number }): Promise<string | null> {
     const view = this.views.get(sessionId);
     if (!view?.interruptedByShutdown) return Promise.resolve(null);
+    if (this.options.autoResumeEnabled?.() === false) return Promise.resolve(null);
     if (view.pid !== null || (view.status !== "exited" && view.status !== "error")) return Promise.resolve(null);
     const pending = this.pendingResumes.get(sessionId);
     if (pending) return pending;

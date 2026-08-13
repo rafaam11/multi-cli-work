@@ -66,7 +66,8 @@ function createWindow(): BrowserWindow {
   window.on("close", (event) => {
     if (quitCoordinator.isCommitted()) return;
     event.preventDefault();
-    if (trayUnavailable) {
+    const closeToTray = runtime?.settings.current().general.closeToTray ?? true;
+    if (trayUnavailable || !closeToTray) {
       void requestQuit();
       return;
     }
@@ -241,7 +242,7 @@ if (!hasSingleInstanceLock) {
         mainWindow.show();
         console.error("Tray creation failed; close will quit instead of hiding the app.", error);
       }
-      initUpdater();
+      initUpdater({ autoCheck: runtime?.settings.current().general.autoCheckUpdates ?? true });
       if (shouldFocusWhenReady) showMainWindow();
     } catch (error) {
       await dialog.showMessageBox({

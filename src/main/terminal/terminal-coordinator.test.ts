@@ -874,6 +874,43 @@ describe("TerminalCoordinator", () => {
     expect(after.worker.create).not.toHaveBeenCalled();
   });
 
+  it("autoResumeSessions가 꺼지면 interrupted 세션도 재개하지 않고 종료 상태로 attach된다", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    await first.instance.flush();
+    await first.instance.shutdown();
+
+    const worker = new FakeWorker();
+    const gated = new TerminalCoordinator({
+      worker,
+      statePath: path.join(root, "state.json"),
+      logDir: path.join(root, "logs"),
+      claudeSettingsPath: path.join(root, "claude-settings.json"),
+      getProject: async (id) => (id === project.id ? project : null),
+      getExecutables: async () => ({
+        agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
+        vscode: "code.cmd",
+      }),
+      getAgent: (agentId) => BUILTIN_AGENTS[agentId as BuiltinAgentId] ?? null,
+      toolSessionCwd: () => "C:\\Users\\me",
+      env: { SYSTEMROOT: "C:\\Windows" },
+      idFactory: () => "session-1",
+      now: () => "2026-07-11T01:00:00.000Z",
+      logFlushMs: 60_000,
+      autoResumeEnabled: () => false,
+    });
+    await gated.initialize();
+
+    const result = await gated.attachForRenderer("session-1");
+
+    expect(worker.create).not.toHaveBeenCalled();
+    expect(result.session.status).toBe("exited");
+    // 수동 재개 경로는 그대로 살아 있다 — 시그니처는 기존 테스트(:487)와 동일.
+    await gated.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    expect(worker.create).toHaveBeenCalledOnce();
+  });
+
   it("coalesces simultaneous attaches from both panes into a single auto-resume", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
