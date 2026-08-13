@@ -1044,6 +1044,25 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     expect(await focusedRowLabels()).toEqual(focusedBefore);
   });
 
+  test("설정에서 바꾼 터미널 글꼴 크기가 살아있는 세션에 즉시 반영된다 @smoke", async () => {
+    await openFolder();
+    await expect(page.locator(".xterm")).toBeVisible();
+
+    await page.getByRole("menuitem", { name: "설정" }).click();
+    await expect(page.getByRole("dialog", { name: "설정" })).toBeVisible();
+    await page.getByRole("button", { name: "터미널" }).click();
+    await page.getByLabel("글꼴 크기").fill("20");
+
+    // xterm(DOM 렌더러)은 폰트 크기를 .xterm-rows에 얹는다 — 재생성 없이 20px이 되어야 한다.
+    await expect.poll(() => computedFontSize(".xterm-rows")).toBe("20px");
+
+    // 되돌리고 닫는다 — 같은 창을 쓰는 뒤 테스트가 13px 전제를 잃지 않게.
+    await page.getByLabel("글꼴 크기").fill("13");
+    await expect.poll(() => computedFontSize(".xterm-rows")).toBe("13px");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "설정" })).toBeHidden();
+  });
+
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
     const projectRoot = path.join(tempRoot, "sample-project");
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
