@@ -1,5 +1,6 @@
 import type { SessionAttention } from "../shared/api-types";
 import type { TerminalStatus } from "../shared/terminal-types";
+import { DEFAULT_SETTINGS, type NotifiableStatus, type NotificationSettings } from "../shared/settings-types";
 import { createTerminalAttentionTracker, type AttentionSnapshot } from "./attention-policy";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
 
@@ -12,9 +13,11 @@ interface SessionAttentionControllerOptions {
   readSelection(): Promise<SessionSelection>;
   windowState(): { visible: boolean; focused: boolean };
   publish(snapshot: AttentionSnapshot): void;
-  notify(sessionId: string, status: "awaiting-input" | "awaiting-approval", onClick: () => void): void;
+  notify(sessionId: string, status: NotifiableStatus, onClick: () => void): void;
   navigate(sessionId: string): void;
   logError?(message: string, error: unknown): void;
+  /** 없으면 기본값 — 설정 도입 전과 동일하게 동작한다(기존 테스트·호출부 보호). */
+  notificationSettings?(): NotificationSettings;
 }
 
 export interface SessionAttentionController {
@@ -54,10 +57,17 @@ export function createSessionAttentionController(
   return {
     async handleStatus(sessionId, status) {
       const revision = bump(sessionId);
-      if (status !== "awaiting-input" && status !== "awaiting-approval") {
+      const notifications = options.notificationSettings?.() ?? DEFAULT_SETTINGS.notifications;
+      const awaiting = status === "awaiting-input" || status === "awaiting-approval";
+      const notifiable = awaiting || status === "exited" || status === "error";
+      const wantsNotification =
+        notifiable && notifications.desktop && notifications.statuses[status as NotifiableStatus];
+
+      if (!awaiting) {
+        // 배지·트레이는 알림 설정과 무관: 대기 상태만 attention을 세우고 나머지는 오늘처럼 지운다.
         deduper.reset(sessionId);
         publish(tracker.applyStatus(sessionId, status));
-        return;
+        if (!wantsNotification) return;
       }
 
       let selection: SessionSelection;
@@ -79,13 +89,14 @@ export function createSessionAttentionController(
       });
       if (!shouldNotify) {
         deduper.reset(sessionId);
-        publish(tracker.markSeen(sessionId));
+        if (awaiting) publish(tracker.markSeen(sessionId));
         return;
       }
 
-      publish(tracker.applyStatus(sessionId, status));
+      if (awaiting) publish(tracker.applyStatus(sessionId, status));
+      if (!wantsNotification) return;
       if (!deduper.shouldNotify(sessionId, status)) return;
-      options.notify(sessionId, status, () => {
+      options.notify(sessionId, status as NotifiableStatus, () => {
         options.navigate(sessionId);
         markSeen(sessionId);
       });

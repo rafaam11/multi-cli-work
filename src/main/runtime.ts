@@ -5,6 +5,7 @@ import path from "node:path";
 import type { AgentDefinition } from "../shared/agent-types";
 import type { AgentsSnapshot, ProviderAvailability } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
+import type { NotifiableStatus } from "../shared/settings-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
 import { createSettingsService, type SettingsService } from "./settings/settings-store";
@@ -301,6 +302,12 @@ export async function createDesktopRuntime(
       window.webContents.send("attention:event", snapshot.unread);
     }
   };
+  const NOTIFICATION_BODY: Record<NotifiableStatus, string> = {
+    "awaiting-input": "입력을 기다리는 중입니다",
+    "awaiting-approval": "승인이 필요합니다",
+    exited: "세션이 종료되었습니다",
+    error: "세션이 오류로 중단되었습니다",
+  };
   const attention = createSessionAttentionController({
     readSelection: async () => {
       const { state } = await coordinator.state();
@@ -325,7 +332,7 @@ export async function createDesktopRuntime(
         : "멀티 터미널 작업기";
       const notification = new Notification({
         title,
-        body: status === "awaiting-approval" ? "승인이 필요합니다" : "입력을 기다리는 중입니다",
+        body: NOTIFICATION_BODY[status],
         silent: false,
       });
       notification.on("click", onClick);
@@ -338,6 +345,7 @@ export async function createDesktopRuntime(
       }
     },
     logError: (message, error) => console.error(message, error),
+    notificationSettings: () => settingsService.current().notifications,
   });
 
   registerMainIpc(ipcMain, {
