@@ -21,6 +21,14 @@ import type {
   WindowChromeState,
   WindowZoomAction,
 } from "../shared/api-types";
+import {
+  TERMINAL_FONT_SIZE_RANGE,
+  TERMINAL_LINE_HEIGHT_RANGE,
+  TERMINAL_SCROLLBACK_RANGE,
+  type AppSettings,
+  type AppSettingsPatch,
+  type NotifiableStatus,
+} from "../shared/settings-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
@@ -227,6 +235,10 @@ interface MainIpcDependencies {
   editAgents(): Promise<void>;
   attentionState(): Record<string, SessionAttention>;
   onSessionSelected?(sessionId: string | null): void;
+  settings: {
+    get(): AppSettings;
+    update(patch: AppSettingsPatch): Promise<AppSettings>;
+  };
 }
 
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
@@ -442,6 +454,109 @@ function positiveInteger(value: unknown, label: string): number {
   const result = integer(value, label);
   if (result < 1) throw new Error(`${label} must be positive`);
   return result;
+}
+
+const NOTIFIABLE_STATUSES: readonly NotifiableStatus[] = ["awaiting-input", "awaiting-approval", "exited", "error"];
+
+function booleanValue(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${label} must be a boolean`);
+  return value;
+}
+
+function numberInRange(value: unknown, min: number, max: number, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${label} must be a number`);
+  if (value < min || value > max) throw new Error(`${label} must be between ${min} and ${max}`);
+  return value;
+}
+
+function validateSettingsPatch(value: unknown): AppSettingsPatch {
+  const raw = exactObject(value, ["language", "general", "terminal", "notifications", "keybindings"], "Settings patch");
+  const patch: AppSettingsPatch = {};
+  if (raw.language !== undefined) {
+    if (raw.language !== "ko" && raw.language !== "en") throw new Error('Settings language must be "ko" or "en"');
+    patch.language = raw.language;
+  }
+  if (raw.general !== undefined) {
+    const general = exactObject(raw.general, ["closeToTray", "autoResumeSessions", "autoCheckUpdates"], "Settings general");
+    patch.general = {};
+    if (general.closeToTray !== undefined) patch.general.closeToTray = booleanValue(general.closeToTray, "Settings closeToTray");
+    if (general.autoResumeSessions !== undefined) {
+      patch.general.autoResumeSessions = booleanValue(general.autoResumeSessions, "Settings autoResumeSessions");
+    }
+    if (general.autoCheckUpdates !== undefined) {
+      patch.general.autoCheckUpdates = booleanValue(general.autoCheckUpdates, "Settings autoCheckUpdates");
+    }
+  }
+  if (raw.terminal !== undefined) {
+    const terminal = exactObject(
+      raw.terminal,
+      ["fontFamily", "fontSize", "lineHeight", "scrollback", "cursorStyle", "cursorBlink"],
+      "Settings terminal",
+    );
+    patch.terminal = {};
+    if (terminal.fontFamily !== undefined) patch.terminal.fontFamily = nonEmptyString(terminal.fontFamily, "Settings fontFamily");
+    if (terminal.fontSize !== undefined) {
+      patch.terminal.fontSize = numberInRange(
+        integer(terminal.fontSize, "Settings fontSize"),
+        TERMINAL_FONT_SIZE_RANGE.min,
+        TERMINAL_FONT_SIZE_RANGE.max,
+        "Settings fontSize",
+      );
+    }
+    if (terminal.lineHeight !== undefined) {
+      patch.terminal.lineHeight = numberInRange(
+        terminal.lineHeight,
+        TERMINAL_LINE_HEIGHT_RANGE.min,
+        TERMINAL_LINE_HEIGHT_RANGE.max,
+        "Settings lineHeight",
+      );
+    }
+    if (terminal.scrollback !== undefined) {
+      patch.terminal.scrollback = numberInRange(
+        integer(terminal.scrollback, "Settings scrollback"),
+        TERMINAL_SCROLLBACK_RANGE.min,
+        TERMINAL_SCROLLBACK_RANGE.max,
+        "Settings scrollback",
+      );
+    }
+    if (terminal.cursorStyle !== undefined) {
+      if (terminal.cursorStyle !== "bar" && terminal.cursorStyle !== "block" && terminal.cursorStyle !== "underline") {
+        throw new Error("Settings cursorStyle must be bar, block, or underline");
+      }
+      patch.terminal.cursorStyle = terminal.cursorStyle;
+    }
+    if (terminal.cursorBlink !== undefined) patch.terminal.cursorBlink = booleanValue(terminal.cursorBlink, "Settings cursorBlink");
+  }
+  if (raw.notifications !== undefined) {
+    const notifications = exactObject(raw.notifications, ["desktop", "statuses"], "Settings notifications");
+    patch.notifications = {};
+    if (notifications.desktop !== undefined) {
+      patch.notifications.desktop = booleanValue(notifications.desktop, "Settings notifications.desktop");
+    }
+    if (notifications.statuses !== undefined) {
+      const statuses = exactObject(notifications.statuses, NOTIFIABLE_STATUSES, "Settings notification statuses");
+      patch.notifications.statuses = {};
+      for (const status of NOTIFIABLE_STATUSES) {
+        if (statuses[status] !== undefined) {
+          patch.notifications.statuses[status] = booleanValue(statuses[status], `Settings notifications.${status}`);
+        }
+      }
+    }
+  }
+  if (raw.keybindings !== undefined) {
+    if (typeof raw.keybindings !== "object" || raw.keybindings === null || Array.isArray(raw.keybindings)) {
+      throw new Error("Settings keybindings must be an object");
+    }
+    const keybindings: Record<string, string | null> = {};
+    for (const [actionId, accelerator] of Object.entries(raw.keybindings)) {
+      if (accelerator !== null && (typeof accelerator !== "string" || accelerator.length === 0 || accelerator.length > 64)) {
+        throw new Error(`Settings keybinding for ${actionId} must be a short string or null`);
+      }
+      keybindings[actionId] = accelerator as string | null;
+    }
+    patch.keybindings = keybindings;
+  }
+  return patch;
 }
 
 function validatePullRequestQuery(value: unknown): PullRequestListQuery {
@@ -978,4 +1093,7 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("updater:install", () => dependencies.updater.install());
   ipc.handle("app:open-releases", () => dependencies.updater.openReleases());
   ipc.handle("app:open-repository", () => dependencies.updater.openRepository());
+
+  ipc.handle("settings:get", () => dependencies.settings.get());
+  ipc.handle("settings:update", (_event, patch: unknown) => dependencies.settings.update(validateSettingsPatch(patch)));
 }

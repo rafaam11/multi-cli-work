@@ -3,6 +3,7 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { SlotViewsInput } from "../shared/api-types";
+import { DEFAULT_SETTINGS } from "../shared/settings-types";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
 
 function setup(options: { onSessionSelected?: (sessionId: string | null) => void } = {}) {
@@ -200,6 +201,10 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     quit: vi.fn(async () => undefined),
   };
   const chooseDirectory = vi.fn(async (_defaultPath?: string): Promise<string | null> => "C:\\Work");
+  const settingsGateway = {
+    get: vi.fn(() => DEFAULT_SETTINGS),
+    update: vi.fn(async (patch: unknown) => ({ ...DEFAULT_SETTINGS, patched: patch })),
+  };
   registerMainIpc(ipc, {
     projectService,
     workProjectService,
@@ -225,10 +230,12 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     editAgents: vi.fn(async () => undefined),
     attentionState: vi.fn(() => ({ "session-1": "input" as const })),
     onSessionSelected: options.onSessionSelected,
+    settings: settingsGateway,
   });
   return {
     handlers,
     projectService,
+    settingsGateway,
     workProjectService,
     workProjectRegistry,
     coordinator,
@@ -624,6 +631,36 @@ describe("main IPC boundary", () => {
       state: { selectedProjectId: project.id, selectedSessionId: null },
     });
     expect(coordinator.state).toHaveBeenCalledOnce();
+  });
+
+  it("reads and writes settings, validating patches before delegating", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    expect(handlers.get("settings:get")!({})).toEqual(DEFAULT_SETTINGS);
+
+    await handlers.get("settings:update")!({}, {
+      terminal: { fontSize: 16 },
+      keybindings: { "view.quick-open": null },
+    });
+    expect(settingsGateway.update).toHaveBeenCalledWith({
+      terminal: { fontSize: 16 },
+      keybindings: { "view.quick-open": null },
+    });
+  });
+
+  it("rejects unknown fields, out-of-range values, and mistyped settings patches", () => {
+    const { handlers, settingsGateway } = setup();
+
+    expect(() => handlers.get("settings:update")!({}, { theme: "dark" })).toThrow(/Settings patch/);
+    expect(() => handlers.get("settings:update")!({}, { terminal: { fontSize: 4 } })).toThrow(/fontSize/);
+    expect(() => handlers.get("settings:update")!({}, { terminal: { fontSize: 40 } })).toThrow(/fontSize/);
+    expect(() => handlers.get("settings:update")!({}, { terminal: { scrollback: 100 } })).toThrow(/scrollback/);
+    expect(() => handlers.get("settings:update")!({}, { language: "jp" })).toThrow(/language/);
+    expect(() => handlers.get("settings:update")!({}, { keybindings: { "view.quick-open": 5 } })).toThrow(/keybinding/i);
+    expect(() => handlers.get("settings:update")!({}, { notifications: { statuses: { finished: true } } })).toThrow(
+      /notification statuses/i,
+    );
+    expect(settingsGateway.update).not.toHaveBeenCalled();
   });
 
   it("serves the current updater state so a late renderer does not miss the first check", async () => {

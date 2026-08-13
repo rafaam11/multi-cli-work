@@ -7,6 +7,7 @@ import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1 } from "@shared/work-project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
+import { DEFAULT_SETTINGS, mergeSettingsPatch, type AppSettings, type AppSettingsPatch } from "@shared/settings-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { SESSION_DRAG_TYPE } from "./session-drag";
@@ -261,6 +262,8 @@ function createApi(options?: {
     },
   };
 
+  const settingsListeners = new Set<(settings: AppSettings) => void>();
+
   const workProjectRegistry: WorkProjectRegistryV1 = {
     schemaVersion: 1,
     updatedAt: "2026-07-11T04:00:00.000Z",
@@ -469,6 +472,14 @@ function createApi(options?: {
         return () => listeners.delete(listener);
       }),
     },
+    settings: {
+      get: vi.fn().mockResolvedValue(DEFAULT_SETTINGS),
+      update: vi.fn().mockImplementation(async (patch: AppSettingsPatch) => mergeSettingsPatch(DEFAULT_SETTINGS, patch)),
+      onChange: vi.fn((listener: (settings: AppSettings) => void) => {
+        settingsListeners.add(listener);
+        return () => settingsListeners.delete(listener);
+      }),
+    },
     updates: {
       appVersion: vi.fn().mockResolvedValue("1.0.0"),
       status: vi.fn().mockResolvedValue({ state: "idle" }),
@@ -488,6 +499,9 @@ function createApi(options?: {
     },
     emitAttention(unread: Record<string, "input" | "approval">) {
       for (const listener of attentionListeners) listener(unread);
+    },
+    emitSettings(settings: AppSettings) {
+      for (const listener of settingsListeners) listener(settings);
     },
     requestSession(sessionId: string) {
       for (const listener of navigationListeners) listener(sessionId);

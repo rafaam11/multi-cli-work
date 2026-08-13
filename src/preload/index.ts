@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { AppSettings } from "../shared/settings-types";
 import type { MultiCliWorkApi, SessionAttention, UpdaterStatus, WindowChromeState } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
 
@@ -183,6 +184,17 @@ const api: MultiCliWorkApi = {
       const handler = (_event: Electron.IpcRendererEvent, terminalEvent: TerminalEvent) => listener(terminalEvent);
       ipcRenderer.on("terminal:event", handler);
       return () => ipcRenderer.removeListener("terminal:event", handler);
+    },
+  },
+  settings: {
+    get: () => ipcRenderer.invoke("settings:get"),
+    update: (patch) => ipcRenderer.invoke("settings:update", patch),
+    onChange(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, settings: AppSettings) => listener(settings);
+      ipcRenderer.on("settings:changed", handler);
+      return () => {
+        ipcRenderer.removeListener("settings:changed", handler);
+      };
     },
   },
   updates: {

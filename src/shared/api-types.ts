@@ -22,6 +22,7 @@ import type {
   WorktreeRemovalResult,
   WorktreeWorkspaceSnapshot,
 } from "./worktree-types";
+import type { AppSettings, AppSettingsPatch } from "./settings-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -469,6 +470,12 @@ export interface MultiCliWorkApi {
     /** The saved arrangements — each folder's grid and the curated workspaces. */
     setSlotViews(input: SlotViewsInput): Promise<AppStateSnapshot>;
     onEvent(listener: (event: TerminalEvent) => void): () => void;
+  };
+  settings: {
+    get(): Promise<AppSettings>;
+    update(patch: AppSettingsPatch): Promise<AppSettings>;
+    /** 모든 저장이 모든 창으로 온다 — 다이얼로그와 앱 셸이 이 이벤트로 동기화된다. */
+    onChange(listener: (settings: AppSettings) => void): () => void;
   };
   updates: {
     appVersion(): Promise<string>;

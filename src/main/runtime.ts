@@ -7,6 +7,7 @@ import type { AgentsSnapshot, ProviderAvailability } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
+import { createSettingsService, type SettingsService } from "./settings/settings-store";
 import {
   CONTROL_ENDPOINT_ENV,
   CONTROL_PIPE_ENV,
@@ -87,6 +88,7 @@ function availability(executables: ProviderExecutables): ProviderAvailability {
 
 export interface DesktopRuntime {
   coordinator: TerminalCoordinator;
+  settings: SettingsService;
   markVisibleSessionsSeen(): Promise<void>;
   writeRecoveryMarker(): void;
   dispose(): Promise<void>;
@@ -114,6 +116,7 @@ export async function createDesktopRuntime(
   const statePath = path.join(userData, "state.json");
   const recoveryMarkerPath = path.join(userData, "shutdown-recovery.json");
   await consumeRecoveryMarker(recoveryMarkerPath, statePath);
+  const settingsService = await createSettingsService(path.join(userData, "settings.json"));
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
   // Both transcript directories are only overridden so tests can point at a fixture.
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
@@ -345,6 +348,16 @@ export async function createDesktopRuntime(
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
       }),
     coordinator,
+    settings: {
+      get: () => settingsService.current(),
+      update: async (patch) => {
+        const next = await settingsService.update(patch);
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send("settings:changed", next);
+        }
+        return next;
+      },
+    },
     worktrees: {
       list: () => worktrees.list(),
       sync: (projects) => worktrees.sync(projects),
@@ -495,6 +508,7 @@ export async function createDesktopRuntime(
 
   return {
     coordinator,
+    settings: settingsService,
     markVisibleSessionsSeen: () => attention.markVisibleSessionsSeen(),
     writeRecoveryMarker() {
       const activeIds = coordinator.list()
