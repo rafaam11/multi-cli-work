@@ -3779,6 +3779,93 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   opacity: 0.5;
 }
 
+.settings-dialog {
+  display: flex;
+  width: min(720px, calc(100vw - 48px));
+  min-height: 420px;
+  max-height: calc(100vh - 96px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 132px;
+  flex-shrink: 0;
+  padding: 14px 8px;
+  border-right: 1px solid var(--line);
+}
+
+.settings-nav button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font: var(--type-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-nav button:hover {
+  color: var(--text);
+}
+
+.settings-nav button.active {
+  background: rgb(255 255 255 / 8%);
+  color: var(--text);
+}
+
+.settings-body {
+  flex: 1;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+.settings-body h2 {
+  margin: 0 0 12px;
+  font: var(--type-panel-title);
+}
+
+.settings-hint {
+  margin: 2px 0 10px;
+  color: var(--muted);
+  font: var(--type-secondary);
+}
+
+.settings-error {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font: var(--type-secondary);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.settings-row > label {
+  color: var(--text);
+  font: var(--type-secondary);
+}
+
+.settings-row input[type="text"],
+.settings-row input[type="number"],
+.settings-row select {
+  width: 220px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: var(--type-secondary);
+}
+
 .action-error {
   display: flex;
   min-width: 0;

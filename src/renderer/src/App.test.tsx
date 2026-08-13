@@ -3196,3 +3196,22 @@ describe("folder colour", () => {
     await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
   });
 });
+
+describe("settings entry points", () => {
+  it("타이틀바 설정 버튼이 설정 다이얼로그를 연다", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "설정" }));
+    expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
+  });
+
+  it("빠른 열기의 설정 열기 명령이 같은 다이얼로그를 연다", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    fireEvent.click(await screen.findByText("설정 열기"));
+    expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
+  });
+});

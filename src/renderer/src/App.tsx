@@ -28,6 +28,7 @@ import {
 } from "react";
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
+import { SettingsDialog } from "./SettingsDialog";
 import type { GitDiffFile } from "./GitDiffPane";
 import { GitGraphEmbed } from "./GitGraphEmbed";
 import type { GitWorktreeOption } from "./GitPanel";
@@ -46,6 +47,7 @@ import { SessionContextMenu } from "./SessionContextMenu";
 import type { TerminalCommands } from "./TerminalPane";
 import { TitleBar } from "./TitleBar";
 import { buildTitleBarMenus, NEW_SESSION_PREFIX } from "./title-bar-menu";
+import { DEFAULT_SETTINGS, type AppSettings } from "@shared/settings-types";
 import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceGrid } from "./WorkspaceGrid";
@@ -331,6 +333,8 @@ export function App() {
   const [worktreeRemoval, setWorktreeRemoval] = useState<WorktreeRemovalState | null>(null);
   const [worktreeForce, setWorktreeForce] = useState<WorktreeForceState | null>(null);
   const [fanOutVisible, setFanOutVisible] = useState(false);
+  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   /** Each folder's saved grid, keyed by `folderViewKeyOf`. */
   const [folderViews, setFolderViews] = useState<Record<string, SlotViewState>>({});
@@ -715,6 +719,22 @@ export function App() {
   // Only the 도움말 menu shows it, and it never changes while the app runs.
   useEffect(() => {
     void window.multiCliWork.updates.appVersion().then(setAppVersion).catch(() => undefined);
+  }, []);
+
+  // 기본값 = 현행 동작이므로 로드 전 잠깐 DEFAULT_SETTINGS로 그려도 시각적 차이가 없다.
+  useEffect(() => {
+    let disposed = false;
+    void window.multiCliWork.settings
+      .get()
+      .then((settings) => {
+        if (!disposed) setAppSettings(settings);
+      })
+      .catch(() => undefined);
+    const unsubscribe = window.multiCliWork.settings.onChange(setAppSettings);
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -2234,6 +2254,7 @@ export function App() {
         : []),
       { key: "command:edit-agents", kind: "command", label: "에이전트 추가 (agents.json)", detail: null },
       { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
+      { key: "command:settings", kind: "command", label: "설정 열기", detail: null },
     ];
     return [...sessionItems, ...workspaceItems, ...projectItems, ...commandItems];
   }, [quickOpenVisible, sessions, projects, workspaceViews, agents, selectedProject, selectedProjectMissing]);
@@ -2257,6 +2278,9 @@ export function App() {
       void editAgents();
     } else if (item.key === "command:check-updates") {
       void window.multiCliWork.updates.check().catch((error) => setActionError(errorMessage(error)));
+    } else if (item.key === "command:settings") {
+      setSettingsOpen(true);
+      return;
     } else if (rest[0] === "new-session" && selectedProject) {
       void startSession(selectedProject, rest.slice(1).join(":"));
     }
@@ -2672,6 +2696,9 @@ export function App() {
         break;
       case "help.release-notes": void window.multiCliWork.updates.openReleases(); break;
       case "help.repository": void window.multiCliWork.updates.openRepository(); break;
+      case "settings.open":
+        setSettingsOpen(true);
+        break;
     }
   };
 
@@ -3196,6 +3223,8 @@ export function App() {
           onClose={() => setQuickOpenVisible(false)}
         />
       ) : null}
+
+      {settingsOpen ? <SettingsDialog settings={appSettings} onClose={() => setSettingsOpen(false)} /> : null}
 
       {worktreeCreateProject ? (
         <WorktreeCreateDialog
