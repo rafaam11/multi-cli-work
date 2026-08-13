@@ -42,8 +42,30 @@ function shellLiteral(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-function powershellLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
+function batchQuotedPath(value: string): string {
+  return `"${value.replaceAll("%", "%%")}"`;
+}
+
+function windowsHookRunner(executablePath: string, hookScriptPath: string): string {
+  return [
+    "@echo off",
+    "setlocal DisableDelayedExpansion",
+    'set "ELECTRON_RUN_AS_NODE=1"',
+    `${batchQuotedPath(executablePath)} ${batchQuotedPath(hookScriptPath)}`,
+    "exit /b %errorlevel%",
+    "",
+  ].join("\r\n");
+}
+
+async function readHookTrustState(profilePath: string): Promise<string> {
+  try {
+    const current = await fs.readFile(profilePath, "utf8");
+    const match = /(?:^|\n)\[hooks\.state(?:\]|\.)/.exec(current);
+    return match ? `\n${current.slice(match.index + (match[0].startsWith("\n") ? 1 : 0)).trimStart()}` : "";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  }
 }
 
 export interface CodexIntegrationOptions {
@@ -64,14 +86,17 @@ export async function ensureCodexIntegration(options: CodexIntegrationOptions): 
   const executablePath = options.executablePath ?? process.execPath;
   const integrationDir = path.join(options.userData, "provider-hooks");
   const hookScriptPath = path.join(integrationDir, "codex-session-start.cjs");
+  const windowsHookRunnerPath = path.join(integrationDir, "codex-session-start.cmd");
   const profilePath = path.join(codexHome, `${CODEX_APP_PROFILE}.config.toml`);
   await fs.mkdir(integrationDir, { recursive: true });
   await fs.mkdir(codexHome, { recursive: true });
   await fs.writeFile(hookScriptPath, HOOK_SCRIPT, "utf8");
+  await fs.writeFile(windowsHookRunnerPath, windowsHookRunner(executablePath, hookScriptPath), "utf8");
 
   const command = `ELECTRON_RUN_AS_NODE=1 ${shellLiteral(executablePath)} ${shellLiteral(hookScriptPath)}`;
-  const commandWindows = `$env:ELECTRON_RUN_AS_NODE='1'; & ${powershellLiteral(executablePath)} ${powershellLiteral(hookScriptPath)}`;
-  const profile = `[features]\nhooks = true\n\n[[hooks.SessionStart]]\nmatcher = "^(startup|resume)$"\n\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = ${tomlString(command)}\ncommand_windows = ${tomlString(`powershell.exe -NoProfile -NonInteractive -Command "${commandWindows}"`)}\ntimeout = 5\n`;
+  const commandWindows = `cmd.exe /d /s /c ""${windowsHookRunnerPath.replaceAll("%", "%%")}""`;
+  const trustState = await readHookTrustState(profilePath);
+  const profile = `[features]\nhooks = true\n\n[[hooks.SessionStart]]\nmatcher = "^(startup|resume)$"\n\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = ${tomlString(command)}\ncommand_windows = ${tomlString(commandWindows)}\ntimeout = 5\n${trustState}`;
   await fs.writeFile(profilePath, profile, "utf8");
   return { profileName: CODEX_APP_PROFILE, profilePath, hookScriptPath };
 }
