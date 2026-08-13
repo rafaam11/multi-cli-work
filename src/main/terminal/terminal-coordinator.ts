@@ -39,7 +39,11 @@ import {
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const LOG_TRIM_SLACK_BYTES = 256 * 1024;
 const DEFAULT_LOG_FLUSH_MS = 100;
-/** A lazy auto-resume starts at the same default size the renderer uses, then gets resized to fit. */
+/**
+ * The fallback size for a lazy auto-resume. An attach from the renderer carries the pane's own size
+ * and uses that instead; this is for callers that have no pane to measure, and it is the same
+ * default xterm itself starts at.
+ */
 const AUTO_RESUME_COLS = 80;
 const AUTO_RESUME_ROWS = 24;
 /**
@@ -277,9 +281,13 @@ export class TerminalCoordinator {
    * is resumed here, on first view — the lazy half of session persistence — and its replay stitches
    * the saved scrollback, a dated separator, and whatever the fresh PTY has said so far. Everything
    * else falls through to the side-effect-free attach() below.
+   *
+   * The size is the pane the replay is about to be read in. It reaches the resumed PTY so the
+   * separator and everything after it are written at that width; without it the process would start
+   * at a default no later resize can retroactively re-wrap.
    */
-  async attachForRenderer(sessionId: string): Promise<TerminalAttachResult> {
-    const restoredReplay = await this.maybeAutoResume(sessionId);
+  async attachForRenderer(sessionId: string, size?: { cols: number; rows: number }): Promise<TerminalAttachResult> {
+    const restoredReplay = await this.maybeAutoResume(sessionId, size);
     if (restoredReplay === null) return this.attach(sessionId);
     const view = this.views.get(sessionId);
     if (!view) throw new Error(`Unknown terminal session: ${sessionId}`);
@@ -308,7 +316,7 @@ export class TerminalCoordinator {
    * at the same time — share one attempt per session instead of spawning two PTYs, and at most
    * MAX_CONCURRENT_AUTO_RESUMES of them run at once.
    */
-  private maybeAutoResume(sessionId: string): Promise<string | null> {
+  private maybeAutoResume(sessionId: string, size?: { cols: number; rows: number }): Promise<string | null> {
     const view = this.views.get(sessionId);
     if (!view?.interruptedByShutdown) return Promise.resolve(null);
     if (view.pid !== null || (view.status !== "exited" && view.status !== "error")) return Promise.resolve(null);
@@ -321,7 +329,11 @@ export class TerminalCoordinator {
         // committed only after create() succeeds, so failed retries leave the durable log intact.
         const replay = await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES);
         await this.resume(
-          { sessionId, cols: AUTO_RESUME_COLS, rows: AUTO_RESUME_ROWS },
+          {
+            sessionId,
+            cols: size?.cols ?? AUTO_RESUME_COLS,
+            rows: size?.rows ?? AUTO_RESUME_ROWS,
+          },
           { updateSelection: false },
         );
         const appendLog = this.options.appendLog ?? appendSessionLog;

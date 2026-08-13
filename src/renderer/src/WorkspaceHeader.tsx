@@ -2,8 +2,20 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import { ChevronLeft, ChevronRight, EyeOff, FolderOpen, LayoutGrid, MonitorDot, PanelsTopLeft, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  EyeOff,
+  FolderOpen,
+  LayoutGrid,
+  MonitorDot,
+  PanelsTopLeft,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
+import { isAutoLayout } from "./grid-layouts";
 import { LayoutPicker } from "./LayoutPicker";
 import { newSessionLabel, projectName, statusLabels } from "./session-labels";
 import { SHELF_TEXT, type ShelfKind } from "./shelves";
@@ -22,15 +34,23 @@ interface WorkspaceHeaderProps {
    * how many fit in the first place.
    */
   pages: { page: number; count: number; onChange(page: number): void } | null;
+  /**
+   * Redrawing every pane on screen, or null on a surface with no panes to redraw. Refreshing is a
+   * property of the window rather than of a session — every pane rebuilds its terminal against the
+   * size it now has — so one button here replaces the one each pane header used to carry.
+   */
+  refreshAll: { count: number; busy: boolean; onRefresh(): void } | null;
   selectedProject: SharedProject | null;
   selectedSession: TerminalSessionView | null;
   selectedSessionLabel: string | null;
   /**
    * The session in the pane that has the focus, wherever that pane came from. `selectedSession`
    * belongs to the folder on screen and is null on a shelf, which holds panes from several — so
-   * the 제거 button follows the focus instead, and works on both surfaces.
+   * the 제거 button follows the focus instead, and works on both surfaces. The launchers do the
+   * same on a shelf: with no folder of its own, the focused pane's path is what "here" means, and
+   * `launchDisabledReason` says why that path cannot start anything right now.
    */
-  focusedSession: { session: TerminalSessionView; label: string } | null;
+  focusedSession: { session: TerminalSessionView; label: string; launchDisabledReason: string | null } | null;
   onRemoveSession(session: TerminalSessionView): void;
   projectMissing: boolean;
   agents: AgentView[];
@@ -40,6 +60,11 @@ interface WorkspaceHeaderProps {
   detailActive: boolean;
   onOpenDetail(): void;
   onStartSession(kind: TerminalKind): void;
+  /**
+   * Opens the recent-folders launcher under the button. `자동` has no empty slots to press — the
+   * arrangement closes every gap — so on that layout this is the only way in to the list.
+   */
+  onRequestNewSession(anchor: { x: number; y: number }): void;
   onRelinkProject(): void;
 }
 
@@ -48,14 +73,15 @@ interface WorkspaceHeaderProps {
  * headers instead — with a grid of terminals, only the pane itself says which session a button
  * would act on.
  *
- * A shelf holds panes from several folders at once, so there is no folder for 상세 to open and no
- * folder for a launcher to start a session in. Those controls are for folder surfaces only; a shelf
- * gets a title saying how much it holds and where from.
+ * A shelf holds panes from several folders at once, so there is no folder for 상세 to open. That
+ * control is for folder surfaces only; a shelf gets a title saying how much it holds and where from.
+ * The launchers do follow it there, aimed at the focused pane's path — see `focusedSession`.
  */
 export function WorkspaceHeader({
   workspace,
   layout,
   pages,
+  refreshAll,
   selectedProject,
   selectedSession,
   selectedSessionLabel,
@@ -68,9 +94,25 @@ export function WorkspaceHeader({
   detailActive,
   onOpenDetail,
   onStartSession,
+  onRequestNewSession,
   onRelinkProject,
 }: WorkspaceHeaderProps) {
-  const canLaunch = Boolean(selectedProject) && !projectMissing && !pendingAction;
+  /**
+   * A folder surface launches into the folder it is showing; a shelf launches into whichever pane
+   * holds the focus, since that is the only path on screen that belongs to anything.
+   */
+  const showsAgentLaunchers = workspace ? focusedSession !== null : selectedProject !== null;
+  const launchDisabledReason = workspace
+    ? focusedSession?.launchDisabledReason ?? null
+    : projectMissing
+      ? "세션을 시작하려면 먼저 폴더를 다시 연결하세요"
+      : pendingAction
+        ? "다른 작업이 끝난 뒤에 시작할 수 있습니다"
+        : null;
+  const canLaunch = showsAgentLaunchers && launchDisabledReason === null;
+  /** Where a launched session lands, in words — the launchers' tooltip on a shelf says so. */
+  const launchTargetLabel = workspace ? focusedSession?.label ?? null : null;
+  const showsNewSessionButton = layout !== null && isAutoLayout(layout.layoutId);
   const title = workspace
     ? SHELF_TEXT[workspace.kind].name
     : selectedSession?.tool
@@ -146,6 +188,22 @@ export function WorkspaceHeader({
             </button>
           </div>
         ) : null}
+        {refreshAll ? (
+          <button
+            className="icon-button"
+            type="button"
+            onClick={refreshAll.onRefresh}
+            disabled={refreshAll.busy || refreshAll.count === 0}
+            aria-label="화면 새로고침"
+            title={
+              refreshAll.count === 0
+                ? "새로고침할 세션이 없습니다"
+                : `화면에 보이는 세션 ${refreshAll.count}개 새로고침`
+            }
+          >
+            <RefreshCw className={refreshAll.busy ? "spin" : undefined} size={13} />
+          </button>
+        ) : null}
         {workspace ? null : selectedSession ? (
           <span className={`active-status status-${selectedSession.status}`}>
             <span className={`status-dot status-${selectedSession.status}`} aria-hidden="true" />
@@ -181,28 +239,52 @@ export function WorkspaceHeader({
         ) : null}
 
         {/* The launchers stay out in the open whether or not the folder already has sessions. */}
-        {!workspace && selectedProject ? (
+        {showsAgentLaunchers || showsNewSessionButton ? (
           <div className="launcher-row">
-            {agents.map((agent) => (
+            {showsAgentLaunchers
+              ? agents.map((agent) => (
+                  <button
+                    key={agent.id}
+                    className="launcher-button"
+                    type="button"
+                    disabled={!canLaunch || !agent.available}
+                    onClick={() => onStartSession(agent.id)}
+                    aria-label={newSessionLabel(agent)}
+                    title={
+                      !agent.available
+                        ? `${agent.label} 미설치`
+                        : (launchDisabledReason ??
+                          (launchTargetLabel
+                            ? `${launchTargetLabel}와 같은 경로에서 ${agent.label} 시작`
+                            : newSessionLabel(agent)))
+                    }
+                  >
+                    <AgentIcon
+                      agent={agent}
+                      size={15}
+                      className={agent.available ? agentAccentClass(agent) : undefined}
+                    />
+                    <span>{agent.label}</span>
+                  </button>
+                ))
+              : null}
+            {/* The list of recent folders, for starting somewhere other than what is on screen. */}
+            {showsNewSessionButton ? (
               <button
-                key={agent.id}
                 className="launcher-button"
                 type="button"
-                disabled={!canLaunch || !agent.available}
-                onClick={() => onStartSession(agent.id)}
-                aria-label={newSessionLabel(agent)}
-                title={
-                  !agent.available
-                    ? `${agent.label} 미설치`
-                    : projectMissing
-                      ? "세션을 시작하려면 먼저 폴더를 다시 연결하세요"
-                      : newSessionLabel(agent)
-                }
+                disabled={pendingAction}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  onRequestNewSession({ x: rect.left, y: rect.bottom + 4 });
+                }}
+                aria-label="최근 폴더에서 새 세션"
+                title="최근 폴더에서 새 세션"
               >
-                <AgentIcon agent={agent} size={15} className={agent.available ? agentAccentClass(agent) : undefined} />
-                <span>{agent.label}</span>
+                <Plus size={15} />
+                <span>새 세션</span>
               </button>
-            ))}
+            ) : null}
           </div>
         ) : null}
 

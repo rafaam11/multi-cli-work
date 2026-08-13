@@ -648,9 +648,15 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     }));
     expect(overflow.scrollable).toBe("auto");
     if (overflow.scrollWidth > overflow.clientWidth) {
+      // ＋ 새 세션 rides at the end of the row, past every agent, so the far edge lands on it.
       await launcherRow.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
-      const lastButton = launcherRow.getByRole("button", { name: "새 Echo Agent 세션" });
-      await expect(lastButton).toBeInViewport();
+      await expect(launcherRow.getByRole("button", { name: "최근 폴더에서 새 세션" })).toBeInViewport();
+
+      // The agent the user added is reachable from the other direction: the row scrolls both ways
+      // rather than clipping whatever does not fit.
+      const customAgent = launcherRow.getByRole("button", { name: "새 Echo Agent 세션" });
+      await customAgent.evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }));
+      await expect(customAgent).toBeInViewport();
     }
   });
 

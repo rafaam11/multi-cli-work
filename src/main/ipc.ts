@@ -71,7 +71,7 @@ interface TerminalCoordinatorGateway {
   create(input: CreateTerminalInput, options?: { updateSelection?: boolean }): Promise<unknown>;
   createTool(input: CreateToolTerminalInput): Promise<unknown>;
   /** The renderer-facing attach: it may lazily auto-resume a session interrupted by app shutdown. */
-  attachForRenderer(sessionId: string): Promise<unknown>;
+  attachForRenderer(sessionId: string, size?: { cols: number; rows: number }): Promise<unknown>;
   /** Side-effect-free attach used by an explicit screen refresh. */
   attach(sessionId: string): Promise<unknown>;
   write(sessionId: string, data: string): Promise<void>;
@@ -901,8 +901,15 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("terminals:create-tool", async (_event, input: unknown) =>
     dependencies.coordinator.createTool(validateCreateToolInput(input)),
   );
-  ipc.handle("terminals:attach", (_event, sessionId: unknown) =>
-    dependencies.coordinator.attachForRenderer(nonEmptyString(sessionId, "Session id")),
+  // The size is optional: a renderer that cannot measure its pane yet attaches without one and the
+  // coordinator falls back to its default, exactly as before.
+  ipc.handle("terminals:attach", (_event, sessionId: unknown, cols: unknown, rows: unknown) =>
+    dependencies.coordinator.attachForRenderer(
+      nonEmptyString(sessionId, "Session id"),
+      cols === undefined || rows === undefined
+        ? undefined
+        : { cols: integer(cols, "Terminal columns"), rows: integer(rows, "Terminal rows") },
+    ),
   );
   ipc.handle("terminals:refresh", (_event, sessionId: unknown) =>
     dependencies.coordinator.attach(nonEmptyString(sessionId, "Session id")),

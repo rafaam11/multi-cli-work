@@ -337,7 +337,12 @@ export function App() {
   const [shelfKind, setShelfKind] = useState<ShelfKind | null>(null);
   const [page, setPage] = useState(0);
   /** The empty slot whose ＋ 새 세션 is open, and where its list hangs from. */
-  const [newSessionSlot, setNewSessionSlot] = useState<{ index: number; x: number; y: number } | null>(null);
+  /**
+   * The open recent-folders launcher and where it points. A null `index` means it was opened from
+   * the header rather than from a slot, so the session it starts joins the end of what is on screen
+   * instead of taking a particular place in it.
+   */
+  const [newSessionSlot, setNewSessionSlot] = useState<{ index: number | null; x: number; y: number } | null>(null);
   /** The pane the keyboard and the outline follow — a session id or a document id. */
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
   /** The folder a tab click just pointed at; the sidebar pulses it for three seconds. */
@@ -1509,20 +1514,24 @@ export function App() {
   };
 
   /**
-   * An empty slot's ＋ 새 세션. The session is started for another folder than the one on screen,
-   * so it is placed twice: `placeInFolderView` gives it its slot in its own folder's grid — it is
-   * already there when the user goes to that folder — and the second placement moves it to the slot
-   * that was pressed on the surface in front of them. When those are the same view the second wins,
-   * because `placeInSlot` takes a pane out of its old slot before inserting it.
+   * An empty slot's ＋ 새 세션, and the header's. The session is started for another folder than the
+   * one on screen, so it is placed twice: `placeInFolderView` gives it its slot in its own folder's
+   * grid — it is already there when the user goes to that folder — and the second placement moves it
+   * onto the surface in front of them. When those are the same view the second wins, because both
+   * placements take a pane out of its old slot before inserting it.
+   *
+   * A null `slotIndex` is the header's launchers and its 새 세션 button: they aim at a surface, not
+   * at a place on it, so the pane joins the end. That is also what `자동` would do with any index,
+   * since the arrangement closes every gap.
    *
    * Nothing navigates: the page, the selected folder and the active view stay put, which is the
-   * whole point of starting from a slot rather than from the sidebar.
+   * whole point of starting from here rather than from the sidebar.
    */
   const startSessionInSlot = async (
     project: SharedProject,
     kind: TerminalKind,
     worktreeId: string | null,
-    slotIndex: number,
+    slotIndex: number | null,
   ) => {
     if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
     setPendingAction(true);
@@ -1537,7 +1546,9 @@ export function App() {
       });
       setSessions((current) => replaceSession(current, created));
       placeInFolderView({ paneId: created.id, projectId: project.id, worktreeId });
-      placePaneOnCurrentView(created.id, (view) => placeInSlot(view, absoluteSlot(slotIndex), created.id));
+      placePaneOnCurrentView(created.id, (view) =>
+        slotIndex === null ? appendSession(view, created.id) : placeInSlot(view, absoluteSlot(slotIndex), created.id),
+      );
       focusPane(created.id);
       flashFolder(project.id);
     } catch (error) {
@@ -1548,15 +1559,39 @@ export function App() {
   };
 
   /**
+   * The header's launchers. On a folder surface they start in the folder on screen, and going to
+   * the new session is the point. A shelf belongs to no folder, so they start where the focused pane
+   * already is — same folder, same worktree — and the pane joins the shelf in front of the user
+   * rather than pulling them off it onto that folder's grid.
+   */
+  const startSessionFromHeader = (kind: TerminalKind) => {
+    if (shelfKind === null) {
+      if (selectedProject) void startSession(selectedProject, kind, selectedWorktree?.id);
+      return;
+    }
+    const focused =
+      focusedPaneId !== null && !isDocumentPaneId(focusedPaneId)
+        ? (sessions.find((candidate) => candidate.id === focusedPaneId) ?? null)
+        : null;
+    if (!focused?.projectId) return;
+    const project = projects.find((candidate) => candidate.id === focused.projectId);
+    if (!project) return;
+    void startSessionInSlot(project, kind, focused.worktreeId ?? null, null);
+  };
+
+  /**
    * Why the sidebar menus' 새 세션 block cannot run right now, or null when it can. A folder whose
    * root went missing has nowhere to start a shell, and a launch already in flight would be lost to
    * the `pendingAction` guard — the menu says which it is instead of going quiet.
    */
-  const newSessionDisabledReason = (projectId: string): string | null => {
-    if (isProjectMissing(projectId)) return "폴더를 찾을 수 없습니다";
-    if (pendingAction) return "다른 작업이 끝난 뒤에 시작할 수 있습니다";
-    return null;
-  };
+  const newSessionDisabledReason = useCallback(
+    (projectId: string): string | null => {
+      if (isProjectMissing(projectId)) return "폴더를 찾을 수 없습니다";
+      if (pendingAction) return "다른 작업이 끝난 뒤에 시작할 수 있습니다";
+      return null;
+    },
+    [isProjectMissing, pendingAction],
+  );
 
   /** The folder a worktree belongs to — a session needs it, since the worktree only narrows the cwd. */
   const worktreeMenuProject = worktreeMenu
@@ -1656,6 +1691,15 @@ export function App() {
     } finally {
       finishSessionRefresh(sessionId);
     }
+  };
+
+  /**
+   * The header's one refresh. Rebuilding a terminal is about the pane it is drawn in, not about the
+   * session behind it, so the button acts on everything the page is showing — the panes that would
+   * each have needed their own click. Sessions already refreshing are skipped by `refreshSession`.
+   */
+  const refreshVisibleSessions = () => {
+    for (const sessionId of visibleSessionIds) void refreshSession(sessionId);
   };
 
   const removeSessionById = async (session: TerminalSessionView) => {
@@ -2248,8 +2292,12 @@ export function App() {
   }, [activeView, shelfKind, currentView, sessions]);
 
   /**
-   * What the header's 제거 button acts on: the session behind the focused pane. A document pane has
-   * nothing to delete — it closes from its own viewer — so the button steps aside for one.
+   * What the header's 제거 button acts on, and what its launchers aim at on a shelf: the session
+   * behind the focused pane. A document pane has nothing to delete — it closes from its own viewer —
+   * so the button steps aside for one.
+   *
+   * A tool session belongs to no folder, so there is nothing for a launcher to start beside it; that
+   * is a reason of its own rather than a missing folder.
    */
   const headerFocusedSession = useMemo(() => {
     if (activeView !== "terminal" || focusedPaneId === null || isDocumentPaneId(focusedPaneId)) return null;
@@ -2262,8 +2310,12 @@ export function App() {
         sessions.filter((peer) => peer.projectId === session.projectId),
         agents,
       ),
+      launchDisabledReason:
+        session.projectId === null
+          ? "이 세션은 폴더에 속해 있지 않습니다"
+          : newSessionDisabledReason(session.projectId),
     };
-  }, [activeView, focusedPaneId, sessions, agents]);
+  }, [activeView, focusedPaneId, sessions, agents, newSessionDisabledReason]);
 
   // The right-hand file explorer follows whatever the sidebar has selected — a worktree takes
   // precedence over its owning project, mirroring how the sidebar itself scopes a worktree's tree.
@@ -2742,6 +2794,15 @@ export function App() {
           pages={
             showsLayoutPicker ? { page: resolvedView.page, count: resolvedView.pages, onChange: setPage } : null
           }
+          refreshAll={
+            showsLayoutPicker
+              ? {
+                  count: visibleSessionIds.length,
+                  busy: visibleSessionIds.some((sessionId) => refreshingSessionIds.has(sessionId)),
+                  onRefresh: refreshVisibleSessions,
+                }
+              : null
+          }
           selectedProject={headerProject}
           selectedSession={headerSession}
           selectedSessionLabel={headerSessionLabel}
@@ -2753,9 +2814,8 @@ export function App() {
           readOnly={Boolean(snapshot && !snapshot.writable)}
           detailActive={activeView === "detail"}
           onOpenDetail={() => setActiveView("detail")}
-          onStartSession={(kind) =>
-            selectedProject && void startSession(selectedProject, kind, selectedWorktree?.id)
-          }
+          onStartSession={(kind) => startSessionFromHeader(kind)}
+          onRequestNewSession={(anchor) => setNewSessionSlot({ index: null, ...anchor })}
           onRelinkProject={() => void relinkProject()}
         />
 
@@ -2818,7 +2878,6 @@ export function App() {
                 focusedPaneId={focusedPaneId}
                 renamingSessionId={renameTarget?.surface === "pane" ? renameTarget.sessionId : null}
                 refreshRequests={refreshRequests}
-                refreshingSessionIds={refreshingSessionIds}
                 pendingAction={pendingAction}
                 isProjectMissing={isProjectMissing}
                 onAttached={(attached) => setSessions((current) => mergeAttachedSession(current, attached))}
@@ -2828,7 +2887,6 @@ export function App() {
                 onTerminalFocused={setLastFocusedTerminalId}
                 onFocusPane={focusPane}
                 onResumeSession={(session) => void resumeSession(session)}
-                onRefreshSession={(sessionId) => void refreshSession(sessionId)}
                 onStopSession={(session) => void stopSession(session)}
                 onClearSlot={clearSlotAt}
                 clearAction={

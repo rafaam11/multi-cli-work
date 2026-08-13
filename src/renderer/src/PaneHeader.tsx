@@ -5,7 +5,6 @@ import {
   CircleStop,
   Folder,
   GitBranch,
-  RefreshCw,
   RotateCcw,
   Square,
   SquareSplitVertical,
@@ -109,7 +108,6 @@ interface PaneHeaderProps {
   agents: AgentView[];
   renaming: boolean;
   pendingAction: boolean;
-  refreshing: boolean;
   /** A missing folder blocks resume until it is relinked; tool sessions never are. */
   resumeBlocked: boolean;
   /** This pane's column, and what splitting it would do. */
@@ -118,7 +116,6 @@ interface PaneHeaderProps {
   onRename(name: string | null): void;
   onCancelRename(): void;
   onResume(): void;
-  onRefresh(): void;
   onStop(): void;
   /**
    * What ✕ does here, in words. On a folder grid it frees the slot; on a shelf it moves the pane to
@@ -134,7 +131,9 @@ interface PaneHeaderProps {
 
 /**
  * Session controls live on the pane, not in the workspace header: with several terminals on screen
- * only the pane itself says which session a button acts on.
+ * only the pane itself says which session a button acts on. Refreshing is the one exception — it
+ * redraws whatever is on screen rather than acting on a session, so it lives in the header. This
+ * pane's right-click menu still offers it for the single-pane case.
  *
  * The header doubles as the pane's drag handle — dragging it onto another slot is how panes trade
  * places. Renaming turns the handle off so the name field can take a text selection.
@@ -146,7 +145,6 @@ export function PaneHeader({
   agents,
   renaming,
   pendingAction,
-  refreshing,
   resumeBlocked,
   columnSplit,
   clearAction,
@@ -154,7 +152,6 @@ export function PaneHeader({
   onRename,
   onCancelRename,
   onResume,
-  onRefresh,
   onStop,
   onClearSlot,
   onRemove,
@@ -199,16 +196,6 @@ export function PaneHeader({
               <RotateCcw size={13} />
             </button>
           ) : null}
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            aria-label="세션 새로고침"
-            title="세션 새로고침"
-          >
-            <RefreshCw className={refreshing ? "spin" : undefined} size={13} />
-          </button>
           {!finished ? (
             <button
               className="icon-button"

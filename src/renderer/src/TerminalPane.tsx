@@ -276,9 +276,14 @@ export function TerminalPane({
     // and the later fit cannot fully undo it. Size this terminal, and the PTY, before asking for it.
     resize();
 
+    // resize() just fitted the terminal, so these are the pane's real dimensions. An attach that
+    // lazily resumes a session interrupted by shutdown spawns its PTY at this size — the renderer's
+    // own resize cannot do it, because the session is still `exited` when this runs and the
+    // coordinator drops a resize for a session with no process.
+    const size = terminal.cols > 0 && terminal.rows > 0 ? { cols: terminal.cols, rows: terminal.rows } : undefined;
     const attachment = refreshing
       ? window.multiCliWork.terminals.refresh(session.id)
-      : window.multiCliWork.terminals.attach(session.id);
+      : window.multiCliWork.terminals.attach(session.id, size);
     void attachment
       .then((attachment) => {
         if (disposed) return;

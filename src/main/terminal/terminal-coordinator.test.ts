@@ -814,6 +814,37 @@ describe("TerminalCoordinator", () => {
     expect(stored.state).toMatchObject({ selectedProjectId: null, selectedSessionId: null });
   });
 
+  /**
+   * The pane is already on screen and measured when the attach arrives, and the replay is about to be
+   * written into it. Spawning the replacement process at the pane's own size is the only chance to get
+   * the wrapping right — a resize afterwards cannot re-wrap what the process already emitted, and the
+   * coordinator drops resizes for a session that is still `exited` at that moment anyway.
+   */
+  it("spawns a lazily resumed session at the attaching pane's size, and at the default without one", async () => {
+    /** Leaves one session marked as interrupted, ready for the next run to resume lazily. */
+    const interrupted = async () => {
+      const root = await tempRoot();
+      const first = await coordinator(root);
+      await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+      await first.instance.flush();
+      await first.instance.shutdown();
+      return coordinator(root, new FakeWorker());
+    };
+
+    const measured = await interrupted();
+    await measured.instance.attachForRenderer("session-1", { cols: 214, rows: 51 });
+    expect(measured.worker.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1", cols: 214, rows: 51 }),
+    );
+
+    // No pane to measure — the caller gets xterm's own starting size rather than a guess.
+    const unmeasured = await interrupted();
+    await unmeasured.instance.attachForRenderer("session-1");
+    expect(unmeasured.worker.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1", cols: 80, rows: 24 }),
+    );
+  });
+
   it("does not auto-resume sessions that exited on their own or died without a marking", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);

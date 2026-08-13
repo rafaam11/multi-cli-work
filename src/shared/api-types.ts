@@ -449,7 +449,12 @@ export interface MultiCliWorkApi {
     state(): Promise<AppStateSnapshot>;
     create(input: CreateTerminalInput): Promise<TerminalSessionView>;
     createTool(input: CreateToolTerminalInput): Promise<TerminalSessionView>;
-    attach(sessionId: string): Promise<TerminalAttachResult>;
+    /**
+     * The size carries the pane the terminal is about to fill. A session resumed lazily by this
+     * attach gets its PTY at that size, so the replay is written at the width it is read at instead
+     * of at an 80x24 default the later fit cannot fully undo.
+     */
+    attach(sessionId: string, size?: { cols: number; rows: number }): Promise<TerminalAttachResult>;
     /** Re-reads replay and status without resuming or replacing the underlying process. */
     refresh(sessionId: string): Promise<TerminalAttachResult>;
     write(sessionId: string, data: string): Promise<void>;

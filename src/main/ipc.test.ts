@@ -574,6 +574,25 @@ describe("main IPC boundary", () => {
     expect(coordinator.attachForRenderer).not.toHaveBeenCalled();
   });
 
+  /**
+   * The size is what a lazily resumed session's process is spawned at, so it has to survive the trip
+   * across the boundary as numbers — and a renderer with nothing to measure yet must still be able to
+   * attach, leaving the coordinator to pick the fallback.
+   */
+  it("carries the attaching pane's size, and attaches without one when the renderer omits it", async () => {
+    const { handlers, coordinator } = setup();
+    const attach = handlers.get("terminals:attach")!;
+
+    await attach({}, "session-1", 214, 51);
+    expect(coordinator.attachForRenderer).toHaveBeenCalledWith("session-1", { cols: 214, rows: 51 });
+
+    await attach({}, "session-1");
+    expect(coordinator.attachForRenderer).toHaveBeenLastCalledWith("session-1", undefined);
+
+    expect(() => attach({}, "")).toThrow(/session id/i);
+    expect(() => attach({}, "session-1", "214", 51)).toThrow(/columns/i);
+  });
+
   it("only accepts the maintenance commands the main process knows about", async () => {
     const { handlers, coordinator } = setup();
 

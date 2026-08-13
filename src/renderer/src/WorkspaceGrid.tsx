@@ -26,7 +26,6 @@ interface WorkspaceGridProps {
   focusedPaneId: string | null;
   renamingSessionId: string | null;
   refreshRequests: Readonly<Record<string, number>>;
-  refreshingSessionIds: ReadonlySet<string>;
   pendingAction: boolean;
   isProjectMissing(projectId: string | null): boolean;
   onAttached(session: TerminalSessionView): void;
@@ -38,7 +37,6 @@ interface WorkspaceGridProps {
   /** The user pressed inside this pane, which is what moves the focused-pane selection. */
   onFocusPane(paneId: string): void;
   onResumeSession(session: TerminalSessionView): void;
-  onRefreshSession(sessionId: string): void;
   onStopSession(session: TerminalSessionView): void;
   /**
    * What ✕ means on this surface. A folder grid empties the slot; a shelf hands the pane to the
@@ -88,7 +86,6 @@ export function WorkspaceGrid({
   focusedPaneId,
   renamingSessionId,
   refreshRequests,
-  refreshingSessionIds,
   pendingAction,
   isProjectMissing,
   onAttached,
@@ -98,7 +95,6 @@ export function WorkspaceGrid({
   onTerminalFocused,
   onFocusPane,
   onResumeSession,
-  onRefreshSession,
   onStopSession,
   clearAction,
   onClearSlot,
@@ -312,7 +308,6 @@ export function WorkspaceGrid({
               agents={agents}
               renaming={renamingSessionId === session.id}
               pendingAction={pendingAction}
-              refreshing={refreshingSessionIds.has(session.id)}
               resumeBlocked={!session.tool && isProjectMissing(session.projectId)}
               columnSplit={columnSplitFor(index)}
               clearAction={clearAction}
@@ -320,7 +315,6 @@ export function WorkspaceGrid({
               onRename={(name) => onRenameSession(session.id, name)}
               onCancelRename={onCancelRename}
               onResume={() => onResumeSession(session)}
-              onRefresh={() => onRefreshSession(session.id)}
               onStop={() => onStopSession(session)}
               onClearSlot={() => onClearSlot(index)}
               onRemove={() => onRemoveSession(session)}
