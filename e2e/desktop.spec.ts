@@ -1053,14 +1053,16 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.getByRole("button", { name: "터미널" }).click();
     await page.getByLabel("글꼴 크기").fill("20");
 
-    // xterm(DOM 렌더러)은 폰트 크기를 .xterm-rows에 얹는다 — 재생성 없이 20px이 되어야 한다.
-    await expect.poll(() => computedFontSize(".xterm-rows")).toBe("20px");
-
-    // 되돌리고 닫는다 — 같은 창을 쓰는 뒤 테스트가 13px 전제를 잃지 않게.
-    await page.getByLabel("글꼴 크기").fill("13");
-    await expect.poll(() => computedFontSize(".xterm-rows")).toBe("13px");
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "설정" })).toBeHidden();
+    try {
+      // xterm(DOM 렌더러)은 폰트 크기를 .xterm-rows에 얹는다 — 재생성 없이 20px이 되어야 한다.
+      await expect.poll(() => computedFontSize(".xterm-rows")).toBe("20px");
+    } finally {
+      // 되돌리고 닫는다 — 같은 창을 쓰는 뒤 테스트가 13px 전제를 잃지 않게.
+      await page.getByLabel("글꼴 크기").fill("13");
+      await expect.poll(() => computedFontSize(".xterm-rows")).toBe("13px");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog", { name: "설정" })).toBeHidden();
+    }
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
