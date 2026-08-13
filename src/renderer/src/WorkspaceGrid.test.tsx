@@ -1,4 +1,5 @@
 import type { TerminalSessionView } from "@shared/api-types";
+import { DEFAULT_SETTINGS } from "@shared/settings-types";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { layoutById } from "./grid-layouts";
@@ -71,6 +72,7 @@ function renderGrid(overrides: Partial<Parameters<typeof WorkspaceGrid>[0]> = {}
     allSessions: sessions,
     paneContexts: contextsFor(slots),
     agents: [],
+    terminalSettings: DEFAULT_SETTINGS.terminal,
     focusedPaneId: sessions[0]?.id ?? null,
     renamingSessionId: null,
     refreshRequests: {},

@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import { SHIFT_ENTER_BYTES } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
+import type { TerminalSettings } from "@shared/settings-types";
 import { Plus, X } from "lucide-react";
 import { useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { canSplitColumn, columnOfSlot, type GridLayout } from "./grid-layouts";
@@ -22,6 +23,8 @@ interface WorkspaceGridProps {
   /** Where each pane lives, keyed by pane id — the grid never asks whether it is a session. */
   paneContexts: ReadonlyMap<string, PaneContext>;
   agents: AgentView[];
+  /** Terminal configuration to apply to all pane instances. */
+  terminalSettings: TerminalSettings;
   /** The pane keyboard input goes to; panes surface it, clicking one moves it. */
   focusedPaneId: string | null;
   renamingSessionId: string | null;
@@ -83,6 +86,7 @@ export function WorkspaceGrid({
   allSessions,
   paneContexts,
   agents,
+  terminalSettings,
   focusedPaneId,
   renamingSessionId,
   refreshRequests,
@@ -322,6 +326,7 @@ export function WorkspaceGrid({
             />
             <TerminalPane
               session={session}
+              settings={terminalSettings}
               shiftEnterBytes={shiftEnterBytes(session)}
               refreshRequest={refreshRequests[session.id] ?? 0}
               autoFocus={paneId === focusedPaneId}

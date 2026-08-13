@@ -1,9 +1,9 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
+import type { TerminalSettings } from "@shared/settings-types";
 import { useEffect, useRef, useState } from "react";
 import { droppedPathsAsPromptText } from "./drop-paths";
-import { CONTENT_TYPOGRAPHY } from "./renderer-typography";
 import { createTerminalOutputFilter } from "./terminal-output-filter";
 import "@xterm/xterm/css/xterm.css";
 
@@ -20,6 +20,7 @@ export interface TerminalCommands {
 
 interface TerminalPaneProps {
   session: TerminalSessionView;
+  settings: TerminalSettings;
   /** Bytes to send instead of a plain Enter when Shift is held. Null keeps xterm's own handling. */
   shiftEnterBytes: string | null;
   refreshRequest: number;
@@ -47,6 +48,7 @@ function isReadOnly(session: TerminalSessionView): boolean {
 
 export function TerminalPane({
   session,
+  settings,
   shiftEnterBytes,
   refreshRequest,
   autoFocus = true,
@@ -59,6 +61,7 @@ export function TerminalPane({
   const hostRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(session);
+  const settingsRef = useRef(settings);
   const shiftEnterRef = useRef(shiftEnterBytes);
   const onAttachedRef = useRef(onAttached);
   const onRefreshCompleteRef = useRef(onRefreshComplete);
@@ -68,10 +71,13 @@ export function TerminalPane({
   const autoFocusRef = useRef(autoFocus);
   const lastRefreshRequestRef = useRef(refreshRequest);
   const scheduleResizeRef = useRef<() => void>(() => undefined);
+  const refitRef = useRef<() => void>(() => undefined);
+  const terminalInstanceRef = useRef<Terminal | null>(null);
   const [attaching, setAttaching] = useState(true);
   const readOnly = isReadOnly(session);
 
   sessionRef.current = session;
+  settingsRef.current = settings;
   shiftEnterRef.current = shiftEnterBytes;
   onAttachedRef.current = onAttached;
   onRefreshCompleteRef.current = onRefreshComplete;
@@ -99,11 +105,11 @@ export function TerminalPane({
     };
     const terminal = new Terminal({
       allowTransparency: false,
-      cursorBlink: false,
-      cursorStyle: "bar",
-      fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
-      fontSize: CONTENT_TYPOGRAPHY.codeFontSize,
-      lineHeight: CONTENT_TYPOGRAPHY.terminalLineHeight,
+      cursorBlink: settingsRef.current.cursorBlink,
+      cursorStyle: settingsRef.current.cursorStyle,
+      fontFamily: settingsRef.current.fontFamily,
+      fontSize: settingsRef.current.fontSize,
+      lineHeight: settingsRef.current.lineHeight,
       // Without a handler, xterm confirms the click and then calls window.open(), which
       // secureBrowserWindow() denies, so the link never opens. Hand the URL to the OS browser
       // through the main process instead. allowNonHttpProtocols stays off, so only http(s) links
@@ -113,7 +119,7 @@ export function TerminalPane({
           void window.multiCliWork.shell.openExternal(uri).catch(reportError);
         },
       },
-      scrollback: 10_000,
+      scrollback: settingsRef.current.scrollback,
       theme: {
         background: "#161918",
         foreground: "#dfe5e1",
@@ -138,6 +144,7 @@ export function TerminalPane({
         brightWhite: "#ffffff",
       },
     });
+    terminalInstanceRef.current = terminal;
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     // Opened in the inset frame, not the host: FitAddon sizes the grid from this parent's border
@@ -226,6 +233,10 @@ export function TerminalPane({
       } catch (error) {
         reportError(error);
       }
+    };
+
+    refitRef.current = () => {
+      resize();
     };
 
     const scheduleResize = () => {
@@ -318,6 +329,8 @@ export function TerminalPane({
       fitAddon.dispose();
       terminal.dispose();
       scheduleResizeRef.current = () => undefined;
+      terminalInstanceRef.current = null;
+      refitRef.current = () => undefined;
       finishRefresh();
     };
   }, [session.id, refreshRequest]);
@@ -325,6 +338,19 @@ export function TerminalPane({
   useEffect(() => {
     if (!readOnly) scheduleResizeRef.current();
   }, [readOnly]);
+
+  // xterm 6은 options를 런타임에 바꿀 수 있다 — 인스턴스를 살려둔 채 반영해야 스크롤백이 산다.
+  useEffect(() => {
+    const terminal = terminalInstanceRef.current;
+    if (!terminal) return;
+    terminal.options.fontFamily = settings.fontFamily;
+    terminal.options.fontSize = settings.fontSize;
+    terminal.options.lineHeight = settings.lineHeight;
+    terminal.options.scrollback = settings.scrollback;
+    terminal.options.cursorStyle = settings.cursorStyle;
+    terminal.options.cursorBlink = settings.cursorBlink;
+    refitRef.current(); // 폰트 크기가 곧 셀 크기 — 그리드를 다시 맞춘다
+  }, [settings]);
 
   return (
     <section className="terminal-surface" aria-label={`${session.kind} 터미널`}>

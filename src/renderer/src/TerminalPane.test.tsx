@@ -2,6 +2,7 @@ import type { IBufferRange, ILinkHandler } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS } from "@shared/settings-types";
 import { TerminalPane } from "./TerminalPane";
 
 /**
@@ -11,7 +12,15 @@ import { TerminalPane } from "./TerminalPane";
  */
 const terminalHarness = vi.hoisted(() => ({
   instances: [] as Array<{
-    options: { fontSize?: number; lineHeight?: number; linkHandler?: ILinkHandler | null };
+    options: {
+      fontSize?: number;
+      lineHeight?: number;
+      linkHandler?: ILinkHandler | null;
+      fontFamily?: string;
+      cursorBlink?: boolean;
+      scrollback?: number;
+      cursorStyle?: "bar" | "block" | "underline";
+    };
   }>,
   events: [] as string[],
   resizeObservers: [] as ResizeObserverCallback[],
@@ -29,11 +38,26 @@ vi.mock("@xterm/xterm", () => ({
       terminalHarness.events.push(`write:${this.cols}x${this.rows}:${data}`);
     });
 
-    constructor(readonly options: {
+    options: {
       fontSize?: number;
       lineHeight?: number;
       linkHandler?: ILinkHandler | null;
+      fontFamily?: string;
+      cursorBlink?: boolean;
+      scrollback?: number;
+      cursorStyle?: "bar" | "block" | "underline";
+    };
+
+    constructor(initialOptions: {
+      fontSize?: number;
+      lineHeight?: number;
+      linkHandler?: ILinkHandler | null;
+      fontFamily?: string;
+      cursorBlink?: boolean;
+      scrollback?: number;
+      cursorStyle?: "bar" | "block" | "underline";
     }) {
+      this.options = initialOptions;
       terminalHarness.instances.push(this);
     }
 
@@ -96,6 +120,7 @@ function renderPane(overrides: Partial<Parameters<typeof TerminalPane>[0]> = {})
   render(
     <TerminalPane
       session={session}
+      settings={DEFAULT_SETTINGS.terminal}
       shiftEnterBytes={null}
       refreshRequest={0}
       onAttached={vi.fn()}
@@ -220,5 +245,40 @@ describe("TerminalPane link handling", () => {
     linkHandler().activate(new MouseEvent("click"), "https://example.com/docs", range);
 
     await waitFor(() => expect(onError).toHaveBeenCalledWith("no browser"));
+  });
+});
+
+describe("TerminalPane settings", () => {
+  it("설정 변경이 살아있는 터미널에 재생성 없이 반영된다", () => {
+    const { rerender } = render(
+      <TerminalPane
+        session={session}
+        settings={DEFAULT_SETTINGS.terminal}
+        shiftEnterBytes={null}
+        refreshRequest={0}
+        onAttached={vi.fn()}
+        onRefreshComplete={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+    const terminal = terminalHarness.instances.at(-1)!;
+    expect(terminal.options.fontSize).toBe(13);
+
+    rerender(
+      <TerminalPane
+        session={session}
+        settings={{ ...DEFAULT_SETTINGS.terminal, fontSize: 20, cursorBlink: true, scrollback: 50_000 }}
+        shiftEnterBytes={null}
+        refreshRequest={0}
+        onAttached={vi.fn()}
+        onRefreshComplete={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+
+    expect(terminal.options.fontSize).toBe(20);
+    expect(terminal.options.cursorBlink).toBe(true);
+    expect(terminal.options.scrollback).toBe(50_000);
+    expect(terminalHarness.instances.length).toBe(1); // 재생성 없음 = 스크롤백·상태 보존
   });
 });

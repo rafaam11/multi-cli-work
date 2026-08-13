@@ -2905,6 +2905,7 @@ export function App() {
                 allSessions={sessions}
                 paneContexts={paneContexts}
                 agents={agents}
+                terminalSettings={appSettings.terminal}
                 focusedPaneId={focusedPaneId}
                 renamingSessionId={renameTarget?.surface === "pane" ? renameTarget.sessionId : null}
                 refreshRequests={refreshRequests}
