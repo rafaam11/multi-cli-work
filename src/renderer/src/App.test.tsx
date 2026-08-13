@@ -1134,6 +1134,82 @@ describe("folder workspace", () => {
     await waitFor(() => expect(harness.api.terminals.resize).toHaveBeenCalledWith(powershellSession.id, 96, 28));
   });
 
+  it("accepts keyboard input after a shutdown-interrupted Codex session resumes on attach", async () => {
+    const interrupted: TerminalSessionView = {
+      ...codexSession,
+      providerConversationId: "codex-conversation",
+      interruptedByShutdown: true,
+      status: "exited",
+      pid: null,
+      exitCode: null,
+    };
+    const resumed: TerminalSessionView = {
+      ...interrupted,
+      interruptedByShutdown: false,
+      status: "awaiting-input",
+      pid: 4400,
+      updatedAt: "2026-07-11T04:01:00.000Z",
+    };
+    const harness = createApi({
+      sessions: [interrupted],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: interrupted.id },
+    });
+    vi.mocked(harness.api.terminals.attach).mockResolvedValue({
+      session: resumed,
+      replay: `${interrupted.id} replay\r\n`,
+      sequence: 0,
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const terminal = await xtermFor(interrupted.id);
+    await waitFor(() => expect(document.querySelector(".grid-pane")).toHaveClass("status-awaiting-input"));
+    terminal.emitInput("continue this session\r");
+
+    expect(harness.api.terminals.write).toHaveBeenCalledWith(interrupted.id, "continue this session\r");
+  });
+
+  it("keeps a real exit read-only when it arrives before a resumed attachment", async () => {
+    const interrupted: TerminalSessionView = {
+      ...codexSession,
+      providerConversationId: "codex-conversation",
+      interruptedByShutdown: true,
+      status: "exited",
+      pid: null,
+      exitCode: null,
+    };
+    const resumed: TerminalSessionView = {
+      ...interrupted,
+      interruptedByShutdown: false,
+      status: "awaiting-input",
+      pid: 4400,
+      updatedAt: "2026-07-11T04:01:00.000Z",
+    };
+    const harness = createApi({
+      sessions: [interrupted],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: interrupted.id },
+    });
+    let resolveAttach!: (value: Awaited<ReturnType<MultiCliWorkApi["terminals"]["attach"]>>) => void;
+    vi.mocked(harness.api.terminals.attach).mockImplementation(
+      () => new Promise((resolve) => { resolveAttach = resolve; }),
+    );
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalled());
+    await act(async () => {
+      harness.emit({ type: "created", sessionId: interrupted.id, session: resumed });
+      harness.emit({ type: "exit", sessionId: interrupted.id, exitCode: 0 });
+      resolveAttach({ session: resumed, replay: `${interrupted.id} replay\r\n`, sequence: 0 });
+    });
+
+    const terminal = await xtermFor(interrupted.id);
+    await waitFor(() => expect(document.querySelector(".grid-pane")).toHaveClass("status-exited"));
+    vi.mocked(harness.api.terminals.write).mockClear();
+    terminal.emitInput("must not be sent\r");
+    expect(harness.api.terminals.write).not.toHaveBeenCalled();
+  });
+
   it("does not duplicate live output that is already included in attach replay", async () => {
     const harness = createApi({ sessions: [powershellSession] });
     let resolveAttach!: (value: Awaited<ReturnType<MultiCliWorkApi["terminals"]["attach"]>>) => void;

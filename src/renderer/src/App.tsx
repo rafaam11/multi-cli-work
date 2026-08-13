@@ -251,7 +251,10 @@ function mergeAttachedSession(sessions: TerminalSessionView[], attached: Termina
     if (current.id !== attached.id) return current;
     const currentFinished = current.status === "exited" || current.status === "error";
     const attachedFinished = attached.status === "exited" || attached.status === "error";
-    return currentFinished && !attachedFinished ? current : attached;
+    const resumedAfterShutdown = current.interruptedByShutdown
+      && !attachedFinished
+      && !attached.interruptedByShutdown;
+    return currentFinished && !attachedFinished && !resumedAfterShutdown ? current : attached;
   });
 }
 
