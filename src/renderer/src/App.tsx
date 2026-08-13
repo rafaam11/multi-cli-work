@@ -2605,24 +2605,27 @@ export function App() {
 
   const titleBarMenus = useMemo(
     () =>
-      buildTitleBarMenus({
-        agents,
-        appVersion,
-        project: headerProject ? { missing: selectedProjectMissing } : null,
-        readOnly: Boolean(snapshot && !snapshot.writable),
-        pendingAction,
-        session: headerSession
-          ? {
-              status: headerSession.status,
-              tool: headerSession.tool !== null,
-              refreshing: refreshingSessionIds.has(headerSession.id),
-            }
-          : null,
-        terminalFocused: editTargetId !== null,
-        canSaveFile,
-        sidebarCollapsed,
-        rightSidebarCollapsed,
-      }),
+      buildTitleBarMenus(
+        {
+          agents,
+          appVersion,
+          project: headerProject ? { missing: selectedProjectMissing } : null,
+          readOnly: Boolean(snapshot && !snapshot.writable),
+          pendingAction,
+          session: headerSession
+            ? {
+                status: headerSession.status,
+                tool: headerSession.tool !== null,
+                refreshing: refreshingSessionIds.has(headerSession.id),
+              }
+            : null,
+          terminalFocused: editTargetId !== null,
+          canSaveFile,
+          sidebarCollapsed,
+          rightSidebarCollapsed,
+        },
+        appSettings.keybindings,
+      ),
     [
       agents,
       appVersion,
@@ -2636,6 +2639,7 @@ export function App() {
       canSaveFile,
       sidebarCollapsed,
       rightSidebarCollapsed,
+      appSettings.keybindings,
     ],
   );
 

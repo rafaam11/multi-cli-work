@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalStatus, ToolCommand } from "@shared/terminal-types";
 import { TOOL_AGENT_ID, findAgent, toolDetails } from "./session-labels";
+import { effectiveAccelerator } from "./keymap";
 
 /**
  * The title bar's menus as plain data. Keeping the enablement rules out of the component is what
@@ -60,8 +61,13 @@ function item(id: string, label: string, options?: { shortcut?: string; disabled
   };
 }
 
-export function buildTitleBarMenus(context: TitleBarMenuContext): TitleBarMenu[] {
+export function buildTitleBarMenus(
+  context: TitleBarMenuContext,
+  keybindings: Record<string, string | null> = {},
+): TitleBarMenu[] {
   const { project, session } = context;
+  const shortcutFor = (actionId: string): string | undefined =>
+    effectiveAccelerator(actionId, keybindings) ?? undefined;
   // Same rules the workspace header uses for its own buttons, so the two never disagree.
   const finished = session?.status === "exited" || session?.status === "error";
   const canLaunch = project !== null && !project.missing && !context.pendingAction;
@@ -75,7 +81,7 @@ export function buildTitleBarMenus(context: TitleBarMenuContext): TitleBarMenu[]
         item("file.add-folder", "폴더 추가", { disabled: context.readOnly }),
         item("file.add-work-project", "업무 프로젝트 추가", { disabled: context.readOnly }),
         separator,
-        item("file.save", "파일 저장", { shortcut: "Ctrl+S", disabled: !context.canSaveFile }),
+        item("file.save", "파일 저장", { shortcut: shortcutFor("file.save"), disabled: !context.canSaveFile }),
         item("file.relink", "폴더 다시 연결", { disabled: project === null || context.readOnly }),
         separator,
         item("file.quit", "종료"),
@@ -85,9 +91,9 @@ export function buildTitleBarMenus(context: TitleBarMenuContext): TitleBarMenu[]
       id: "edit",
       label: "편집",
       entries: [
-        item("edit.copy", "복사", { shortcut: "Ctrl+Shift+C", disabled: !context.terminalFocused }),
-        item("edit.paste", "붙여넣기", { shortcut: "Ctrl+V", disabled: !context.terminalFocused }),
-        item("edit.select-all", "모두 선택", { shortcut: "Ctrl+A", disabled: !context.terminalFocused }),
+        item("edit.copy", "복사", { shortcut: shortcutFor("edit.copy"), disabled: !context.terminalFocused }),
+        item("edit.paste", "붙여넣기", { shortcut: shortcutFor("edit.paste"), disabled: !context.terminalFocused }),
+        item("edit.select-all", "모두 선택", { shortcut: shortcutFor("edit.select-all"), disabled: !context.terminalFocused }),
         separator,
         item("edit.clear", "터미널 지우기", { disabled: !context.terminalFocused }),
       ],
@@ -102,15 +108,15 @@ export function buildTitleBarMenus(context: TitleBarMenuContext): TitleBarMenu[]
           context.rightSidebarCollapsed ? "오른쪽 사이드바 펼치기" : "오른쪽 사이드바 접기",
         ),
         separator,
-        item("view.quick-open", "빠른 열기", { shortcut: "Ctrl+P" }),
+        item("view.quick-open", "빠른 열기", { shortcut: shortcutFor("view.quick-open") }),
         separator,
-        item("view.zoom-in", "확대", { shortcut: "Ctrl+=" }),
-        item("view.zoom-out", "축소", { shortcut: "Ctrl+-" }),
-        item("view.zoom-reset", "원래 크기", { shortcut: "Ctrl+0" }),
-        item("view.full-screen", "전체 화면", { shortcut: "F11" }),
+        item("view.zoom-in", "확대", { shortcut: shortcutFor("view.zoom-in") }),
+        item("view.zoom-out", "축소", { shortcut: shortcutFor("view.zoom-out") }),
+        item("view.zoom-reset", "원래 크기", { shortcut: shortcutFor("view.zoom-reset") }),
+        item("view.full-screen", "전체 화면", { shortcut: shortcutFor("view.full-screen") }),
         separator,
-        item("view.reload", "다시 로드"),
-        item("view.dev-tools", "개발자 도구", { shortcut: "F12" }),
+        item("view.reload", "다시 로드", { shortcut: shortcutFor("view.reload") }),
+        item("view.dev-tools", "개발자 도구", { shortcut: shortcutFor("view.dev-tools") }),
       ],
     },
     {
@@ -130,7 +136,10 @@ export function buildTitleBarMenus(context: TitleBarMenuContext): TitleBarMenu[]
         item("session.resume", "재개", {
           disabled: !session || !finished || context.pendingAction || blockedByMissingRoot,
         }),
-        item("session.refresh", "새로고침", { disabled: !session || session.refreshing }),
+        item("session.refresh", "새로고침", {
+          shortcut: shortcutFor("session.refresh"),
+          disabled: !session || session.refreshing,
+        }),
         item("session.stop", "중지", { disabled: !session || finished || context.pendingAction }),
         item("session.remove", "제거", { disabled: !session || context.pendingAction }),
       ],

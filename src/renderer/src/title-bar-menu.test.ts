@@ -64,6 +64,12 @@ function find(overrides: Partial<TitleBarMenuContext> | undefined, id: string) {
   return entry;
 }
 
+function findItem(menus: ReturnType<typeof buildTitleBarMenus>, menuId: string, itemId: string) {
+  const menu = menus.find((candidate) => candidate.id === menuId)!;
+  const entry = menu.entries.find((candidate) => candidate.kind === "item" && candidate.id === itemId);
+  return entry && entry.kind === "item" ? entry : undefined;
+}
+
 describe("buildTitleBarMenus", () => {
   it("lays out the six top-level menus in VS Code's order", () => {
     expect(buildTitleBarMenus(context()).map((menu) => [menu.id, menu.label])).toEqual([
@@ -161,5 +167,24 @@ describe("buildTitleBarMenus", () => {
     expect(last).toMatchObject({ id: "settings", label: "설정", action: "settings.open" });
     expect(last.entries).toEqual([]);
     expect(menus[menus.length - 2]!.id).toBe("help");
+  });
+
+  it("단축키 표기가 키맵 기본값에서 나온다 — 세션 새로고침은 F5를 얻는다", () => {
+    const menus = buildTitleBarMenus({ ...settingsButtonContext, session: { status: "working", tool: false, refreshing: false } });
+    expect(findItem(menus, "view", "view.quick-open")?.shortcut).toBe("Ctrl+P");
+    expect(findItem(menus, "file", "file.save")?.shortcut).toBe("Ctrl+S");
+    expect(findItem(menus, "view", "view.zoom-in")?.shortcut).toBe("Ctrl+=");
+    expect(findItem(menus, "session", "session.refresh")?.shortcut).toBe("F5");
+    expect(findItem(menus, "view", "view.reload")?.shortcut).toBeUndefined();
+    expect(findItem(menus, "edit", "edit.paste")?.shortcut).toBe("Ctrl+V");
+  });
+
+  it("리매핑과 해제가 메뉴 표기에 반영된다", () => {
+    const menus = buildTitleBarMenus(
+      { ...settingsButtonContext, session: { status: "working", tool: false, refreshing: false } },
+      { "view.quick-open": "Ctrl+K", "session.refresh": null },
+    );
+    expect(findItem(menus, "view", "view.quick-open")?.shortcut).toBe("Ctrl+K");
+    expect(findItem(menus, "session", "session.refresh")?.shortcut).toBeUndefined();
   });
 });
