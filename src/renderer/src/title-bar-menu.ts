@@ -16,6 +16,8 @@ export interface TitleBarMenu {
   id: string;
   label: string;
   entries: TitleBarEntry[];
+  /** 있으면 드롭다운 대신 버튼이다 — 클릭이 이 액션 id를 바로 쏜다. */
+  action?: string;
 }
 
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
@@ -157,5 +159,7 @@ export function buildTitleBarMenus(context: TitleBarMenuContext): TitleBarMenu[]
         item("help.version", `버전 v${context.appVersion}`, { disabled: true }),
       ],
     },
+    // 스펙: "도움말" 오른쪽. 메뉴가 아니라 버튼 — 누르면 설정 창이 바로 열린다.
+    { id: "settings", label: "설정", entries: [], action: "settings.open" },
   ];
 }

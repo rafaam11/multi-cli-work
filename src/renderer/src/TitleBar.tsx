@@ -95,9 +95,10 @@ export function TitleBar({ menus, onAction, workProjectName, folderName, attenti
     }
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault();
-      const index = menus.findIndex((menu) => menu.id === openMenuId);
+      const cycle = menus.filter((candidate) => !candidate.action);
+      const index = cycle.findIndex((menu) => menu.id === openMenuId);
       const step = event.key === "ArrowRight" ? 1 : -1;
-      const next = menus[(index + step + menus.length) % menus.length];
+      const next = cycle[(index + step + cycle.length) % cycle.length];
       if (next) openMenu(next.id);
     }
   };
@@ -170,36 +171,55 @@ export function TitleBar({ menus, onAction, workProjectName, folderName, attenti
         <span className="title-bar-icon" aria-hidden="true">
           <MonitorDot size={15} />
         </span>
-        {menus.map((menu) => (
-          <div className="title-bar-menu-anchor" key={menu.id}>
+        {menus.map((menu) =>
+          menu.action ? (
             <button
+              key={menu.id}
               type="button"
               role="menuitem"
-              className={`title-bar-menu-button ${openMenuId === menu.id ? "open" : ""}`}
-              aria-haspopup="menu"
-              aria-expanded={openMenuId === menu.id}
-              ref={(node) => {
-                if (node) menuButtons.current.set(menu.id, node);
-                else menuButtons.current.delete(menu.id);
-              }}
-              // Once one menu is open the bar behaves like a menu bar: hovering switches.
+              className="title-bar-menu-button"
+              // 열린 메뉴에서 이 버튼으로 hover하면 드롭다운을 접는다 — 버튼엔 펼칠 것이 없다.
               onMouseEnter={() => {
-                if (openMenuId && openMenuId !== menu.id) {
-                  setOpenMenuId(menu.id);
-                  setOpenSubmenuId(null);
-                }
+                if (openMenuId) closeMenus();
               }}
-              onClick={() => (openMenuId === menu.id ? closeMenus() : openMenu(menu.id))}
+              onClick={() => {
+                closeMenus();
+                onAction(menu.action!);
+              }}
             >
               {menu.label}
             </button>
-            {openMenuId === menu.id ? (
-              <div className="provider-menu title-bar-dropdown" role="menu" aria-label={menu.label}>
-                {menu.entries.map((entry, index) => renderEntry(entry, menu.id, index))}
-              </div>
-            ) : null}
-          </div>
-        ))}
+          ) : (
+            <div className="title-bar-menu-anchor" key={menu.id}>
+              <button
+                type="button"
+                role="menuitem"
+                className={`title-bar-menu-button ${openMenuId === menu.id ? "open" : ""}`}
+                aria-haspopup="menu"
+                aria-expanded={openMenuId === menu.id}
+                ref={(node) => {
+                  if (node) menuButtons.current.set(menu.id, node);
+                  else menuButtons.current.delete(menu.id);
+                }}
+                // Once one menu is open the bar behaves like a menu bar: hovering switches.
+                onMouseEnter={() => {
+                  if (openMenuId && openMenuId !== menu.id) {
+                    setOpenMenuId(menu.id);
+                    setOpenSubmenuId(null);
+                  }
+                }}
+                onClick={() => (openMenuId === menu.id ? closeMenus() : openMenu(menu.id))}
+              >
+                {menu.label}
+              </button>
+              {openMenuId === menu.id ? (
+                <div className="provider-menu title-bar-dropdown" role="menu" aria-label={menu.label}>
+                  {menu.entries.map((entry, index) => renderEntry(entry, menu.id, index))}
+                </div>
+              ) : null}
+            </div>
+          ),
+        )}
       </div>
 
       <div className="title-bar-command-centre">

@@ -39,6 +39,19 @@ function context(overrides?: Partial<TitleBarMenuContext>): TitleBarMenuContext 
   };
 }
 
+const settingsButtonContext: TitleBarMenuContext = {
+  agents: [],
+  appVersion: "1.0.0",
+  project: null,
+  readOnly: false,
+  pendingAction: false,
+  session: null,
+  terminalFocused: false,
+  canSaveFile: false,
+  sidebarCollapsed: false,
+  rightSidebarCollapsed: false,
+};
+
 function flatten(entries: TitleBarEntry[]): TitleBarEntry[] {
   return entries.flatMap((entry) => (entry.kind === "submenu" ? [entry, ...entry.items] : [entry]));
 }
@@ -60,6 +73,7 @@ describe("buildTitleBarMenus", () => {
       ["session", "세션"],
       ["tools", "도구"],
       ["help", "도움말"],
+      ["settings", "설정"],
     ]);
   });
 
@@ -139,5 +153,13 @@ describe("buildTitleBarMenus", () => {
     const version = find(undefined, "help.version");
     expect(version.label).toBe("버전 v1.12.0");
     expect(version.disabled).toBe(true);
+  });
+
+  it("도움말 오른쪽에 드롭다운 없는 설정 버튼이 선다", () => {
+    const menus = buildTitleBarMenus(settingsButtonContext);
+    const last = menus[menus.length - 1]!;
+    expect(last).toMatchObject({ id: "settings", label: "설정", action: "settings.open" });
+    expect(last.entries).toEqual([]);
+    expect(menus[menus.length - 2]!.id).toBe("help");
   });
 });
