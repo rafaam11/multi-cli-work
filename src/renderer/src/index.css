@@ -3895,6 +3895,62 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
+.settings-key-category {
+  margin: 14px 0 4px;
+  color: var(--muted);
+  font: var(--type-secondary);
+}
+
+.settings-key-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-key {
+  min-width: 96px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  text-align: center;
+}
+
+.settings-key.capturing {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.settings-key-fixed {
+  color: var(--muted);
+  font: var(--type-secondary);
+}
+
+.settings-key-controls button {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: var(--type-secondary);
+  cursor: pointer;
+}
+
+.settings-key-controls button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.settings-conflict {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
+
 .terminal-surface {
   position: relative;
   min-width: 0;

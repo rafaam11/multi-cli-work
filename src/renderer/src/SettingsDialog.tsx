@@ -5,6 +5,15 @@ import {
   TERMINAL_LINE_HEIGHT_RANGE,
   TERMINAL_SCROLLBACK_RANGE,
 } from "@shared/settings-types";
+import {
+  KEYMAP_ACTIONS,
+  KEYMAP_CATEGORY_ORDER,
+  effectiveAccelerator,
+  findConflict,
+  isBindableAccelerator,
+  normalizeKeyEvent,
+  type KeymapAction,
+} from "./keymap";
 
 type SettingsTab = "general" | "terminal" | "notifications" | "keybindings";
 
@@ -34,6 +43,9 @@ interface SettingsDialogProps {
 export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>("general");
   const [error, setError] = useState<string | null>(null);
+  const [capturingActionId, setCapturingActionId] = useState<string | null>(null);
+  const [captureNotice, setCaptureNotice] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<{ actionId: string; accelerator: string; existing: KeymapAction } | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -47,6 +59,56 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
     setError(null);
     window.multiCliWork.settings.update(patch).catch(() => setError("설정 저장에 실패했습니다"));
   };
+
+  /** 기본값과 같은 값은 오버라이드가 아니다 — 지워서 미래의 기본 키맵 변경을 따라가게 한다. */
+  const withBinding = (
+    overrides: Record<string, string | null>,
+    actionId: string,
+    accelerator: string | null,
+  ): Record<string, string | null> => {
+    const catalog = KEYMAP_ACTIONS.find((candidate) => candidate.id === actionId);
+    const next = { ...overrides };
+    if (!catalog || accelerator === catalog.defaultAccelerator) delete next[actionId];
+    else next[actionId] = accelerator;
+    return next;
+  };
+
+  const applyBinding = (actionId: string, accelerator: string | null) => {
+    update({ keybindings: withBinding(settings.keybindings, actionId, accelerator) });
+  };
+
+  useEffect(() => {
+    if (!capturingActionId) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") {
+        setCapturingActionId(null);
+        setCaptureNotice(null);
+        return;
+      }
+      const accelerator = normalizeKeyEvent(event);
+      if (!accelerator) return; // 수식어 단독 — 계속 기다린다
+      if (!isBindableAccelerator(accelerator)) {
+        setCaptureNotice("수식어 없는 단독 키는 터미널 입력과 충돌합니다 (F1~F12 제외)");
+        return; // 계속 캡처
+      }
+      const existing = findConflict(accelerator, settings.keybindings, capturingActionId);
+      if (existing?.fixed) {
+        setCaptureNotice(`${accelerator}는 ${existing.label}의 고정 키입니다`);
+        return;
+      }
+      setCapturingActionId(null);
+      setCaptureNotice(null);
+      if (existing) {
+        setConflict({ actionId: capturingActionId, accelerator, existing });
+        return;
+      }
+      applyBinding(capturingActionId, accelerator);
+    };
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [capturingActionId, settings.keybindings]);
 
   const numberField = (
     label: string,
@@ -201,7 +263,70 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
           {tab === "keybindings" ? (
             <>
               <h2>단축키</h2>
-              <p className="settings-hint">단축키 편집은 곧 제공됩니다.</p>
+              <p className="settings-hint">키를 클릭해 새 조합을 누르세요. 수식어 없는 단독 키는 쓸 수 없습니다.</p>
+              {KEYMAP_CATEGORY_ORDER.map((category) => (
+                <section key={category}>
+                  <h3 className="settings-key-category">{category}</h3>
+                  {KEYMAP_ACTIONS.filter((candidate) => candidate.category === category).map((candidate) => {
+                    const accelerator = effectiveAccelerator(candidate.id, settings.keybindings);
+                    const capturing = capturingActionId === candidate.id;
+                    return (
+                      <div className="settings-row settings-key-row" key={candidate.id}>
+                        <span className="settings-key-label">{candidate.label}</span>
+                        <span className="settings-key-controls">
+                          <span
+                            className={`settings-key ${capturing ? "capturing" : ""}`}
+                            {...(capturing ? { "data-key-capture": "true" } : {})}
+                          >
+                            {capturing ? "키를 누르세요…" : accelerator ?? "없음"}
+                          </span>
+                          {candidate.fixed ? (
+                            <span className="settings-key-fixed">고정</span>
+                          ) : (
+                            <>
+                              <button type="button" onClick={() => { setCapturingActionId(candidate.id); setCaptureNotice(null); }}>
+                                키 변경
+                              </button>
+                              <button
+                                type="button"
+                                disabled={settings.keybindings[candidate.id] === undefined}
+                                onClick={() => applyBinding(candidate.id, candidate.defaultAccelerator)}
+                              >
+                                기본값으로
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </section>
+              ))}
+              {captureNotice ? <p className="settings-error" role="alert">{captureNotice}</p> : null}
+              {conflict ? (
+                <div className="settings-conflict" role="alertdialog" aria-label="단축키 충돌">
+                  <p>
+                    {conflict.accelerator}는 이미 &quot;{conflict.existing.label}&quot;이 사용합니다. 기존 바인딩을 해제할까요?
+                  </p>
+                  <div className="confirm-dialog-actions">
+                    <button type="button" onClick={() => setConflict(null)}>취소</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleared = withBinding(settings.keybindings, conflict.existing.id, null);
+                        update({ keybindings: withBinding(cleared, conflict.actionId, conflict.accelerator) });
+                        setConflict(null);
+                      }}
+                    >
+                      기존 바인딩 해제
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="settings-row">
+                <span />
+                <button type="button" onClick={() => update({ keybindings: {} })}>모두 초기화</button>
+              </div>
             </>
           ) : null}
           {error ? <p className="settings-error" role="alert">{error}</p> : null}
