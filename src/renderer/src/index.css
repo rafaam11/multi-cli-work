@@ -570,6 +570,31 @@ body.sidebar-resizing {
   margin: 1px 0 3px 20px;
 }
 
+/* A shelf row is an insertion target: the pointer's upper/lower half chooses the matching edge. */
+.workspace-shelf-panes .session-row {
+  position: relative;
+}
+
+.workspace-shelf-panes .session-row.pane-drop-before::after,
+.workspace-shelf-panes .session-row.pane-drop-after::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 2px;
+  background: var(--teal);
+  content: "";
+  pointer-events: none;
+}
+
+.workspace-shelf-panes .session-row.pane-drop-before::after {
+  top: -1px;
+}
+
+.workspace-shelf-panes .session-row.pane-drop-after::after {
+  bottom: -1px;
+}
+
 .rail-workspaces {
   display: flex;
   flex-direction: column;

@@ -13,6 +13,7 @@ import {
   resolveLayout,
   type GridLayout,
 } from "./grid-layouts";
+import type { DropPosition } from "./project-order";
 
 /**
  * A view's slots as pure data. Everything the grid, the tab bar and the sidebar do to an
@@ -111,6 +112,52 @@ export function placeInSlot(view: SlotViewState, index: number, sessionId: strin
   while (slots.length < index) slots.push(null);
   slots.splice(index, 0, sessionId);
   return { ...view, slots: tidySlots(view.layoutId, slots) };
+}
+
+/**
+ * Places a pane before or after another pane in the order the sidebar shows.
+ *
+ * Reordering a pane already in the view changes only the ids in occupied slots. Fixed-layout holes
+ * therefore stay at the same indices and page boundaries do not move. A pane arriving from the
+ * other shelf needs a new occupied slot, so it is spliced beside the target without flattening any
+ * holes already present.
+ */
+export function placePaneRelative(
+  view: SlotViewState,
+  paneId: string,
+  targetPaneId: string,
+  position: DropPosition,
+): SlotViewState {
+  if (paneId === targetPaneId) return view;
+  const targetSlot = view.slots.indexOf(targetPaneId);
+  if (targetSlot < 0) return view;
+
+  const occupiedSlots: number[] = [];
+  const paneIds: string[] = [];
+  view.slots.forEach((id, index) => {
+    if (id === null) return;
+    occupiedSlots.push(index);
+    paneIds.push(id);
+  });
+
+  const from = paneIds.indexOf(paneId);
+  if (from < 0) {
+    const slots = [...view.slots];
+    slots.splice(position === "after" ? targetSlot + 1 : targetSlot, 0, paneId);
+    return { ...view, slots: tidySlots(view.layoutId, slots) };
+  }
+
+  const ordered = [...paneIds];
+  ordered.splice(from, 1);
+  const target = ordered.indexOf(targetPaneId);
+  ordered.splice(position === "after" ? target + 1 : target, 0, paneId);
+  if (ordered.every((id, index) => id === paneIds[index])) return view;
+
+  const slots = [...view.slots];
+  occupiedSlots.forEach((slot, index) => {
+    slots[slot] = ordered[index];
+  });
+  return { ...view, slots };
 }
 
 /** Takes a pane off the grid without touching the session behind it; the rest move forward. */

@@ -2330,6 +2330,43 @@ describe("sidebar panes", () => {
     };
   };
 
+  const shelfPaneRow = (group: HTMLElement, label: string) =>
+    within(group).getByRole("button", { name: `${label} 패인 열기` }).closest(".session-row") as HTMLElement;
+
+  const dragAtShelfRow = (
+    row: HTMLElement,
+    type: "dragover" | "drop",
+    position: "before" | "after",
+    dataTransfer: ReturnType<typeof dragPayload>,
+  ) => {
+    Object.defineProperty(row, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        top: 0,
+        right: 200,
+        bottom: 40,
+        left: 0,
+        width: 200,
+        height: 40,
+        toJSON: () => ({}),
+      }),
+    });
+    // jsdom has no DragEvent, so a MouseEvent carries the vertical coordinate and receives the
+    // DataTransfer separately — the same bridge the grid's coordinate-based drag tests use.
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientY: position === "before" ? 5 : 35,
+    });
+    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+    fireEvent(row, event);
+  };
+
+  const paneLabelsOnGrid = (container: HTMLElement) =>
+    [...container.querySelectorAll(".workspace-grid .grid-pane")].map((pane) => pane.getAttribute("aria-label"));
+
   it("counts a folder's sessions beside its name, and says nothing for a folder with none", async () => {
     const harness = createApi({ projects: [atlas, dashboard] });
     window.multiCliWork = harness.api;
@@ -2414,6 +2451,151 @@ describe("sidebar panes", () => {
     fireEvent.click(screen.getByRole("button", { name: "숨김 펼치기" }));
     const hidden = screen.getByRole("group", { name: "숨김 패인" });
     expect(within(hidden).getByRole("button", { name: "PowerShell 작업공간에 다시 표시" })).toBeInTheDocument();
+  });
+
+  it("reorders 작업공간 rows at the insertion line and updates the visible grid and saved slots", async () => {
+    const harness = createApi({
+      sessions: [powershellSession, claudeSession, codexSession],
+      savedViews: {
+        workspace: {
+          layoutId: "cols:1-1-1",
+          slots: [powershellSession.id, claudeSession.id, codexSession.id],
+        },
+        hiddenPanes: { layoutId: "auto", slots: [] },
+      },
+    });
+    window.multiCliWork = harness.api;
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "작업공간 열기 (패인 3개)" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업공간 펼치기" }));
+    const group = screen.getByRole("group", { name: "작업공간 패인" });
+    await waitFor(() => expect(harness.api.terminals.setSlotViews).toHaveBeenCalled());
+    vi.mocked(harness.api.terminals.setSlotViews).mockClear();
+
+    const source = shelfPaneRow(group, "Codex");
+    const target = shelfPaneRow(group, "PowerShell");
+    const dataTransfer = dragPayload();
+    fireEvent.dragStart(source, { dataTransfer });
+    dragAtShelfRow(target, "dragover", "before", dataTransfer);
+    expect(target).toHaveClass("pane-drop-before");
+    dragAtShelfRow(target, "drop", "before", dataTransfer);
+
+    expect(within(group).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.textContent)).toEqual([
+      "CodexAtlas",
+      "PowerShellAtlas",
+      "Claude CodeAtlas",
+    ]);
+    expect(paneLabelsOnGrid(container)).toEqual(["Codex", "PowerShell", "Claude Code"]);
+    await waitFor(() =>
+      expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          workspace: {
+            layoutId: "cols:1-1-1",
+            slots: [codexSession.id, powershellSession.id, claudeSession.id],
+          },
+        }),
+      ),
+    );
+  });
+
+  it("reorders 숨김 rows downward and keeps its central grid synchronized", async () => {
+    const harness = createApi({
+      sessions: [powershellSession, claudeSession, codexSession],
+      savedViews: {
+        workspace: { layoutId: "auto", slots: [] },
+        hiddenPanes: {
+          layoutId: "cols:1-1-1",
+          slots: [powershellSession.id, claudeSession.id, codexSession.id],
+        },
+      },
+    });
+    window.multiCliWork = harness.api;
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "숨김 열기 (패인 3개)" }));
+    fireEvent.click(screen.getByRole("button", { name: "숨김 펼치기" }));
+    const group = screen.getByRole("group", { name: "숨김 패인" });
+    const source = shelfPaneRow(group, "PowerShell");
+    const target = shelfPaneRow(group, "Claude Code");
+    const dataTransfer = dragPayload();
+    fireEvent.dragStart(source, { dataTransfer });
+    dragAtShelfRow(target, "dragover", "after", dataTransfer);
+    expect(target).toHaveClass("pane-drop-after");
+    dragAtShelfRow(target, "drop", "after", dataTransfer);
+
+    expect(within(group).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.textContent)).toEqual([
+      "Claude CodeAtlas",
+      "PowerShellAtlas",
+      "CodexAtlas",
+    ]);
+    expect(paneLabelsOnGrid(container)).toEqual(["Claude Code", "PowerShell", "Codex"]);
+  });
+
+  it("moves a document between mixed shelf lists at the chosen position and persists both views", async () => {
+    const markdownEntry: FileTreeEntry = {
+      name: "README.md",
+      relativePath: "README.md",
+      kind: "file",
+      extension: "md",
+      executable: false,
+    };
+    const harness = createApi({
+      sessions: [powershellSession, claudeSession],
+      savedViews: {
+        workspace: { layoutId: "auto", slots: [powershellSession.id] },
+        hiddenPanes: { layoutId: "auto", slots: [claudeSession.id] },
+      },
+    });
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
+      relativePath: "README.md",
+      encoding: "utf8",
+      content: "# Readme",
+      truncated: false,
+      sizeBytes: 8,
+    });
+    window.multiCliWork = harness.api;
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
+    await screen.findByRole("button", { name: "README.md 문서 열기" });
+    await screen.findByRole("button", { name: "작업공간 열기 (패인 2개)" });
+    fireEvent.click(screen.getByRole("button", { name: "작업공간 펼치기" }));
+    fireEvent.click(screen.getByRole("button", { name: "숨김 펼치기" }));
+    const active = screen.getByRole("group", { name: "작업공간 패인" });
+    const hidden = screen.getByRole("group", { name: "숨김 패인" });
+    await waitFor(() => expect(harness.api.terminals.setSlotViews).toHaveBeenCalled());
+    vi.mocked(harness.api.terminals.setSlotViews).mockClear();
+
+    const source = shelfPaneRow(active, "README.md");
+    const target = shelfPaneRow(hidden, "Claude Code");
+    const dataTransfer = dragPayload();
+    fireEvent.dragStart(source, { dataTransfer });
+    dragAtShelfRow(target, "dragover", "before", dataTransfer);
+    dragAtShelfRow(target, "drop", "before", dataTransfer);
+
+    expect(within(active).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
+      "PowerShell 패인 열기",
+    ]);
+    expect(within(hidden).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
+      "README.md 패인 열기",
+      "Claude Code 패인 열기",
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "숨김 열기 (패인 2개)" }));
+    expect(paneLabelsOnGrid(container)).toEqual(["README.md", "Claude Code"]);
+    await waitFor(() =>
+      expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          workspace: { layoutId: "auto", slots: [powershellSession.id] },
+          hiddenPanes: {
+            layoutId: "auto",
+            slots: ["file:project:project-atlas:README.md", claudeSession.id],
+          },
+        }),
+      ),
+    );
   });
 });
 

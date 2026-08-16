@@ -71,6 +71,7 @@ import {
   type PaneRow,
 } from "./pane-items";
 import { OTHER_SHELF, SHELF_TEXT, type ShelfKind, type Shelves } from "./shelves";
+import type { DropPosition } from "./project-order";
 import {
   appendSession,
   clampPage,
@@ -78,6 +79,7 @@ import {
   normalizeSlots,
   pageOfSession,
   placeInSlot,
+  placePaneRelative,
   removeSession,
   renamePaneId,
   resolveView,
@@ -1239,6 +1241,29 @@ export function App() {
   const movePaneToShelf = (kind: ShelfKind, paneId: string) => {
     placePaneOnShelf(kind, paneId, (view) => appendSession(view, paneId));
     // The pane has just left the grid on screen, so the focus cannot stay on it.
+    if (shelfKind !== null && shelfKind !== kind) {
+      setFocusedPaneId((current) => (current === paneId ? null : current));
+    }
+  };
+
+  /**
+   * A sidebar pane row is an insertion target rather than an append target. Moving between shelves
+   * and placing beside the named row happen in the same state update, preserving the one-shelf rule.
+   */
+  const placePaneOnShelfRow = (
+    kind: ShelfKind,
+    paneId: string,
+    targetPaneId: string,
+    position: DropPosition,
+  ) => {
+    setShelves((current) => {
+      if (!current[kind].slots.includes(targetPaneId)) return current;
+      const other = OTHER_SHELF[kind];
+      const placed = placePaneRelative(current[kind], paneId, targetPaneId, position);
+      const removed = removeSession(current[other], paneId);
+      if (placed === current[kind] && removed === current[other]) return current;
+      return { ...current, [kind]: placed, [other]: removed };
+    });
     if (shelfKind !== null && shelfKind !== kind) {
       setFocusedPaneId((current) => (current === paneId ? null : current));
     }
@@ -2824,6 +2849,7 @@ export function App() {
         selectedShelf={activeView === "terminal" ? shelfKind : null}
         onSelectShelf={selectShelf}
         onDropPaneOnShelf={movePaneToShelf}
+        onPlacePaneOnShelf={placePaneOnShelfRow}
         onSelectShelfPane={revealShelfPane}
         onMovePaneToOtherShelf={movePaneToOtherShelf}
         flashProjectId={flashProjectId}

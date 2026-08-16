@@ -116,6 +116,8 @@ interface ProjectSidebarProps {
   onSelectShelf(kind: ShelfKind): void;
   /** A row dropped on a shelf row. It leaves the other shelf — a pane belongs to exactly one. */
   onDropPaneOnShelf(kind: ShelfKind, paneId: string): void;
+  /** A pane dropped beside another shelf pane, with the row half choosing before or after. */
+  onPlacePaneOnShelf(kind: ShelfKind, paneId: string, targetPaneId: string, position: DropPosition): void;
   /** A pane picked from an expanded shelf row: show that shelf, on the page holding the pane. */
   onSelectShelfPane(kind: ShelfKind, paneId: string): void;
   /** Hands the pane to the other shelf. The session keeps running and the document stays open. */
@@ -239,6 +241,7 @@ export function ProjectSidebar({
   selectedShelf,
   onSelectShelf,
   onDropPaneOnShelf,
+  onPlacePaneOnShelf,
   onSelectShelfPane,
   onMovePaneToOtherShelf,
   flashProjectId,
@@ -250,6 +253,11 @@ export function ProjectSidebar({
   const readOnly = Boolean(snapshot && !snapshot.writable);
   const [drag, setDrag] = useState<{ id: string; over: { id: string; position: DropPosition } | null } | null>(null);
   const [shelfDropKind, setShelfDropKind] = useState<ShelfKind | null>(null);
+  const [shelfPaneDrop, setShelfPaneDrop] = useState<{
+    kind: ShelfKind;
+    paneId: string;
+    position: DropPosition;
+  } | null>(null);
   const flashRow = useRef<HTMLDivElement | null>(null);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(
     () => new Set(readSidebarState().expandedWorkspaces),
@@ -308,6 +316,37 @@ export function ProjectSidebar({
       setShelfDropKind(null);
       const paneId = readSessionDrag(event);
       if (paneId) onDropPaneOnShelf(kind, paneId);
+    },
+  });
+
+  /** Expanded shelf rows split into before/after targets, matching folder insertion feedback. */
+  const shelfPaneDropProps = (kind: ShelfKind, targetPaneId: string) => ({
+    onDragOver: (event: ReactDragEvent<HTMLElement>) => {
+      if (!isSessionDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const position: DropPosition = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+      setShelfPaneDrop((current) =>
+        current?.kind === kind && current.paneId === targetPaneId && current.position === position
+          ? current
+          : { kind, paneId: targetPaneId, position },
+      );
+    },
+    onDragLeave: (event: ReactDragEvent<HTMLElement>) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      setShelfPaneDrop((current) =>
+        current?.kind === kind && current.paneId === targetPaneId ? null : current,
+      );
+    },
+    onDrop: (event: ReactDragEvent<HTMLElement>) => {
+      if (!isSessionDrag(event)) return;
+      event.preventDefault();
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const position: DropPosition = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+      setShelfPaneDrop(null);
+      const paneId = readSessionDrag(event);
+      if (paneId) onPlacePaneOnShelf(kind, paneId, targetPaneId, position);
     },
   });
 
@@ -375,6 +414,10 @@ export function ProjectSidebar({
     onDragStart: (event: ReactDragEvent<HTMLElement>) => {
       event.stopPropagation();
       startSessionDrag(event, paneId);
+    },
+    onDragEnd: () => {
+      setShelfDropKind(null);
+      setShelfPaneDrop(null);
     },
   });
 
@@ -469,8 +512,16 @@ export function ProjectSidebar({
   const renderShelfPane = (kind: ShelfKind, row: PaneRow) => (
     <li key={row.id}>
       <div
-        className={rowClass(row.id, "file-tab-row", row.kind === "session" ? `status-${row.status}` : "")}
+        className={rowClass(
+          row.id,
+          "file-tab-row",
+          row.kind === "session" ? `status-${row.status}` : "",
+          shelfPaneDrop?.kind === kind && shelfPaneDrop.paneId === row.id
+            ? `pane-drop-${shelfPaneDrop.position}`
+            : "",
+        )}
         {...paneDragProps(row.id)}
+        {...shelfPaneDropProps(kind, row.id)}
       >
         <button
           type="button"

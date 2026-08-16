@@ -10,6 +10,7 @@ import {
   pageOfSession,
   pageSlots,
   placeInSlot,
+  placePaneRelative,
   removeSession,
   renamePaneId,
   resolveView,
@@ -119,6 +120,50 @@ describe("placeInSlot", () => {
 
   it("lands right after the last pane in a 자동 view, however far past the end it was dropped", () => {
     expect(placeInSlot({ layoutId: "auto", slots: ["a"] }, 3, "b").slots).toEqual(["a", "b"]);
+  });
+});
+
+describe("placePaneRelative", () => {
+  it("moves a pane down by inserting it after the drop target", () => {
+    expect(placePaneRelative({ layoutId: "auto", slots: ["a", "b", "c", "d"] }, "a", "c", "after").slots).toEqual([
+      "b",
+      "c",
+      "a",
+      "d",
+    ]);
+  });
+
+  it("moves a pane up by inserting it before the drop target", () => {
+    expect(placePaneRelative({ layoutId: "auto", slots: ["a", "b", "c", "d"] }, "d", "b", "before").slots).toEqual([
+      "a",
+      "d",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("returns the same view for self, missing-target, and already-adjacent drops", () => {
+    const view = { layoutId: "cols:1-1-1", slots: ["a", null, "b", "c"] };
+
+    expect(placePaneRelative(view, "b", "b", "before")).toBe(view);
+    expect(placePaneRelative(view, "b", "missing", "after")).toBe(view);
+    expect(placePaneRelative(view, "a", "b", "before")).toBe(view);
+    expect(placePaneRelative(view, "b", "a", "after")).toBe(view);
+  });
+
+  it("keeps empty slots and page boundaries while reordering panes already in the view", () => {
+    const view = { layoutId: "cols:1-1-1", slots: ["a", null, "b", "c", null, "d"] };
+    const moved = placePaneRelative(view, "d", "b", "before");
+
+    expect(moved.slots).toEqual(["a", null, "d", "b", null, "c"]);
+    expect(pageCount(moved.slots, viewPageSize(moved))).toBe(2);
+  });
+
+  it("inserts a pane from another view at the requested side without flattening holes", () => {
+    const view = { layoutId: "cols:1-1-1", slots: ["a", null, "b", "c"] };
+
+    expect(placePaneRelative(view, "new", "b", "before").slots).toEqual(["a", null, "new", "b", "c"]);
+    expect(placePaneRelative(view, "new", "a", "after").slots).toEqual(["a", "new", null, "b", "c"]);
   });
 });
 
