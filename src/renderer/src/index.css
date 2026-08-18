@@ -1612,6 +1612,9 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
   letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-navigation {
@@ -1626,11 +1629,19 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
   height: 34px;
   padding: 0 4px 0 8px;
   color: var(--muted);
   font: var(--type-secondary-semibold);
   text-transform: uppercase;
+}
+
+.section-heading > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Bulk expansion gets its own row: the heading's four icons are already as many as it holds. */
@@ -1643,6 +1654,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .tree-controls button {
   display: flex;
   flex: 1;
+  min-width: 0;
   align-items: center;
   justify-content: center;
   gap: 3px;
@@ -1658,6 +1670,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .tree-controls button:hover {
   color: var(--text);
+}
+
+.tree-controls button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-button {
