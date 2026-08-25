@@ -447,6 +447,7 @@ body.sidebar-resizing {
 .project-sidebar {
   grid-column: 1;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   min-width: 0;
   min-height: 0;
