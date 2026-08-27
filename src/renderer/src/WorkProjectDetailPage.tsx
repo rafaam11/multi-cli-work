@@ -10,7 +10,7 @@ import type {
 } from "@shared/work-project-types";
 import { WORK_PROJECT_CATEGORIES } from "@shared/work-project-types";
 import { BookOpen, ExternalLink, FolderOpen, FolderPlus, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { GitHubIcon, TeamsIcon } from "./brand-icons";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 import { categoryAccentClass } from "./work-project-accent";
@@ -19,6 +19,44 @@ const STATUS_OPTIONS: Array<ProjectStatus | ""> = ["", "진행중", "보류", "�
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const AUTOSAVE_DELAY_MS = 400;
+
+/**
+ * Saves an edited value a moment after it stops changing, and immediately when the row loses focus
+ * or the page goes away. Returns that immediate save.
+ *
+ * The trigger is the value itself, not the blur: a Korean IME whose composition is still open when
+ * focus leaves commits the finished text *after* the blur, so a handler reading the row at blur time
+ * sees the pre-edit value, decides nothing changed, and drops the edit — which is exactly how a
+ * renamed Notion label came back as "노션" on the next launch.
+ */
+function useAutosave(signature: string, savedSignature: string, save: () => void): () => void {
+  const saveRef = useRef(save);
+  const pendingRef = useRef<string | null>(null);
+  const sentRef = useRef<string | null>(null);
+  // Kept on the latest render so a flush always writes what is on screen now, late input included.
+  saveRef.current = save;
+  pendingRef.current = signature === savedSignature ? null : signature;
+
+  const flush = useCallback(() => {
+    const pending = pendingRef.current;
+    if (pending === null || pending === sentRef.current) return;
+    sentRef.current = pending;
+    saveRef.current();
+  }, []);
+
+  useEffect(() => {
+    if (signature === savedSignature) return;
+    const timer = setTimeout(flush, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [signature, savedSignature, flush]);
+
+  // Picking another sidebar entry replaces this page outright, without ever blurring the row.
+  useEffect(() => () => flush(), [flush]);
+
+  return flush;
 }
 
 interface WorkProjectDetailPageProps {
@@ -88,11 +126,6 @@ export function WorkProjectDetailPage({
         .filter((link) => link.url.length > 0),
     );
 
-  const commitNotionLinks = (links: WorkProjectNotionLink[]) => {
-    setNotionLinks(links);
-    if (normalizedLinks(links) !== normalizedLinks(workProject.notionLinks)) void save({ notionLinks: links });
-  };
-
   const updateNotionLink = (index: number, patch: Partial<WorkProjectNotionLink>) => {
     setNotionLinks((current) => current.map((link, at) => (at === index ? { ...link, ...patch } : link)));
   };
@@ -110,24 +143,30 @@ export function WorkProjectDetailPage({
         .map((folder) => ({ label: folderLabel(folder), path: folder.path.trim() })),
     );
 
-  const commitLocalFolders = (folders: WorkProjectLocalFolder[]) => {
-    setLocalFolders(folders);
-    if (normalizedFolders(folders) !== normalizedFolders(workProject.localFolders)) {
-      void save({ localFolders: folders });
-    }
-  };
-
   const updateLocalFolder = (index: number, patch: Partial<WorkProjectLocalFolder>) => {
     setLocalFolders((current) => current.map((folder, at) => (at === index ? { ...folder, ...patch } : folder)));
   };
 
-  // The dialog steals focus, so the row's blur cannot be relied on to save the picked path.
+  const flushNotionLinks = useAutosave(
+    normalizedLinks(notionLinks),
+    normalizedLinks(workProject.notionLinks),
+    () => void save({ notionLinks }),
+  );
+  const flushLocalFolders = useAutosave(
+    normalizedFolders(localFolders),
+    normalizedFolders(workProject.localFolders),
+    () => void save({ localFolders }),
+  );
+
+  // The dialog steals focus, so the row never blurs — the autosave stores the picked path anyway.
   const chooseLocalFolder = async (index: number) => {
     setSaveError(null);
     try {
       const picked = await window.multiCliWork.workProjects.chooseLocalFolder();
       if (picked) {
-        commitLocalFolders(localFolders.map((folder, at) => (at === index ? { ...folder, path: picked } : folder)));
+        setLocalFolders((current) =>
+          current.map((folder, at) => (at === index ? { ...folder, path: picked } : folder)),
+        );
       }
     } catch (error) {
       setSaveError(errorMessage(error));
@@ -243,7 +282,7 @@ export function WorkProjectDetailPage({
                     placeholder={index === 0 ? "채널" : `${index}차년도`}
                     aria-label={`노션 링크 ${index + 1} 라벨`}
                     onChange={(event) => updateNotionLink(index, { label: event.target.value })}
-                    onBlur={() => commitNotionLinks(notionLinks)}
+                    onBlur={flushNotionLinks}
                   />
                   <input
                     type="text"
@@ -251,7 +290,7 @@ export function WorkProjectDetailPage({
                     placeholder="https://notion.so/…"
                     aria-label={`노션 링크 ${index + 1} URL`}
                     onChange={(event) => updateNotionLink(index, { url: event.target.value })}
-                    onBlur={() => commitNotionLinks(notionLinks)}
+                    onBlur={flushNotionLinks}
                   />
                   <button
                     type="button"
@@ -268,7 +307,7 @@ export function WorkProjectDetailPage({
                     className="icon-button"
                     aria-label={`노션 링크 ${index + 1} 삭제`}
                     title="링크 삭제"
-                    onClick={() => commitNotionLinks(notionLinks.filter((_, at) => at !== index))}
+                    onClick={() => setNotionLinks((current) => current.filter((_, at) => at !== index))}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -294,7 +333,7 @@ export function WorkProjectDetailPage({
                     placeholder="자료 폴더"
                     aria-label={`참고 폴더 ${index + 1} 라벨`}
                     onChange={(event) => updateLocalFolder(index, { label: event.target.value })}
-                    onBlur={() => commitLocalFolders(localFolders)}
+                    onBlur={flushLocalFolders}
                   />
                   <input
                     type="text"
@@ -302,7 +341,7 @@ export function WorkProjectDetailPage({
                     placeholder="D:\Work\참고자료"
                     aria-label={`참고 폴더 ${index + 1} 경로`}
                     onChange={(event) => updateLocalFolder(index, { path: event.target.value })}
-                    onBlur={() => commitLocalFolders(localFolders)}
+                    onBlur={flushLocalFolders}
                   />
                   <button
                     type="button"
@@ -328,7 +367,7 @@ export function WorkProjectDetailPage({
                     className="icon-button"
                     aria-label={`참고 폴더 ${index + 1} 삭제`}
                     title="폴더 삭제"
-                    onClick={() => commitLocalFolders(localFolders.filter((_, at) => at !== index))}
+                    onClick={() => setLocalFolders((current) => current.filter((_, at) => at !== index))}
                   >
                     <Trash2 size={14} />
                   </button>
