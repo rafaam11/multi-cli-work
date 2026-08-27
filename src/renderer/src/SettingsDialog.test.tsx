@@ -5,11 +5,21 @@ import { DEFAULT_SETTINGS } from "@shared/settings-types";
 import { SettingsDialog } from "./SettingsDialog";
 
 const update = vi.fn().mockResolvedValue(DEFAULT_SETTINGS);
+const notion = {
+  status: vi.fn(),
+  setToken: vi.fn(),
+  clearToken: vi.fn(),
+  inspectLink: vi.fn(),
+};
 
 beforeEach(() => {
   update.mockClear();
+  notion.status.mockReset().mockResolvedValue({ configured: false, encryptionAvailable: true });
+  notion.setToken.mockReset().mockResolvedValue({ configured: true, encryptionAvailable: true });
+  notion.clearToken.mockReset().mockResolvedValue({ configured: false, encryptionAvailable: true });
   window.multiCliWork = {
     settings: { get: vi.fn().mockResolvedValue(DEFAULT_SETTINGS), update, onChange: vi.fn(() => () => undefined) },
+    notion,
   } as unknown as MultiCliWorkApi;
 });
 
@@ -54,6 +64,59 @@ describe("SettingsDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.mouseDown(document.querySelector(".modal-backdrop")!);
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("노션 탭", () => {
+  async function openNotion() {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "노션" }));
+    await waitFor(() => expect(notion.status).toHaveBeenCalled());
+  }
+
+  it("현재 상태를 보여주고, 저장하면 입력칸을 비운다 — 토큰은 DOM에 남지 않는다", async () => {
+    await openNotion();
+    expect(await screen.findByText("설정되지 않음")).toBeInTheDocument();
+
+    const input = screen.getByLabelText("통합 토큰") as HTMLInputElement;
+    expect(input.type).toBe("password");
+    fireEvent.change(input, { target: { value: "  ntn_supersecret  " } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(notion.setToken).toHaveBeenCalledWith("ntn_supersecret"));
+    expect(await screen.findByText("연결됨")).toBeInTheDocument();
+    expect(input.value).toBe("");
+    expect(document.body.innerHTML).not.toContain("ntn_supersecret");
+  });
+
+  it("저장이 거절되면 사유를 그대로 보여주고 상태는 그대로다", async () => {
+    notion.setToken.mockRejectedValue(
+      new Error("Error invoking remote method 'notion:set-token': Error: 노션 토큰이 유효하지 않습니다"),
+    );
+    await openNotion();
+    fireEvent.change(screen.getByLabelText("통합 토큰"), { target: { value: "ntn_wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("노션 토큰이 유효하지 않습니다");
+    expect(screen.getByText("설정되지 않음")).toBeInTheDocument();
+  });
+
+  it("설정된 토큰만 제거할 수 있다", async () => {
+    notion.status.mockResolvedValue({ configured: true, encryptionAvailable: true });
+    await openNotion();
+    const remove = await screen.findByRole("button", { name: "제거" });
+    await waitFor(() => expect(remove).toBeEnabled());
+    fireEvent.click(remove);
+    await waitFor(() => expect(notion.clearToken).toHaveBeenCalled());
+    expect(await screen.findByText("설정되지 않음")).toBeInTheDocument();
+  });
+
+  it("안전한 저장이 불가능한 환경이면 입력을 막는다", async () => {
+    notion.status.mockResolvedValue({ configured: false, encryptionAvailable: false });
+    await openNotion();
+    await waitFor(() => expect(screen.getByLabelText("통합 토큰")).toBeDisabled());
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("안전하게 저장할 수 없어");
   });
 });
 

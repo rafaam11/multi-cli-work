@@ -1,5 +1,6 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, WorkProjectMemberFolderAddResult, WorkProjectMetadataPatch } from "@shared/api-types";
+import type { NotionLinkCheck } from "@shared/notion-types";
 import type { ProjectStatus, SharedProject } from "@shared/project-types";
 import type {
   WorkProject,
@@ -9,9 +10,10 @@ import type {
   WorkProjectRole,
 } from "@shared/work-project-types";
 import { WORK_PROJECT_CATEGORIES } from "@shared/work-project-types";
-import { BookOpen, ExternalLink, FolderOpen, FolderPlus, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, ExternalLink, FolderOpen, FolderPlus, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GitHubIcon, TeamsIcon } from "./brand-icons";
+import { subscribeNotionTokenStatus } from "./notion-token-status";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 import { categoryAccentClass } from "./work-project-accent";
 
@@ -22,6 +24,19 @@ function errorMessage(error: unknown): string {
 }
 
 const AUTOSAVE_DELAY_MS = 400;
+
+/** 저장 디바운스보다 길다 — URL을 타이핑하는 동안 조회와 저장이 매 글자마다 연쇄되지 않게 한다. */
+const NOTION_CHECK_DELAY_MS = 800;
+
+/** 자동 조회가 덮어써도 되는 라벨. 그 밖의 라벨은 사람이 지은 것으로 보고 건드리지 않는다. */
+const AUTO_FILLABLE_LABELS = new Set(["", "노션"]);
+
+/**
+ * URL별 마지막 검증 결과. 사이드바를 오가면 이 페이지는 통째로 언마운트되므로(App의 `key={id}`)
+ * 모듈 스코프에 둬야 같은 링크를 매번 다시 묻지 않는다. 앱을 껐다 켜면 비워진다 — 노션 쪽 공유
+ * 설정은 언제든 바뀔 수 있어서 오래 들고 있을 값이 아니다.
+ */
+const notionCheckCache = new Map<string, NotionLinkCheck>();
 
 /**
  * Saves an edited value a moment after it stops changing, and immediately when the row loses focus
@@ -99,6 +114,10 @@ export function WorkProjectDetailPage({
   const [memo, setMemo] = useState(workProject.memo);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [notionTokenReady, setNotionTokenReady] = useState<boolean | null>(null);
+  const [notionChecks, setNotionChecks] = useState<Record<string, NotionLinkCheck>>({});
+  const [notionInFlight, setNotionInFlight] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [notionError, setNotionError] = useState<string | null>(null);
 
   useEffect(() => {
     // Only resync on a genuine work project switch (same reasoning as ProjectDetailPage).
@@ -129,6 +148,93 @@ export function WorkProjectDetailPage({
   const updateNotionLink = (index: number, patch: Partial<WorkProjectNotionLink>) => {
     setNotionLinks((current) => current.map((link, at) => (at === index ? { ...link, ...patch } : link)));
   };
+
+  const notionLinksRef = useRef(notionLinks);
+  notionLinksRef.current = notionLinks;
+
+  useEffect(() => {
+    let alive = true;
+    window.multiCliWork.notion
+      .status()
+      .then((status) => {
+        if (alive) setNotionTokenReady(status.configured);
+      })
+      .catch(() => {
+        if (alive) setNotionTokenReady(false);
+      });
+    // 설정 다이얼로그는 이 페이지 위에 열린다 — 토큰을 넣자마자 조회가 살아나야 한다.
+    const unsubscribe = subscribeNotionTokenStatus((status) => setNotionTokenReady(status.configured));
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, []);
+
+  /**
+   * 제목 조회가 곧 접근성 검증이다 — 통합이 읽지 못하는 페이지는 노션 MCP도 쓰지 못한다.
+   * 자동 조회(force=false)는 비어 있거나 기본값인 라벨만 채우고, 버튼(force=true)은 항상 덮어쓴다.
+   */
+  const inspectNotionLink = useCallback(async (index: number, url: string, force: boolean) => {
+    if (url.length === 0) return;
+    setNotionInFlight((current) => new Set(current).add(url));
+    try {
+      const check = await window.multiCliWork.notion.inspectLink(url);
+      notionCheckCache.set(url, check);
+      setNotionChecks((current) => ({ ...current, [url]: check }));
+      setNotionError(check.state === "ok" ? null : check.message);
+      if (check.state !== "ok" || !check.title) return;
+      const title = check.title;
+      setNotionLinks((current) =>
+        current.map((link, at) => {
+          if (link.url.trim() !== url) return link;
+          const fillable = force ? at === index : AUTO_FILLABLE_LABELS.has(link.label.trim());
+          return fillable ? { ...link, label: title } : link;
+        }),
+      );
+    } catch (error) {
+      setNotionError(errorMessage(error));
+    } finally {
+      setNotionInFlight((current) => {
+        const next = new Set(current);
+        next.delete(url);
+        return next;
+      });
+    }
+  }, []);
+
+  // 진입 직후와 URL 입력이 멎은 뒤, 아직 물어보지 않은 링크만 훑는다. 노션 API 한도가 초당 3회
+  // 수준이라 병렬로 돌리지 않고 한 줄씩 기다린다.
+  const notionUrlSignature = notionLinks.map((link) => link.url.trim()).join("\n");
+  useEffect(() => {
+    if (notionTokenReady !== true) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        for (const [index, link] of notionLinksRef.current.entries()) {
+          if (cancelled) return;
+          const url = link.url.trim();
+          if (url.length === 0 || notionCheckCache.has(url)) continue;
+          await inspectNotionLink(index, url, false);
+        }
+      })();
+    }, NOTION_CHECK_DELAY_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [notionUrlSignature, notionTokenReady, inspectNotionLink]);
+
+  // 캐시에 이미 있는 결과는 다시 물어보지 않고 화면에만 되살린다.
+  useEffect(() => {
+    const cached: Record<string, NotionLinkCheck> = {};
+    for (const link of workProject.notionLinks) {
+      const url = link.url.trim();
+      const hit = notionCheckCache.get(url);
+      if (hit) cached[url] = hit;
+    }
+    setNotionChecks(cached);
+    setNotionError(null);
+  }, [workProject.id]);
 
   /** Mirrors the service's default label — the folder's own name — so an untouched row reads as unchanged. */
   const folderLabel = (folder: WorkProjectLocalFolder) => {
@@ -273,46 +379,83 @@ export function WorkProjectDetailPage({
             </select>
             <label id={`wp-notion-${workProject.id}`}>노션 페이지</label>
             <div className="work-project-notion-list" role="group" aria-labelledby={`wp-notion-${workProject.id}`}>
-              {notionLinks.map((link, index) => (
-                <div className="work-project-notion-row" key={index}>
-                  <input
-                    className="notion-label-input"
-                    type="text"
-                    value={link.label}
-                    placeholder={index === 0 ? "채널" : `${index}차년도`}
-                    aria-label={`노션 링크 ${index + 1} 라벨`}
-                    onChange={(event) => updateNotionLink(index, { label: event.target.value })}
-                    onBlur={flushNotionLinks}
-                  />
-                  <input
-                    type="text"
-                    value={link.url}
-                    placeholder="https://notion.so/…"
-                    aria-label={`노션 링크 ${index + 1} URL`}
-                    onChange={(event) => updateNotionLink(index, { url: event.target.value })}
-                    onBlur={flushNotionLinks}
-                  />
-                  <button
-                    type="button"
-                    className="icon-button"
-                    disabled={link.url.trim().length === 0}
-                    title={link.url.trim() ? "노션에서 열기" : "URL을 먼저 입력하세요"}
-                    aria-label={`노션 링크 ${index + 1} 열기`}
-                    onClick={() => onOpenNotion(link.url.trim())}
-                  >
-                    <ExternalLink size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`노션 링크 ${index + 1} 삭제`}
-                    title="링크 삭제"
-                    onClick={() => setNotionLinks((current) => current.filter((_, at) => at !== index))}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
+              {notionLinks.map((link, index) => {
+                const url = link.url.trim();
+                const check = url.length > 0 ? notionChecks[url] : undefined;
+                const checking = url.length > 0 && notionInFlight.has(url);
+                return (
+                  <div className="work-project-notion-row" key={index}>
+                    <input
+                      className="notion-label-input"
+                      type="text"
+                      value={link.label}
+                      placeholder={index === 0 ? "채널" : `${index}차년도`}
+                      aria-label={`노션 링크 ${index + 1} 라벨`}
+                      onChange={(event) => updateNotionLink(index, { label: event.target.value })}
+                      onBlur={flushNotionLinks}
+                    />
+                    <input
+                      type="text"
+                      value={link.url}
+                      placeholder="https://notion.so/…"
+                      aria-label={`노션 링크 ${index + 1} URL`}
+                      onChange={(event) => updateNotionLink(index, { url: event.target.value })}
+                      onBlur={flushNotionLinks}
+                    />
+                    {check ? (
+                      <span
+                        className={`notion-link-status ${check.state === "ok" ? "ok" : "warn"}`}
+                        role="img"
+                        aria-label={
+                          check.state === "ok"
+                            ? `노션 링크 ${index + 1} 접근 가능`
+                            : `노션 링크 ${index + 1} 접근 불가: ${check.message ?? ""}`
+                        }
+                        title={check.state === "ok" ? check.title ?? "통합이 이 페이지를 읽을 수 있습니다" : check.message ?? ""}
+                      >
+                        {check.state === "ok" ? <Check size={14} /> : <AlertTriangle size={14} />}
+                      </span>
+                    ) : (
+                      <span className="notion-link-status" aria-hidden="true" />
+                    )}
+                    <button
+                      type="button"
+                      className="icon-button"
+                      disabled={url.length === 0 || checking || notionTokenReady !== true}
+                      title={
+                        notionTokenReady === true
+                          ? url.length === 0
+                            ? "URL을 먼저 입력하세요"
+                            : "제목 다시 가져오기"
+                          : "설정 → 노션에서 통합 토큰을 먼저 입력하세요"
+                      }
+                      aria-label={`노션 링크 ${index + 1} 제목 조회`}
+                      onClick={() => void inspectNotionLink(index, url, true)}
+                    >
+                      <RefreshCw size={14} className={checking ? "spin" : undefined} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      disabled={url.length === 0}
+                      title={url.length > 0 ? "노션에서 열기" : "URL을 먼저 입력하세요"}
+                      aria-label={`노션 링크 ${index + 1} 열기`}
+                      onClick={() => onOpenNotion(url)}
+                    >
+                      <ExternalLink size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={`노션 링크 ${index + 1} 삭제`}
+                      title="링크 삭제"
+                      onClick={() => setNotionLinks((current) => current.filter((_, at) => at !== index))}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
               <button
                 type="button"
                 className="work-project-notion-add"
@@ -322,6 +465,11 @@ export function WorkProjectDetailPage({
                 <span>링크 추가</span>
               </button>
             </div>
+            {notionError ? (
+              <p className="detail-save-error" role="alert">
+                {notionError}
+              </p>
+            ) : null}
             <label id={`wp-folders-${workProject.id}`}>참고 로컬 폴더</label>
             <div className="work-project-local-list" role="group" aria-labelledby={`wp-folders-${workProject.id}`}>
               {localFolders.map((folder, index) => (

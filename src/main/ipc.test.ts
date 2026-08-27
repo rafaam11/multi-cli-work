@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { SlotViewsInput } from "../shared/api-types";
 import { DEFAULT_SETTINGS } from "../shared/settings-types";
+import { notionLinkCheck } from "../shared/notion-types";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
 
 function setup(options: { onSessionSelected?: (sessionId: string | null) => void } = {}) {
@@ -205,6 +206,13 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     get: vi.fn(() => DEFAULT_SETTINGS),
     update: vi.fn(async (patch: unknown) => ({ ...DEFAULT_SETTINGS, patched: patch })),
   };
+  const notionStatus = { configured: true, encryptionAvailable: true };
+  const notionGateway = {
+    status: vi.fn(async () => notionStatus),
+    setToken: vi.fn(async (_token: string) => notionStatus),
+    clearToken: vi.fn(async () => ({ configured: false, encryptionAvailable: true })),
+    inspectLink: vi.fn(async (_url: string) => notionLinkCheck("ok", "삼성서울병원 채널")),
+  };
   registerMainIpc(ipc, {
     projectService,
     workProjectService,
@@ -231,11 +239,13 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     attentionState: vi.fn(() => ({ "session-1": "input" as const })),
     onSessionSelected: options.onSessionSelected,
     settings: settingsGateway,
+    notion: notionGateway,
   });
   return {
     handlers,
     projectService,
     settingsGateway,
+    notionGateway,
     workProjectService,
     workProjectRegistry,
     coordinator,
@@ -661,6 +671,37 @@ describe("main IPC boundary", () => {
       /notification statuses/i,
     );
     expect(settingsGateway.update).not.toHaveBeenCalled();
+  });
+
+  it("delegates notion token channels and never echoes the token back", async () => {
+    const { handlers, notionGateway } = setup();
+
+    await expect(handlers.get("notion:status")!({})).resolves.toEqual({
+      configured: true,
+      encryptionAvailable: true,
+    });
+
+    const saved = await handlers.get("notion:set-token")!({}, "ntn_supersecret");
+    expect(notionGateway.setToken).toHaveBeenCalledWith("ntn_supersecret");
+    expect(JSON.stringify(saved)).not.toContain("ntn_supersecret");
+
+    await expect(handlers.get("notion:clear-token")!({})).resolves.toEqual({
+      configured: false,
+      encryptionAvailable: true,
+    });
+
+    await expect(handlers.get("notion:set-token")!({}, "  ")).rejects.toThrow(/Notion token/);
+  });
+
+  it("validates the link before asking notion about it", async () => {
+    const { handlers, notionGateway } = setup();
+
+    await expect(
+      handlers.get("notion:inspect-link")!({}, "https://app.notion.com/p/44c1183735e08258ac3b017e876998a1"),
+    ).resolves.toMatchObject({ state: "ok", title: "삼성서울병원 채널" });
+
+    await expect(handlers.get("notion:inspect-link")!({}, "file:///C:/secret.txt")).rejects.toThrow(/http/);
+    expect(notionGateway.inspectLink).toHaveBeenCalledTimes(1);
   });
 
   it("serves the current updater state so a late renderer does not miss the first check", async () => {

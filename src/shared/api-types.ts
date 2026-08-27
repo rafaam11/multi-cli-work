@@ -23,6 +23,7 @@ import type {
   WorktreeWorkspaceSnapshot,
 } from "./worktree-types";
 import type { AppSettings, AppSettingsPatch } from "./settings-types";
+import type { NotionLinkCheck, NotionTokenStatus } from "./notion-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -470,6 +471,14 @@ export interface MultiCliWorkApi {
     /** The saved arrangements — each folder's grid and the curated workspaces. */
     setSlotViews(input: SlotViewsInput): Promise<AppStateSnapshot>;
     onEvent(listener: (event: TerminalEvent) => void): () => void;
+  };
+  notion: {
+    status(): Promise<NotionTokenStatus>;
+    /** 저장 전에 노션이 토큰을 받아주는지 확인한다 — 거절되면 저장하지 않고 거부한다. */
+    setToken(token: string): Promise<NotionTokenStatus>;
+    clearToken(): Promise<NotionTokenStatus>;
+    /** 제목 조회 겸 "이 링크가 통합(=MCP)에서 보이는가" 검증. */
+    inspectLink(url: string): Promise<NotionLinkCheck>;
   };
   settings: {
     get(): Promise<AppSettings>;

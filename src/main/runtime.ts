@@ -1,4 +1,14 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell, utilityProcess } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Notification,
+  safeStorage,
+  shell,
+  utilityProcess,
+} from "electron";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +19,8 @@ import type { NotifiableStatus } from "../shared/settings-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
 import { createSettingsService, type SettingsService } from "./settings/settings-store";
+import { createNotionService } from "./notion/notion-service";
+import { createNotionTokenStore } from "./notion/notion-token-store";
 import {
   CONTROL_ENDPOINT_ENV,
   CONTROL_PIPE_ENV,
@@ -118,6 +130,10 @@ export async function createDesktopRuntime(
   const recoveryMarkerPath = path.join(userData, "shutdown-recovery.json");
   await consumeRecoveryMarker(recoveryMarkerPath, statePath);
   const settingsService = await createSettingsService(path.join(userData, "settings.json"));
+  // 노션 통합 토큰은 시크릿이라 settings.json(평문)이 아니라 safeStorage로 암호화한 별도 파일에 둔다.
+  const notionService = createNotionService(
+    createNotionTokenStore(path.join(userData, "notion-credentials.json"), safeStorage),
+  );
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
   // Both transcript directories are only overridden so tests can point at a fixture.
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
@@ -357,6 +373,7 @@ export async function createDesktopRuntime(
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
       }),
     coordinator,
+    notion: notionService,
     settings: {
       get: () => settingsService.current(),
       update: async (patch) => {

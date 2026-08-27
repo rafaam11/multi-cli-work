@@ -302,6 +302,12 @@ function createApi(options?: {
       chooseTeamsSyncRoot: vi.fn().mockResolvedValue(null),
       clearTeamsSyncRoot: vi.fn().mockResolvedValue(workProjectRegistry),
     },
+    notion: {
+      status: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true }),
+      setToken: vi.fn().mockResolvedValue({ configured: true, encryptionAvailable: true }),
+      clearToken: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true }),
+      inspectLink: vi.fn().mockResolvedValue({ state: "no-token", title: null, message: null }),
+    },
     worktrees: {
       list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
       sync: vi.fn().mockResolvedValue({

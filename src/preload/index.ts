@@ -186,6 +186,12 @@ const api: MultiCliWorkApi = {
       return () => ipcRenderer.removeListener("terminal:event", handler);
     },
   },
+  notion: {
+    status: () => ipcRenderer.invoke("notion:status"),
+    setToken: (token) => ipcRenderer.invoke("notion:set-token", token),
+    clearToken: () => ipcRenderer.invoke("notion:clear-token"),
+    inspectLink: (url) => ipcRenderer.invoke("notion:inspect-link", url),
+  },
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     update: (patch) => ipcRenderer.invoke("settings:update", patch),

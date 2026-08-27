@@ -1,4 +1,5 @@
 import type { MultiCliWorkApi } from "@shared/api-types";
+import { notionLinkCheck, type NotionLinkCheck } from "@shared/notion-types";
 import type { WorkProject, WorkProjectRegistryV1 } from "@shared/work-project-types";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +26,10 @@ const NOTION_PROJECT: WorkProject = {
   notionLinks: [{ label: "노션", url: "https://notion.so/a" }],
 };
 
-function installApi(picked: string | null = null) {
+function installApi(
+  picked: string | null = null,
+  notionOptions: { configured?: boolean; check?: NotionLinkCheck } = {},
+) {
   const registry: WorkProjectRegistryV1 = {
     schemaVersion: 1,
     updatedAt: WORK_PROJECT.updatedAt,
@@ -34,8 +38,15 @@ function installApi(picked: string | null = null) {
   };
   const update = vi.fn().mockResolvedValue(registry);
   const chooseLocalFolder = vi.fn().mockResolvedValue(picked);
-  window.multiCliWork = { workProjects: { update, chooseLocalFolder } } as unknown as MultiCliWorkApi;
-  return { update, chooseLocalFolder };
+  const status = vi
+    .fn()
+    .mockResolvedValue({ configured: notionOptions.configured ?? false, encryptionAvailable: true });
+  const inspectLink = vi.fn().mockResolvedValue(notionOptions.check ?? notionLinkCheck("ok", "삼성서울병원 채널"));
+  window.multiCliWork = {
+    workProjects: { update, chooseLocalFolder },
+    notion: { status, setToken: vi.fn(), clearToken: vi.fn(), inspectLink },
+  } as unknown as MultiCliWorkApi;
+  return { update, chooseLocalFolder, status, inspectLink };
 }
 
 function renderPage(workProject: WorkProject = WORK_PROJECT) {
@@ -210,5 +221,73 @@ describe("WorkProjectDetailPage 노션 링크", () => {
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith("wp-1", { notionLinks: [{ label: "프로젝트", url: "https://notion.so/b" }] }),
     );
+  });
+});
+
+// 조회 결과는 모듈 스코프 캐시에 남으므로 테스트마다 URL을 달리 쓴다.
+describe("WorkProjectDetailPage 노션 링크 검증", () => {
+  it("진입하면 통합이 읽을 수 있는 링크에 체크 표시가 붙는다", async () => {
+    const { inspectLink } = installApi(null, { configured: true });
+    renderPage({ ...WORK_PROJECT, notionLinks: [{ label: "채널", url: "https://notion.so/check-ok" }] });
+
+    expect(await screen.findByLabelText("노션 링크 1 접근 가능", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(inspectLink).toHaveBeenCalledWith("https://notion.so/check-ok");
+  });
+
+  it("기본 라벨은 조회한 제목으로 채우고 그대로 저장한다", async () => {
+    const { update } = installApi(null, { configured: true });
+    renderPage({ ...WORK_PROJECT, notionLinks: [{ label: "노션", url: "https://notion.so/check-fill" }] });
+
+    await waitFor(
+      () =>
+        expect(update).toHaveBeenCalledWith("wp-1", {
+          notionLinks: [{ label: "삼성서울병원 채널", url: "https://notion.so/check-fill" }],
+        }),
+      { timeout: 3000 },
+    );
+  });
+
+  it("사람이 지은 라벨은 자동 조회가 건드리지 않는다", async () => {
+    const { update, inspectLink } = installApi(null, { configured: true });
+    renderPage({ ...WORK_PROJECT, notionLinks: [{ label: "채널", url: "https://notion.so/check-keep" }] });
+
+    await waitFor(() => expect(inspectLink).toHaveBeenCalled(), { timeout: 3000 });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(update).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: "노션 링크 1 라벨" })).toHaveValue("채널");
+  });
+
+  it("조회 버튼은 사람이 지은 라벨도 덮어쓴다", async () => {
+    const { update } = installApi(null, { configured: true });
+    renderPage({ ...WORK_PROJECT, notionLinks: [{ label: "채널", url: "https://notion.so/check-force" }] });
+
+    const button = screen.getByRole("button", { name: "노션 링크 1 제목 조회" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith("wp-1", {
+        notionLinks: [{ label: "삼성서울병원 채널", url: "https://notion.so/check-force" }],
+      }),
+    );
+  });
+
+  it("통합에 연결되지 않은 링크는 경고와 사유를 보여주고 라벨은 그대로 둔다", async () => {
+    installApi(null, { configured: true, check: notionLinkCheck("not-shared") });
+    renderPage({ ...WORK_PROJECT, notionLinks: [{ label: "노션", url: "https://notion.so/check-closed" }] });
+
+    expect(await screen.findByLabelText(/접근 불가/, {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("통합에 연결되어 있지 않습니다");
+    expect(screen.getByRole("textbox", { name: "노션 링크 1 라벨" })).toHaveValue("노션");
+  });
+
+  it("토큰이 없으면 조회 버튼이 죽어 있고 자동 조회도 하지 않는다", async () => {
+    const { inspectLink, status } = installApi(null, { configured: false });
+    renderPage({ ...WORK_PROJECT, notionLinks: [{ label: "노션", url: "https://notion.so/check-no-token" }] });
+
+    await waitFor(() => expect(status).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(inspectLink).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "노션 링크 1 제목 조회" })).toBeDisabled();
   });
 });

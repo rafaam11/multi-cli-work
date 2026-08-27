@@ -36,6 +36,7 @@ import type {
   PullRequestReviewAnnotation, PullRequestReviewAnnotationInput, PullRequestReviewAnnotationSendResult,
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "../shared/github-types";
+import type { NotionLinkCheck, NotionTokenStatus } from "../shared/notion-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "../shared/work-project-types";
 import type {
@@ -193,6 +194,13 @@ interface ClipboardGateway {
   writeText(text: string): void;
 }
 
+interface NotionGateway {
+  status(): Promise<NotionTokenStatus>;
+  setToken(token: string): Promise<NotionTokenStatus>;
+  clearToken(): Promise<NotionTokenStatus>;
+  inspectLink(url: string): Promise<NotionLinkCheck>;
+}
+
 /**
  * The renderer draws the title bar, so everything the native caption used to do has to come back
  * through here. `close` keeps the app's own close semantics (hide to tray); `quit` is the menu's
@@ -225,6 +233,7 @@ interface MainIpcDependencies {
   htmlPreview: HtmlPreviewGateway;
   shell: ShellGateway;
   clipboard: ClipboardGateway;
+  notion: NotionGateway;
   windowControls: WindowControlsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
@@ -1093,6 +1102,17 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("updater:install", () => dependencies.updater.install());
   ipc.handle("app:open-releases", () => dependencies.updater.openReleases());
   ipc.handle("app:open-repository", () => dependencies.updater.openRepository());
+
+  ipc.handle("notion:status", () => dependencies.notion.status());
+  // async라 잘못된 입력의 throw가 다른 핸들러들처럼 rejected invoke로 렌더러에 도달한다.
+  ipc.handle("notion:set-token", async (_event, token: unknown) =>
+    // 붙여넣은 토큰의 앞뒤 공백은 흔한 실수라 다듬은 뒤 다시 비었는지 본다.
+    dependencies.notion.setToken(nonEmptyString(nonEmptyString(token, "Notion token").trim(), "Notion token")),
+  );
+  ipc.handle("notion:clear-token", () => dependencies.notion.clearToken());
+  ipc.handle("notion:inspect-link", async (_event, url: unknown) =>
+    dependencies.notion.inspectLink(externalUrl(url)),
+  );
 
   ipc.handle("settings:get", () => dependencies.settings.get());
   ipc.handle("settings:update", (_event, patch: unknown) => dependencies.settings.update(validateSettingsPatch(patch)));

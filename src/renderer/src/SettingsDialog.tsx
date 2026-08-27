@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { NotionTokenStatus } from "@shared/notion-types";
 import type { AppSettings, AppSettingsPatch, NotifiableStatus } from "@shared/settings-types";
 import {
   TERMINAL_FONT_SIZE_RANGE,
@@ -14,13 +15,15 @@ import {
   normalizeKeyEvent,
   type KeymapAction,
 } from "./keymap";
+import { publishNotionTokenStatus } from "./notion-token-status";
 
-type SettingsTab = "general" | "terminal" | "notifications" | "keybindings";
+type SettingsTab = "general" | "terminal" | "notifications" | "notion" | "keybindings";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "general", label: "일반" },
   { id: "terminal", label: "터미널" },
   { id: "notifications", label: "알림" },
+  { id: "notion", label: "노션" },
   { id: "keybindings", label: "단축키" },
 ];
 
@@ -34,6 +37,123 @@ const STATUS_LABELS: Array<{ status: NotifiableStatus; label: string }> = [
 interface SettingsDialogProps {
   settings: AppSettings;
   onClose(): void;
+}
+
+/** Electron이 invoke 실패에 덧붙이는 접두어를 걷어내 메인 프로세스가 낸 사유만 보인다. */
+function ipcReason(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = /Error invoking remote method '[^']+': (?:Error: )?([\s\S]*)$/.exec(raw);
+  return match ? match[1] : raw;
+}
+
+/**
+ * 노션 탭만 AppSettings를 쓰지 않는다 — 통합 토큰은 시크릿이라 평문 settings.json이 아니라
+ * 메인 프로세스의 암호화 저장소에 있고, 렌더러는 설정 여부만 알 수 있다.
+ */
+function NotionSettings() {
+  const [status, setStatus] = useState<NotionTokenStatus | null>(null);
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    window.multiCliWork.notion
+      .status()
+      .then((next) => {
+        if (alive) setStatus(next);
+      })
+      .catch((cause: unknown) => {
+        if (alive) setError(ipcReason(cause));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const run = (action: () => Promise<NotionTokenStatus>, done: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    action()
+      .then((next) => {
+        setStatus(next);
+        setToken("");
+        setNotice(done);
+        // 열려 있는 업무 프로젝트 상세 페이지가 곧바로 조회를 시작할 수 있게 알린다.
+        publishNotionTokenStatus(next);
+      })
+      .catch((cause: unknown) => setError(ipcReason(cause)))
+      .finally(() => setBusy(false));
+  };
+
+  const trimmed = token.trim();
+  const encryptionAvailable = status?.encryptionAvailable !== false;
+
+  return (
+    <>
+      <h2>노션</h2>
+      <p className="settings-hint">
+        통합 토큰이 있으면 업무 프로젝트의 노션 링크에서 제목을 자동으로 가져오고, 그 링크를 노션 MCP가
+        읽을 수 있는지도 함께 확인합니다.
+      </p>
+      <div className="settings-row">
+        <span>상태</span>
+        <span>{status === null ? "확인 중…" : status.configured ? "연결됨" : "설정되지 않음"}</span>
+      </div>
+      <div className="settings-row">
+        <label htmlFor="settings-notion-token">통합 토큰</label>
+        <input
+          id="settings-notion-token"
+          type="password"
+          autoComplete="off"
+          placeholder={status?.configured ? "저장됨 — 바꾸려면 새 토큰을 붙여넣으세요" : "ntn_…"}
+          value={token}
+          disabled={busy || !encryptionAvailable}
+          onChange={(event) => setToken(event.target.value)}
+        />
+      </div>
+      <div className="settings-row">
+        <span />
+        <span className="settings-key-controls">
+          <button
+            type="button"
+            disabled={busy || trimmed.length === 0 || !encryptionAvailable}
+            onClick={() => run(() => window.multiCliWork.notion.setToken(trimmed), "토큰을 저장했습니다")}
+          >
+            저장
+          </button>
+          <button
+            type="button"
+            disabled={busy || status?.configured !== true}
+            onClick={() => run(() => window.multiCliWork.notion.clearToken(), "토큰을 제거했습니다")}
+          >
+            제거
+          </button>
+        </span>
+      </div>
+      {encryptionAvailable ? null : (
+        <p className="settings-error" role="alert">
+          이 환경에서는 토큰을 안전하게 저장할 수 없어 입력을 막았습니다 (OS 키체인 사용 불가).
+        </p>
+      )}
+      <p className="settings-hint">
+        토큰은 notion.so/my-integrations에서 내부 통합을 만들면 발급됩니다. 토큰만으로는 부족하고,
+        조회할 페이지마다 노션에서 &quot;연결&quot;에 그 통합을 추가해야 제목이 읽힙니다.
+      </p>
+      {notice ? (
+        <p className="settings-hint" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="settings-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -260,6 +380,7 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
               ))}
             </>
           ) : null}
+          {tab === "notion" ? <NotionSettings /> : null}
           {tab === "keybindings" ? (
             <>
               <h2>단축키</h2>

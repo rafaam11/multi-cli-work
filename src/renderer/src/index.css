@@ -5178,6 +5178,24 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   flex: 0 0 96px;
 }
 
+/* 아직 조회하지 않은 행도 자리를 차지해야 아래 행들과 열이 어긋나지 않는다. */
+.notion-link-status {
+  display: inline-flex;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: var(--quiet);
+}
+
+.notion-link-status.ok {
+  color: var(--green);
+}
+
+.notion-link-status.warn {
+  color: var(--amber);
+}
+
 .work-project-notion-add,
 .work-project-local-add {
   display: inline-flex;
