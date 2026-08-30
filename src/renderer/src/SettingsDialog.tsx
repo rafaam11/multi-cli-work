@@ -200,8 +200,7 @@ function WorkspaceSettings() {
   };
 
   const roots = snapshot?.registry.roots ?? [];
-  const shellsOf = (rootPath: string) =>
-    (snapshot?.shells ?? []).filter((shell) => shell.root === rootPath).length;
+  const shellsOf = (work: string) => (snapshot?.shells ?? []).filter((shell) => shell.root === work).length;
 
   return (
     <>
@@ -218,18 +217,21 @@ function WorkspaceSettings() {
       ) : (
         <ul className="settings-list">
           {roots.map((root) => (
-            <li key={root.path} className="settings-row">
+            <li key={root.work} className="settings-row">
               <span className="settings-list-copy">
                 <strong>{root.label}</strong>
-                <span title={root.path}>{root.path}</span>
-                <span className="settings-hint">셸 {shellsOf(root.path)}개</span>
+                <span title={root.work}>{root.work}</span>
+                {/* 세 루트를 다 보여 준다 — 어디가 dev·data로 잡혔는지가 이 화면의 요점이다. */}
+                <span className="settings-hint">
+                  dev {root.dev} · data {root.data} · 셸 {shellsOf(root.work)}개
+                </span>
               </span>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() =>
                   run(
-                    async () => (await window.multiCliWork.workspace.remove(root.path)).workspace,
+                    async () => (await window.multiCliWork.workspace.remove(root.work)).workspace,
                     `${root.label}을(를) 목록에서 뺐습니다`,
                   )
                 }

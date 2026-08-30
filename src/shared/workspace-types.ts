@@ -5,21 +5,26 @@
  */
 
 /**
+ * 3형제 루트(루트 CLAUDE.md §0·§1): 채널·셸과 원칙이 사는 **work**, 개발 레포가 평탄 배치되는
+ * **dev**, 데이터셋이 사는 **data**. 관례는 드라이브 직하위 형제 폴더(`C:\\work` · `C:\\dev` ·
+ * `C:\\data`, 연구실은 `D:\\…`)지만 PC별 설정값(`DEV_ROOT`/`DATA_ROOT`)이라 추측하지 않는다.
+ *
+ * 저장되는 값은 `path.resolve`된 원형이다 — 정규화형이 아니다(레지스트리 계약 §7).
+ */
+export interface WorkspaceRoots {
+  work: string;
+  dev: string;
+  data: string;
+}
+
+/**
  * 사용자가 등록한 워크스페이스 루트 하나. `label`은 사이드바·설정에 쓰는 표시명.
  *
- * 루트는 셋이다 — 채널·셸이 사는 work, 레포가 사는 dev, 데이터셋이 사는 data(루트 CLAUDE.md §1).
- * 셋의 위치는 PC마다 다르고(`DEV_ROOT`/`DATA_ROOT` 환경변수, 형제 폴더, 예전의 중첩 배치) 옮겨지는
- * 중일 수도 있으므로, 추측하지 않고 **등록할 때 찾아 적어 둔다** — 그래야 렌더러의 순수 함수도
- * 파일시스템을 보지 않고 같은 답을 낸다. 다시 찾게 하려면 `workspace:sync`가 갱신한다.
+ * 세 경로를 **등록할 때 찾아 적어 둔다** — 그래야 렌더러의 순수 함수도 파일시스템을 보지 않고
+ * 같은 답을 내고, 배치가 옮겨지면 앱 시작과 `workspace:sync`가 다시 찾아 고쳐 준다.
  */
-export interface WorkspaceRoot {
-  /** work 루트의 절대경로(path.resolve 형태). 정규화형이 아니라 원형을 저장한다(계약 §7). */
-  path: string;
+export interface WorkspaceRoot extends WorkspaceRoots {
   label: string;
-  /** 개발 레포 루트. 관례는 work의 형제 `dev/`이고, 예전 배치에서는 `<work>/dev`다. */
-  devPath: string;
-  /** 데이터셋 루트. 관례는 work의 형제 `data/`. */
-  dataPath: string;
 }
 
 /**

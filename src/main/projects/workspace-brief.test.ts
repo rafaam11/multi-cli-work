@@ -48,7 +48,7 @@ function snapshotFor(root: string, shells: WorkspaceShellInfo[]): WorkspaceSnaps
     registry: {
       schemaVersion: 1,
       updatedAt: "2026-08-30T00:00:00.000Z",
-      roots: [{ path: root, label: "ws", devPath: path.join(root, "dev"), dataPath: path.join(root, "data") }],
+      roots: [{ work: root, dev: path.join(root, "dev"), data: path.join(root, "data"), label: "work" }],
       shellLinks: [],
     },
     shells,
@@ -182,5 +182,42 @@ describe("buildWorkspaceBrief", () => {
     const snapshot = snapshotFor(root, [shellInfo(root, { data: ["DS-0404"] })]);
     const brief = await buildWorkspaceBrief(path.join(root, "dev", "VSP_FastAPI"), snapshot);
     expect(brief).toContain("- DS-0404: (data/index.md에 없음)");
+  });
+});
+
+/** 관례 배치에서 브리프의 레포·데이터셋 경로가 각각 dev·data 루트를 가리키는지. */
+describe("buildWorkspaceBrief — 3형제 루트", () => {
+  it("레포는 dev 루트, 데이터셋은 data 루트 절대경로로 적는다", async () => {
+    const work = await tempWorkspace("brief-triple-work");
+    const dev = await tempWorkspace("brief-triple-dev");
+    const data = await tempWorkspace("brief-triple-data");
+    await writeFile(
+      path.join(data, "index.md"),
+      [
+        "| id | title | purpose | source | kind | sensitivity | path |",
+        "|---|---|---|---|---|---|---|",
+        "| DS-0001 | 교합연구 | patient | SMCH | raw | restricted | patient/26_SMCH_Occlusion-1 |",
+      ].join("\n"),
+    );
+    const shell = shellInfo(work, { path: path.join(work, "O_SMCH", "24_SMCH_VSP-1") });
+    const snapshot: WorkspaceSnapshot = {
+      registry: {
+        schemaVersion: 1,
+        updatedAt: "2026-08-30T00:00:00.000Z",
+        roots: [{ work, dev, data, label: "work-root" }],
+        shellLinks: [],
+      },
+      shells: [shell],
+      repoOwners: Object.fromEntries(
+        shell.repos.map((repo) => [workspacePathKey(path.join(dev, repo)), shell.ref]),
+      ),
+      warnings: [],
+    };
+
+    const brief = await buildWorkspaceBrief(path.join(dev, "VSP_FastAPI"), snapshot);
+    expect(brief).toContain(`- VSP_FastAPI: ${path.join(dev, "VSP_FastAPI")}`);
+    expect(brief).toContain(`- VSP_MQ_v2: ${path.join(dev, "VSP_MQ_v2")}`);
+    expect(brief).toContain(`- DS-0001: ${path.join(data, "patient", "26_SMCH_Occlusion-1")}`);
+    expect(brief).toContain(`- 루트 원칙: ${path.join(work, "CLAUDE.md")}`);
   });
 });

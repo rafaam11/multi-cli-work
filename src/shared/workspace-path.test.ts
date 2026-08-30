@@ -192,7 +192,7 @@ describe("경로 정규화", () => {
 });
 
 describe("deriveWorkspaceLocation", () => {
-  const roots = [{ path: ROOT, devPath: DEV, dataPath: DATA }];
+  const roots = [{ work: ROOT, dev: DEV, data: DATA }];
 
   it("레포·셸·데이터셋·채널을 좁힌 kind로 준다", () => {
     expect(deriveWorkspaceLocation(`${DEV}\\VSP_FastAPI`, roots, win)).toEqual({
@@ -238,8 +238,8 @@ describe("deriveWorkspaceLocation", () => {
 
   it("루트가 중첩되면 더 깊은 쪽이 이긴다", () => {
     const nested = [
-      { path: "C:\\", devPath: "C:\\nowhere-dev", dataPath: "C:\\nowhere-data" },
-      { path: ROOT, devPath: DEV, dataPath: DATA },
+      { work: "C:\\", dev: "C:\\nowhere-dev", data: "C:\\nowhere-data" },
+      { work: ROOT, dev: DEV, data: DATA },
     ];
     expect(deriveWorkspaceLocation(`${DEV}\\VSP_FastAPI`, nested, win)?.root).toBe(ROOT);
   });
@@ -247,7 +247,7 @@ describe("deriveWorkspaceLocation", () => {
 
 describe("resolveShellRefForPath", () => {
   const lookup = {
-    roots: [{ path: ROOT, devPath: DEV, dataPath: DATA }],
+    roots: [{ work: ROOT, dev: DEV, data: DATA }],
     repoOwners: {
       [workspacePathKey(`${DEV}\\VSP_FastAPI`, win)]: "O_SMCH/24_SMCH_VSP-1",
       [workspacePathKey("C:\\NeuroPilot\\neuropilot_develop", win)]: "O_ATNC/24_ATNC_NeuroPilot-1",

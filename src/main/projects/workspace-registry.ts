@@ -21,7 +21,7 @@ import {
 export const WORKSPACE_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "workspace.json");
 
 const REGISTRY_KEYS = ["schemaVersion", "updatedAt", "roots", "shellLinks"] as const;
-const ROOT_KEYS = ["path", "label", "devPath", "dataPath"] as const;
+const ROOT_KEYS = ["work", "dev", "data", "label"] as const;
 const SHELL_LINK_KEYS = ["workProjectId", "root", "channel", "shell"] as const;
 
 export class WorkspaceRegistryError extends Error {
@@ -76,22 +76,18 @@ function parseRoots(value: unknown): WorkspaceRoot[] {
   const roots = value.map((root, index) => {
     if (!isRecord(root)) throw new WorkspaceRegistryError(`Workspace root [${index}] must be an object`);
     assertExactKeys(root, ROOT_KEYS, `Workspace root [${index}]`);
-    const workPath = requiredString(root.path, `Workspace root [${index}].path`);
+    const work = requiredString(root.work, `Workspace root [${index}].work`);
     return {
-      path: workPath,
+      work,
+      // dev·data를 적지 않은 손편집 파일은 관례값(work의 형제 폴더)으로 읽는다.
+      dev: root.dev === undefined ? siblingRoot(work, "dev") : requiredString(root.dev, `Workspace root [${index}].dev`),
+      data:
+        root.data === undefined ? siblingRoot(work, "data") : requiredString(root.data, `Workspace root [${index}].data`),
       label: plainString(root.label, `Workspace root [${index}].label`),
-      devPath:
-        root.devPath === undefined
-          ? siblingRoot(workPath, "dev")
-          : requiredString(root.devPath, `Workspace root [${index}].devPath`),
-      dataPath:
-        root.dataPath === undefined
-          ? siblingRoot(workPath, "data")
-          : requiredString(root.dataPath, `Workspace root [${index}].dataPath`),
     };
   });
   // 계약 §7의 정규화 경로로 중복을 본다 — 같은 폴더가 두 줄이면 역인덱스가 두 번 스캔된다.
-  const keys = new Set(roots.map((root) => workspacePathKey(root.path)));
+  const keys = new Set(roots.map((root) => workspacePathKey(root.work)));
   if (keys.size !== roots.length) {
     throw new WorkspaceRegistryError("Workspace registry contains duplicate roots");
   }
@@ -195,7 +191,7 @@ export async function restoreWorkspaceRegistryFromBackup(
 export async function addWorkspaceRoot(
   rootPath: string,
   label: string | null,
-  siblings: { devPath?: string; dataPath?: string } = {},
+  siblings: { dev?: string; data?: string } = {},
   options: WorkspaceRegistryOptions = {},
 ): Promise<WorkspaceRegistryV1> {
   if (typeof rootPath !== "string" || rootPath.trim().length === 0) {
@@ -206,19 +202,17 @@ export async function addWorkspaceRoot(
   const resolved = pathApi.resolve(rootPath);
   const style = pathStyleFor(platform);
   const name = (label ?? "").trim() || pathApi.basename(resolved) || resolved;
-  const devPath = siblings.devPath ?? siblingRoot(resolved, "dev", platform);
-  const dataPath = siblings.dataPath ?? siblingRoot(resolved, "data", platform);
+  const dev = siblings.dev ?? siblingRoot(resolved, "dev", platform);
+  const data = siblings.data ?? siblingRoot(resolved, "data", platform);
   const now = nowOf(options);
   return updateWorkspaceRegistry((registry) => {
     const key = workspacePathKey(resolved, style);
-    const existing = registry.roots.findIndex((root) => workspacePathKey(root.path, style) === key);
-    // 다시 고른 폴더는 줄을 늘리지 않고 라벨과 dev/data 위치만 갱신한다 — 그 사이 배치가 옮겨졌을 수 있다.
+    const existing = registry.roots.findIndex((root) => workspacePathKey(root.work, style) === key);
+    // 다시 고른 폴더는 줄을 늘리지 않고 라벨과 dev·data 위치만 갱신한다 — 그 사이 배치가 옮겨졌을 수 있다.
     const roots =
       existing >= 0
-        ? registry.roots.map((root, index) =>
-            index === existing ? { ...root, label: name, devPath, dataPath } : root,
-          )
-        : [...registry.roots, { path: resolved, label: name, devPath, dataPath }];
+        ? registry.roots.map((root, index) => (index === existing ? { ...root, label: name, dev, data } : root))
+        : [...registry.roots, { work: resolved, dev, data, label: name }];
     return { ...registry, updatedAt: now, roots };
   }, options);
 }
@@ -236,13 +230,13 @@ export async function removeWorkspaceRoot(
   const key = workspacePathKey(requiredString(rootPath, "Workspace root path"), style);
   const now = nowOf(options);
   return updateWorkspaceRegistry((registry) => {
-    if (!registry.roots.some((root) => workspacePathKey(root.path, style) === key)) {
+    if (!registry.roots.some((root) => workspacePathKey(root.work, style) === key)) {
       throw new WorkspaceRegistryError(`Workspace root ${rootPath} is not registered`);
     }
     return {
       ...registry,
       updatedAt: now,
-      roots: registry.roots.filter((root) => workspacePathKey(root.path, style) !== key),
+      roots: registry.roots.filter((root) => workspacePathKey(root.work, style) !== key),
       shellLinks: registry.shellLinks.filter((link) => workspacePathKey(link.root, style) !== key),
     };
   }, options);

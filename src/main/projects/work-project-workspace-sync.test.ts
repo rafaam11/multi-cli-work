@@ -16,9 +16,10 @@ import { readWorkspaceRegistry } from "./workspace-registry";
  */
 
 const tempRoots: string[] = [];
-const WS_ROOT = "C:\\ws";
-const DEV_ROOT = path.win32.join(WS_ROOT, "dev");
-const DATA_ROOT = path.win32.join(WS_ROOT, "data");
+// 3형제 배치(루트 CLAUDE.md §1): work·dev·data 는 드라이브 직하위 형제 폴더다.
+const WORK_ROOT = "C:\\work";
+const DEV_ROOT = "C:\\dev";
+const DATA_ROOT = "C:\\data";
 const IDS = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "cccccccc-cccc-4ccc-8ccc-cccccccccccc"];
 const MANUAL_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
@@ -44,13 +45,13 @@ function service(paths: { registryPath: string; workspaceRegistryPath: string },
 function shell(overrides: Partial<WorkspaceShellInfo> & Pick<WorkspaceShellInfo, "channel" | "shell">): WorkspaceShellInfo {
   const ref = `${overrides.channel}/${overrides.shell}`;
   return {
-    root: WS_ROOT,
+    root: WORK_ROOT,
     ref,
     channelLetter: overrides.channel.charAt(0),
     channelLabel: "용역",
     title: overrides.shell,
     status: "active",
-    path: path.win32.join(WS_ROOT, overrides.channel, overrides.shell),
+    path: path.win32.join(WORK_ROOT, overrides.channel, overrides.shell),
     repos: [],
     externalPaths: [],
     data: [],
@@ -62,7 +63,7 @@ function snapshot(shells: WorkspaceShellInfo[], shellLinks: WorkspaceSnapshot["r
   const repoOwners: Record<string, string> = {};
   for (const entry of shells) {
     for (const repo of entry.repos) {
-      repoOwners[workspacePathKey(path.win32.join(entry.root, "dev", repo), "win32")] = entry.ref;
+      repoOwners[workspacePathKey(path.win32.join(DEV_ROOT, repo), "win32")] = entry.ref;
     }
     for (const external of entry.externalPaths) {
       repoOwners[workspacePathKey(external, "win32")] = entry.ref;
@@ -72,7 +73,7 @@ function snapshot(shells: WorkspaceShellInfo[], shellLinks: WorkspaceSnapshot["r
     registry: {
       schemaVersion: 1,
       updatedAt: "2026-08-30T00:00:00.000Z",
-      roots: [{ path: WS_ROOT, label: "ws-root", devPath: DEV_ROOT, dataPath: DATA_ROOT }],
+      roots: [{ work: WORK_ROOT, dev: DEV_ROOT, data: DATA_ROOT, label: "work-root" }],
       shellLinks,
     },
     shells,
@@ -106,8 +107,8 @@ const CAREER = shell({
   title: "진로",
   repos: [],
 });
-const REPO_PROJECT = project("11111111-1111-4111-8111-111111111111", "C:\\ws\\dev\\VSP_FastAPI");
-const DOCS_PROJECT = project("22222222-2222-4222-8222-222222222222", "C:\\ws\\O_SMCH\\24_SMCH_VSP-1");
+const REPO_PROJECT = project("11111111-1111-4111-8111-111111111111", "C:\\dev\\VSP_FastAPI");
+const DOCS_PROJECT = project("22222222-2222-4222-8222-222222222222", "C:\\work\\O_SMCH\\24_SMCH_VSP-1");
 const OUTSIDE_PROJECT = project("33333333-3333-4333-8333-333333333333", "D:\\elsewhere\\repo");
 
 afterEach(async () => {
@@ -129,8 +130,8 @@ describe("syncFromWorkspace", () => {
     // 출처는 workspace.json에만 남는다 — work-projects.json 스키마는 그대로다(계약 §8).
     const workspace = await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath });
     expect(workspace.shellLinks).toEqual([
-      { workProjectId: IDS[0], root: WS_ROOT, channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
-      { workProjectId: IDS[1], root: WS_ROOT, channel: "P_Personal", shell: "26_Personal_Career-1" },
+      { workProjectId: IDS[0], root: WORK_ROOT, channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+      { workProjectId: IDS[1], root: WORK_ROOT, channel: "P_Personal", shell: "26_Personal_Career-1" },
     ]);
   });
 
@@ -248,7 +249,7 @@ describe("syncFromWorkspace", () => {
     expect(second.created).toBe(1);
     expect(Object.keys(second.workProjects.workProjects)).toEqual([IDS[2]]);
     expect((await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks).toEqual([
-      { workProjectId: IDS[2], root: WS_ROOT, channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+      { workProjectId: IDS[2], root: WORK_ROOT, channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
     ]);
   });
 

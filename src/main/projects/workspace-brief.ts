@@ -112,14 +112,14 @@ export async function buildWorkspaceBrief(
   const shell = snapshot.shells.find((candidate) => candidate.ref === ref);
   if (!shell) return null;
 
-  const owner = snapshot.registry.roots.find((candidate) => candidate.path === shell.root);
-  const datasetPaths = shell.data.length > 0 && owner ? await readDatasetPaths(owner.dataPath) : {};
+  const owner = snapshot.registry.roots.find((candidate) => candidate.work === shell.root);
+  const datasetPaths = shell.data.length > 0 && owner ? await readDatasetPaths(owner.data) : {};
   return renderWorkspaceBrief({
     shell,
     rootPrinciplesPath: path.join(shell.root, "CLAUDE.md"),
     // 레포는 dev 루트에 평탄 배치된다(루트 §10). 루트 밖 레포는 셸이 절대경로로 들고 있다.
     siblingRepos: [
-      ...shell.repos.map((name) => ({ name, path: path.join(owner?.devPath ?? shell.root, name) })),
+      ...shell.repos.map((name) => ({ name, path: path.join(owner?.dev ?? shell.root, name) })),
       ...shell.externalPaths.map((external) => ({ name: path.basename(external), path: external })),
     ],
     siblingShells: snapshot.shells

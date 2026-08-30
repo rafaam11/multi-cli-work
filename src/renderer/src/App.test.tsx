@@ -1597,7 +1597,9 @@ describe("work project categories", () => {
    * 그 아래로 들어가고, 손으로 만든 것과 미분류는 있던 자리에 그대로 남는다.
    */
   describe("ws-root 채널", () => {
-    const WS_ROOT = "C:" + String.fromCharCode(92) + "ws";
+    // 3형제 배치: work·dev 는 드라이브 직하위 형제 폴더다.
+    const WS_ROOT = "C:" + String.fromCharCode(92) + "work";
+    const DEV_ROOT = "C:" + String.fromCharCode(92) + "dev";
     const join = (...parts: string[]) => parts.join(String.fromCharCode(92));
     const shellInfo = (channel: string, name: string, title: string, repos: string[] = []) => ({
       root: WS_ROOT,
@@ -1622,13 +1624,13 @@ describe("work project categories", () => {
       registry: {
         schemaVersion: 1,
         updatedAt: "2026-08-30T00:00:00.000Z",
-        roots: [{ path: WS_ROOT, label: "ws-root", devPath: join(WS_ROOT, "dev"), dataPath: join(WS_ROOT, "data") }],
+        roots: [{ work: WS_ROOT, dev: DEV_ROOT, data: join(WS_ROOT, "data"), label: "work-root" }],
         shellLinks: links.map((link) => ({ ...link, root: WS_ROOT })),
       },
       shells,
       repoOwners: Object.fromEntries(
         shells.flatMap((entry) =>
-          entry.repos.map((repo) => [join(WS_ROOT, "dev", repo).toLowerCase(), entry.ref] as const),
+          entry.repos.map((repo) => [join(DEV_ROOT, repo).toLowerCase(), entry.ref] as const),
         ),
       ),
       warnings: [],
@@ -1731,7 +1733,7 @@ describe("work project categories", () => {
     });
 
     it("files an unassigned folder under its shell through the reverse index", async () => {
-      const repo: SharedProject = { ...atlas, id: "project-vsp", rootPath: join(WS_ROOT, "dev", "VSP_FastAPI"), displayName: "VSP_FastAPI" };
+      const repo: SharedProject = { ...atlas, id: "project-vsp", rootPath: join(DEV_ROOT, "VSP_FastAPI"), displayName: "VSP_FastAPI" };
       const harness = createApi({
         projects: [repo],
         sessions: [],

@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WorkspaceRegistryV1 } from "../../shared/workspace-types";
 import { workspacePathKey } from "../../shared/workspace-path";
-import { WorkspaceIndex, readDatasetPaths } from "./workspace-index";
+import { WorkspaceIndex, readDatasetPaths, resolveWorkspaceRoots } from "./workspace-index";
 
 const tempRoots: string[] = [];
 
@@ -60,18 +60,25 @@ async function fixture(name: string): Promise<string> {
   return root;
 }
 
-/** 이 픽스처들은 dev·data를 루트 안에 둔다 — 임시 폴더 하나로 세 루트를 다 만들 수 있어서다. */
-function rootRecord(root: string, label = "ws-root") {
-  return { path: root, label, devPath: path.join(root, "dev"), dataPath: path.join(root, "data") };
+/**
+ * 기본 픽스처는 dev·data를 work 안에 둔다 — 임시 폴더 하나로 세 루트를 다 만들 수 있어서다.
+ * 실제 관례인 3형제 배치는 아래 "3형제 루트" describe가 따로 검사한다.
+ */
+function rootRecord(root: string, label = "work-root") {
+  return { work: root, dev: path.join(root, "dev"), data: path.join(root, "data"), label };
 }
 
-function registryFor(root: string, label = "ws-root"): WorkspaceRegistryV1 {
+function registryFor(root: string, label = "work-root"): WorkspaceRegistryV1 {
   return {
     schemaVersion: 1,
     updatedAt: "2026-08-30T00:00:00.000Z",
     roots: [rootRecord(root, label)],
     shellLinks: [],
   };
+}
+
+function registryOf(roots: WorkspaceRegistryV1["roots"]): WorkspaceRegistryV1 {
+  return { schemaVersion: 1, updatedAt: "2026-08-30T00:00:00.000Z", roots, shellLinks: [] };
 }
 
 afterEach(async () => {
@@ -270,5 +277,83 @@ describe("readDatasetPaths", () => {
   it("returns nothing when the registry file is absent", async () => {
     const root = await tempWorkspace("dataset-registry-missing");
     expect(await readDatasetPaths(path.join(root, "data"))).toEqual({});
+  });
+});
+
+/**
+ * 관례 배치(루트 CLAUDE.md §1): work·dev·data 는 서로 다른 폴더다. 위 픽스처들은 임시 폴더 하나로
+ * 셋을 만들지만, 실제로 쓰이는 모양은 이쪽이므로 따로 검사한다.
+ */
+describe("3형제 루트", () => {
+  async function siblings(name: string) {
+    const work = await tempWorkspace(`${name}-work`);
+    const dev = await tempWorkspace(`${name}-dev`);
+    const data = await tempWorkspace(`${name}-data`);
+    return { work, dev, data, label: "work-root" };
+  }
+
+  it("레포는 dev 루트 기준으로, 데이터셋은 data 루트 기준으로 잡힌다", async () => {
+    const roots = await siblings("triple");
+    await writeFile(
+      path.join(roots.work, "O_SMCH", "24_SMCH_VSP-1", "CLAUDE.md"),
+      shellClaude({ title: "가상수술계획", channel: "O_SMCH", repos: "[VSP_FastAPI]", data: "[DS-0001]" }),
+    );
+    await writeFile(
+      path.join(roots.data, "index.md"),
+      [
+        "| id | title | purpose | source | kind | sensitivity | path |",
+        "|---|---|---|---|---|---|---|",
+        "| DS-0001 | 교합연구 | patient | SMCH | raw | restricted | patient/26_SMCH_Occlusion-1 |",
+      ].join("\n"),
+    );
+
+    const snapshot = await new WorkspaceIndex().snapshot(registryOf([roots]));
+    expect(snapshot.shells).toHaveLength(1);
+    // 셸 경로는 work 루트, 레포 경로는 dev 루트 — work 안의 dev 는 쳐다보지 않는다.
+    expect(snapshot.shells[0].path).toBe(path.join(roots.work, "O_SMCH", "24_SMCH_VSP-1"));
+    expect(snapshot.repoOwners[workspacePathKey(path.join(roots.dev, "VSP_FastAPI"))]).toBe(
+      "O_SMCH/24_SMCH_VSP-1",
+    );
+    expect(snapshot.repoOwners[workspacePathKey(path.join(roots.dev, "_archive", "VSP_FastAPI"))]).toBe(
+      "O_SMCH/24_SMCH_VSP-1",
+    );
+    expect(snapshot.repoOwners[workspacePathKey(path.join(roots.work, "dev", "VSP_FastAPI"))]).toBeUndefined();
+    expect(await readDatasetPaths(roots.data)).toEqual({
+      "DS-0001": path.join(roots.data, "patient", "26_SMCH_Occlusion-1"),
+    });
+  });
+});
+
+describe("resolveWorkspaceRoots", () => {
+  it("`.ws-index.json`이 선언한 루트가 실재하면 그것을 쓴다", async () => {
+    const work = await tempWorkspace("resolve-declared");
+    const dev = await tempWorkspace("resolve-declared-dev");
+    const data = await tempWorkspace("resolve-declared-data");
+    await writeFile(path.join(work, ".ws-index.json"), JSON.stringify({ roots: { work, dev, data } }));
+    expect(await resolveWorkspaceRoots(work)).toEqual({ dev, data });
+  });
+
+  it("선언이 없거나 그 폴더가 없으면 예전의 중첩 배치를 본다", async () => {
+    const work = await tempWorkspace("resolve-nested");
+    await fs.mkdir(path.join(work, "dev"), { recursive: true });
+    await fs.mkdir(path.join(work, "data"), { recursive: true });
+    // 선언은 있지만 그 경로가 아직 없다 — 이전 중간 상태.
+    await writeFile(
+      path.join(work, ".ws-index.json"),
+      JSON.stringify({ roots: { work, dev: path.join(work, "nope-dev"), data: path.join(work, "nope-data") } }),
+    );
+    expect(await resolveWorkspaceRoots(work)).toEqual({
+      dev: path.join(work, "dev"),
+      data: path.join(work, "data"),
+    });
+  });
+
+  it("아무것도 없으면 관례값인 형제 폴더를 적어 둔다", async () => {
+    const work = await tempWorkspace("resolve-sibling");
+    const parent = path.dirname(work);
+    expect(await resolveWorkspaceRoots(work)).toEqual({
+      dev: path.join(parent, "dev"),
+      data: path.join(parent, "data"),
+    });
   });
 });

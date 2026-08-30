@@ -95,9 +95,7 @@ async function isDirectory(candidate: string): Promise<boolean> {
  *  3. 형제 `<parent>/dev` — 관례값. 아직 없어도 이 값을 적어 둔다.
  * 결과는 workspace.json에 남으므로 렌더러의 순수 함수도 같은 답을 본다.
  */
-export async function resolveWorkspaceRoots(
-  rootPath: string,
-): Promise<{ devPath: string; dataPath: string }> {
+export async function resolveWorkspaceRoots(rootPath: string): Promise<{ dev: string; data: string }> {
   const declared = await readWsIndexRoots(rootPath);
   const resolve = async (name: "dev" | "data") => {
     const fromIndex = declared?.[name];
@@ -106,7 +104,7 @@ export async function resolveWorkspaceRoots(
     if (await isDirectory(nested)) return nested;
     return path.join(path.dirname(path.resolve(rootPath)), name);
   };
-  return { devPath: await resolve("dev"), dataPath: await resolve("data") };
+  return { dev: await resolve("dev"), data: await resolve("data") };
 }
 
 async function readWsIndexRoots(rootPath: string): Promise<Record<string, string> | null> {
@@ -172,7 +170,7 @@ function shellInfoFrom(
   const parsed = parseChannel(channel);
   const letter = (parsed?.letter ?? "Z") as ChannelLetter;
   return {
-    root: root.path,
+    root: root.work,
     ref: shellRef(channel, shell),
     channel,
     channelLetter: letter,
@@ -181,7 +179,7 @@ function shellInfoFrom(
     // 한글 표시명은 폴더가 아니라 프론트매터에 있다(루트 §2). 없으면 폴더명으로 떨어진다.
     title: fields.title && fields.title.length > 0 ? fields.title : shell,
     status: fields.status ?? null,
-    path: path.join(root.path, channel, shell),
+    path: path.join(root.work, channel, shell),
     repos: fields.repos ?? [],
     // 프론트매터의 따옴표 경로는 이스케이프가 풀리지 않은 채로 온다 — ws-path.mjs의 parseScalar가
     // 따옴표만 벗기므로 백슬래시가 둘로 남는다. 여기서 접어 두면 역인덱스도 브리프도 실경로를 본다.
@@ -273,15 +271,15 @@ export class WorkspaceIndex {
       const scan = await this.scanRoot(root);
       shells.push(...scan.shells);
       warnings.push(...scan.warnings);
-      seen.add(workspacePathKey(root.path, style));
+      seen.add(workspacePathKey(root.work, style));
     }
     // 등록이 풀린 루트의 스캔 결과는 들고 있을 이유가 없다.
     for (const key of [...this.cache.keys()]) if (!seen.has(key)) this.cache.delete(key);
 
     const repoOwners: Record<string, string> = {};
-    const devPathOf = new Map(registry.roots.map((root) => [workspacePathKey(root.path, style), root.devPath]));
+    const devRootOf = new Map(registry.roots.map((root) => [workspacePathKey(root.work, style), root.dev]));
     for (const shell of shells) {
-      const devPath = devPathOf.get(workspacePathKey(shell.root, style)) ?? shell.root;
+      const devPath = devRootOf.get(workspacePathKey(shell.root, style)) ?? shell.root;
       for (const repo of shell.repos) {
         repoOwners[workspacePathKey(path.join(devPath, repo), style)] = shell.ref;
         // 휴면 레포는 _archive/ 아래로 옮겨져도 같은 셸 소속이다(루트 §10).
@@ -296,7 +294,7 @@ export class WorkspaceIndex {
   }
 
   private async scanRoot(root: WorkspaceRoot): Promise<RootScan> {
-    const rootPath = root.path;
+    const rootPath = root.work;
     const key = workspacePathKey(rootPath, pathStyleFor(this.platform));
     const { shells: stats, warnings } = await statShells(rootPath);
     const wsIndexPath = path.join(rootPath, WS_INDEX_FILE);

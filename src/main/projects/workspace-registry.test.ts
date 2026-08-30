@@ -27,7 +27,7 @@ function sampleRegistry(): WorkspaceRegistryV1 {
   return {
     schemaVersion: 1,
     updatedAt: "2026-08-30T00:00:00.000Z",
-    roots: [{ path: "C:\\work", label: "ws-root", devPath: "C:\\dev", dataPath: "C:\\data" }],
+    roots: [{ work: "C:\\work", dev: "C:\\dev", data: "C:\\data", label: "work-root" }],
     shellLinks: [
       { workProjectId: WORK_PROJECT_ID, root: "C:\\work", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
     ],
@@ -44,9 +44,7 @@ describe("parseWorkspaceRegistry", () => {
     registry.updatedAt = "2026-08-30T09:00:00+09:00";
     const parsed = parseWorkspaceRegistry(registry);
     expect(parsed.updatedAt).toBe("2026-08-30T00:00:00.000Z");
-    expect(parsed.roots).toEqual([
-      { path: "C:\\work", label: "ws-root", devPath: "C:\\dev", dataPath: "C:\\data" },
-    ]);
+    expect(parsed.roots).toEqual([{ work: "C:\\work", dev: "C:\\dev", data: "C:\\data", label: "work-root" }]);
   });
 
   it("rejects unknown fields on the registry, on roots and on links", () => {
@@ -66,7 +64,7 @@ describe("parseWorkspaceRegistry", () => {
 
   it("rejects duplicate roots by normalized path", () => {
     const registry = sampleRegistry();
-    registry.roots.push({ path: "c:/work/", label: "같은 폴더", devPath: "C:\\dev", dataPath: "C:\\data" });
+    registry.roots.push({ work: "c:/work/", dev: "C:\\dev", data: "C:\\data", label: "같은 폴더" });
     expect(() => parseWorkspaceRegistry(registry)).toThrow(/duplicate roots/);
   });
 
@@ -91,20 +89,23 @@ describe("parseWorkspaceRegistry", () => {
 
   it("falls back to the sibling convention when a hand-written root omits dev/data", () => {
     const registry = sampleRegistry() as unknown as { roots: Array<Record<string, unknown>> };
-    delete registry.roots[0].devPath;
-    delete registry.roots[0].dataPath;
+    delete registry.roots[0].dev;
+    delete registry.roots[0].data;
     const parsed = parseWorkspaceRegistry(registry);
-    expect(parsed.roots[0].devPath).toBe(path.win32.join("C:\\", "dev"));
-    expect(parsed.roots[0].dataPath).toBe(path.win32.join("C:\\", "data"));
+    expect(parsed.roots[0].dev).toBe(path.win32.join("C:\\", "dev"));
+    expect(parsed.roots[0].data).toBe(path.win32.join("C:\\", "data"));
   });
 
-  it("allows an empty label but not an empty path", () => {
+  it("allows an empty label but not an empty path on any of the three roots", () => {
     const blankLabel = sampleRegistry();
     blankLabel.roots[0].label = "";
     expect(parseWorkspaceRegistry(blankLabel).roots[0].label).toBe("");
-    const blankPath = sampleRegistry();
-    blankPath.roots[0].path = "";
-    expect(() => parseWorkspaceRegistry(blankPath)).toThrow(/path must be a non-empty string/);
+
+    for (const key of ["work", "dev", "data"] as const) {
+      const blank = sampleRegistry();
+      blank.roots[0][key] = "";
+      expect(() => parseWorkspaceRegistry(blank)).toThrow(new RegExp(`${key} must be a non-empty string`));
+    }
   });
 });
 
@@ -133,7 +134,7 @@ describe("workspace registry storage", () => {
     await updateWorkspaceRegistry(
       (registry) => ({
         ...registry,
-        roots: [...registry.roots, { path: "D:\\work", label: "lab", devPath: "D:\\dev", dataPath: "D:\\data" }],
+        roots: [...registry.roots, { work: "D:\\work", dev: "D:\\dev", data: "D:\\data", label: "lab" }],
       }),
       { registryPath },
     );
@@ -168,26 +169,22 @@ describe("root mutations", () => {
     const registryPath = path.join(workspace, "workspace.json");
     const registry = await addWorkspaceRoot("C:\\work", null, {}, options(registryPath));
     // dev·data를 주지 않으면 관례값(형제 폴더)을 적어 둔다.
-    expect(registry.roots).toEqual([
-      { path: "C:\\work", label: "work", devPath: "C:\\dev", dataPath: "C:\\data" },
-    ]);
+    expect(registry.roots).toEqual([{ work: "C:\\work", dev: "C:\\dev", data: "C:\\data", label: "work" }]);
     expect(registry.updatedAt).toBe("2026-08-30T12:00:00.000Z");
   });
 
   it("re-adding the same folder relabels it instead of duplicating the row", async () => {
     const workspace = await tempWorkspace("ws-readd");
     const registryPath = path.join(workspace, "workspace.json");
-    await addWorkspaceRoot("C:\\work", "ws-root", { devPath: "C:\\dev", dataPath: "C:\\data" }, options(registryPath));
+    await addWorkspaceRoot("C:\\work", "work-root", { dev: "C:\\dev", data: "C:\\data" }, options(registryPath));
     const registry = await addWorkspaceRoot(
       "c:/work/",
       "연구실",
-      { devPath: "D:\\dev", dataPath: "D:\\data" },
+      { dev: "D:\\dev", data: "D:\\data" },
       options(registryPath),
     );
     // 줄을 늘리지 않고 라벨과 dev·data 위치만 갱신한다 — 그 사이 배치가 옮겨졌을 수 있다.
-    expect(registry.roots).toEqual([
-      { path: "C:\\work", label: "연구실", devPath: "D:\\dev", dataPath: "D:\\data" },
-    ]);
+    expect(registry.roots).toEqual([{ work: "C:\\work", dev: "D:\\dev", data: "D:\\data", label: "연구실" }]);
   });
 
   it("removes a root together with its shell links, leaving other roots alone", async () => {
@@ -197,16 +194,14 @@ describe("root mutations", () => {
       () => ({
         ...sampleRegistry(),
         roots: [
-          { path: "C:\\work", label: "ws-root", devPath: "C:\\dev", dataPath: "C:\\data" },
-          { path: "D:\\work", label: "lab", devPath: "D:\\dev", dataPath: "D:\\data" },
+          { work: "C:\\work", dev: "C:\\dev", data: "C:\\data", label: "work-root" },
+          { work: "D:\\work", dev: "D:\\dev", data: "D:\\data", label: "lab" },
         ],
       }),
       { registryPath },
     );
     const registry = await removeWorkspaceRoot("C:\\WORK", options(registryPath));
-    expect(registry.roots).toEqual([
-      { path: "D:\\work", label: "lab", devPath: "D:\\dev", dataPath: "D:\\data" },
-    ]);
+    expect(registry.roots).toEqual([{ work: "D:\\work", dev: "D:\\dev", data: "D:\\data", label: "lab" }]);
     expect(registry.shellLinks).toEqual([]);
   });
 
@@ -219,7 +214,7 @@ describe("root mutations", () => {
   it("replaces the shell links wholesale", async () => {
     const workspace = await tempWorkspace("ws-links");
     const registryPath = path.join(workspace, "workspace.json");
-    await addWorkspaceRoot("C:\\work", "ws-root", {}, options(registryPath));
+    await addWorkspaceRoot("C:\\work", "work-root", {}, options(registryPath));
     const links = [
       { workProjectId: WORK_PROJECT_ID, root: "C:\\work", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
     ];

@@ -206,7 +206,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     registry: {
       schemaVersion: 1 as const,
       updatedAt: "2026-08-30T00:00:00.000Z",
-      roots: [{ path: "C:\\ws", label: "ws-root", devPath: "C:\\dev", dataPath: "C:\\data" }],
+      roots: [{ work: "C:\\work", dev: "C:\\dev", data: "C:\\data", label: "work-root" }],
       shellLinks: [],
     },
     shells: [],

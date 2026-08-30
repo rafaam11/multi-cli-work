@@ -10,6 +10,8 @@
  *  - `deriveWorkspaceLocation`: 앱이 쓰는 축약형. 루트 목록에서 소속 루트를 고르고 kind를 좁힌다.
  */
 
+import type { WorkspaceRoots } from "./workspace-types";
+
 export const CHANNEL_RE = /^([GORZP])_([A-Za-z][A-Za-z0-9]*)$/;
 // YY_<channelSlug>(_<Topic>)?(-<n>)? — channelSlug 검증은 parseShell(name, channelSlug)에서
 export const SHELL_RE = /^(\d{2})_([A-Za-z][A-Za-z0-9]*)(?:_([A-Za-z0-9]+))?(?:-(\d+))?$/;
@@ -186,17 +188,6 @@ export interface WorkspacePathClassification {
   warning?: string;
 }
 
-/**
- * 워크스페이스의 세 루트(루트 CLAUDE.md §1). 관례상 형제 폴더(`C:\work` · `C:\dev` · `C:\data`)
- * 지만 PC별 설정값이므로 추측하지 않고 받는다 — 예전의 중첩 배치(`<work>/dev`)도 이 모양으로
- * 표현되면 같은 코드가 그대로 답한다.
- */
-export interface WorkspaceRoots {
-  work: string;
-  dev: string;
-  data: string;
-}
-
 /** 절대경로를 세 루트 기준으로 분류한다 — ws-path.mjs `classify`와 같은 판정·같은 kind·같은 순서. */
 export function classifyWorkspacePath(
   absPath: string,
@@ -254,18 +245,6 @@ export function classifyWorkspacePath(
 
 // ---------- 앱이 쓰는 축약형 ----------
 
-/** 등록된 루트 하나 — 세 경로를 함께 들고 다닌다. `WorkspaceRoot`가 이 모양을 만족한다. */
-export interface WorkspaceRootRef {
-  path: string;
-  devPath: string;
-  dataPath: string;
-}
-
-/** 등록 레코드를 분류기가 받는 모양으로. */
-export function rootsOf(root: WorkspaceRootRef): WorkspaceRoots {
-  return { work: root.path, dev: root.devPath, data: root.dataPath };
-}
-
 /**
  * 앱이 다루는 kind는 여덟 가지로 좁혔다. `classifyWorkspacePath`의 나머지(root·dev-dir·data-root·
  * data-purpose·wiki)는 전부 `other`로 접히고, `dataset-sub`는 그 데이터셋 안이라는 뜻이므로
@@ -282,7 +261,7 @@ export type WorkspaceLocationKind =
   | "other";
 
 export interface WorkspaceLocation {
-  /** 이 경로를 품은 루트의 경로(등록된 원형 그대로). */
+  /** 이 경로를 품은 루트의 **work** 경로(등록된 원형 그대로). */
   root: string;
   kind: WorkspaceLocationKind;
   channel?: string;
@@ -317,25 +296,26 @@ const KIND_MAP: Record<WorkspacePathKind, WorkspaceLocationKind | null> = {
  */
 export function deriveWorkspaceLocation(
   rootPath: string,
-  roots: readonly WorkspaceRootRef[],
+  roots: readonly WorkspaceRoots[],
   style: WorkspacePathStyle = detectPathStyle(rootPath),
 ): WorkspaceLocation | null {
-  let best: { root: WorkspaceRootRef; depth: number } | null = null;
+  let best: { root: WorkspaceRoots; depth: number } | null = null;
   for (const candidate of roots) {
-    const trio = rootsOf(candidate);
     // 세 루트 중 어느 것에라도 들어가면 이 루트의 일이다. 가장 깊게 맞는 것이 이긴다.
-    const depths = [trio.work, trio.dev, trio.data]
-      .map((base) => (relativeSegments(base, rootPath, style) === null ? -1 : cleanWorkspacePath(base, style).length));
-    const depth = Math.max(...depths);
+    const depth = Math.max(
+      ...[candidate.work, candidate.dev, candidate.data].map((base) =>
+        relativeSegments(base, rootPath, style) === null ? -1 : cleanWorkspacePath(base, style).length,
+      ),
+    );
     if (depth < 0) continue;
     if (!best || depth > best.depth) best = { root: candidate, depth };
   }
   if (!best) return null;
-  const classified = classifyWorkspacePath(rootPath, rootsOf(best.root), style);
+  const classified = classifyWorkspacePath(rootPath, best.root, style);
   const kind = KIND_MAP[classified.kind];
   if (kind === null) return null;
   return {
-    root: best.root.path,
+    root: best.root.work,
     kind,
     ...(classified.channel !== undefined ? { channel: classified.channel } : {}),
     ...(classified.shell !== undefined ? { shell: classified.shell } : {}),
@@ -367,7 +347,7 @@ export function ancestorPaths(target: string, style: WorkspacePathStyle = detect
 }
 
 export interface ShellLookup {
-  roots: readonly WorkspaceRootRef[];
+  roots: readonly WorkspaceRoots[];
   /** 정규화된 절대경로 → 셸 ref (`WorkspaceSnapshot.repoOwners`). */
   repoOwners: Readonly<Record<string, string>>;
 }

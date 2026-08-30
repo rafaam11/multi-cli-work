@@ -181,13 +181,13 @@ export async function createDesktopRuntime(
    */
   const refreshRootLocations = async () => {
     for (const root of (await readWorkspaceRegistry(workspaceRegistryOptions)).roots) {
-      const siblings = await resolveWorkspaceRoots(root.path);
-      if (siblings.devPath === root.devPath && siblings.dataPath === root.dataPath) continue;
-      await addWorkspaceRoot(root.path, root.label, siblings, {
+      const siblings = await resolveWorkspaceRoots(root.work);
+      if (siblings.dev === root.dev && siblings.data === root.data) continue;
+      await addWorkspaceRoot(root.work, root.label, siblings, {
         ...workspaceRegistryOptions,
         platform: process.platform,
       });
-      workspaceIndex.invalidate(root.path);
+      workspaceIndex.invalidate(root.work);
     }
   };
   const agentRegistryPath = process.env.MULTI_CLI_WORK_AGENTS_PATH;
