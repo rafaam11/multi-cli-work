@@ -41,6 +41,12 @@ const api: MultiCliWorkApi = {
     chooseTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:choose-teams-root"),
     clearTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:clear-teams-root"),
   },
+  workspace: {
+    list: () => ipcRenderer.invoke("workspace:list"),
+    add: () => ipcRenderer.invoke("workspace:add"),
+    remove: (rootPath) => ipcRenderer.invoke("workspace:remove", rootPath),
+    sync: () => ipcRenderer.invoke("workspace:sync"),
+  },
   worktrees: {
     list: () => ipcRenderer.invoke("worktrees:list"),
     sync: () => ipcRenderer.invoke("worktrees:sync"),

@@ -202,6 +202,23 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     quit: vi.fn(async () => undefined),
   };
   const chooseDirectory = vi.fn(async (_defaultPath?: string): Promise<string | null> => "C:\\Work");
+  const workspaceSnapshot = {
+    registry: {
+      schemaVersion: 1 as const,
+      updatedAt: "2026-08-30T00:00:00.000Z",
+      roots: [{ path: "C:\\ws", label: "ws-root", devPath: "C:\\dev", dataPath: "C:\\data" }],
+      shellLinks: [],
+    },
+    shells: [],
+    repoOwners: {},
+    warnings: [],
+  };
+  const workspaceGateway = {
+    snapshot: vi.fn(async () => workspaceSnapshot),
+    addRoot: vi.fn(async (_rootPath: string) => workspaceSnapshot),
+    removeRoot: vi.fn(async (_rootPath: string) => workspaceSnapshot),
+    sync: vi.fn(async () => workspaceSnapshot),
+  };
   const settingsGateway = {
     get: vi.fn(() => DEFAULT_SETTINGS),
     update: vi.fn(async (patch: unknown) => ({ ...DEFAULT_SETTINGS, patched: patch })),
@@ -217,6 +234,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     projectService,
     workProjectService,
     readWorkProjectRegistry: vi.fn(async () => workProjectRegistry),
+    workspace: workspaceGateway,
     coordinator,
     updater,
     projectActions,
@@ -248,6 +266,8 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     notionGateway,
     workProjectService,
     workProjectRegistry,
+    workspaceGateway,
+    workspaceSnapshot,
     coordinator,
     project,
     worktree,
@@ -477,6 +497,39 @@ describe("main IPC boundary", () => {
 
     chooseDirectory.mockResolvedValueOnce(null);
     await expect(handlers.get("work-projects:add-member-folder")!({}, "wp-1", "repo")).resolves.toBeNull();
+  });
+
+  it("registers a workspace root through the dialog and syncs the work projects in the same round trip", async () => {
+    const { handlers, workspaceGateway, workspaceSnapshot, workProjectRegistry, chooseDirectory } = setup();
+
+    const result = await handlers.get("workspace:add")!({});
+    expect(chooseDirectory).toHaveBeenCalledWith();
+    expect(workspaceGateway.addRoot).toHaveBeenCalledWith("C:\\Work");
+    // 등록 직후 곧바로 맞춘다 — 사이드바가 한 번의 왕복으로 제 모습을 갖춘다.
+    expect(workspaceGateway.sync).toHaveBeenCalled();
+    expect(result).toEqual({ workspace: workspaceSnapshot, workProjects: workProjectRegistry });
+
+    chooseDirectory.mockResolvedValueOnce(null);
+    await expect(handlers.get("workspace:add")!({})).resolves.toBeNull();
+  });
+
+  it("lists, removes and re-syncs workspace roots", async () => {
+    const { handlers, workspaceGateway, workspaceSnapshot, workProjectRegistry } = setup();
+
+    await expect(handlers.get("workspace:list")!({})).resolves.toBe(workspaceSnapshot);
+
+    await expect(handlers.get("workspace:remove")!({}, "C:\\ws")).resolves.toEqual({
+      workspace: workspaceSnapshot,
+      workProjects: workProjectRegistry,
+    });
+    expect(workspaceGateway.removeRoot).toHaveBeenCalledWith("C:\\ws");
+    // 자유 경로가 아니라 문자열이라는 것만 확인한다 — 등록 여부는 레지스트리가 답할 일이다.
+    await expect(handlers.get("workspace:remove")!({}, "")).rejects.toThrow(/non-empty string/);
+
+    await expect(handlers.get("workspace:sync")!({})).resolves.toEqual({
+      workspace: workspaceSnapshot,
+      workProjects: workProjectRegistry,
+    });
   });
 
   it("stores and clears the teams sync root through the main-process dialog", async () => {

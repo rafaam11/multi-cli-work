@@ -16,13 +16,15 @@ import {
   type KeymapAction,
 } from "./keymap";
 import { publishNotionTokenStatus } from "./notion-token-status";
+import type { WorkspaceSnapshot } from "@shared/workspace-types";
 
-type SettingsTab = "general" | "terminal" | "notifications" | "notion" | "keybindings";
+type SettingsTab = "general" | "terminal" | "notifications" | "workspace" | "notion" | "keybindings";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "general", label: "일반" },
   { id: "terminal", label: "터미널" },
   { id: "notifications", label: "알림" },
+  { id: "workspace", label: "워크스페이스" },
   { id: "notion", label: "노션" },
   { id: "keybindings", label: "단축키" },
 ];
@@ -142,6 +144,137 @@ function NotionSettings() {
         토큰은 notion.so/my-integrations에서 내부 통합을 만들면 발급됩니다. 토큰만으로는 부족하고,
         조회할 페이지마다 노션에서 &quot;연결&quot;에 그 통합을 추가해야 제목이 읽힙니다.
       </p>
+      {notice ? (
+        <p className="settings-hint" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="settings-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * ws-root 워크스페이스 루트. 노션 탭과 마찬가지로 AppSettings를 쓰지 않는다 — 루트 목록은
+ * `~/.multi-cli-work/workspace.json`에 따로 살고(레지스트리 계약 §8), 여기서는 그 파일을 다루는
+ * IPC만 부른다. 루트를 하나도 등록하지 않으면 사이드바는 이 기능이 없던 때와 똑같이 그려진다.
+ */
+function WorkspaceSettings() {
+  const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    window.multiCliWork.workspace
+      .list()
+      .then((next) => {
+        if (alive) setSnapshot(next);
+      })
+      .catch((cause: unknown) => {
+        if (alive) setError(ipcReason(cause));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const run = (action: () => Promise<WorkspaceSnapshot | null>, done: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    action()
+      .then((next) => {
+        // null은 사용자가 폴더 대화상자를 닫은 것 — 알릴 일이 아니다.
+        if (!next) return;
+        setSnapshot(next);
+        setNotice(done);
+      })
+      .catch((cause: unknown) => setError(ipcReason(cause)))
+      .finally(() => setBusy(false));
+  };
+
+  const roots = snapshot?.registry.roots ?? [];
+  const shellsOf = (rootPath: string) =>
+    (snapshot?.shells ?? []).filter((shell) => shell.root === rootPath).length;
+
+  return (
+    <>
+      <h2>워크스페이스 루트</h2>
+      <p className="settings-hint">
+        채널·프로젝트 셸·<code>dev/</code> 레포가 사는 폴더입니다. 등록하면 사이드바가 레포를 소속
+        셸 아래로 묶고, 세션 브리프에 형제 레포·데이터셋 경로가 붙습니다. 워크스페이스의 파일은
+        읽기만 합니다.
+      </p>
+      {snapshot === null ? (
+        <p className="settings-hint">확인 중…</p>
+      ) : roots.length === 0 ? (
+        <p className="settings-hint">등록된 루트가 없습니다 — 사이드바는 지금까지와 똑같이 동작합니다.</p>
+      ) : (
+        <ul className="settings-list">
+          {roots.map((root) => (
+            <li key={root.path} className="settings-row">
+              <span className="settings-list-copy">
+                <strong>{root.label}</strong>
+                <span title={root.path}>{root.path}</span>
+                <span className="settings-hint">셸 {shellsOf(root.path)}개</span>
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  run(
+                    async () => (await window.multiCliWork.workspace.remove(root.path)).workspace,
+                    `${root.label}을(를) 목록에서 뺐습니다`,
+                  )
+                }
+              >
+                제거
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="settings-row">
+        <span />
+        <span className="settings-key-controls">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              run(async () => (await window.multiCliWork.workspace.add())?.workspace ?? null, "루트를 등록했습니다")
+            }
+          >
+            루트 추가
+          </button>
+          <button
+            type="button"
+            disabled={busy || roots.length === 0}
+            onClick={() =>
+              run(async () => (await window.multiCliWork.workspace.sync()).workspace, "셸을 다시 읽었습니다")
+            }
+          >
+            다시 읽기
+          </button>
+        </span>
+      </div>
+      <p className="settings-hint">
+        제거는 목록에서만 뺍니다 — 디스크의 폴더도, 이미 만들어진 업무 프로젝트도 그대로 남습니다.
+      </p>
+      {snapshot && snapshot.warnings.length > 0 ? (
+        <ul className="settings-list" aria-label="워크스페이스 경고">
+          {snapshot.warnings.map((warning) => (
+            <li key={warning} className="settings-hint">
+              {warning}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {notice ? (
         <p className="settings-hint" role="status">
           {notice}
@@ -380,6 +513,7 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
               ))}
             </>
           ) : null}
+          {tab === "workspace" ? <WorkspaceSettings /> : null}
           {tab === "notion" ? <NotionSettings /> : null}
           {tab === "keybindings" ? (
             <>

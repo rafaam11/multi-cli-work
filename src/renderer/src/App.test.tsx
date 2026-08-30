@@ -5,6 +5,7 @@ import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView, Wi
 import type { FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1 } from "@shared/work-project-types";
+import type { WorkspaceSnapshot } from "@shared/workspace-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
 import { DEFAULT_SETTINGS, mergeSettingsPatch, type AppSettings, type AppSettingsPatch } from "@shared/settings-types";
@@ -223,6 +224,8 @@ function createApi(options?: {
   writable?: boolean;
   missingRootProjectIds?: string[];
   workProjects?: WorkProject[];
+  /** ws-root 워크스페이스. 기본값은 "루트 미등록" — 이 기능이 없던 때와 같은 화면이다. */
+  workspace?: WorkspaceSnapshot;
   selection?: Pick<AppStateSnapshot["state"], "selectedProjectId" | "selectedSessionId">;
   /** Arrangements a previous run left on disk, as main would hand them back on startup. */
   savedViews?: Pick<AppStateSnapshot["state"], "folderViews" | "workspace" | "hiddenPanes">;
@@ -272,6 +275,12 @@ function createApi(options?: {
       (options?.workProjects ?? []).map((workProject) => [workProject.id, workProject]),
     ),
   };
+  const workspaceSnapshot: WorkspaceSnapshot = options?.workspace ?? {
+    registry: { schemaVersion: 1, updatedAt: "2026-08-30T00:00:00.000Z", roots: [], shellLinks: [] },
+    shells: [],
+    repoOwners: {},
+    warnings: [],
+  };
   const api: MultiCliWorkApi = {
     platform: "win32",
     projects: {
@@ -301,6 +310,12 @@ function createApi(options?: {
       revealLocalFolder: vi.fn().mockResolvedValue(undefined),
       chooseTeamsSyncRoot: vi.fn().mockResolvedValue(null),
       clearTeamsSyncRoot: vi.fn().mockResolvedValue(workProjectRegistry),
+    },
+    workspace: {
+      list: vi.fn().mockResolvedValue(workspaceSnapshot),
+      add: vi.fn().mockResolvedValue(null),
+      remove: vi.fn().mockResolvedValue({ workspace: workspaceSnapshot, workProjects: workProjectRegistry }),
+      sync: vi.fn().mockResolvedValue({ workspace: workspaceSnapshot, workProjects: workProjectRegistry }),
     },
     notion: {
       status: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true }),
@@ -1576,6 +1591,166 @@ describe("work project categories", () => {
       ".work-project-node",
     )!;
   };
+
+  /**
+   * ws-root 워크스페이스를 등록하면 트리에 채널 한 겹이 더 선다. 셸에서 만들어진 업무 프로젝트만
+   * 그 아래로 들어가고, 손으로 만든 것과 미분류는 있던 자리에 그대로 남는다.
+   */
+  describe("ws-root 채널", () => {
+    const WS_ROOT = "C:" + String.fromCharCode(92) + "ws";
+    const join = (...parts: string[]) => parts.join(String.fromCharCode(92));
+    const shellInfo = (channel: string, name: string, title: string, repos: string[] = []) => ({
+      root: WS_ROOT,
+      ref: channel + "/" + name,
+      channel,
+      channelLetter: channel.charAt(0),
+      channelLabel: channel.startsWith("O") ? "용역" : "개인",
+      shell: name,
+      title,
+      status: "active",
+      path: join(WS_ROOT, channel, name),
+      repos,
+      externalPaths: [],
+      data: [],
+    });
+    const VSP = shellInfo("O_SMCH", "24_SMCH_VSP-1", "가상수술계획", ["VSP_FastAPI"]);
+    const CAREER = shellInfo("P_Personal", "26_Personal_Career-1", "진로");
+    const workspaceSnapshot = (
+      shells: Array<ReturnType<typeof shellInfo>>,
+      links: Array<{ workProjectId: string; channel: string; shell: string }>,
+    ): WorkspaceSnapshot => ({
+      registry: {
+        schemaVersion: 1,
+        updatedAt: "2026-08-30T00:00:00.000Z",
+        roots: [{ path: WS_ROOT, label: "ws-root", devPath: join(WS_ROOT, "dev"), dataPath: join(WS_ROOT, "data") }],
+        shellLinks: links.map((link) => ({ ...link, root: WS_ROOT })),
+      },
+      shells,
+      repoOwners: Object.fromEntries(
+        shells.flatMap((entry) =>
+          entry.repos.map((repo) => [join(WS_ROOT, "dev", repo).toLowerCase(), entry.ref] as const),
+        ),
+      ),
+      warnings: [],
+    });
+
+    it("groups shells under their channel and names them by the shell title", async () => {
+      const harness = createApi({
+        projects: [atlas],
+        sessions: [],
+        workProjects: [
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발", {
+            members: [{ projectId: atlas.id, role: "repo" }],
+          }),
+          workProject("wp-career", "P_Personal/26_Personal_Career-1", "기타", { order: 1 }),
+        ],
+        workspace: workspaceSnapshot(
+          [VSP, CAREER],
+          [
+            { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+            { workProjectId: "wp-career", channel: "P_Personal", shell: "26_Personal_Career-1" },
+          ],
+        ),
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      // 셸 폴더명이 아니라 프론트매터의 한글 title:로 불린다.
+      const group = (await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).closest(
+        ".work-project-node",
+      )!;
+      const channel = group.closest(".channel-node")!;
+      expect(channel).toHaveClass("channel-service");
+      expect(channel).toHaveTextContent("O_SMCH");
+      expect(channel).toHaveTextContent("용역");
+      // 다른 채널은 자기 묶음을 따로 가진다.
+      const personal = (await within(nav).findByRole("button", { name: "진로 프로젝트 열기" })).closest(
+        ".channel-node",
+      )!;
+      expect(personal).toHaveClass("channel-personal");
+      expect(personal).not.toBe(channel);
+    });
+
+    it("folds a channel away and brings it back", async () => {
+      const harness = createApi({
+        projects: [atlas],
+        sessions: [],
+        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발")],
+        workspace: workspaceSnapshot([VSP], [
+          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+        ]),
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      expect(await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).toBeInTheDocument();
+
+      fireEvent.click(within(nav).getByRole("button", { name: "O_SMCH 접기" }));
+      expect(within(nav).queryByRole("button", { name: "가상수술계획 프로젝트 열기" })).not.toBeInTheDocument();
+
+      fireEvent.click(within(nav).getByRole("button", { name: "O_SMCH 펼치기" }));
+      expect(within(nav).getByRole("button", { name: "가상수술계획 프로젝트 열기" })).toBeInTheDocument();
+    });
+
+    it("leaves hand-made work projects at the top level, outside every channel", async () => {
+      const harness = createApi({
+        projects: [atlas],
+        sessions: [],
+        workProjects: [
+          workProject("wp-manual", "손으로 만든 묶음", "정부지원과제"),
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발", { order: 1 }),
+        ],
+        workspace: workspaceSnapshot([VSP], [
+          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+        ]),
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      const manual = (await within(nav).findByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" })).closest(
+        ".work-project-node",
+      )!;
+      expect(manual.closest(".channel-node")).toBeNull();
+    });
+
+    it("draws the tree exactly as before when no workspace root is registered", async () => {
+      const harness = createApi({
+        projects: [atlas],
+        sessions: [],
+        workProjects: [workProject("wp-grant", "스마트팩토리 과제", "정부지원과제")],
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      await within(nav).findByRole("button", { name: "스마트팩토리 과제 프로젝트 열기" });
+      expect(nav.querySelector(".channel-node")).toBeNull();
+    });
+
+    it("files an unassigned folder under its shell through the reverse index", async () => {
+      const repo: SharedProject = { ...atlas, id: "project-vsp", rootPath: join(WS_ROOT, "dev", "VSP_FastAPI"), displayName: "VSP_FastAPI" };
+      const harness = createApi({
+        projects: [repo],
+        sessions: [],
+        // 이 폴더는 어느 업무 프로젝트의 members에도 없다 — 방금 연 레포와 같은 상황.
+        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발")],
+        workspace: workspaceSnapshot([VSP], [
+          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+        ]),
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      const group = (await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).closest(
+        ".work-project-node",
+      )!;
+      expect(within(group as HTMLElement).getByRole("button", { name: "VSP_FastAPI 폴더 선택" })).toBeInTheDocument();
+    });
+  });
 
   it("gives each 구분 its own accent class, and the rail covers the folders inside", async () => {
     const harness = createApi({

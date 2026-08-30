@@ -39,6 +39,7 @@ import type {
 import type { NotionLinkCheck, NotionTokenStatus } from "../shared/notion-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "../shared/work-project-types";
+import type { WorkspaceSnapshot } from "../shared/workspace-types";
 import type {
   SharedWorktree,
   WorktreeCreateOptions,
@@ -72,6 +73,17 @@ interface WorkProjectServiceGateway {
   removeProjectReferences(projectId: string): Promise<WorkProjectRegistryV1>;
   reorderWorkProjects(orderedIds: readonly string[]): Promise<WorkProjectRegistryV1>;
   setTeamsSyncRoot(rootPath: string | null): Promise<WorkProjectRegistryV1>;
+}
+
+/**
+ * ws-root 워크스페이스 루트. 렌더러는 경로를 **목록에 있는 것만** 지목할 수 있고, 추가는
+ * 폴더 대화상자를 거친다 — `projects:add-folder`와 같은 약속이다.
+ */
+interface WorkspaceGateway {
+  snapshot(): Promise<WorkspaceSnapshot>;
+  addRoot(rootPath: string): Promise<WorkspaceSnapshot>;
+  removeRoot(rootPath: string): Promise<WorkspaceSnapshot>;
+  sync(): Promise<WorkspaceSnapshot>;
 }
 
 interface TerminalCoordinatorGateway {
@@ -222,6 +234,7 @@ interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
   workProjectService: WorkProjectServiceGateway;
   readWorkProjectRegistry(): Promise<WorkProjectRegistryV1>;
+  workspace: WorkspaceGateway;
   coordinator: TerminalCoordinatorGateway;
   updater: UpdaterGateway;
   projectActions: ProjectActionsGateway;
@@ -783,6 +796,25 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     return dependencies.workProjectService.setTeamsSyncRoot(rootPath);
   });
   ipc.handle("work-projects:clear-teams-root", () => dependencies.workProjectService.setTeamsSyncRoot(null));
+
+  // 워크스페이스 루트를 바꾸면 업무 프로젝트 묶음도 따라 바뀌므로, 두 스냅샷을 함께 돌려준다.
+  const workspaceResult = async (workspace: WorkspaceSnapshot) => ({
+    workspace,
+    workProjects: await dependencies.readWorkProjectRegistry(),
+  });
+  ipc.handle("workspace:list", () => dependencies.workspace.snapshot());
+  ipc.handle("workspace:add", async () => {
+    const rootPath = await dependencies.chooseDirectory();
+    if (!rootPath) return null;
+    await dependencies.workspace.addRoot(rootPath);
+    // 새 루트의 셸을 업무 프로젝트로 옮겨 적고 나서 결과를 준다 — 두 번 왕복할 이유가 없다.
+    return workspaceResult(await dependencies.workspace.sync());
+  });
+  // 렌더러는 이미 등록된 루트만 지목한다. 자유 경로를 받지 않는 것은 projects:reveal과 같은 이유다.
+  ipc.handle("workspace:remove", async (_event, rootPath: unknown) =>
+    workspaceResult(await dependencies.workspace.removeRoot(nonEmptyString(rootPath, "Workspace root path"))),
+  );
+  ipc.handle("workspace:sync", async () => workspaceResult(await dependencies.workspace.sync()));
 
   const worktreePath = async (worktreeId: unknown) => {
     const id = nonEmptyString(worktreeId, "Worktree id");

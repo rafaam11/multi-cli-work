@@ -59,7 +59,18 @@ import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
 import { WorkProjectService } from "./projects/work-project-service";
 import { readWorkProjectRegistry } from "./projects/work-project-registry";
-import { writeWorkProjectBrief, type WorkProjectBriefMember } from "./projects/work-project-brief";
+import {
+  renderWorkProjectBrief,
+  writeSessionBrief,
+  type WorkProjectBriefMember,
+} from "./projects/work-project-brief";
+import { buildWorkspaceBrief } from "./projects/workspace-brief";
+import { WorkspaceIndex, resolveWorkspaceRoots } from "./projects/workspace-index";
+import {
+  addWorkspaceRoot,
+  readWorkspaceRegistry,
+  removeWorkspaceRoot,
+} from "./projects/workspace-registry";
 import {
   createWorkspaceEntry,
   duplicateWorkspaceEntry,
@@ -151,9 +162,34 @@ export async function createDesktopRuntime(
   const projectService = new ProjectService({ registryPath });
   // Like MULTI_CLI_WORK_REGISTRY_PATH: only overridden so tests can point at a fixture.
   const workProjectRegistryPath = process.env.MULTI_CLI_WORK_WORK_PROJECTS_PATH;
+  const workspaceRegistryPath = process.env.MULTI_CLI_WORK_WORKSPACE_PATH;
   const workProjectService = new WorkProjectService({
     ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
+    ...(workspaceRegistryPath ? { workspaceRegistryPath } : {}),
+    platform: process.platform,
   });
+  // ws-root 워크스페이스 루트. 등록된 루트가 없으면 이 기능 전체가 잠자코 있는다 — 아무것도
+  // 스캔하지 않고, 업무 프로젝트도 만들지 않으며, 브리프에 워크스페이스 절이 붙지 않는다.
+  const workspaceIndex = new WorkspaceIndex({ platform: process.platform });
+  const workspaceRegistryOptions = workspaceRegistryPath ? { registryPath: workspaceRegistryPath } : {};
+  const workspaceSnapshot = async () =>
+    workspaceIndex.snapshot(await readWorkspaceRegistry(workspaceRegistryOptions));
+  /**
+   * 등록해 둔 dev·data 위치를 다시 찾는다. 워크스페이스 배치는 옮겨질 수 있고(형제 루트로의 이전
+   * 같은), 그때 저장된 경로가 낡으면 레포가 자기 셸을 잃는다. 실제로 바뀐 루트만 다시 쓴다 —
+   * 아무것도 안 바뀌었으면 파일에 손대지 않는다.
+   */
+  const refreshRootLocations = async () => {
+    for (const root of (await readWorkspaceRegistry(workspaceRegistryOptions)).roots) {
+      const siblings = await resolveWorkspaceRoots(root.path);
+      if (siblings.devPath === root.devPath && siblings.dataPath === root.dataPath) continue;
+      await addWorkspaceRoot(root.path, root.label, siblings, {
+        ...workspaceRegistryOptions,
+        platform: process.platform,
+      });
+      workspaceIndex.invalidate(root.path);
+    }
+  };
   const agentRegistryPath = process.env.MULTI_CLI_WORK_AGENTS_PATH;
   const agentOptions = { ...(agentRegistryPath ? { registryPath: agentRegistryPath } : {}), platform: process.platform };
 
@@ -221,20 +257,44 @@ export async function createDesktopRuntime(
     getProject,
     getWorktree: (worktreeId) => worktrees.get(worktreeId),
     getExecutables,
-    // Resolves the folder's owning 업무 프로젝트 and writes its brief fresh for this launch.
+    /**
+     * 세션의 폴더가 무엇에 속하는지 두 갈래로 답하고 한 파일로 합친다: 업무 프로젝트(팀즈·노션·
+     * 레포)와 ws-root 워크스페이스(채널·셸·형제 레포·데이터셋). 둘 중 하나만 있어도 브리프가
+     * 나가고, 둘 다 없으면 null이라 세션은 브리프 없이 평소대로 열린다.
+     *
+     * 파일 이름은 업무 프로젝트가 아니라 **폴더** 기준이다 — 같은 업무 프로젝트의 두 폴더도
+     * 워크스페이스 절(형제 레포·데이터셋)이 다르기 때문.
+     */
     getWorkProjectBrief: async (projectId) => {
+      const { registry } = await readProjectRegistry({ registryPath });
       const workProjectRegistry = await readWorkProjectRegistry({
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
       });
       const workProject = Object.values(workProjectRegistry.workProjects).find((candidate) =>
         candidate.members.some((member) => member.projectId === projectId),
       );
-      if (!workProject) return null;
-      const { registry } = await readProjectRegistry({ registryPath });
-      const members = workProject.members
-        .map((member) => ({ project: registry.projects[member.projectId] ?? null, role: member.role }))
-        .filter((member): member is WorkProjectBriefMember => member.project !== null);
-      return writeWorkProjectBrief(path.join(userData, "project-briefs"), workProject, members);
+      const workProjectSection = workProject
+        ? renderWorkProjectBrief(
+            workProject,
+            workProject.members
+              .map((member) => ({ project: registry.projects[member.projectId] ?? null, role: member.role }))
+              .filter((member): member is WorkProjectBriefMember => member.project !== null),
+          )
+        : null;
+      const project = registry.projects[projectId] ?? null;
+      const workspaceRegistry = await readWorkspaceRegistry(workspaceRegistryOptions);
+      const workspaceSection =
+        project && workspaceRegistry.roots.length > 0
+          ? await buildWorkspaceBrief(
+              project.rootPath,
+              await workspaceIndex.snapshot(workspaceRegistry),
+              process.platform,
+            )
+          : null;
+      return writeSessionBrief(path.join(userData, "project-briefs"), projectId, [
+        workProjectSection,
+        workspaceSection,
+      ]);
     },
     getAgent: (agentId) => agentMap.get(agentId) ?? null,
     toolSessionCwd: () => os.homedir(),
@@ -372,6 +432,38 @@ export async function createDesktopRuntime(
       readWorkProjectRegistry({
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
       }),
+    workspace: {
+      snapshot: workspaceSnapshot,
+      async addRoot(rootPath: string) {
+        // dev·data 루트는 이 PC에서 찾아 적어 둔다 — 배치가 옮겨지는 중이라 관례만 믿을 수 없다.
+        const siblings = await resolveWorkspaceRoots(rootPath);
+        // 루트가 바뀌면 다음 조회는 반드시 다시 훑는다 — 캐시는 mtime만 보므로 새 루트를 모른다.
+        const registry = await addWorkspaceRoot(rootPath, null, siblings, {
+          ...workspaceRegistryOptions,
+          platform: process.platform,
+        });
+        workspaceIndex.invalidate();
+        return workspaceIndex.snapshot(registry);
+      },
+      async removeRoot(rootPath: string) {
+        const registry = await removeWorkspaceRoot(rootPath, {
+          ...workspaceRegistryOptions,
+          platform: process.platform,
+        });
+        workspaceIndex.invalidate(rootPath);
+        return workspaceIndex.snapshot(registry);
+      },
+      async sync() {
+        workspaceIndex.invalidate();
+        await refreshRootLocations();
+        const snapshot = await workspaceSnapshot();
+        const { registry } = await readProjectRegistry({ registryPath });
+        // 등록된 루트가 없으면 아무것도 쓰지 않는다.
+        if (snapshot.registry.roots.length === 0) return snapshot;
+        await workProjectService.syncFromWorkspace(snapshot, Object.values(registry.projects));
+        return workspaceIndex.snapshot(await readWorkspaceRegistry(workspaceRegistryOptions));
+      },
+    },
     coordinator,
     notion: notionService,
     settings: {
@@ -522,6 +614,17 @@ export async function createDesktopRuntime(
       attention.markSeen(sessionId);
     },
   });
+
+  // 시작할 때 한 번 맞춰 둔다 — 사이드바가 처음 그려질 때 이미 채널·셸 묶음이 서 있도록.
+  // 루트가 없으면 파일을 아예 건드리지 않으므로, 이 기능을 안 쓰는 사용자에게는 아무 일도 없다.
+  void (async () => {
+    if ((await readWorkspaceRegistry(workspaceRegistryOptions)).roots.length === 0) return;
+    // 지난 실행 뒤에 배치가 옮겨졌을 수 있으므로 먼저 위치부터 맞춘다.
+    await refreshRootLocations();
+    const snapshot = await workspaceSnapshot();
+    const { registry } = await readProjectRegistry({ registryPath });
+    await workProjectService.syncFromWorkspace(snapshot, Object.values(registry.projects));
+  })().catch((error) => console.error("Failed to sync work projects from the workspace", error));
 
   coordinator.onEvent((event: TerminalEvent) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("terminal:event", event);
