@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import type { WorkProject } from "../../shared/work-project-types";
-import { renderWorkProjectBrief, writeWorkProjectBrief } from "./work-project-brief";
+import { renderWorkProjectBrief, writeSessionBrief } from "./work-project-brief";
 
 const tempRoots: string[] = [];
 
@@ -102,11 +102,22 @@ describe("renderWorkProjectBrief", () => {
   });
 });
 
-describe("writeWorkProjectBrief", () => {
-  it("writes the brief under the work project id and returns the path", async () => {
+describe("writeSessionBrief", () => {
+  it("writes the sections under the key and returns the path", async () => {
     const briefDir = path.join(await tempDir("brief"), "project-briefs");
-    const briefPath = await writeWorkProjectBrief(briefDir, WORK_PROJECT, []);
-    expect(briefPath).toBe(path.join(briefDir, `${WORK_PROJECT.id}.md`));
-    expect(await fs.readFile(briefPath, "utf8")).toContain("# 업무 프로젝트: 스마트팩토리 과제");
+    const briefPath = await writeSessionBrief(briefDir, "folder-1", [
+      renderWorkProjectBrief(WORK_PROJECT, []),
+      "# 워크스페이스: O_SMCH/24_SMCH_VSP-1",
+    ]);
+    expect(briefPath).toBe(path.join(briefDir, "folder-1.md"));
+    const written = await fs.readFile(briefPath!, "utf8");
+    expect(written).toContain("# 업무 프로젝트: 스마트팩토리 과제");
+    expect(written).toContain("# 워크스페이스: O_SMCH/24_SMCH_VSP-1");
+  });
+
+  it("writes nothing and returns null when every section is empty", async () => {
+    const briefDir = path.join(await tempDir("brief-empty"), "project-briefs");
+    expect(await writeSessionBrief(briefDir, "folder-1", [null, "  "])).toBeNull();
+    await expect(fs.readdir(briefDir)).rejects.toThrow();
   });
 });

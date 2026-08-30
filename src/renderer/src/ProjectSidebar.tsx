@@ -2,10 +2,12 @@ import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
+import type { WorkspaceShellInfo } from "@shared/workspace-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import {
   Briefcase,
+  Boxes,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
@@ -43,7 +45,7 @@ import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
 import { DocumentPaneIcon, type DocumentPane, type PaneRow } from "./pane-items";
 import { findAgent, projectName, sessionLabel, statusLabels } from "./session-labels";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
-import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
+import { categoryAccentClass, channelAccentClass, isWorkProjectDormant } from "./work-project-accent";
 import { folderActivityClass, isFolderActive } from "./folder-status";
 import { SHELF_KINDS, SHELF_TEXT, type ShelfKind } from "./shelves";
 
@@ -52,6 +54,12 @@ interface ProjectSidebarProps {
   projects: SharedProject[];
   /** Work projects in display order; folders whose id is absent from every membership are 미분류. */
   workProjects: WorkProject[];
+  /**
+   * ws-root 워크스페이스의 셸에서 만들어진 업무 프로젝트만, id → 그 셸. 여기 있는 항목은 채널
+   * 아래로 한 겹 더 들어가고 셸의 한글 `title:`로 불린다. 비어 있으면(루트 미등록) 트리는
+   * 이 기능이 없던 때와 똑같이 그려진다.
+   */
+  workspaceShells: Record<string, WorkspaceShellInfo>;
   projectMembership: Record<string, { workProjectId: string; role: WorkProjectRole }>;
   expandedWorkProjects: Set<string>;
   selectedWorkProjectId: string | null;
@@ -184,6 +192,25 @@ function rollUpAttention(
   }, null);
 }
 
+/** 트리의 한 묶음 — 업무 프로젝트 하나(또는 미분류)와 그 아래 폴더들. */
+interface TreeSection {
+  key: string;
+  workProject: WorkProject | null;
+  projects: SharedProject[];
+}
+
+interface ChannelNode {
+  kind: "channel";
+  key: string;
+  channel: string;
+  letter: string;
+  label: string;
+  sections: TreeSection[];
+}
+
+/** 최상위 줄은 채널 묶음이거나, 채널에 속하지 않는 묶음 하나다. */
+type TreeNode = ChannelNode | { kind: "section"; key: string; section: TreeSection };
+
 function attentionLabel(attention: SessionAttention): string {
   return attention === "approval" ? "승인 대기 세션 있음" : "입력 대기 세션 있음";
 }
@@ -192,6 +219,7 @@ export function ProjectSidebar({
   snapshot,
   projects,
   workProjects,
+  workspaceShells,
   projectMembership,
   expandedWorkProjects,
   selectedWorkProjectId,
@@ -391,6 +419,38 @@ export function ProjectSidebar({
     }
     return sections;
   }, [workProjects, projects, projectMembership]);
+
+  /**
+   * 채널 한 겹을 얹는다. 워크스페이스 셸에서 만들어진 업무 프로젝트만 자기 채널 아래로 들어가고,
+   * 손으로 만든 업무 프로젝트와 미분류는 있던 자리에 그대로 남는다. 채널 묶음은 **그 채널의 첫
+   * 항목이 있던 자리**를 차지하므로, 정렬해 둔 순서가 통째로 뒤집히지 않는다.
+   */
+  const treeNodes = useMemo<TreeNode[]>(() => {
+    const nodes: TreeNode[] = [];
+    const channelNodes = new Map<string, ChannelNode>();
+    for (const section of treeSections) {
+      const shell = section.workProject ? workspaceShells[section.workProject.id] : undefined;
+      if (!shell) {
+        nodes.push({ kind: "section", key: section.key, section });
+        continue;
+      }
+      let channel = channelNodes.get(shell.channel);
+      if (!channel) {
+        channel = {
+          kind: "channel",
+          key: `channel:${shell.channel}`,
+          channel: shell.channel,
+          letter: shell.channelLetter,
+          label: shell.channelLabel,
+          sections: [],
+        };
+        channelNodes.set(shell.channel, channel);
+        nodes.push(channel);
+      }
+      channel.sections.push(section);
+    }
+    return nodes;
+  }, [treeSections, workspaceShells]);
 
   const attentionOf = (candidates: TerminalSessionView[]) => rollUpAttention(candidates, unread);
 
@@ -596,196 +656,57 @@ export function ProjectSidebar({
     );
   };
 
-  return (
-    <aside className={`project-sidebar ${collapsed ? "collapsed" : ""}`}>
-      <div className="sidebar-top-row">
-        <button
-          type="button"
-          className={`brand-block ${isHome ? "selected" : ""}`}
-          onClick={onOpenHome}
-          aria-label="홈 대시보드 열기"
-        >
-          <span className="brand-mark" aria-hidden="true">
-            <SquareTerminal size={17} strokeWidth={1.8} />
+  /**
+   * 워크스페이스에서 온 업무 프로젝트는 셸의 한글 `title:`로 부른다 — 폴더명(`24_SMCH_VSP-1`)은
+   * 규약을 위한 이름이지 사람이 읽을 이름이 아니다(루트 CLAUDE.md §2).
+   */
+  const workProjectLabel = (workProject: WorkProject) =>
+    workspaceShells[workProject.id]?.title ?? workProject.name;
+
+  /**
+   * 채널 줄. 업무 프로젝트 줄과 달리 열 화면이 없으므로 접고 펴는 것이 전부다 — 채널은 폴더도
+   * 세션도 직접 갖지 않는, 셸을 모아 두는 이름일 뿐이기 때문.
+   */
+  const renderChannel = (node: ChannelNode) => {
+    // worktree 노드와 같은 극성: 키가 있으면 접힌 것이라, 새로 생긴 채널은 펼쳐진 채로 시작한다.
+    const collapsedChannel = expandedWorkspaces.has(node.key);
+    return (
+      <li
+        className={`channel-node ${channelAccentClass(node.letter)}`}
+        key={node.key}
+        role="treeitem"
+        aria-expanded={!collapsedChannel}
+      >
+        <div className="channel-row">
+          <button
+            className="tree-toggle"
+            type="button"
+            onClick={() => toggleWorkspace(node.key)}
+            aria-label={`${node.channel} ${collapsedChannel ? "펼치기" : "접기"}`}
+            title={`${node.channel} ${collapsedChannel ? "펼치기" : "접기"}`}
+          >
+            {collapsedChannel ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+          </button>
+          <span className="channel-copy">
+            <Boxes size={13} aria-hidden="true" />
+            <span className="channel-name">{node.channel}</span>
+            <span className="channel-label">{node.label}</span>
           </span>
-          <div className="brand-copy">
-            <h1>멀티 터미널 작업기</h1>
-            <span className="brand-context">로컬 워크스페이스</span>
-          </div>
-        </button>
-        <button
-          type="button"
-          className="icon-button sidebar-collapse-toggle"
-          onClick={onToggleCollapse}
-          aria-label={collapsed ? "사이드바 펼치기" : "사이드바 접기"}
-          title={collapsed ? "사이드바 펼치기" : "사이드바 접기"}
-        >
-          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-        </button>
-      </div>
-
-      {/* The two shelves sit above the tree because they are screens, not folders: 작업공간 gathers
-          every pane the app holds no matter which folder it came from, and 숨김 is the exception
-          list that keeps that screen usable. Neither belongs to a group in the tree below. */}
-      {collapsed ? (
-        <ul className="rail-workspaces" role="list" aria-label="작업공간">
-          {SHELF_KINDS.map((kind) => (
-            <li key={kind}>
-              <button
-                type="button"
-                className={[
-                  "rail-workspace-button",
-                  selectedShelf === kind ? "selected" : "",
-                  shelfDropKind === kind ? "drop-target" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onSelectShelf(kind)}
-                aria-label={shelfLabel(kind, shelfPaneRows[kind].length)}
-                title={SHELF_TEXT[kind].name}
-                {...shelfDropProps(kind)}
-              >
-                <ShelfIcon kind={kind} size={14} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="workspace-shelf" aria-label="작업공간">
-          {SHELF_KINDS.map((kind) => {
-            const rows = shelfPaneRows[kind];
-            const open = openShelves.has(kind) && rows.length > 0;
-            const name = SHELF_TEXT[kind].name;
-            return (
-              <div className="workspace-shelf-node" key={kind}>
-                <div
-                  className={[
-                    "workspace-shelf-row",
-                    selectedShelf === kind ? "selected" : "",
-                    shelfDropKind === kind ? "drop-target" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  {...shelfDropProps(kind)}
-                >
-                  <button
-                    className="tree-toggle"
-                    type="button"
-                    onClick={() => toggleShelf(kind)}
-                    disabled={rows.length === 0}
-                    aria-label={`${name} ${open ? "접기" : "펼치기"}`}
-                    title={`${name} ${open ? "접기" : "펼치기"}`}
-                  >
-                    {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                  </button>
-                  <button
-                    className="workspace-shelf-select"
-                    type="button"
-                    onClick={() => onSelectShelf(kind)}
-                    aria-label={shelfLabel(kind, rows.length)}
-                  >
-                    <ShelfIcon kind={kind} size={14} />
-                    <span className="workspace-shelf-name">{name}</span>
-                    {rows.length > 0 ? <span className="workspace-shelf-count">{rows.length}</span> : null}
-                  </button>
-                </div>
-                {open ? (
-                  <ul className="session-tree workspace-shelf-panes" role="group" aria-label={`${name} 패인`}>
-                    {rows.map((row) => renderShelfPane(kind, row))}
-                  </ul>
-                ) : null}
-              </div>
-            );
-          })}
         </div>
-      )}
+        {collapsedChannel ? null : (
+          <ul className="channel-group" role="group" aria-label={node.channel}>
+            {node.sections.map(renderSection)}
+          </ul>
+        )}
+      </li>
+    );
+  };
 
-      {collapsed ? (
-        <div className="sidebar-rail-sessions" aria-label="폴더 바로가기">
-          <ul role="list">{projects.map(renderRailProject)}</ul>
-        </div>
-      ) : (
-      <nav className="project-navigation" aria-label="프로젝트">
-        <div className="section-heading">
-          <span>프로젝트</span>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onReload}
-            disabled={loading}
-            aria-label="목록 새로고침"
-            title="목록 새로고침"
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onCreateWorkProject}
-            disabled={readOnly}
-            aria-label="프로젝트 만들기"
-            title="프로젝트 만들기"
-          >
-            <Briefcase size={16} />
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onAddProject}
-            disabled={readOnly}
-            aria-label="폴더 열기"
-            title="폴더 열기"
-          >
-            <FolderPlus size={16} />
-          </button>
-        </div>
-
-        {/* Bulk expansion, on its own row rather than crowding the heading's four icons. Reaches the
-            work project and 폴더 layers only — worktree expansion is the user's own arrangement. */}
-        <div className="tree-controls">
-          <button type="button" onClick={onExpandAll} title="모든 프로젝트와 폴더 펼치기">
-            <ChevronsUpDown size={13} />
-            <span>모두</span>
-          </button>
-          <button type="button" onClick={onCollapseAll} title="모든 프로젝트와 폴더 접기">
-            <ChevronsDownUp size={13} />
-            <span>접기</span>
-          </button>
-          <button type="button" onClick={onExpandWorking} title="작업중인 폴더만 펼치고 나머지는 접기">
-            <Zap size={13} />
-            <span>작업중</span>
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="sidebar-state">
-            <RefreshCw className="spin" size={15} />
-            <span>작업 영역 불러오는 중</span>
-          </div>
-        ) : loadError ? (
-          <div className="sidebar-failure" role="alert">
-            <TriangleAlert size={16} />
-            <span>{loadError}</span>
-            <button type="button" onClick={onReload}>
-              재시도
-            </button>
-          </div>
-        ) : projects.length === 0 && workProjects.length === 0 ? (
-          <div className="sidebar-empty">
-            <FolderPlus size={18} aria-hidden="true" />
-            <span>아직 프로젝트가 없습니다</span>
-          </div>
-        ) : (
-          <ul
-            className="project-tree"
-            role="tree"
-            onDragLeave={(event) => {
-              // Only when the pointer actually left the list, not on every hop between rows.
-              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-              setDrag((current) => (current?.over ? { ...current, over: null } : current));
-            }}
-          >
-            {treeSections.map((section) => {
+  /**
+   * 트리의 한 묶음 — 업무 프로젝트 하나(또는 미분류)와 그 아래 폴더들. 채널 밑에 들어가든
+   * 최상위에 서든 같은 줄이라, 그리는 코드는 하나다.
+   */
+  const renderSection = (section: TreeSection) => {
               const workProject = section.workProject;
               const sectionExpanded = workProject ? expandedWorkProjects.has(workProject.id) : true;
               // Its page is already on screen, so the row has nothing left to open — it folds instead.
@@ -828,8 +749,8 @@ export function ProjectSidebar({
                         className="tree-toggle"
                         type="button"
                         onClick={() => onToggleWorkProject(workProject.id)}
-                        aria-label={`${workProject.name} ${sectionExpanded ? "접기" : "펼치기"}`}
-                        title={`${workProject.name} ${sectionExpanded ? "접기" : "펼치기"}`}
+                        aria-label={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
+                        title={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
                       >
                         {sectionExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
@@ -841,13 +762,15 @@ export function ProjectSidebar({
                             ? onToggleWorkProject(workProject.id)
                             : onSelectWorkProject(workProject.id)
                         }
-                        aria-label={`${workProject.name} 프로젝트 열기`}
+                        aria-label={`${workProjectLabel(workProject)} 프로젝트 열기`}
                       >
                         <Briefcase size={15} />
                         {/* Name only — the 구분 reads from the icon and rail colour, and the folder
                             count is one expand away. The chip and counts moved out for quiet. */}
                         <span className="project-copy">
-                          <span className="project-name">{workProject.name}</span>
+                          <span className="project-name" title={workProject.name}>
+                            {workProjectLabel(workProject)}
+                          </span>
                         </span>
                       </button>
                     </div>
@@ -872,11 +795,11 @@ export function ProjectSidebar({
                   ) : null}
                   {sectionExpanded ? (
                     section.projects.length === 0 && workProject ? (
-                      <ul className="project-group" role="group" aria-label={workProject.name}>
+                      <ul className="project-group" role="group" aria-label={workProjectLabel(workProject)}>
                         <li className="work-project-empty">폴더 없음 — 상세 페이지에서 추가</li>
                       </ul>
                     ) : (
-            <ul className="project-group" role="group" aria-label={workProject?.name ?? "미분류"}>
+            <ul className="project-group" role="group" aria-label={workProject ? workProjectLabel(workProject) : "미분류"}>
             {section.projects.map((project) => {
               const name = projectName(project);
               const expanded = expandedProjects.has(project.id);
@@ -1081,7 +1004,200 @@ export function ProjectSidebar({
                   ) : null}
                 </li>
               );
-            })}
+  };
+
+  return (
+    <aside className={`project-sidebar ${collapsed ? "collapsed" : ""}`}>
+      <div className="sidebar-top-row">
+        <button
+          type="button"
+          className={`brand-block ${isHome ? "selected" : ""}`}
+          onClick={onOpenHome}
+          aria-label="홈 대시보드 열기"
+        >
+          <span className="brand-mark" aria-hidden="true">
+            <SquareTerminal size={17} strokeWidth={1.8} />
+          </span>
+          <div className="brand-copy">
+            <h1>멀티 터미널 작업기</h1>
+            <span className="brand-context">로컬 워크스페이스</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          className="icon-button sidebar-collapse-toggle"
+          onClick={onToggleCollapse}
+          aria-label={collapsed ? "사이드바 펼치기" : "사이드바 접기"}
+          title={collapsed ? "사이드바 펼치기" : "사이드바 접기"}
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
+      </div>
+
+      {/* The two shelves sit above the tree because they are screens, not folders: 작업공간 gathers
+          every pane the app holds no matter which folder it came from, and 숨김 is the exception
+          list that keeps that screen usable. Neither belongs to a group in the tree below. */}
+      {collapsed ? (
+        <ul className="rail-workspaces" role="list" aria-label="작업공간">
+          {SHELF_KINDS.map((kind) => (
+            <li key={kind}>
+              <button
+                type="button"
+                className={[
+                  "rail-workspace-button",
+                  selectedShelf === kind ? "selected" : "",
+                  shelfDropKind === kind ? "drop-target" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => onSelectShelf(kind)}
+                aria-label={shelfLabel(kind, shelfPaneRows[kind].length)}
+                title={SHELF_TEXT[kind].name}
+                {...shelfDropProps(kind)}
+              >
+                <ShelfIcon kind={kind} size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="workspace-shelf" aria-label="작업공간">
+          {SHELF_KINDS.map((kind) => {
+            const rows = shelfPaneRows[kind];
+            const open = openShelves.has(kind) && rows.length > 0;
+            const name = SHELF_TEXT[kind].name;
+            return (
+              <div className="workspace-shelf-node" key={kind}>
+                <div
+                  className={[
+                    "workspace-shelf-row",
+                    selectedShelf === kind ? "selected" : "",
+                    shelfDropKind === kind ? "drop-target" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  {...shelfDropProps(kind)}
+                >
+                  <button
+                    className="tree-toggle"
+                    type="button"
+                    onClick={() => toggleShelf(kind)}
+                    disabled={rows.length === 0}
+                    aria-label={`${name} ${open ? "접기" : "펼치기"}`}
+                    title={`${name} ${open ? "접기" : "펼치기"}`}
+                  >
+                    {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  </button>
+                  <button
+                    className="workspace-shelf-select"
+                    type="button"
+                    onClick={() => onSelectShelf(kind)}
+                    aria-label={shelfLabel(kind, rows.length)}
+                  >
+                    <ShelfIcon kind={kind} size={14} />
+                    <span className="workspace-shelf-name">{name}</span>
+                    {rows.length > 0 ? <span className="workspace-shelf-count">{rows.length}</span> : null}
+                  </button>
+                </div>
+                {open ? (
+                  <ul className="session-tree workspace-shelf-panes" role="group" aria-label={`${name} 패인`}>
+                    {rows.map((row) => renderShelfPane(kind, row))}
+                  </ul>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {collapsed ? (
+        <div className="sidebar-rail-sessions" aria-label="폴더 바로가기">
+          <ul role="list">{projects.map(renderRailProject)}</ul>
+        </div>
+      ) : (
+      <nav className="project-navigation" aria-label="프로젝트">
+        <div className="section-heading">
+          <span>프로젝트</span>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onReload}
+            disabled={loading}
+            aria-label="목록 새로고침"
+            title="목록 새로고침"
+          >
+            <RefreshCw size={16} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onCreateWorkProject}
+            disabled={readOnly}
+            aria-label="프로젝트 만들기"
+            title="프로젝트 만들기"
+          >
+            <Briefcase size={16} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onAddProject}
+            disabled={readOnly}
+            aria-label="폴더 열기"
+            title="폴더 열기"
+          >
+            <FolderPlus size={16} />
+          </button>
+        </div>
+
+        {/* Bulk expansion, on its own row rather than crowding the heading's four icons. Reaches the
+            work project and 폴더 layers only — worktree expansion is the user's own arrangement. */}
+        <div className="tree-controls">
+          <button type="button" onClick={onExpandAll} title="모든 프로젝트와 폴더 펼치기">
+            <ChevronsUpDown size={13} />
+            <span>모두</span>
+          </button>
+          <button type="button" onClick={onCollapseAll} title="모든 프로젝트와 폴더 접기">
+            <ChevronsDownUp size={13} />
+            <span>접기</span>
+          </button>
+          <button type="button" onClick={onExpandWorking} title="작업중인 폴더만 펼치고 나머지는 접기">
+            <Zap size={13} />
+            <span>작업중</span>
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="sidebar-state">
+            <RefreshCw className="spin" size={15} />
+            <span>작업 영역 불러오는 중</span>
+          </div>
+        ) : loadError ? (
+          <div className="sidebar-failure" role="alert">
+            <TriangleAlert size={16} />
+            <span>{loadError}</span>
+            <button type="button" onClick={onReload}>
+              재시도
+            </button>
+          </div>
+        ) : projects.length === 0 && workProjects.length === 0 ? (
+          <div className="sidebar-empty">
+            <FolderPlus size={18} aria-hidden="true" />
+            <span>아직 프로젝트가 없습니다</span>
+          </div>
+        ) : (
+          <ul
+            className="project-tree"
+            role="tree"
+            onDragLeave={(event) => {
+              // Only when the pointer actually left the list, not on every hop between rows.
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+              setDrag((current) => (current?.over ? { ...current, over: null } : current));
+            }}
+          >
+            {treeNodes.map((node) =>
+              node.kind === "channel" ? renderChannel(node) : renderSection(node.section),
+            )}
           </ul>
         )}
 

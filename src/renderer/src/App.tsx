@@ -12,6 +12,8 @@ import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-ty
 import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
+import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
+import { pathStyleFor, resolveShellRefForPath } from "@shared/workspace-path";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
@@ -293,6 +295,7 @@ export function App() {
     } catch { return new Set(); }
   });
   const [workProjectRegistry, setWorkProjectRegistry] = useState<WorkProjectRegistryV1 | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
   const [selectedWorkProjectId, setSelectedWorkProjectId] = useState<string | null>(null);
   const [collapsedWorkProjectIds, setCollapsedWorkProjectIds] = useState<Set<string>>(() => {
     try {
@@ -386,7 +389,28 @@ export function App() {
     );
   }, [workProjectRegistry]);
 
-  /** projectId → owning work project and role; folders absent from the map are 미분류. */
+  /**
+   * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 사이드바가 채널 한 겹을 얹고 셸의
+   * 한글 이름을 쓰는 근거이며, 대응하는 업무 프로젝트가 사라진 연결은 그냥 빠진다.
+   */
+  const workspaceShells = useMemo(() => {
+    const map: Record<string, WorkspaceShellInfo> = {};
+    if (!workspace) return map;
+    const shellByRef = new Map(workspace.shells.map((shell) => [shell.ref, shell]));
+    for (const link of workspace.registry.shellLinks) {
+      const shell = shellByRef.get(`${link.channel}/${link.shell}`);
+      if (shell) map[link.workProjectId] = shell;
+    }
+    return map;
+  }, [workspace]);
+
+  /**
+   * projectId → owning work project and role; folders absent from the map are 미분류.
+   *
+   * 우선순위는 **수동 멤버십 > 역인덱스 > 미분류**다. 어느 업무 프로젝트에도 없는 폴더만
+   * 워크스페이스 역인덱스로 자리를 찾는다 — 방금 연 레포가 다음 동기화 전에도 제 셸 아래에
+   * 서도록. 사용자가 옮겨 둔 자리는 이 경로가 절대 건드리지 않는다.
+   */
   const projectMembership = useMemo(() => {
     const map: Record<string, { workProjectId: string; role: WorkProjectRole }> = {};
     for (const workProject of workProjects) {
@@ -394,8 +418,22 @@ export function App() {
         map[member.projectId] = { workProjectId: workProject.id, role: member.role };
       }
     }
+    if (!workspace || workspace.registry.roots.length === 0) return map;
+    const style = pathStyleFor(window.multiCliWork.platform);
+    const lookup = { roots: workspace.registry.roots, repoOwners: workspace.repoOwners };
+    const workProjectByRef = new Map(
+      workspace.registry.shellLinks.map((link) => [`${link.channel}/${link.shell}`, link.workProjectId]),
+    );
+    for (const project of projects) {
+      if (map[project.id]) continue;
+      const ref = resolveShellRefForPath(project.rootPath, lookup, style);
+      const workProjectId = ref ? workProjectByRef.get(ref) : undefined;
+      if (workProjectId && workProjects.some((workProject) => workProject.id === workProjectId)) {
+        map[project.id] = { workProjectId, role: "repo" };
+      }
+    }
     return map;
-  }, [workProjects]);
+  }, [workProjects, projects, workspace]);
 
   const expandedWorkProjects = useMemo(
     () => new Set(workProjects.filter((workProject) => !collapsedWorkProjectIds.has(workProject.id)).map((workProject) => workProject.id)),
@@ -579,7 +617,7 @@ export function App() {
       setLoadError(null);
       const forceHome = preservedSelection?.view === "home";
       try {
-        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList, workProjectList] =
+        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList, workProjectList, workspaceSnapshot] =
           await Promise.all([
             window.multiCliWork.projects.list(),
             window.multiCliWork.terminals.list(),
@@ -589,11 +627,13 @@ export function App() {
             window.multiCliWork.worktrees.list(),
             window.multiCliWork.github.activeReviews(),
             window.multiCliWork.workProjects.list(),
+            window.multiCliWork.workspace.list(),
           ]);
         // The project registry is the primary sidebar data. Publish it before optional selection
         // restoration and Git enrichment so either concern cannot blank the whole tree.
         setSnapshot(registrySnapshot);
         setWorkProjectRegistry(workProjectList);
+        setWorkspace(workspaceSnapshot);
         setSessions(terminalSessions);
         setAvailability(providers);
         setLoading(false);
@@ -2779,6 +2819,7 @@ export function App() {
         snapshot={snapshot}
         projects={projects}
         workProjects={workProjects}
+        workspaceShells={workspaceShells}
         projectMembership={projectMembership}
         expandedWorkProjects={expandedWorkProjects}
         selectedWorkProjectId={activeView === "work-project" ? selectedWorkProjectId : null}

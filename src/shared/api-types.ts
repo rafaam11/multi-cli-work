@@ -15,6 +15,7 @@ import type {
   WorkProjectRegistryV1,
   WorkProjectRole,
 } from "./work-project-types";
+import type { WorkspaceSnapshot } from "./workspace-types";
 import type {
   SharedWorktree,
   WorktreeCreateOptions,
@@ -47,6 +48,14 @@ export interface WorkProjectMetadataPatch {
 /** Registering a member folder touches both registries, so both come back in one round trip. */
 export interface WorkProjectMemberFolderAddResult {
   project: SharedProject;
+  workProjects: WorkProjectRegistryV1;
+}
+
+/**
+ * 워크스페이스 루트를 바꾸면 셸에서 만들어진 업무 프로젝트도 따라 바뀌므로, 두 스냅샷이 함께 온다.
+ */
+export interface WorkspaceMutationResult {
+  workspace: WorkspaceSnapshot;
   workProjects: WorkProjectRegistryV1;
 }
 
@@ -310,6 +319,19 @@ export interface MultiCliWorkApi {
     /** Opens the folder dialog and stores the choice; `clear` resets it. Null when cancelled. */
     chooseTeamsSyncRoot(): Promise<WorkProjectRegistryV1 | null>;
     clearTeamsSyncRoot(): Promise<WorkProjectRegistryV1>;
+  };
+  /**
+   * ws-root 워크스페이스 루트(`~/.multi-cli-work/workspace.json`). 등록된 루트가 없으면 스냅샷은
+   * 비어 있고, 사이드바는 이 기능이 없던 때와 똑같이 그려진다.
+   */
+  workspace: {
+    list(): Promise<WorkspaceSnapshot>;
+    /** 폴더 대화상자를 열어 루트를 등록하고 곧바로 동기화한다. 취소하면 null. */
+    add(): Promise<WorkspaceMutationResult | null>;
+    /** 목록에서만 뺀다 — 디스크의 폴더도, 이미 만들어진 업무 프로젝트도 지우지 않는다. */
+    remove(rootPath: string): Promise<WorkspaceMutationResult>;
+    /** 셸을 다시 훑어 업무 프로젝트의 소속 폴더를 맞춘다. 수동 항목은 건드리지 않는다. */
+    sync(): Promise<WorkspaceMutationResult>;
   };
   worktrees: {
     list(): Promise<SharedWorktree[]>;

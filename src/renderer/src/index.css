@@ -52,6 +52,7 @@
    */
   --category-government: #e07a72;
   --category-outsourcing: #6fc08a;
+  --category-research: #e08ac0;
   --category-product: #6aa6e0;
   --category-etc: #9aa49f;
 }
@@ -65,11 +66,39 @@
   --category-accent: var(--category-outsourcing);
 }
 
+.category-research {
+  --category-accent: var(--category-research);
+}
+
 .category-product {
   --category-accent: var(--category-product);
 }
 
 .category-etc {
+  --category-accent: var(--category-etc);
+}
+
+/*
+ * ws-root 채널은 업무 프로젝트의 상위 묶음이므로 같은 팔레트를 다시 쓴다 — 한 화면에 색 계열이
+ * 둘이 되면 색이 무엇을 뜻하는지 흐려진다. 매핑은 work-project-accent.ts의 channelAccentClass에.
+ */
+.channel-grant {
+  --category-accent: var(--category-government);
+}
+
+.channel-service {
+  --category-accent: var(--category-outsourcing);
+}
+
+.channel-research {
+  --category-accent: var(--category-research);
+}
+
+.channel-personal {
+  --category-accent: var(--category-product);
+}
+
+.channel-etc {
   --category-accent: var(--category-etc);
 }
 
@@ -1850,6 +1879,53 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--quiet);
   font: var(--type-secondary-semibold);
   text-transform: uppercase;
+}
+
+/*
+ * ws-root 채널 줄. 업무 프로젝트 줄보다 한 단 위지만 더 조용하다 — 채널은 열 화면이 없고 접고
+ * 펴는 것이 전부라, 눌러야 할 것처럼 보이면 안 된다. 그래서 배경도 선택 상태도 없고, 대문자
+ * 캡션과 채널 색 점만 남긴다(미분류 라벨과 같은 급).
+ */
+.channel-node + .channel-node,
+.channel-node + .work-project-node,
+.work-project-node + .channel-node {
+  margin-top: 10px;
+}
+
+.channel-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  min-height: 24px;
+  align-items: center;
+}
+
+.channel-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--category-accent, var(--quiet));
+}
+
+.channel-name {
+  font: var(--type-caption-semibold);
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-label {
+  color: var(--quiet);
+  font: var(--type-caption);
+}
+
+/* 채널 아래의 셸들은 들여쓰기 없이 선다 — 채널 줄 자체가 이미 낮고 조용해서, 한 단 더 밀면
+   폴더 이름이 사이드바 폭을 잃는다. 묶음은 각 셸의 색 레일이 이어 준다. */
+.channel-group {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 /* Folders are the layer below, and the indent has to carry that on its own — the group rail is the
@@ -3892,6 +3968,29 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   justify-content: space-between;
   gap: 12px;
   padding: 7px 0;
+}
+
+/* 워크스페이스 루트처럼 줄마다 경로가 붙는 목록. 라벨·경로·요약이 세로로 쌓이고 오른쪽 끝에
+   동작 버튼 하나가 선다 — .settings-row의 좌우 배치를 그대로 쓴다. */
+.settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-list-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  color: var(--muted);
+  font: var(--type-secondary);
+  overflow-wrap: anywhere;
+}
+
+.settings-list-copy strong {
+  color: var(--text);
+  font: var(--type-secondary-semibold);
 }
 
 .settings-row > label {

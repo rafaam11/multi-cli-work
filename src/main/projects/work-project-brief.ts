@@ -60,14 +60,20 @@ export function renderWorkProjectBrief(workProject: WorkProject, members: WorkPr
 /**
  * Rewritten on every session launch rather than cached: the file is tiny, and stale briefs after a
  * metadata edit would be worse than the extra write. Returns the absolute path for the env variable.
+ *
+ * Keyed by the *folder*, not by the work project: a session also carries the ws-root workspace
+ * section (`workspace-brief.ts`), whose sibling repos and datasets differ per folder even when two
+ * folders share one work project.
  */
-export async function writeWorkProjectBrief(
+export async function writeSessionBrief(
   briefDir: string,
-  workProject: WorkProject,
-  members: WorkProjectBriefMember[],
-): Promise<string> {
+  key: string,
+  sections: readonly (string | null)[],
+): Promise<string | null> {
+  const body = sections.filter((section): section is string => Boolean(section && section.trim().length > 0));
+  if (body.length === 0) return null;
   await fs.mkdir(briefDir, { recursive: true });
-  const briefPath = path.join(briefDir, `${workProject.id}.md`);
-  await fs.writeFile(briefPath, renderWorkProjectBrief(workProject, members), "utf8");
+  const briefPath = path.join(briefDir, `${key}.md`);
+  await fs.writeFile(briefPath, body.join("\n"), "utf8");
   return briefPath;
 }

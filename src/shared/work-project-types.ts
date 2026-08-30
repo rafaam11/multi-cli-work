@@ -19,7 +19,7 @@ export interface WorkProjectMember {
 }
 
 /** Suggested values for `WorkProject.category`; the field itself accepts any non-empty string. */
-export const WORK_PROJECT_CATEGORIES = ["정부지원과제", "외주개발", "상품개발", "기타"] as const;
+export const WORK_PROJECT_CATEGORIES = ["정부지원과제", "외주개발", "연구", "상품개발", "기타"] as const;
 
 /**
  * One Notion page of the work project, labeled the way the team talks about it — "채널" for the
