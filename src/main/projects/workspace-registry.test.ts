@@ -88,12 +88,15 @@ describe("parseWorkspaceRegistry", () => {
   });
 
   it("falls back to the sibling convention when a hand-written root omits dev/data", () => {
+    // 플랫폼 네이티브 절대경로로 검사한다 — CI(ubuntu)에서는 "C:\\work"가 절대경로가 아니라 cwd 기준으로 풀린다.
+    const work = path.resolve(path.sep, "x", "work");
     const registry = sampleRegistry() as unknown as { roots: Array<Record<string, unknown>> };
+    registry.roots[0].work = work;
     delete registry.roots[0].dev;
     delete registry.roots[0].data;
     const parsed = parseWorkspaceRegistry(registry);
-    expect(parsed.roots[0].dev).toBe(path.win32.join("C:\\", "dev"));
-    expect(parsed.roots[0].data).toBe(path.win32.join("C:\\", "data"));
+    expect(parsed.roots[0].dev).toBe(path.join(path.dirname(work), "dev"));
+    expect(parsed.roots[0].data).toBe(path.join(path.dirname(work), "data"));
   });
 
   it("allows an empty label but not an empty path on any of the three roots", () => {

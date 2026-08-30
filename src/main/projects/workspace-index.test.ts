@@ -8,6 +8,8 @@ import { workspacePathKey } from "../../shared/workspace-path";
 import { WorkspaceIndex, readDatasetPaths, resolveWorkspaceRoots } from "./workspace-index";
 
 const tempRoots: string[] = [];
+// 루트 밖 레포(external_paths) 픽스처 — 플랫폼 네이티브 절대경로. CI(ubuntu)에서는 "C:\\…"가 절대경로가 아니다.
+const EXTERNAL_REPO = path.resolve(path.sep, "NeuroPilot", "neuropilot_develop");
 
 async function tempWorkspace(name: string): Promise<string> {
   const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), `mcw-${name}-`));
@@ -53,7 +55,7 @@ async function fixture(name: string): Promise<string> {
       status: "active",
       repos: "[BrainHi]",
       // ws-path.mjs의 파서는 따옴표만 벗기므로 백슬래시가 둘로 남는다 — 정규화가 이걸 흡수해야 한다.
-      external_paths: '["C:\\\\NeuroPilot\\\\neuropilot_develop"]',
+      external_paths: JSON.stringify([EXTERNAL_REPO]),
       data: "[]",
     }),
   );
@@ -114,7 +116,7 @@ describe("WorkspaceIndex", () => {
       "O_ATNC/24_ATNC_NeuroPilot-1",
     );
     // 루트 밖 레포도 셸을 안다 — 겹백슬래시가 접힌 뒤에.
-    expect(snapshot.repoOwners[workspacePathKey("C:\\NeuroPilot\\neuropilot_develop")]).toBe(
+    expect(snapshot.repoOwners[workspacePathKey(EXTERNAL_REPO)]).toBe(
       "O_ATNC/24_ATNC_NeuroPilot-1",
     );
   });
