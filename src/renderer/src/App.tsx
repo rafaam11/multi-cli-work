@@ -2098,11 +2098,10 @@ export function App() {
     );
   };
 
-  const relinkProject = async () => {
-    if (!selectedProject) return;
+  const relinkProject = async (project: SharedProject) => {
     setActionError(null);
     try {
-      const relinked = await window.multiCliWork.projects.relink(selectedProject.id);
+      const relinked = await window.multiCliWork.projects.relink(project.id);
       if (!relinked) return;
       setSnapshot((current) =>
         current
@@ -2119,6 +2118,11 @@ export function App() {
     } catch (error) {
       setActionError(errorMessage(error));
     }
+  };
+  // The title-bar menu, header button and missing-root banner all act on the selected folder;
+  // the sidebar context menu is the one entry that names its folder directly.
+  const relinkSelectedProject = () => {
+    if (selectedProject) void relinkProject(selectedProject);
   };
 
   const runProjectAction = async (action: () => Promise<void>) => {
@@ -2736,7 +2740,7 @@ export function App() {
       case "file.add-folder": void addProject(); break;
       case "file.add-work-project": void createWorkProject(); break;
       case "file.save": if (selectedFileTab) void saveFileTab(selectedFileTab.id); break;
-      case "file.relink": void relinkProject(); break;
+      case "file.relink": relinkSelectedProject(); break;
       // Not window.close(): ✕ hides to the tray, 종료 goes through the session-stop confirmation.
       case "file.quit": void window.multiCliWork.window.quit(); break;
       case "edit.copy": terminal?.copySelection(); break;
@@ -2940,7 +2944,7 @@ export function App() {
           onOpenDetail={() => setActiveView("detail")}
           onStartSession={(kind) => startSessionFromHeader(kind)}
           onRequestNewSession={(anchor) => setNewSessionSlot({ index: null, ...anchor })}
-          onRelinkProject={() => void relinkProject()}
+          onRelinkProject={relinkSelectedProject}
         />
 
         <div className="workspace-body">
@@ -2951,7 +2955,7 @@ export function App() {
                 <span>폴더를 찾을 수 없습니다</span>
                 <button
                   type="button"
-                  onClick={() => void relinkProject()}
+                  onClick={relinkSelectedProject}
                   disabled={Boolean(snapshot && !snapshot.writable)}
                   aria-label="누락된 폴더 다시 연결"
                 >
@@ -3243,6 +3247,7 @@ export function App() {
             setExpandedProjects((current) => new Set(current).add(contextMenu.project.id));
             setEditingProjectId(contextMenu.project.id);
           }}
+          onRelink={() => void relinkProject(contextMenu.project)}
           onRemove={() => requestRemoval(contextMenu.project)}
           onClose={() => setContextMenu(null)}
         />

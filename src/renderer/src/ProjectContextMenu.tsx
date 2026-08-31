@@ -1,5 +1,5 @@
 import type { AgentId, AgentView } from "@shared/agent-types";
-import { FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
+import { FolderInput, FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
 import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 import { NewSessionMenuItems } from "./NewSessionMenuItems";
 import { useClampedMenuPosition } from "./context-menu-position";
@@ -20,6 +20,8 @@ export interface ProjectContextMenuProps {
   onOpenOnGitHub(): void;
   onCreateWorktree(): void;
   onRename(): void;
+  /** Points the folder at a new root — the sidebar's way to relink a moved folder. */
+  onRelink(): void;
   onRemove(): void;
   onClose(): void;
 }
@@ -37,6 +39,7 @@ export function ProjectContextMenu({
   onOpenOnGitHub,
   onCreateWorktree,
   onRename,
+  onRelink,
   onRemove,
   onClose,
 }: ProjectContextMenuProps) {
@@ -103,6 +106,10 @@ export function ProjectContextMenu({
       <button type="button" role="menuitem" onClick={run(onRename)}>
         <Pencil size={15} />
         <span>이름 변경</span>
+      </button>
+      <button type="button" role="menuitem" onClick={run(onRelink)}>
+        <FolderInput size={15} />
+        <span>폴더 다시 연결</span>
       </button>
       <button type="button" role="menuitem" className="danger-item" onClick={run(onRemove)}>
         <Trash2 size={15} />

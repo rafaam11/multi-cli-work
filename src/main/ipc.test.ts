@@ -384,6 +384,22 @@ describe("main IPC boundary", () => {
     expect(result).toEqual({ project, worktreeId: null });
   });
 
+  it("relinks a folder through the dialog, starting beside its old root", async () => {
+    const { handlers, projectService, project, chooseDirectory } = setup();
+
+    const result = await handlers.get("projects:relink")!({}, project.id);
+
+    // A moved folder is usually a sibling of where it was — start the picker there, not at the
+    // OS default, so relinking reads like GitHub Desktop's "Locate".
+    expect(chooseDirectory).toHaveBeenCalledWith(path.dirname(project.rootPath));
+    expect(projectService.relinkProject).toHaveBeenCalledWith(project.id, "C:\\Work");
+    expect(result).toEqual(project);
+
+    chooseDirectory.mockResolvedValueOnce(null);
+    await expect(handlers.get("projects:relink")!({}, project.id)).resolves.toBeNull();
+    expect(projectService.relinkProject).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects renderer attempts to inject a terminal executable or cwd", async () => {
     const { handlers, coordinator } = setup();
 
