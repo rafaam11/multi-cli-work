@@ -696,7 +696,9 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   });
   ipc.handle("projects:relink", async (_event, projectId: unknown) => {
     const id = nonEmptyString(projectId, "Project id");
-    const rootPath = await dependencies.chooseDirectory();
+    // A moved folder is usually a sibling of where it was, so the picker starts beside the old
+    // root rather than at the OS default. Electron ignores a defaultPath that no longer exists.
+    const rootPath = await dependencies.chooseDirectory(path.dirname(await projectRoot(id)));
     if (!rootPath) return null;
     return selectedProject(await dependencies.projectService.relinkProject(id, rootPath), id);
   });

@@ -814,6 +814,43 @@ describe("folder workspace", () => {
     await waitFor(() => expect(harness.api.projects.remove).toHaveBeenCalledWith(dashboard.id));
   });
 
+  it("relinks a folder from the sidebar context menu without selecting it first", async () => {
+    const harness = createApi({ projects: [atlas, dashboard], missingRootProjectIds: [dashboard.id] });
+    vi.mocked(harness.api.projects.relink).mockResolvedValue({ ...dashboard, rootPath: "D:\\restored\\dashboard" });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const select = await screen.findByRole("button", { name: "Dashboard 폴더 선택" });
+    expect(select.closest(".project-row")).toHaveClass("missing");
+    // Dashboard is not the selected folder, so the workspace banner never appears: the tree is
+    // the only way to reach this folder's relink.
+    expect(screen.queryByText("폴더를 찾을 수 없습니다")).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(select.closest(".project-row")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: "폴더 다시 연결" }));
+
+    await waitFor(() => expect(harness.api.projects.relink).toHaveBeenCalledWith(dashboard.id));
+    const relinked = await screen.findByRole("button", { name: "Dashboard 폴더 선택" });
+    await waitFor(() => expect(relinked.closest(".project-row")).not.toHaveClass("missing"));
+    expect(relinked).toHaveAttribute("title", "D:\\restored\\dashboard");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("leaves a folder untouched when the relink dialog is cancelled", async () => {
+    const harness = createApi({ projects: [atlas, dashboard], missingRootProjectIds: [dashboard.id] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = (await screen.findByRole("button", { name: "Dashboard 폴더 선택" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "폴더 다시 연결" }));
+
+    await waitFor(() => expect(harness.api.projects.relink).toHaveBeenCalledWith(dashboard.id));
+    expect(screen.getByRole("button", { name: "Dashboard 폴더 선택" }).closest(".project-row")).toHaveClass("missing");
+    expect(screen.getByRole("button", { name: "Dashboard 폴더 선택" })).toHaveAttribute("title", dashboard.rootPath);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("keeps the launchers exposed whether or not the folder already has sessions", async () => {
     const empty = createApi({ sessions: [] });
     window.multiCliWork = empty.api;
