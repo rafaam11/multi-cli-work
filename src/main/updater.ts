@@ -1,6 +1,8 @@
 import { app, BrowserWindow, shell } from "electron";
 import electronUpdater, { type ProgressInfo, type UpdateInfo } from "electron-updater";
+import path from "node:path";
 import type { UpdaterStatus } from "../shared/api-types";
+import { createUpdaterLogger } from "./updater-log";
 import { quitAndInstallArguments } from "./updater-platform";
 
 // electron-updater ships CommonJS; a named import is undefined once the main process is bundled.
@@ -27,6 +29,9 @@ export function updaterStatus(): UpdaterStatus {
  */
 export function initUpdater(options: { autoCheck?: boolean } = {}): void {
   if (!app.isPackaged) return;
+  // Before anything else: a silent install has no window to report from, so this file is the
+  // only place a stalled or refused install ever says so.
+  autoUpdater.logger = createUpdaterLogger(path.join(app.getPath("userData"), "logs", "updater.log"));
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on("checking-for-update", () => publish({ state: "checking" }));
