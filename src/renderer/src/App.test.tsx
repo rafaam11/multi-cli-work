@@ -2473,6 +2473,46 @@ describe("worktrees", () => {
       expect(screen.queryByRole("button", { name: "feature-x worktree 선택" })).not.toBeInTheDocument(),
     );
   });
+
+  it("blocks removal behind a dirty check and requires the explicit force confirmation from the folder page's worktree card", async () => {
+    const harness = createApi({
+      sessions: [worktreeSession],
+      worktrees: [atlasWorktree],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.worktrees.remove).mockResolvedValueOnce({
+      removed: false,
+      reason: "dirty",
+      message: "feature-x에 커밋되지 않은 변경 2개가 있습니다.",
+    });
+    render(<App />);
+
+    // Startup restores the worktree session, which scopes the page to that worktree; the folder
+    // itself is what we want, so the card lists the worktree as one you can still open.
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(await screen.findByRole("button", { name: "폴더 상세" }));
+    const card = await screen.findByRole("region", { name: "워크트리" });
+    fireEvent.contextMenu(within(card).getByRole("button", { name: "feature-x 워크트리 열기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Worktree 제거" }));
+
+    // First: the session-teardown confirmation.
+    const confirm = await screen.findByRole("dialog", { name: "Worktree 제거" });
+    expect(confirm).toHaveTextContent("세션 1개");
+    fireEvent.click(within(confirm).getByRole("button", { name: "제거" }));
+
+    // git refused: the force dialog quotes the reason, and only its explicit button forces.
+    const force = await screen.findByRole("dialog", { name: "Worktree 강제 제거" });
+    expect(force).toHaveTextContent("커밋되지 않은 변경 2개");
+    expect(harness.api.worktrees.remove).toHaveBeenCalledWith(atlasWorktree.id, false);
+
+    fireEvent.click(within(force).getByRole("button", { name: "변경을 버리고 강제 제거" }));
+    await waitFor(() => expect(harness.api.worktrees.remove).toHaveBeenCalledWith(atlasWorktree.id, true));
+    await waitFor(() =>
+      expect(within(card).queryByRole("button", { name: "feature-x 워크트리 열기" })).not.toBeInTheDocument(),
+    );
+    expect(within(card).getByText("아직 워크트리가 없습니다")).toBeInTheDocument();
+  });
 });
 
 describe("prompt fan-out", () => {

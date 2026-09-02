@@ -5179,6 +5179,78 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-secondary-size);
 }
 
+.detail-worktrees {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The row carries the context menu, so it has to stretch as wide as the button it wraps. */
+.detail-worktree-row {
+  display: flex;
+}
+
+.detail-worktree {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text);
+  background: none;
+  font-size: var(--type-ui-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.detail-worktree:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.detail-worktree.current {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+  cursor: default;
+}
+
+.detail-worktree-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: var(--type-secondary-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pushed to the far edge so the counts line up down the list however long a branch name runs. */
+.detail-worktree-meta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+}
+
+.detail-worktree-note {
+  flex: 0 0 auto;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+}
+
+.detail-worktree-warning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 8px;
+  color: var(--amber);
+  font-size: var(--type-caption-size);
+}
+
 .detail-empty-sessions {
   padding: 18px 0;
   text-align: center;

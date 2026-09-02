@@ -3154,6 +3154,16 @@ export function App() {
               agents={agents}
               vscodeAvailable={availability.vscode}
               pendingAction={pendingAction}
+              worktrees={worktrees.filter((candidate) => candidate.projectId === selectedProject.id)}
+              workspaceViews={workspaceViews}
+              activeReviews={activeReviews}
+              worktreeSessionCounts={Object.fromEntries(
+                worktrees.map((candidate) => [
+                  candidate.id,
+                  sessions.filter((session) => session.worktreeId === candidate.id).length,
+                ]),
+              )}
+              worktreeWarning={worktreeWarnings[selectedProject.id] ?? null}
               onSelectSession={selectSession}
               onStartSession={(kind) => void startSession(selectedProject, kind, selectedWorktree?.id)}
               onReveal={() =>
@@ -3176,6 +3186,12 @@ export function App() {
                 void showDiff(selectedWorktree ? { worktree: selectedWorktree } : { project: selectedProject })
               }
               onProjectSaved={handleProjectSaved}
+              onSelectWorktree={selectWorktree}
+              onCreateWorktree={() => setWorktreeCreateProject(selectedProject)}
+              onWorktreeContextMenu={(worktree, event) => {
+                event.preventDefault();
+                setWorktreeMenu({ worktree, x: event.clientX, y: event.clientY });
+              }}
             />
           ) : (
             <HomeDashboard

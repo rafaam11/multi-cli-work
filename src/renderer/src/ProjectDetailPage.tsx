@@ -1,10 +1,11 @@
 import type { AgentView } from "@shared/agent-types";
 import type { GitStatusResult, ProjectMetadataPatch, TerminalSessionView } from "@shared/api-types";
+import type { ActivePullRequestReview } from "@shared/github-types";
 import type { ProjectTrack, SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import type { SharedWorktree } from "@shared/worktree-types";
-import { FileDiff, FolderOpen, RefreshCw, Send, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
+import { FileDiff, FolderOpen, GitBranch, Plus, RefreshCw, Send, Trash2, TriangleAlert } from "lucide-react";
+import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { AgentIcon, GitHubIcon, VSCodeIcon, agentAccentClass } from "./brand-icons";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 
@@ -96,6 +97,13 @@ interface ProjectDetailPageProps {
   agents: AgentView[];
   vscodeAvailable: boolean;
   pendingAction: boolean;
+  /** Already narrowed to this project — the page never filters by `projectId` itself. */
+  worktrees: SharedWorktree[];
+  workspaceViews: GitWorkspaceView[];
+  activeReviews: ActivePullRequestReview[];
+  /** worktreeId → session count, so the page does not have to hold every session. */
+  worktreeSessionCounts: Record<string, number>;
+  worktreeWarning: string | null;
   onSelectSession(session: TerminalSessionView): void;
   onStartSession(kind: TerminalKind): void;
   onReveal(): void;
@@ -104,6 +112,9 @@ interface ProjectDetailPageProps {
   onFanOut(): void;
   onShowDiff(): void;
   onProjectSaved(project: SharedProject): void;
+  onSelectWorktree(worktree: SharedWorktree): void;
+  onCreateWorktree(): void;
+  onWorktreeContextMenu(worktree: SharedWorktree, event: ReactMouseEvent): void;
 }
 
 export function ProjectDetailPage({
@@ -113,6 +124,11 @@ export function ProjectDetailPage({
   agents,
   vscodeAvailable,
   pendingAction,
+  worktrees,
+  workspaceViews,
+  activeReviews,
+  worktreeSessionCounts,
+  worktreeWarning,
   onSelectSession,
   onStartSession,
   onReveal,
@@ -121,6 +137,9 @@ export function ProjectDetailPage({
   onFanOut,
   onShowDiff,
   onProjectSaved,
+  onSelectWorktree,
+  onCreateWorktree,
+  onWorktreeContextMenu,
 }: ProjectDetailPageProps) {
   const name = worktree ? `${projectName(project)} · ${worktree.branch}` : projectName(project);
   const [gitStatus, setGitStatus] = useState<GitStatusResult | null>(null);
@@ -161,6 +180,21 @@ export function ProjectDetailPage({
       setSaveError(errorMessage(error));
     }
   };
+
+  // Same order as the sidebar tree: throwaway PR-review worktrees sink below the ones you named,
+  // and sorting a copy keeps the caller's array untouched.
+  const sortedWorktrees = useMemo(
+    () =>
+      [...worktrees].sort((left, right) => {
+        const leftReview = activeReviews.find((review) => review.worktreeId === left.id);
+        const rightReview = activeReviews.find((review) => review.worktreeId === right.id);
+        if (leftReview && rightReview) return leftReview.pullRequestNumber - rightReview.pullRequestNumber;
+        if (leftReview) return 1;
+        if (rightReview) return -1;
+        return left.branch.localeCompare(right.branch);
+      }),
+    [worktrees, activeReviews],
+  );
 
   const mutateTracks = (mutate: (current: ProjectTrack[]) => ProjectTrack[]) => {
     const next = mutate(tracks);
@@ -277,6 +311,77 @@ export function ProjectDetailPage({
             </div>
           ) : (
             <p className="detail-empty">Git 저장소가 아닙니다</p>
+          )}
+        </section>
+
+        <section className="detail-card" aria-label="워크트리">
+          <div className="detail-card-header">
+            <h2>워크트리</h2>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={onCreateWorktree}
+              aria-label="워크트리 만들기"
+              title="워크트리 만들기"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          {worktreeWarning ? (
+            <p className="detail-worktree-warning" role="status">
+              <TriangleAlert size={13} />
+              {worktreeWarning}
+            </p>
+          ) : null}
+          {worktrees.length === 0 ? (
+            <p className="detail-empty">아직 워크트리가 없습니다</p>
+          ) : (
+            <ul className="detail-worktrees">
+              {sortedWorktrees.map((candidate) => {
+                const view = workspaceViews.find((item) => item.worktreeId === candidate.id);
+                const review = activeReviews.find((item) => item.worktreeId === candidate.id);
+                const current = candidate.id === worktree?.id;
+                const branchLabel = review
+                  ? `PR #${review.pullRequestNumber} · 임시`
+                  : (view?.branch ?? (view?.head ? `detached @ ${view.head.slice(0, 7)}` : candidate.branch));
+                const flags = [
+                  view?.lockedReason ? "locked" : null,
+                  view?.availability === "missing" ? "missing" : null,
+                  view?.prunableReason ? "prunable" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <li key={candidate.id}>
+                    {/* The menu hangs off the wrapper — on the row you are viewing the button is
+                        disabled, and a disabled button fires no events of its own. */}
+                    <div
+                      className="detail-worktree-row"
+                      onContextMenu={(event) => onWorktreeContextMenu(candidate, event)}
+                    >
+                      <button
+                        type="button"
+                        className={`detail-worktree ${current ? "current" : ""}`.trim()}
+                        disabled={current}
+                        onClick={() => onSelectWorktree(candidate)}
+                        aria-label={current ? `${candidate.branch} (보는 중)` : `${candidate.branch} 워크트리 열기`}
+                        title={candidate.path}
+                      >
+                        <GitBranch size={13} aria-hidden="true" />
+                        <span className="detail-worktree-branch">
+                          {branchLabel}
+                          {flags ? ` · ${flags}` : ""}
+                        </span>
+                        <span className="detail-worktree-meta">
+                          변경 {view?.changedFileCount ?? 0} · 세션 {worktreeSessionCounts[candidate.id] ?? 0}
+                        </span>
+                        {current ? <span className="detail-worktree-note">보는 중</span> : null}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </section>
 
