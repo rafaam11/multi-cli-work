@@ -64,6 +64,7 @@ import { isFolderActive } from "./folder-status";
 import { DEFAULT_LAYOUT_ID, resolveLayout } from "./grid-layouts";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
 import { recentProjects } from "./recent-folders";
+import { buildSessionPanelItems, type SessionScopeTarget } from "./session-panel";
 import {
   documentPaneId,
   isDocumentPaneId,
@@ -2519,6 +2520,31 @@ export function App() {
       selectedFileTab.encoding === "utf8",
   );
 
+  /** 세션 패널의 "여기"가 가리키는 곳. 페이지가 있는 선택만 범위가 된다. */
+  const sessionScopeTarget = useMemo<SessionScopeTarget>(() => {
+    if (activeView === "home") return { kind: "none" };
+    if (activeView === "work-project") {
+      return selectedWorkProject
+        ? {
+            kind: "folders",
+            projectIds: selectedWorkProjectMembers.map(({ project }) => project.id),
+            label: selectedWorkProject.name,
+          }
+        : { kind: "none" };
+    }
+    // 셸프는 어느 폴더의 것도 아니다.
+    if (activeView === "terminal" && shelfKind !== null) return { kind: "none" };
+    if (selectedWorktree) return { kind: "worktree", worktreeId: selectedWorktree.id, label: selectedWorktree.branch };
+    if (selectedProject) return { kind: "folders", projectIds: [selectedProject.id], label: projectName(selectedProject) };
+    return { kind: "none" };
+  }, [activeView, shelfKind, selectedWorktree, selectedProject, selectedWorkProject, selectedWorkProjectMembers]);
+
+  /** 세션 패널이 그리는 줄. shelfPaneRows와 같은 이유로 여기서 만든다. */
+  const sessionPanelItems = useMemo(
+    () => buildSessionPanelItems({ sessions, documentPanes, projects, worktrees, agents, unread }),
+    [sessions, documentPanes, projects, worktrees, agents, unread],
+  );
+
   /**
    * What each shelf holds, in slot order — the rows its sidebar entry draws when expanded. A shelf
    * gathers panes from several folders, so every row carries the folder it came from and only this
@@ -2833,7 +2859,8 @@ export function App() {
         onMoveProjectToWorkProject={(projectId, workProjectId) => void moveProjectToWorkProject(projectId, workProjectId)}
         sessions={sessions}
         agents={agents}
-        documentPanes={documentPanes}
+        sessionPanelItems={sessionPanelItems}
+        sessionScopeTarget={sessionScopeTarget}
         focusedPaneId={activeView === "terminal" ? focusedPaneId : null}
         onScreenPaneIds={onScreenPaneIds}
         onSelectSession={selectSession}
