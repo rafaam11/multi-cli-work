@@ -70,8 +70,8 @@ async function computedFontSize(selector: string): Promise<string> {
 const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`);
 
 /**
- * A session's row in the sidebar tree. Every session has one whatever page its pane sits on — or
- * whether it has a pane at all — and the accessible name may carry an unread suffix after the
+ * A session's row in the sidebar's 세션 패널. Every session has one whatever page its pane sits on —
+ * or whether it has a pane at all — and the accessible name may carry an unread suffix after the
  * label, so the label is matched at the start of it.
  */
 const paneRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 세션 열기`) });
@@ -693,8 +693,12 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await createDialog.getByRole("textbox", { name: "브랜치 이름" }).fill("feature/e2e");
     await createDialog.getByRole("button", { name: "만들기" }).click();
 
-    // The new worktree opens scoped; a session started here runs in the worktree directory.
-    await expect(page.getByRole("button", { name: "feature/e2e worktree 선택" })).toBeVisible();
+    // The new worktree opens scoped, on its own start page — the 워크트리 card there names the
+    // checkout you are on, which is where the tree's worktree row used to say it.
+    await expect(
+      page.getByRole("region", { name: "워크트리" }).getByRole("button", { name: "feature/e2e (보는 중)" }),
+    ).toBeVisible();
+    // A session started here runs in the worktree directory.
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
@@ -737,15 +741,22 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     ));
     await page.keyboard.press("Enter");
     await expect(pane(`${SHELL_LABEL} 2`).locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
-    await page.getByRole("button", { name: "feature/e2e worktree 선택" }).click({ button: "right" });
+    // The tree has no worktree rows any more: the menu hangs off the 워크트리 card of the folder's
+    // 상세 page. The grid is on the folder itself, so the card lists feature/e2e as one to open.
+    await page.getByRole("button", { name: "폴더 상세" }).click();
+    const worktreeCardRow = page
+      .getByRole("region", { name: "워크트리" })
+      .getByRole("button", { name: /^feature\/e2e/ });
+    await worktreeCardRow.click({ button: "right" });
     await page.getByRole("menu", { name: "feature/e2e worktree 작업" }).getByRole("menuitem", { name: "변경 보기" }).click();
     const diff = page.getByRole("dialog", { name: "변경 보기" });
     await expect(diff).toContainText("wip.txt");
     await attachScreenshot("worktree-diff");
     await diff.getByRole("button", { name: "변경 보기 닫기" }).click();
 
-    // Removal refuses over the uncommitted file until the explicit force confirmation.
-    await page.getByRole("button", { name: "feature/e2e worktree 선택" }).click({ button: "right" });
+    // Removal refuses over the uncommitted file until the explicit force confirmation. Closing the
+    // diff left the 상세 page up, so the same card row is still the way in.
+    await worktreeCardRow.click({ button: "right" });
     await page.getByRole("menu", { name: "feature/e2e worktree 작업" }).getByRole("menuitem", { name: "Worktree 제거" }).click();
     const confirm = page.getByRole("dialog", { name: "Worktree 제거" });
     await expect(confirm).toContainText("세션 1개");
@@ -754,7 +765,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(force).toContainText("커밋되지 않은 변경");
     await attachScreenshot("worktree-force-remove");
     await force.getByRole("button", { name: "변경을 버리고 강제 제거" }).click();
-    await expect(page.getByRole("button", { name: "feature/e2e worktree 선택" })).toBeHidden();
+    await expect(worktreeCardRow).toBeHidden();
     expect(
       await fs.stat(path.join(tempRoot, "sample-project-wt", "feature-e2e")).then(
         () => true,
@@ -770,7 +781,12 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // exact: the right sidebar's "파일 목록 새로고침" also matches the substring.
     await page.getByRole("button", { name: "목록 새로고침", exact: true }).click();
-    const row = page.getByRole("button", { name: "feature/external worktree 선택" });
+    // A discovered worktree shows up on the folder's 워크트리 card, the tree having no layer for it.
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("button", { name: "폴더 상세" }).click();
+    const row = page
+      .getByRole("region", { name: "워크트리" })
+      .getByRole("button", { name: "feature/external 워크트리 열기" });
     await expect(row).toBeVisible();
     await row.click();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
@@ -783,6 +799,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_EXTERNAL_DONE");
 
+    // Back to the folder's own 상세 page: on the worktree you are viewing the card row is disabled,
+    // and a disabled button hands the wrapper no right-click to open the menu with.
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("button", { name: "폴더 상세" }).click();
     await row.click({ button: "right" });
     await page.getByRole("menu", { name: "feature/external worktree 작업" }).getByRole("menuitem", { name: "Worktree 제거" }).click();
     await page.getByRole("dialog", { name: "Worktree 제거" }).getByRole("button", { name: "제거" }).click();

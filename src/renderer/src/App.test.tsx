@@ -2410,7 +2410,7 @@ describe("worktrees", () => {
     cwd: atlasWorktree.path,
   };
 
-  it("nests worktree sessions under a third tree level and scopes the grid and detail page to it", async () => {
+  it("reaches a worktree session from the session panel and scopes the grid and detail page to it", async () => {
     const harness = createApi({
       sessions: [powershellSession, worktreeSession],
       worktrees: [atlasWorktree],
@@ -2419,8 +2419,11 @@ describe("worktrees", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    const worktreeButton = await screen.findByRole("button", { name: "feature-x worktree 선택" });
-    fireEvent.click(worktreeButton);
+    const panel = await screen.findByRole("region", { name: "세션 패널" });
+    const row = await within(panel).findByRole("button", { name: "WT 세션 세션 열기" });
+    // 트리의 worktree 행이 하던 일을 이 행이 한다 — 브랜치가 행에 붙어 있어 어느 체크아웃인지 읽힌다.
+    expect(within(row).getByText("feature-x")).toBeInTheDocument();
+    fireEvent.click(row);
 
     // A worktree behaves like a folder: it fills the grid with its own sessions and nothing else.
     expect(await screen.findByRole("region", { name: "WT 세션" })).toBeInTheDocument();
@@ -2441,40 +2444,6 @@ describe("worktrees", () => {
   });
 
   it("blocks removal behind a dirty check and requires the explicit force confirmation", async () => {
-    const harness = createApi({
-      sessions: [worktreeSession],
-      worktrees: [atlasWorktree],
-      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
-    });
-    window.multiCliWork = harness.api;
-    vi.mocked(harness.api.worktrees.remove).mockResolvedValueOnce({
-      removed: false,
-      reason: "dirty",
-      message: "feature-x에 커밋되지 않은 변경 2개가 있습니다.",
-    });
-    render(<App />);
-
-    fireEvent.contextMenu(await screen.findByRole("button", { name: "feature-x worktree 선택" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Worktree 제거" }));
-
-    // First: the session-teardown confirmation.
-    const confirm = await screen.findByRole("dialog", { name: "Worktree 제거" });
-    expect(confirm).toHaveTextContent("세션 1개");
-    fireEvent.click(within(confirm).getByRole("button", { name: "제거" }));
-
-    // git refused: the force dialog quotes the reason, and only its explicit button forces.
-    const force = await screen.findByRole("dialog", { name: "Worktree 강제 제거" });
-    expect(force).toHaveTextContent("커밋되지 않은 변경 2개");
-    expect(harness.api.worktrees.remove).toHaveBeenCalledWith(atlasWorktree.id, false);
-
-    fireEvent.click(within(force).getByRole("button", { name: "변경을 버리고 강제 제거" }));
-    await waitFor(() => expect(harness.api.worktrees.remove).toHaveBeenCalledWith(atlasWorktree.id, true));
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "feature-x worktree 선택" })).not.toBeInTheDocument(),
-    );
-  });
-
-  it("blocks removal behind a dirty check and requires the explicit force confirmation from the folder page's worktree card", async () => {
     const harness = createApi({
       sessions: [worktreeSession],
       worktrees: [atlasWorktree],
@@ -2512,6 +2481,19 @@ describe("worktrees", () => {
       expect(within(card).queryByRole("button", { name: "feature-x 워크트리 열기" })).not.toBeInTheDocument(),
     );
     expect(within(card).getByText("아직 워크트리가 없습니다")).toBeInTheDocument();
+  });
+
+  it("draws no worktree rows in the tree — the folder page's card and the session panel carry them", async () => {
+    const harness = createApi({ sessions: [worktreeSession], worktrees: [atlasWorktree] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    // worktree 세션의 패널 행이 서면 worktrees와 sessions가 같은 배치로 다 들어온 것이다 —
+    // 그러고도 트리에 worktree 층이 없다는 뜻이라야 아래 단언이 공허하지 않다.
+    await within(nav).findByRole("button", { name: "WT 세션 세션 열기" });
+    expect(within(nav).queryByRole("button", { name: /worktree 선택/ })).not.toBeInTheDocument();
+    expect(nav.querySelector(".worktree-tree")).toBeNull();
   });
 });
 

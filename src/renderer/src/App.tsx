@@ -2884,18 +2884,8 @@ export function App() {
         onRenameSession={(sessionId, name) => void renameSession(sessionId, name)}
         onCancelRename={() => setRenameTarget(null)}
         unread={unread}
-        worktrees={worktrees}
-        activeReviews={activeReviews}
-        workspaceViews={workspaceViews}
-        worktreeWarnings={worktreeWarnings}
         selectedProjectId={activeView === "home" ? null : selectedProjectId}
         gridProjectId={gridProjectId}
-        selectedWorktreeId={activeView === "home" ? null : selectedWorktreeId}
-        onSelectWorktree={selectWorktree}
-        onWorktreeContextMenu={(worktree, event) => {
-          event.preventDefault();
-          setWorktreeMenu({ worktree, x: event.clientX, y: event.clientY });
-        }}
         isHome={activeView === "home"}
         onOpenHome={openHome}
         expandedProjects={expandedProjects}

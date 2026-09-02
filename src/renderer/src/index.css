@@ -2322,10 +2322,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   content: "";
 }
 
-.worktree-sessions {
-  padding-left: 14px;
-}
-
 /*
  * 세션 패널. 트리가 장소를 말하고 이 패널이 상태를 말한다 — 그래서 폴더 아래가 아니라 트리 밑에
  * 평면으로 서고, 트리가 아무리 길어져도 자기 자리를 지킨다.
@@ -2593,12 +2589,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--amber);
 }
 
-.worktree-tree {
-  margin: 0;
-  padding: 0 0 0 22px;
-  list-style: none;
-}
-
 .worktree-row {
   display: flex;
   width: 100%;
@@ -2690,19 +2680,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 2px 4px;
 }
 
-.workspace-select {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-}
-
 .workspace-copy {
   display: flex;
   min-width: 0;
@@ -2716,14 +2693,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.project-worktree-warning {
-  display: flex;
-  gap: 5px;
-  padding: 5px 8px;
-  color: var(--amber);
-  font-size: var(--type-caption-size);
 }
 
 .worktree-create-dialog form,
