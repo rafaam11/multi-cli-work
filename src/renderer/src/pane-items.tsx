@@ -55,6 +55,28 @@ export type PaneRow =
   | (PaneRowBase & { kind: "session"; status: TerminalStatus; agent: AgentId })
   | (PaneRowBase & { kind: "document"; document: DocumentKind; dirty: boolean });
 
+/**
+ * The classes on a pane's row, wherever it is drawn — the shelf lists in the sidebar and the
+ * session panel below them. `current` is the focused pane and `on-screen` marks the ones the grid
+ * is drawing right now; the rest read as dim. Tests pin this trio, so one function owns it rather
+ * than each surface spelling it out and drifting.
+ */
+export function paneRowClass(
+  paneId: string,
+  focusedPaneId: string | null,
+  onScreenPaneIds: ReadonlySet<string>,
+  ...extra: string[]
+): string {
+  return [
+    "session-row",
+    ...extra,
+    focusedPaneId === paneId ? "current" : "",
+    onScreenPaneIds.has(paneId) ? "on-screen" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** What a slot draws. `content` is built by App: the grid stays ignorant of viewers. */
 export type PaneContent =
   | { kind: "session"; session: TerminalSessionView }

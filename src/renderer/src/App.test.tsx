@@ -2348,6 +2348,23 @@ describe("세션 패널", () => {
     expect(within(panel()).getByRole("button", { name: "여기" })).toBeDisabled();
     // 범위를 걸 곳이 없으면 전체가 보인다.
     expect(rows()).toHaveLength(2);
+    // 저장된 선호까지 지우지는 않는다 — 홈에 다녀왔다고 토글이 리셋되면 안 된다.
+    expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}").sessionScope).toBe("here");
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() =>
+      expect(within(panel()).getByRole("button", { name: "여기" })).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(rows()).toEqual(["PowerShell 세션 열기"]);
+  });
+
+  it("전체를 보고 있으면 폴더 이름을 대지 않고 그냥 비었다고 말한다", async () => {
+    const harness = createApi({ sessions: [] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("region", { name: "세션 패널" });
+    expect(within(panel()).getByText("열린 세션이 없습니다")).toBeInTheDocument();
   });
 
   it("패널을 접어도 대기 수는 헤더에 남고, 다시 열면 접힘이 localStorage에서 되살아난다", async () => {

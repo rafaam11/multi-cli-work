@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, GitBranch, Wrench, X } from "lucide-react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { SessionNameInput } from "./SessionNameInput";
 import { AgentIcon } from "./brand-icons";
-import { DocumentPaneIcon, type DocumentPane } from "./pane-items";
+import { DocumentPaneIcon, paneRowClass, type DocumentPane } from "./pane-items";
 import { findAgent, statusLabels } from "./session-labels";
 import {
   matchesScope,
@@ -69,16 +69,8 @@ export function SessionPanel({
   const visible = effectiveScope === "all" ? items : items.filter((item) => matchesScope(item, scopeTarget));
   const waiting = sessionPanelWaitCount(items);
 
-  /** `current` is the focused pane, `on-screen` the ones the grid is drawing; the rest read as dim. */
   const rowClass = (paneId: string, ...extra: string[]) =>
-    [
-      "session-row",
-      ...extra,
-      focusedPaneId === paneId ? "current" : "",
-      onScreenPaneIds.has(paneId) ? "on-screen" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
+    paneRowClass(paneId, focusedPaneId, onScreenPaneIds, ...extra);
 
   /**
    * 소속은 눈에 보이는 별도 span과 `title`에만 넣는다. 접근성 이름에 넣으면 세션 행을 찾는 기존
@@ -199,8 +191,14 @@ export function SessionPanel({
       </div>
       {open ? (
         <ul className="session-tree session-panel-list" role="group" aria-label="세션 목록">
-          {visible.length === 0 && scopeTarget.kind !== "none" ? (
-            <li className="session-panel-empty">{scopeTarget.label}에 열린 세션이 없습니다</li>
+          {/* 범위를 좁혀 놓았을 때만 어디가 비었는지 말한다 — 전체를 보고 있는데 폴더 이름을
+              대면 그 폴더만 비었다는 뜻으로 읽힌다. */}
+          {visible.length === 0 ? (
+            <li className="session-panel-empty">
+              {effectiveScope === "here" && scopeTarget.kind !== "none"
+                ? `${scopeTarget.label}에 열린 세션이 없습니다`
+                : "열린 세션이 없습니다"}
+            </li>
           ) : null}
           {visible.map((item) => (item.kind === "session" ? renderSession(item) : renderDocument(item)))}
         </ul>

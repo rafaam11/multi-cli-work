@@ -40,7 +40,7 @@ import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { SessionPanel } from "./SessionPanel";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
-import { DocumentPaneIcon, type DocumentPane, type PaneRow } from "./pane-items";
+import { DocumentPaneIcon, paneRowClass, type DocumentPane, type PaneRow } from "./pane-items";
 import { findAgent, projectName } from "./session-labels";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import type { SessionPanelItem, SessionScope, SessionScopeTarget } from "./session-panel";
@@ -294,12 +294,14 @@ export function ProjectSidebar({
     position: DropPosition;
   } | null>(null);
   const flashRow = useRef<HTMLDivElement | null>(null);
+  // 네 값이 한 레코드에서 오므로 마운트 때 한 번만 읽는다.
+  const [savedSidebarState] = useState(readSidebarState);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(
-    () => new Set(readSidebarState().expandedWorkspaces),
+    () => new Set(savedSidebarState.expandedWorkspaces),
   );
-  const [openShelves, setOpenShelves] = useState<Set<ShelfKind>>(() => new Set(readSidebarState().openShelves));
-  const [sessionPanelOpen, setSessionPanelOpen] = useState(() => readSidebarState().sessionPanelOpen);
-  const [sessionScope, setSessionScope] = useState<SessionScope>(() => readSidebarState().sessionScope);
+  const [openShelves, setOpenShelves] = useState<Set<ShelfKind>>(() => new Set(savedSidebarState.openShelves));
+  const [sessionPanelOpen, setSessionPanelOpen] = useState(savedSidebarState.sessionPanelOpen);
+  const [sessionScope, setSessionScope] = useState<SessionScope>(savedSidebarState.sessionScope);
   // Every toggle writes the whole record, so none can drop another's share of it.
   const persist = (
     workspaces: Set<string>,
@@ -491,16 +493,8 @@ export function ProjectSidebar({
     },
   });
 
-  /** `current` is the focused pane, `on-screen` the ones the grid is drawing; the rest read as dim. */
   const rowClass = (paneId: string, ...extra: string[]) =>
-    [
-      "session-row",
-      ...extra,
-      focusedPaneId === paneId ? "current" : "",
-      onScreenPaneIds.has(paneId) ? "on-screen" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
+    paneRowClass(paneId, focusedPaneId, onScreenPaneIds, ...extra);
 
   /**
    * A pane inside an expanded shelf row. It is the same row as in the tree, but it answers to the
