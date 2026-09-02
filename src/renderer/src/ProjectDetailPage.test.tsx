@@ -1,7 +1,9 @@
 import type { AgentView } from "@shared/agent-types";
 import type { GitStatusResult, MultiCliWorkApi, TerminalSessionView } from "@shared/api-types";
+import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectDetailPage } from "./ProjectDetailPage";
 
@@ -73,6 +75,8 @@ function installApi(options?: { gitStatus?: GitStatusResult; update?: ReturnType
   const update = options?.update ?? vi.fn().mockImplementation(async (id: string, patch) => ({ ...atlas, ...patch }));
   const api = {
     projects: { gitStatus, update },
+    // Worktree-scoped renders read git state through the worktree channel instead.
+    worktrees: { gitStatus },
   } as unknown as MultiCliWorkApi;
   window.multiCliWork = api;
   return { gitStatus, update };
@@ -94,6 +98,15 @@ function baseProps() {
     onFanOut: vi.fn(),
     onShowDiff: vi.fn(),
     onProjectSaved: vi.fn(),
+    worktrees: [] as SharedWorktree[],
+    workspaceViews: [] as GitWorkspaceView[],
+    activeReviews: [] as ActivePullRequestReview[],
+    worktreeSessionCounts: {} as Record<string, number>,
+    worktreeWarning: null as string | null,
+    projectMissing: false,
+    onSelectWorktree: vi.fn(),
+    onCreateWorktree: vi.fn(),
+    onWorktreeContextMenu: vi.fn(),
   };
 }
 
@@ -218,5 +231,139 @@ describe("ProjectDetailPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("registry is read-only");
     expect(memoField).toHaveValue("will fail");
+  });
+});
+
+const featureWorktree: SharedWorktree = {
+  id: "worktree-1",
+  projectId: atlas.id,
+  path: "C:\\work\\atlas-wt\\feature-x",
+  branch: "feature-x",
+  createdAt: "2026-07-13T00:00:00.000Z",
+  updatedAt: "2026-07-13T00:00:00.000Z",
+};
+
+const featureView: GitWorkspaceView = {
+  workspaceKey: "worktree:worktree-1",
+  kind: "worktree",
+  projectId: atlas.id,
+  worktreeId: featureWorktree.id,
+  path: featureWorktree.path,
+  branch: "feature-x",
+  head: "abc1234",
+  changedFileCount: 2,
+  availability: "available",
+  lockedReason: null,
+  prunableReason: null,
+};
+
+function makeReview(overrides: Partial<ActivePullRequestReview>): ActivePullRequestReview {
+  return {
+    id: "review-1",
+    projectId: atlas.id,
+    remoteName: "origin",
+    pullRequestNumber: 42,
+    headSha: "abc1234",
+    worktreeId: featureWorktree.id,
+    sessionId: "session-review",
+    agent: "claude",
+    promptDelivered: true,
+    startedAt: "2026-07-13T00:00:00.000Z",
+    updatedAt: "2026-07-13T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("워크트리 카드", () => {
+  it("워크트리를 브랜치·변경 수·세션 수와 함께 세우고, 열기가 onSelectWorktree를 부른다", () => {
+    installApi();
+    const onSelectWorktree = vi.fn();
+    render(
+      <ProjectDetailPage
+        {...baseProps()}
+        worktrees={[featureWorktree]}
+        workspaceViews={[featureView]}
+        worktreeSessionCounts={{ [featureWorktree.id]: 1 }}
+        onSelectWorktree={onSelectWorktree}
+      />,
+    );
+
+    const card = screen.getByRole("region", { name: "워크트리" });
+    const row = within(card).getByRole("button", { name: "feature-x 워크트리 열기" });
+    expect(row).toHaveTextContent("변경 2 · 세션 1");
+    fireEvent.click(row);
+    expect(onSelectWorktree).toHaveBeenCalledWith(featureWorktree);
+  });
+
+  it("보고 있는 워크트리는 '보는 중'이고 열기가 비활성이지만, 우클릭 메뉴는 열린다", () => {
+    installApi();
+    const onWorktreeContextMenu = vi.fn();
+    render(
+      <ProjectDetailPage
+        {...baseProps()}
+        worktree={featureWorktree}
+        worktrees={[featureWorktree]}
+        workspaceViews={[featureView]}
+        onWorktreeContextMenu={onWorktreeContextMenu}
+      />,
+    );
+
+    const card = screen.getByRole("region", { name: "워크트리" });
+    const button = within(card).getByRole("button", { name: "feature-x (보는 중)" });
+    expect(button).toBeDisabled();
+    fireEvent.contextMenu(button);
+    expect(onWorktreeContextMenu).toHaveBeenCalledWith(featureWorktree, expect.anything());
+  });
+
+  it("locked·missing·PR 리뷰 표시를 달고, PR 리뷰 worktree는 뒤로 간다", () => {
+    installApi();
+    const review: SharedWorktree = { ...featureWorktree, id: "worktree-pr", branch: "pr-42", path: "C:\\work\\atlas-wt\\pr-42" };
+    render(
+      <ProjectDetailPage
+        {...baseProps()}
+        worktrees={[review, featureWorktree]}
+        workspaceViews={[
+          featureView,
+          {
+            ...featureView,
+            workspaceKey: "worktree:worktree-pr",
+            worktreeId: review.id,
+            branch: "pr-42",
+            lockedReason: "review",
+            availability: "missing",
+          },
+        ]}
+        activeReviews={[makeReview({ worktreeId: review.id, pullRequestNumber: 42 })]}
+      />,
+    );
+
+    const card = screen.getByRole("region", { name: "워크트리" });
+    const names = within(card)
+      .getAllByRole("button", { name: /워크트리 열기/ })
+      .map((button) => button.textContent);
+    expect(names[0]).toContain("feature-x");
+    expect(names[1]).toContain("PR #42 · 임시");
+    expect(names[1]).toContain("locked");
+    expect(names[1]).toContain("missing");
+  });
+
+  it("워크트리가 없으면 안내와 만들기 버튼만 있고, 경고가 있으면 카드에 뜬다", () => {
+    installApi();
+    const onCreateWorktree = vi.fn();
+    render(<ProjectDetailPage {...baseProps()} onCreateWorktree={onCreateWorktree} worktreeWarning="stale worktree 2개" />);
+
+    const card = screen.getByRole("region", { name: "워크트리" });
+    expect(within(card).getByText("아직 워크트리가 없습니다")).toBeInTheDocument();
+    expect(within(card).getByRole("status")).toHaveTextContent("stale worktree 2개");
+    fireEvent.click(within(card).getByRole("button", { name: "워크트리 만들기" }));
+    expect(onCreateWorktree).toHaveBeenCalledOnce();
+  });
+
+  it("폴더 루트를 찾을 수 없으면 워크트리 만들기를 비활성화한다", () => {
+    installApi();
+    render(<ProjectDetailPage {...baseProps()} projectMissing />);
+
+    const card = screen.getByRole("region", { name: "워크트리" });
+    expect(within(card).getByRole("button", { name: "워크트리 만들기" })).toBeDisabled();
   });
 });

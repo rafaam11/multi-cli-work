@@ -1647,12 +1647,30 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
+/*
+ * Column, not a plain scroller: the tree takes the space that is left and scrolls inside it, while
+ * the session panel keeps its own height at the foot. Two scrollers, so a long tree never pushes
+ * "what is waiting for me" off the bottom.
+ */
 .project-navigation {
+  display: flex;
   min-height: 0;
-  overflow: auto;
+  flex-direction: column;
+  overflow: hidden;
   padding: 8px;
   scrollbar-color: var(--line-strong) transparent;
   scrollbar-width: thin;
+}
+
+/* Headings, controls and the panel keep their height; only the tree gives way. */
+.project-navigation > * {
+  flex: 0 0 auto;
+}
+
+.project-navigation > .project-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .section-heading {
@@ -2285,9 +2303,10 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * A pane's row in the tree: a session, or a document opened from that folder. Status stays on the
- * dot and label; neutral hover and selection styles carry interaction state. `current` is focused
- * and `on-screen` marks panes the grid is drawing right now.
+ * A pane's row: a session, or a document opened from that folder. This list class is shared by the
+ * 작업공간/숨김 shelf panes and the session panel, so the same row styling — status on the dot and
+ * label, neutral hover and selection for interaction state, `current` for focus, `on-screen` for
+ * panes the grid is drawing right now — reads identically in both places.
  */
 .session-tree {
   position: relative;
@@ -2304,8 +2323,105 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   content: "";
 }
 
-.worktree-sessions {
-  padding-left: 14px;
+/*
+ * 세션 패널. 트리가 장소를 말하고 이 패널이 상태를 말한다 — 그래서 폴더 아래가 아니라 트리 밑에
+ * 평면으로 서고, 트리가 아무리 길어져도 자기 자리를 지킨다.
+ */
+.session-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.session-panel-heading {
+  gap: 6px;
+}
+
+.session-panel-heading > span:first-of-type {
+  flex: 0 0 auto;
+}
+
+/* 접혀 있어도 남는 배지라, 색은 승인 대기 점과 같은 것을 쓴다. */
+.session-panel-wait {
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #111;
+  background: var(--amber);
+  font-size: var(--type-caption-size);
+}
+
+.session-panel-scope {
+  display: inline-flex;
+  margin-left: auto;
+  gap: 2px;
+}
+
+.session-panel-scope button {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: var(--type-caption-size);
+  cursor: pointer;
+}
+
+.session-panel-scope button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.session-panel-scope button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* 스플리터 대신 상한과 자체 스크롤. 사이드바를 반으로 가르지 않으면서 대기 줄을 다 보여 준다. */
+.session-panel-list {
+  max-height: min(40vh, 340px);
+  margin: 1px 0 2px;
+  padding-left: 0;
+  overflow: auto;
+}
+
+/* 폴더 아래 들여쓰기 선은 트리의 것이다 — 평면 목록에는 걸 곳이 없다. */
+.session-panel-list::before {
+  display: none;
+}
+
+.session-panel-empty {
+  padding: 6px 12px;
+  color: var(--quiet);
+  font-size: var(--type-secondary-size);
+}
+
+.session-row-place {
+  flex: 0 0 auto;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+  white-space: nowrap;
+}
+
+.session-row-place::after {
+  margin: 0 4px;
+  content: "·";
+}
+
+.session-row-branch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+  white-space: nowrap;
+}
+
+.session-row-branch::after {
+  margin: 0 4px;
+  content: "·";
 }
 
 /* Flex, not the grid this row used to be: the unread dot is optional, and a fixed column count made
@@ -2435,17 +2551,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--amber);
 }
 
-/* Maintenance sessions belong to no folder, so they get their own group at the foot of the tree. */
-.tools-group {
-  margin-top: 10px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
-}
-
-.tools-group .session-tree {
-  margin-left: 14px;
-}
-
 .session-rename {
   padding: 2px 0 2px 6px;
 }
@@ -2483,12 +2588,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .unread-dot.unread-approval {
   background: var(--amber);
-}
-
-.worktree-tree {
-  margin: 0;
-  padding: 0 0 0 22px;
-  list-style: none;
 }
 
 .worktree-row {
@@ -2578,44 +2677,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 @keyframes pr-line-flash { from { background-color: color-mix(in srgb, #d29922 45%, transparent); } }
 @media (max-width: 760px) { .pr-detail-header { flex-direction: column; }.pr-summary-grid { grid-template-columns: repeat(3, 1fr); }.pr-review-actions { flex-wrap: wrap; } }
 
-.worktree-row.two-line {
-  padding: 2px 4px;
-}
-
-.workspace-select {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-}
-
 .workspace-copy {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
-}
-
-.workspace-meta {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--type-caption-size);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-worktree-warning {
-  display: flex;
-  gap: 5px;
-  padding: 5px 8px;
-  color: var(--amber);
-  font-size: var(--type-caption-size);
 }
 
 .worktree-create-dialog form,
@@ -2634,19 +2700,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .worktree-row:hover {
   background: var(--surface-hover);
 }
-
-.worktree-row.selected {
-  background: var(--surface-raised);
-  color: var(--text);
-}
-
-.worktree-branch {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 
 /* Tab row, then the grid taking whatever height is left — the layout row moved into the header. */
 .workspace-panes {
@@ -5069,6 +5122,78 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin: 0;
   color: var(--quiet);
   font-size: var(--type-secondary-size);
+}
+
+.detail-worktrees {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The row carries the context menu, so it has to stretch as wide as the button it wraps. */
+.detail-worktree-row {
+  display: flex;
+}
+
+.detail-worktree {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text);
+  background: none;
+  font-size: var(--type-ui-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.detail-worktree:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.detail-worktree.current {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+  cursor: default;
+}
+
+.detail-worktree-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: var(--type-secondary-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pushed to the far edge so the counts line up down the list however long a branch name runs. */
+.detail-worktree-meta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+}
+
+.detail-worktree-note {
+  flex: 0 0 auto;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+}
+
+.detail-worktree-warning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 8px;
+  color: var(--amber);
+  font-size: var(--type-caption-size);
 }
 
 .detail-empty-sessions {
