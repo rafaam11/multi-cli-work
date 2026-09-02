@@ -2063,7 +2063,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   min-width: 0;
   align-items: center;
   gap: 8px;
-  padding: 5px 7px 5px 0;
+  padding: 5px 7px 5px 8px;
   border: 0;
   color: var(--muted);
   background: transparent;

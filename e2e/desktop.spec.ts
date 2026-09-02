@@ -251,11 +251,19 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // A folder is a leaf now, so its select button is the row's only child and must consume the
     // whole row. If the old toggle/name/signal parent grid survives, this button is trapped in the
     // former 26px toggle column and the folder name disappears even though it stays accessible.
-    const folderRowWidths = await page.locator(".project-row").first().evaluate((row) => ({
-      row: row.getBoundingClientRect().width,
-      select: row.querySelector<HTMLElement>(".project-select")?.getBoundingClientRect().width ?? 0,
-    }));
-    expect(folderRowWidths.select).toBeGreaterThanOrEqual(folderRowWidths.row - 1);
+    const folderRowLayout = await page.locator(".project-row").first().evaluate((row) => {
+      const rowBounds = row.getBoundingClientRect();
+      const selectBounds = row.querySelector<HTMLElement>(".project-select")?.getBoundingClientRect();
+      const iconBounds = row.querySelector<SVGElement>(".project-select > svg")?.getBoundingClientRect();
+      return {
+        rowWidth: rowBounds.width,
+        selectWidth: selectBounds?.width ?? 0,
+        iconInset: (iconBounds?.left ?? rowBounds.left) - rowBounds.left,
+      };
+    });
+    expect(folderRowLayout.selectWidth).toBeGreaterThanOrEqual(folderRowLayout.rowWidth - 1);
+    // The 4px activity rail belongs at the row's edge; the folder icon must not sit on top of it.
+    expect(folderRowLayout.iconInset).toBeGreaterThanOrEqual(8);
     await expect(page.locator(".project-row .project-name").first()).toBeVisible();
 
     await openFolder();
