@@ -1972,7 +1972,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   --folder-accent: var(--line-strong);
 
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 30px;
   border-radius: 5px;
   box-shadow: inset 4px 0 0 var(--folder-accent);

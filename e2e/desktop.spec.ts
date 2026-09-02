@@ -247,6 +247,17 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
   test("@smoke runs a real native PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
+
+    // A folder is a leaf now, so its select button is the row's only child and must consume the
+    // whole row. If the old toggle/name/signal parent grid survives, this button is trapped in the
+    // former 26px toggle column and the folder name disappears even though it stays accessible.
+    const folderRowWidths = await page.locator(".project-row").first().evaluate((row) => ({
+      row: row.getBoundingClientRect().width,
+      select: row.querySelector<HTMLElement>(".project-select")?.getBoundingClientRect().width ?? 0,
+    }));
+    expect(folderRowWidths.select).toBeGreaterThanOrEqual(folderRowWidths.row - 1);
+    await expect(page.locator(".project-row .project-name").first()).toBeVisible();
+
     await openFolder();
 
     // A folder opened before it has a single session: the start page stands in for the grid, and the
