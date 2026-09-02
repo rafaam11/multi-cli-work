@@ -1,10 +1,10 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import { ChevronDown, ChevronRight, GitBranch, Wrench, X } from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff, GitBranch, Wrench } from "lucide-react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { SessionNameInput } from "./SessionNameInput";
 import { AgentIcon } from "./brand-icons";
-import { DocumentPaneIcon, paneRowClass, type DocumentPane } from "./pane-items";
+import { DocumentPaneIcon, paneRowClass } from "./pane-items";
 import { findAgent, statusLabels } from "./session-labels";
 import {
   matchesScope,
@@ -15,20 +15,22 @@ import {
 } from "./session-panel";
 
 export interface SessionPanelProps {
-  /** App이 정렬까지 끝낸 전체 목록. 범위 필터는 여기서 건다. */
+  /** 작업공간 선반에 속한 패인만, 선반 슬롯 순서로 받는다. 범위 필터는 여기서 건다. */
   items: readonly SessionPanelItem[];
   scopeTarget: SessionScopeTarget;
   scope: SessionScope;
   onChangeScope(scope: SessionScope): void;
   open: boolean;
   onToggleOpen(): void;
+  selected: boolean;
+  dropTarget: boolean;
+  onSelectWorkspace(): void;
+  onSelectPane(paneId: string): void;
+  onMovePaneToHidden(paneId: string): void;
   agents: readonly AgentView[];
   focusedPaneId: string | null;
   onScreenPaneIds: Set<string>;
   renamingSessionId: string | null;
-  onSelectSession(session: TerminalSessionView): void;
-  onSelectDocument(pane: DocumentPane): void;
-  onCloseDocument(pane: DocumentPane): void;
   onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
   onRenameSession(sessionId: string, name: string | null): void;
   onCancelRename(): void;
@@ -38,12 +40,22 @@ export interface SessionPanelProps {
     onDragStart(event: ReactDragEvent<HTMLElement>): void;
     onDragEnd(): void;
   };
+  paneDropClass(paneId: string): string;
+  paneDropProps(paneId: string): {
+    onDragOver(event: ReactDragEvent<HTMLElement>): void;
+    onDragLeave(event: ReactDragEvent<HTMLElement>): void;
+    onDrop(event: ReactDragEvent<HTMLElement>): void;
+  };
+  headingDropProps: {
+    onDragOver(event: ReactDragEvent<HTMLElement>): void;
+    onDragLeave(event: ReactDragEvent<HTMLElement>): void;
+    onDrop(event: ReactDragEvent<HTMLElement>): void;
+  };
 }
 
 /**
- * 사이드바 하단의 세션 패널. 트리가 "어디에 뭐가 있나"를 답한다면 여기는 "지금 무엇이 나를
- * 기다리나"를 답한다 — 승인 대기부터 위로, 폴더를 가리지 않고. 행의 마크업과 접근성 이름은
- * 트리에 있을 때의 세션·문서 행과 같다(설계 문서 참고).
+ * 사이드바 상단에서 작업공간 선반을 대신하는 세션 패널. 슬롯 순서를 보존하면서 현재 상태와
+ * 대기 수를 함께 보여 주고, 행 선택·숨김·재정렬은 기존 작업공간과 같은 경로를 사용한다.
  */
 export function SessionPanel({
   items,
@@ -52,17 +64,22 @@ export function SessionPanel({
   onChangeScope,
   open,
   onToggleOpen,
+  selected,
+  dropTarget,
+  onSelectWorkspace,
+  onSelectPane,
+  onMovePaneToHidden,
   agents,
   focusedPaneId,
   onScreenPaneIds,
   renamingSessionId,
-  onSelectSession,
-  onSelectDocument,
-  onCloseDocument,
   onSessionContextMenu,
   onRenameSession,
   onCancelRename,
   paneDragProps,
+  paneDropClass,
+  paneDropProps,
+  headingDropProps,
 }: SessionPanelProps) {
   // 범위를 걸 곳이 없으면 저장된 선호가 "여기"여도 전체를 보인다 — 홈에 다녀왔다고 토글이 리셋되면 안 된다.
   const effectiveScope: SessionScope = scopeTarget.kind === "none" ? "all" : scope;
@@ -104,24 +121,38 @@ export function SessionPanel({
     }
     return (
       <li key={item.id}>
-        <button
-          className={rowClass(item.id, `status-${item.status}`)}
-          type="button"
-          onClick={() => onSelectSession(item.session)}
-          onContextMenu={(event) => onSessionContextMenu(item.session, event)}
-          aria-label={`${item.label} 세션 열기${item.attention ? " (읽지 않음)" : ""}`}
-          title={titleOf(item)}
+        <div
+          className={rowClass(item.id, "file-tab-row", `status-${item.status}`, paneDropClass(item.id))}
           {...paneDragProps(item.id)}
+          {...paneDropProps(item.id)}
         >
-          <span className={`status-dot status-${item.status}`} aria-hidden="true" />
-          {item.tool ? <Wrench size={14} /> : <AgentIcon agent={findAgent(agents, item.agent)} size={14} />}
-          {placeOf(item)}
-          <span className="session-name">{item.label}</span>
-          {item.attention ? (
-            <span className={`unread-dot unread-${item.attention}`} title="응답 대기" aria-hidden="true" />
-          ) : null}
-          <span className="session-status">{statusLabels[item.status]}</span>
-        </button>
+          <button
+            className="file-tab-open"
+            type="button"
+            onClick={() => onSelectPane(item.id)}
+            onContextMenu={(event) => onSessionContextMenu(item.session, event)}
+            aria-label={`${item.label} 세션 열기${item.attention ? " (읽지 않음)" : ""}`}
+            title={titleOf(item)}
+          >
+            <span className={`status-dot status-${item.status}`} aria-hidden="true" />
+            {item.tool ? <Wrench size={14} /> : <AgentIcon agent={findAgent(agents, item.agent)} size={14} />}
+            {placeOf(item)}
+            <span className="session-name">{item.label}</span>
+            {item.attention ? (
+              <span className={`unread-dot unread-${item.attention}`} title="응답 대기" aria-hidden="true" />
+            ) : null}
+            <span className="session-status">{statusLabels[item.status]}</span>
+          </button>
+          <button
+            type="button"
+            className="file-tab-close"
+            onClick={() => onMovePaneToHidden(item.id)}
+            aria-label={`${item.label} 작업공간에서 숨기기`}
+            title="작업공간에서 숨기기 (세션은 계속 실행됩니다)"
+          >
+            <EyeOff size={12} />
+          </button>
+        </div>
       </li>
     );
   };
@@ -133,11 +164,15 @@ export function SessionPanel({
    */
   const renderDocument = (item: Extract<SessionPanelItem, { kind: "document" }>) => (
     <li key={item.id}>
-      <div className={rowClass(item.id, "file-tab-row")} {...paneDragProps(item.id)}>
+      <div
+        className={rowClass(item.id, "file-tab-row", paneDropClass(item.id))}
+        {...paneDragProps(item.id)}
+        {...paneDropProps(item.id)}
+      >
         <button
           type="button"
           className="file-tab-open"
-          onClick={() => onSelectDocument(item.pane)}
+          onClick={() => onSelectPane(item.id)}
           aria-label={`${item.label} 문서 열기${item.dirty ? " (저장 안 됨)" : ""}`}
           title={titleOf(item)}
         >
@@ -149,11 +184,11 @@ export function SessionPanel({
         <button
           type="button"
           className="file-tab-close"
-          onClick={() => onCloseDocument(item.pane)}
-          aria-label={`${item.label} 닫기`}
-          title="닫기"
+          onClick={() => onMovePaneToHidden(item.id)}
+          aria-label={`${item.label} 작업공간에서 숨기기`}
+          title="작업공간에서 숨기기 (문서는 계속 열려 있습니다)"
         >
-          <X size={12} />
+          <EyeOff size={12} />
         </button>
       </div>
     </li>
@@ -161,7 +196,15 @@ export function SessionPanel({
 
   return (
     <section className="session-panel" aria-label="세션 패널">
-      <div className="section-heading session-panel-heading">
+      <div
+        className={[
+          "section-heading",
+          "session-panel-heading",
+          selected ? "selected" : "",
+          dropTarget ? "drop-target" : "",
+        ].filter(Boolean).join(" ")}
+        {...headingDropProps}
+      >
         <button
           className="tree-toggle"
           type="button"
@@ -171,7 +214,14 @@ export function SessionPanel({
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
-        <span>세션</span>
+        <button
+          className="session-panel-title"
+          type="button"
+          onClick={onSelectWorkspace}
+          aria-label={`세션 작업공간 열기 (패인 ${items.length}개)`}
+        >
+          세션
+        </button>
         {/* 접혀 있어도 보인다 — 그래야 접어 둔 채로도 무엇이 기다리는지 알 수 있다. */}
         {waiting > 0 ? <span className="session-panel-wait">대기 {waiting}</span> : null}
         <div className="session-panel-scope" role="group" aria-label="세션 범위">

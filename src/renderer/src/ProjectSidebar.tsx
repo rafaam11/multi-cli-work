@@ -37,7 +37,7 @@ import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { SessionPanel } from "./SessionPanel";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
-import { DocumentPaneIcon, paneRowClass, type DocumentPane, type PaneRow } from "./pane-items";
+import { DocumentPaneIcon, paneRowClass, type PaneRow } from "./pane-items";
 import { findAgent, projectName } from "./session-labels";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import type { SessionPanelItem, SessionScope, SessionScopeTarget } from "./session-panel";
@@ -86,9 +86,6 @@ interface ProjectSidebarProps {
   focusedPaneId: string | null;
   /** Panes the grid is drawing right now; the rest are one click from coming back. */
   onScreenPaneIds: Set<string>;
-  onSelectSession(session: TerminalSessionView): void;
-  onSelectDocument(pane: DocumentPane): void;
-  onCloseDocument(pane: DocumentPane): void;
   onSessionContextMenu(session: TerminalSessionView, event: ReactMouseEvent): void;
   /** Set only while the rename started here — the pane header runs its own input off the same state. */
   renamingSessionId: string | null;
@@ -222,9 +219,6 @@ export function ProjectSidebar({
   sessionScopeTarget,
   focusedPaneId,
   onScreenPaneIds,
-  onSelectSession,
-  onSelectDocument,
-  onCloseDocument,
   onSessionContextMenu,
   renamingSessionId,
   onRenameSession,
@@ -833,9 +827,7 @@ export function ProjectSidebar({
         </button>
       </div>
 
-      {/* The two shelves sit above the tree because they are screens, not folders: 작업공간 gathers
-          every pane the app holds no matter which folder it came from, and 숨김 is the exception
-          list that keeps that screen usable. Neither belongs to a group in the tree below. */}
+      {/* 세션 패널은 작업공간 선반의 내용과 동작을 그대로 맡고, 숨김만 별도 예외 선반으로 남는다. */}
       {collapsed ? (
         <ul className="rail-workspaces" role="list" aria-label="작업공간">
           {SHELF_KINDS.map((kind) => (
@@ -861,7 +853,44 @@ export function ProjectSidebar({
         </ul>
       ) : (
         <div className="workspace-shelf" aria-label="작업공간">
-          {SHELF_KINDS.map((kind) => {
+          <SessionPanel
+            items={shelfPaneRows.active
+              .map((row) => sessionPanelItems.find((item) => item.id === row.id))
+              .filter((item): item is SessionPanelItem => item !== undefined)}
+            scopeTarget={sessionScopeTarget}
+            scope={sessionScope}
+            onChangeScope={(next) => {
+              setSessionScope(next);
+              persist(expandedWorkspaces, openShelves, sessionPanelOpen, next);
+            }}
+            open={sessionPanelOpen}
+            onToggleOpen={() => {
+              const next = !sessionPanelOpen;
+              setSessionPanelOpen(next);
+              persist(expandedWorkspaces, openShelves, next, sessionScope);
+            }}
+            selected={selectedShelf === "active"}
+            dropTarget={shelfDropKind === "active"}
+            onSelectWorkspace={() => onSelectShelf("active")}
+            onSelectPane={(paneId) => onSelectShelfPane("active", paneId)}
+            onMovePaneToHidden={(paneId) => onMovePaneToOtherShelf("active", paneId)}
+            agents={agents}
+            focusedPaneId={focusedPaneId}
+            onScreenPaneIds={onScreenPaneIds}
+            renamingSessionId={renamingSessionId}
+            onSessionContextMenu={onSessionContextMenu}
+            onRenameSession={onRenameSession}
+            onCancelRename={onCancelRename}
+            paneDragProps={paneDragProps}
+            paneDropClass={(paneId) =>
+              shelfPaneDrop?.kind === "active" && shelfPaneDrop.paneId === paneId
+                ? `pane-drop-${shelfPaneDrop.position}`
+                : ""
+            }
+            paneDropProps={(paneId) => shelfPaneDropProps("active", paneId)}
+            headingDropProps={shelfDropProps("active")}
+          />
+          {(["hidden"] as const).map((kind) => {
             const rows = shelfPaneRows[kind];
             const open = openShelves.has(kind) && rows.length > 0;
             const name = SHELF_TEXT[kind].name;
@@ -1000,34 +1029,6 @@ export function ProjectSidebar({
           </ul>
         )}
 
-        {/* 트리가 "어디에 뭐가 있나"를 답하고 나면, 그 아래가 "지금 무엇이 나를 기다리나"다. 도구
-            세션도 여기 서므로 폴더 없는 세션만의 그룹은 더 이상 필요하지 않다. */}
-        <SessionPanel
-          items={sessionPanelItems}
-          scopeTarget={sessionScopeTarget}
-          scope={sessionScope}
-          onChangeScope={(next) => {
-            setSessionScope(next);
-            persist(expandedWorkspaces, openShelves, sessionPanelOpen, next);
-          }}
-          open={sessionPanelOpen}
-          onToggleOpen={() => {
-            const next = !sessionPanelOpen;
-            setSessionPanelOpen(next);
-            persist(expandedWorkspaces, openShelves, next, sessionScope);
-          }}
-          agents={agents}
-          focusedPaneId={focusedPaneId}
-          onScreenPaneIds={onScreenPaneIds}
-          renamingSessionId={renamingSessionId}
-          onSelectSession={onSelectSession}
-          onSelectDocument={onSelectDocument}
-          onCloseDocument={onCloseDocument}
-          onSessionContextMenu={onSessionContextMenu}
-          onRenameSession={onRenameSession}
-          onCancelRename={onCancelRename}
-          paneDragProps={paneDragProps}
-        />
       </nav>
       )}
 

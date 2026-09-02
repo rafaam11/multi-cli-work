@@ -601,12 +601,15 @@ body.sidebar-resizing {
 }
 
 /* A shelf row is an insertion target: the pointer's upper/lower half chooses the matching edge. */
-.workspace-shelf-panes .session-row {
+.workspace-shelf-panes .session-row,
+.session-panel-list .session-row {
   position: relative;
 }
 
 .workspace-shelf-panes .session-row.pane-drop-before::after,
-.workspace-shelf-panes .session-row.pane-drop-after::after {
+.workspace-shelf-panes .session-row.pane-drop-after::after,
+.session-panel-list .session-row.pane-drop-before::after,
+.session-panel-list .session-row.pane-drop-after::after {
   position: absolute;
   right: 0;
   left: 0;
@@ -617,11 +620,13 @@ body.sidebar-resizing {
   pointer-events: none;
 }
 
-.workspace-shelf-panes .session-row.pane-drop-before::after {
+.workspace-shelf-panes .session-row.pane-drop-before::after,
+.session-panel-list .session-row.pane-drop-before::after {
   top: -1px;
 }
 
-.workspace-shelf-panes .session-row.pane-drop-after::after {
+.workspace-shelf-panes .session-row.pane-drop-after::after,
+.session-panel-list .session-row.pane-drop-after::after {
   bottom: -1px;
 }
 
@@ -2323,23 +2328,44 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   content: "";
 }
 
-/*
- * 세션 패널. 트리가 장소를 말하고 이 패널이 상태를 말한다 — 그래서 폴더 아래가 아니라 트리 밑에
- * 평면으로 서고, 트리가 아무리 길어져도 자기 자리를 지킨다.
- */
+/* 작업공간 선반을 대신하는 세션 패널. 프로젝트 트리 위에서 상태와 선반 동작을 한 줄로 묶는다. */
 .session-panel {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  border-top: 1px solid var(--line);
+  border-top: 0;
 }
 
 .session-panel-heading {
   gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
 }
 
-.session-panel-heading > span:first-of-type {
+.session-panel-heading.selected {
+  color: var(--text);
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.session-panel-heading.drop-target {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 16%, transparent);
+}
+
+.session-panel-title {
   flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.session-panel-title:hover {
+  color: var(--text);
 }
 
 /* 접혀 있어도 남는 배지라, 색은 승인 대기 점과 같은 것을 쓴다. */

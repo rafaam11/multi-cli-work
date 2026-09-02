@@ -2837,9 +2837,6 @@ export function App() {
         sessionScopeTarget={sessionScopeTarget}
         focusedPaneId={activeView === "terminal" ? focusedPaneId : null}
         onScreenPaneIds={onScreenPaneIds}
-        onSelectSession={selectSession}
-        onSelectDocument={revealDocument}
-        onCloseDocument={closePane}
         onSessionContextMenu={(session, event) => {
           event.preventDefault();
           setSessionMenu({
