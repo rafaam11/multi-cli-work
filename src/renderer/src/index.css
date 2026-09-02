@@ -2303,9 +2303,10 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * A pane's row in the tree: a session, or a document opened from that folder. Status stays on the
- * dot and label; neutral hover and selection styles carry interaction state. `current` is focused
- * and `on-screen` marks panes the grid is drawing right now.
+ * A pane's row: a session, or a document opened from that folder. This list class is shared by the
+ * 작업공간/숨김 shelf panes and the session panel, so the same row styling — status on the dot and
+ * label, neutral hover and selection for interaction state, `current` for focus, `on-screen` for
+ * panes the grid is drawing right now — reads identically in both places.
  */
 .session-tree {
   position: relative;

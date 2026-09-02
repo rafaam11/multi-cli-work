@@ -1792,6 +1792,32 @@ describe("work project categories", () => {
       )!;
       expect(within(group as HTMLElement).getByRole("button", { name: "VSP_FastAPI 폴더 선택" })).toBeInTheDocument();
     });
+
+    it("셸 연결 업무 프로젝트를 열면 세션 패널의 '여기'도 셸 title로 범위를 댄다", async () => {
+      const harness = createApi({
+        projects: [atlas],
+        sessions: [],
+        workProjects: [
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발", {
+            members: [{ projectId: atlas.id, role: "repo" }],
+          }),
+        ],
+        workspace: workspaceSnapshot([VSP], [
+          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+        ]),
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      fireEvent.click(await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" }));
+
+      const region = await screen.findByRole("region", { name: "세션 패널" });
+      // 폴더명(O_SMCH/24_SMCH_VSP-1)이 아니라 사이드바와 같은 셸 title로 범위를 댄다.
+      await waitFor(() =>
+        expect(within(region).getByRole("button", { name: "여기" })).toHaveAttribute("title", "가상수술계획"),
+      );
+    });
   });
 
   it("gives each 구분 its own accent class, and the rail covers the folders inside", async () => {

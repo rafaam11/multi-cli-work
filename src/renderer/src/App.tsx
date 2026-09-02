@@ -463,6 +463,23 @@ export function App() {
     [snapshot],
   );
 
+  /** The selected folder's worktrees — 상세 page's 워크트리 카드 and its `sortedWorktrees` derive from this. */
+  const selectedProjectWorktrees = useMemo(
+    () => worktrees.filter((candidate) => candidate.projectId === selectedProject?.id),
+    [worktrees, selectedProject?.id],
+  );
+  /** worktreeId → session count, for the same card. */
+  const worktreeSessionCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        worktrees.map((candidate) => [
+          candidate.id,
+          sessions.filter((session) => session.worktreeId === candidate.id).length,
+        ]),
+      ),
+    [worktrees, sessions],
+  );
+
   /**
    * Every open document as a pane: the file tabs and the diffs, graphs and pull requests opened from
    * the right sidebar. A slot holds one of these exactly as it holds a session.
@@ -2477,7 +2494,7 @@ export function App() {
         ? {
             kind: "folders",
             projectIds: selectedWorkProjectMembers.map(({ project }) => project.id),
-            label: selectedWorkProject.name,
+            label: workspaceShells[selectedWorkProject.id]?.title ?? selectedWorkProject.name,
           }
         : { kind: "none" };
     }
@@ -2486,7 +2503,15 @@ export function App() {
     if (selectedWorktree) return { kind: "worktree", worktreeId: selectedWorktree.id, label: selectedWorktree.branch };
     if (selectedProject) return { kind: "folders", projectIds: [selectedProject.id], label: projectName(selectedProject) };
     return { kind: "none" };
-  }, [activeView, shelfKind, selectedWorktree, selectedProject, selectedWorkProject, selectedWorkProjectMembers]);
+  }, [
+    activeView,
+    shelfKind,
+    selectedWorktree,
+    selectedProject,
+    selectedWorkProject,
+    selectedWorkProjectMembers,
+    workspaceShells,
+  ]);
 
   /** 세션 패널이 그리는 줄. shelfPaneRows와 같은 이유로 여기서 만든다. */
   const sessionPanelItems = useMemo(
@@ -3090,16 +3115,12 @@ export function App() {
               agents={agents}
               vscodeAvailable={availability.vscode}
               pendingAction={pendingAction}
-              worktrees={worktrees.filter((candidate) => candidate.projectId === selectedProject.id)}
+              worktrees={selectedProjectWorktrees}
               workspaceViews={workspaceViews}
               activeReviews={activeReviews}
-              worktreeSessionCounts={Object.fromEntries(
-                worktrees.map((candidate) => [
-                  candidate.id,
-                  sessions.filter((session) => session.worktreeId === candidate.id).length,
-                ]),
-              )}
+              worktreeSessionCounts={worktreeSessionCounts}
               worktreeWarning={worktreeWarnings[selectedProject.id] ?? null}
+              projectMissing={selectedProjectMissing}
               onSelectSession={selectSession}
               onStartSession={(kind) => void startSession(selectedProject, kind, selectedWorktree?.id)}
               onReveal={() =>

@@ -103,6 +103,7 @@ function baseProps() {
     activeReviews: [] as ActivePullRequestReview[],
     worktreeSessionCounts: {} as Record<string, number>,
     worktreeWarning: null as string | null,
+    projectMissing: false,
     onSelectWorktree: vi.fn(),
     onCreateWorktree: vi.fn(),
     onWorktreeContextMenu: vi.fn(),
@@ -356,5 +357,13 @@ describe("워크트리 카드", () => {
     expect(within(card).getByRole("status")).toHaveTextContent("stale worktree 2개");
     fireEvent.click(within(card).getByRole("button", { name: "워크트리 만들기" }));
     expect(onCreateWorktree).toHaveBeenCalledOnce();
+  });
+
+  it("폴더 루트를 찾을 수 없으면 워크트리 만들기를 비활성화한다", () => {
+    installApi();
+    render(<ProjectDetailPage {...baseProps()} projectMissing />);
+
+    const card = screen.getByRole("region", { name: "워크트리" });
+    expect(within(card).getByRole("button", { name: "워크트리 만들기" })).toBeDisabled();
   });
 });

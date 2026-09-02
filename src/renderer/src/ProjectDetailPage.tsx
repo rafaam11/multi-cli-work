@@ -104,6 +104,8 @@ interface ProjectDetailPageProps {
   /** worktreeId → session count, so the page does not have to hold every session. */
   worktreeSessionCounts: Record<string, number>;
   worktreeWarning: string | null;
+  /** The folder's root is gone from disk — nothing here can start until it is relinked. */
+  projectMissing: boolean;
   onSelectSession(session: TerminalSessionView): void;
   onStartSession(kind: TerminalKind): void;
   onReveal(): void;
@@ -129,6 +131,7 @@ export function ProjectDetailPage({
   activeReviews,
   worktreeSessionCounts,
   worktreeWarning,
+  projectMissing,
   onSelectSession,
   onStartSession,
   onReveal,
@@ -321,6 +324,7 @@ export function ProjectDetailPage({
               className="icon-button"
               type="button"
               onClick={onCreateWorktree}
+              disabled={projectMissing}
               aria-label="워크트리 만들기"
               title="워크트리 만들기"
             >

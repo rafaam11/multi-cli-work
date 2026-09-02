@@ -78,9 +78,17 @@ export function buildSessionPanelItems(input: {
   const worktreeById = new Map(input.worktrees.map((worktree) => [worktree.id, worktree]));
   const placeOf = (projectId: string | null) => (projectId === null ? "도구" : (nameById.get(projectId) ?? null));
 
+  // 세션 하나당 전체 목록을 훑는 대신 projectId별로 한 번만 묶어 둔다 — 결과는 동일하다.
+  const sessionsByProjectId = new Map<string | null, TerminalSessionView[]>();
+  for (const session of input.sessions) {
+    const bucket = sessionsByProjectId.get(session.projectId);
+    if (bucket) bucket.push(session);
+    else sessionsByProjectId.set(session.projectId, [session]);
+  }
+
   const sessions = input.sessions
     .map<SessionPanelSessionItem>((session) => {
-      const peers = input.sessions.filter((candidate) => candidate.projectId === session.projectId);
+      const peers = sessionsByProjectId.get(session.projectId) ?? [session];
       const attention = input.unread[session.id] ?? null;
       const worktree = session.worktreeId ? worktreeById.get(session.worktreeId) : undefined;
       return {

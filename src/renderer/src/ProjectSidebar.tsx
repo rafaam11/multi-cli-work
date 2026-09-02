@@ -602,207 +602,207 @@ export function ProjectSidebar({
    * 최상위에 서든 같은 줄이라, 그리는 코드는 하나다.
    */
   const renderSection = (section: TreeSection) => {
-              const workProject = section.workProject;
-              const sectionExpanded = workProject ? expandedWorkProjects.has(workProject.id) : true;
-              // Its page is already on screen, so the row has nothing left to open — it folds instead.
-              const sectionShowing = workProject !== null && selectedWorkProjectId === workProject.id;
-              // With no work projects at all the single unassigned section has no header either,
-              // so it takes no rail — the tree stays exactly as it was before grouping existed.
-              const railed = workProject !== null || workProjects.length > 0;
-              return (
-                <li
-                  className={[
-                    "work-project-node",
-                    workProject ? categoryAccentClass(workProject.category) : "unassigned-node",
-                    railed ? "categorized" : "",
-                    workProject && isWorkProjectDormant(workProject.status) ? "dormant" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  key={section.key}
-                  role="treeitem"
-                  aria-expanded={sectionExpanded}
-                >
-                  {workProject ? (
+    const workProject = section.workProject;
+    const sectionExpanded = workProject ? expandedWorkProjects.has(workProject.id) : true;
+    // Its page is already on screen, so the row has nothing left to open — it folds instead.
+    const sectionShowing = workProject !== null && selectedWorkProjectId === workProject.id;
+    // With no work projects at all the single unassigned section has no header either,
+    // so it takes no rail — the tree stays exactly as it was before grouping existed.
+    const railed = workProject !== null || workProjects.length > 0;
+    return (
+      <li
+        className={[
+          "work-project-node",
+          workProject ? categoryAccentClass(workProject.category) : "unassigned-node",
+          railed ? "categorized" : "",
+          workProject && isWorkProjectDormant(workProject.status) ? "dormant" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        key={section.key}
+        role="treeitem"
+        aria-expanded={sectionExpanded}
+      >
+        {workProject ? (
+          <div
+            className={`work-project-row ${selectedWorkProjectId === workProject.id ? "selected" : ""}`}
+            onDragOver={(event) => {
+              // A folder dragged onto the group header moves into that group.
+              if (!drag || projectMembership[drag.id]?.workProjectId === workProject.id) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(event) => {
+              if (!drag) return;
+              event.preventDefault();
+              const dragId = drag.id;
+              endDrag();
+              onMoveProjectToWorkProject(dragId, workProject.id);
+            }}
+          >
+            <button
+              className="tree-toggle"
+              type="button"
+              onClick={() => onToggleWorkProject(workProject.id)}
+              aria-label={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
+              title={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
+            >
+              {sectionExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            <button
+              className="work-project-select"
+              type="button"
+              onClick={() =>
+                sectionShowing
+                ? onToggleWorkProject(workProject.id)
+                : onSelectWorkProject(workProject.id)
+              }
+              aria-label={`${workProjectLabel(workProject)} 프로젝트 열기`}
+            >
+              <Briefcase size={15} />
+              {/* Name only — the 구분 reads from the icon and rail colour, and the folder
+                  count is one expand away. The chip and counts moved out for quiet. */}
+              <span className="project-copy">
+                <span className="project-name" title={workProject.name}>
+                  {workProjectLabel(workProject)}
+                </span>
+              </span>
+            </button>
+          </div>
+        ) : workProjects.length > 0 ? (
+          <div
+            className="work-project-row unassigned-row"
+            onDragOver={(event) => {
+              if (!drag || !projectMembership[drag.id]) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(event) => {
+              if (!drag) return;
+              event.preventDefault();
+              const dragId = drag.id;
+              endDrag();
+              onMoveProjectToWorkProject(dragId, null);
+            }}
+          >
+            <span className="unassigned-label">미분류</span>
+          </div>
+        ) : null}
+        {sectionExpanded ? (
+          section.projects.length === 0 && workProject ? (
+            <ul className="project-group" role="group" aria-label={workProjectLabel(workProject)}>
+              <li className="work-project-empty">폴더 없음 — 상세 페이지에서 추가</li>
+            </ul>
+          ) : (
+            <ul className="project-group" role="group" aria-label={workProject ? workProjectLabel(workProject) : "미분류"}>
+              {section.projects.map((project) => {
+                const name = projectName(project);
+                const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
+                const projectSessions = sessions.filter((session) => session.projectId === project.id);
+                // The folder row shows the strongest wait among its sessions — the tree has no
+                // session rows of its own to say it instead.
+                const projectAttention = attentionOf(projectSessions);
+                // 잎이라 `aria-expanded`가 없다 — 열고 닫을 하위 층이 없다는 뜻이다.
+                return (
+                  <li className="project-node" key={project.id} role="treeitem">
                     <div
-                      className={`work-project-row ${selectedWorkProjectId === workProject.id ? "selected" : ""}`}
+                      ref={flashProjectId === project.id ? flashRow : undefined}
+                      className={[
+                        "project-row",
+                        folderActivityClass(projectSessions),
+                        selectedProjectId === project.id ? "selected" : "",
+                        flashProjectId === project.id ? "flash" : "",
+                        rootMissing ? "missing" : "",
+                        drag?.id === project.id ? "dragging" : "",
+                        drag?.over?.id === project.id ? `drop-${drag.over.position}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onContextMenu={(event) => onProjectContextMenu(project, event)}
+                      draggable={!readOnly}
+                      onDragStart={(event) => {
+                        // A payload is required for the drag to start at all; the id we act on is
+                        // tracked in state, because dragover cannot read dataTransfer.
+                        event.dataTransfer.setData("text/plain", project.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        setDrag({ id: project.id, over: null });
+                      }}
                       onDragOver={(event) => {
-                        // A folder dragged onto the group header moves into that group.
-                        if (!drag || projectMembership[drag.id]?.workProjectId === workProject.id) return;
+                        if (!drag || drag.id === project.id) return;
                         event.preventDefault();
                         event.dataTransfer.dropEffect = "move";
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        const position: DropPosition =
+                          event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+                        setDrag((current) =>
+                          !current || (current.over?.id === project.id && current.over.position === position)
+                          ? current
+                          : { ...current, over: { id: project.id, position } },
+                        );
                       }}
                       onDrop={(event) => {
-                        if (!drag) return;
+                        if (!drag || drag.id === project.id) return;
                         event.preventDefault();
-                        const dragId = drag.id;
-                        endDrag();
-                        onMoveProjectToWorkProject(dragId, workProject.id);
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        dropOn(project.id, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
                       }}
+                      onDragEnd={endDrag}
                     >
                       <button
-                        className="tree-toggle"
+                        className="project-select"
                         type="button"
-                        onClick={() => onToggleWorkProject(workProject.id)}
-                        aria-label={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
-                        title={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
+                        onClick={() => onSelectProject(project.id)}
+                        aria-label={`${name} 폴더 선택`}
+                        title={project.rootPath}
                       >
-                        {sectionExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </button>
-                      <button
-                        className="work-project-select"
-                        type="button"
-                        onClick={() =>
-                          sectionShowing
-                            ? onToggleWorkProject(workProject.id)
-                            : onSelectWorkProject(workProject.id)
-                        }
-                        aria-label={`${workProjectLabel(workProject)} 프로젝트 열기`}
-                      >
-                        <Briefcase size={15} />
-                        {/* Name only — the 구분 reads from the icon and rail colour, and the folder
-                            count is one expand away. The chip and counts moved out for quiet. */}
+                        {rootMissing ? (
+                          <FolderX size={15} aria-label="폴더 없음" />
+                        ) : projectMembership[project.id]?.role === "docs" ? (
+                          <TeamsIcon size={15} className="brand-icon-teams" />
+                        ) : projectMembership[project.id]?.role === "repo" ? (
+                          <GitHubIcon size={15} className="brand-icon-github" />
+                        ) : selectedProjectId === project.id ? (
+                          <FolderOpen size={15} />
+                        ) : (
+                          <Folder size={15} />
+                        )}
                         <span className="project-copy">
-                          <span className="project-name" title={workProject.name}>
-                            {workProjectLabel(workProject)}
-                          </span>
+                          <span className="project-name">{name}</span>
+                        </span>
+                        {/* The row's right edge is a rail: the count lands on the same spot for every
+                            folder instead of trailing a name of whatever length, and the rarer
+                            signals queue up to its left. */}
+                        <span className="project-signals">
+                          {projectAttention ? (
+                            <span
+                              className={`unread-dot unread-${projectAttention}`}
+                              role="status"
+                              aria-label={attentionLabel(projectAttention)}
+                              title={attentionLabel(projectAttention)}
+                            />
+                          ) : null}
+                          {rootMissing ? <span className="project-status missing-status">없음</span> : null}
+                          {/* Its worktrees' sessions count too: the folder answers "how much is
+                              running here", and the 폴더 상세 워크트리 카드 breaks that down. */}
+                          {projectSessions.length > 0 ? (
+                            <span className="folder-session-count" title={`세션 ${projectSessions.length}개`}>
+                              {projectSessions.length}
+                            </span>
+                          ) : null}
                         </span>
                       </button>
                     </div>
-                  ) : workProjects.length > 0 ? (
-                    <div
-                      className="work-project-row unassigned-row"
-                      onDragOver={(event) => {
-                        if (!drag || !projectMembership[drag.id]) return;
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
-                      }}
-                      onDrop={(event) => {
-                        if (!drag) return;
-                        event.preventDefault();
-                        const dragId = drag.id;
-                        endDrag();
-                        onMoveProjectToWorkProject(dragId, null);
-                      }}
-                    >
-                      <span className="unassigned-label">미분류</span>
-                    </div>
-                  ) : null}
-                  {sectionExpanded ? (
-                    section.projects.length === 0 && workProject ? (
-                      <ul className="project-group" role="group" aria-label={workProjectLabel(workProject)}>
-                        <li className="work-project-empty">폴더 없음 — 상세 페이지에서 추가</li>
-                      </ul>
-                    ) : (
-            <ul className="project-group" role="group" aria-label={workProject ? workProjectLabel(workProject) : "미분류"}>
-            {section.projects.map((project) => {
-              const name = projectName(project);
-              const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
-              const projectSessions = sessions.filter((session) => session.projectId === project.id);
-              // The folder row shows the strongest wait among its sessions — the tree has no
-              // session rows of its own to say it instead.
-              const projectAttention = attentionOf(projectSessions);
-              // 잎이라 `aria-expanded`가 없다 — 열고 닫을 하위 층이 없다는 뜻이다.
-              return (
-                <li className="project-node" key={project.id} role="treeitem">
-                  <div
-                    ref={flashProjectId === project.id ? flashRow : undefined}
-                    className={[
-                      "project-row",
-                      folderActivityClass(projectSessions),
-                      selectedProjectId === project.id ? "selected" : "",
-                      flashProjectId === project.id ? "flash" : "",
-                      rootMissing ? "missing" : "",
-                      drag?.id === project.id ? "dragging" : "",
-                      drag?.over?.id === project.id ? `drop-${drag.over.position}` : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onContextMenu={(event) => onProjectContextMenu(project, event)}
-                    draggable={!readOnly}
-                    onDragStart={(event) => {
-                      // A payload is required for the drag to start at all; the id we act on is
-                      // tracked in state, because dragover cannot read dataTransfer.
-                      event.dataTransfer.setData("text/plain", project.id);
-                      event.dataTransfer.effectAllowed = "move";
-                      setDrag({ id: project.id, over: null });
-                    }}
-                    onDragOver={(event) => {
-                      if (!drag || drag.id === project.id) return;
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                      const bounds = event.currentTarget.getBoundingClientRect();
-                      const position: DropPosition =
-                        event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
-                      setDrag((current) =>
-                        !current || (current.over?.id === project.id && current.over.position === position)
-                          ? current
-                          : { ...current, over: { id: project.id, position } },
-                      );
-                    }}
-                    onDrop={(event) => {
-                      if (!drag || drag.id === project.id) return;
-                      event.preventDefault();
-                      const bounds = event.currentTarget.getBoundingClientRect();
-                      dropOn(project.id, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
-                    }}
-                    onDragEnd={endDrag}
-                  >
-                    <button
-                      className="project-select"
-                      type="button"
-                      onClick={() => onSelectProject(project.id)}
-                      aria-label={`${name} 폴더 선택`}
-                      title={project.rootPath}
-                    >
-                      {rootMissing ? (
-                        <FolderX size={15} aria-label="폴더 없음" />
-                      ) : projectMembership[project.id]?.role === "docs" ? (
-                        <TeamsIcon size={15} className="brand-icon-teams" />
-                      ) : projectMembership[project.id]?.role === "repo" ? (
-                        <GitHubIcon size={15} className="brand-icon-github" />
-                      ) : selectedProjectId === project.id ? (
-                        <FolderOpen size={15} />
-                      ) : (
-                        <Folder size={15} />
-                      )}
-                      <span className="project-copy">
-                        <span className="project-name">{name}</span>
-                      </span>
-                      {/* The row's right edge is a rail: the count lands on the same spot for every
-                          folder instead of trailing a name of whatever length, and the rarer
-                          signals queue up to its left. */}
-                      <span className="project-signals">
-                        {projectAttention ? (
-                          <span
-                            className={`unread-dot unread-${projectAttention}`}
-                            role="status"
-                            aria-label={attentionLabel(projectAttention)}
-                            title={attentionLabel(projectAttention)}
-                          />
-                        ) : null}
-                        {rootMissing ? <span className="project-status missing-status">없음</span> : null}
-                        {/* Its worktrees' sessions count too: the folder answers "how much is
-                            running here", and the 폴더 상세 워크트리 카드 breaks that down. */}
-                        {projectSessions.length > 0 ? (
-                          <span className="folder-session-count" title={`세션 ${projectSessions.length}개`}>
-                            {projectSessions.length}
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
-                  </div>
-                  {editingProjectId === project.id ? (
-                    <ProjectMetadataEditor project={project} onSaved={onProjectSaved} onClose={onCloseEditor} />
-                  ) : null}
-                </li>
-              );
-            })}
+                    {editingProjectId === project.id ? (
+                      <ProjectMetadataEditor project={project} onSaved={onProjectSaved} onClose={onCloseEditor} />
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
-                    )
-                  ) : null}
-                </li>
-              );
+          )
+        ) : null}
+      </li>
+    );
   };
 
   return (
