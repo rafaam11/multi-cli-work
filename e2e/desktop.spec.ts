@@ -77,18 +77,14 @@ const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`
 const paneRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 세션 열기`) });
 
 /**
- * Puts a folder's grid on screen and leaves its subtree open. The row click alone no longer does
- * both: on the folder whose grid is already up it folds the subtree instead of re-selecting it, and
- * the rows under it are what the callers came for.
+ * Puts a folder on screen. The folder row is a leaf — one click is the whole action, and clicking
+ * the folder already up does nothing rather than folding anything away. What lands is the folder's
+ * grid, or its start page while it has no session yet, so the header is what says it arrived.
  */
 async function openFolder(name = "Sample Project"): Promise<void> {
   const row = page.getByRole("button", { name: `${name} 폴더 선택` });
   await row.click();
-  const node = page.locator(".project-node").filter({ has: row });
-  if ((await node.getAttribute("aria-expanded")) === "false") {
-    await page.getByRole("button", { name: `${name} 펼치기` }).click();
-  }
-  await expect(node).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".workspace-title")).toContainText(name);
 }
 
 /**
@@ -550,17 +546,6 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.locator(".workspace-grid")).toBeVisible();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeHidden();
 
-    // The same row clicked again has nothing left to open, so it folds its subtree away instead —
-    // the grid it already brought up stays exactly where it is.
-    const folderNode = page
-      .locator(".project-node")
-      .filter({ has: page.getByRole("button", { name: "Sample Project 폴더 선택" }) });
-    await expect(folderNode).toHaveAttribute("aria-expanded", "true");
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    await expect(folderNode).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator(".workspace-grid")).toBeVisible();
-    await openFolder();
-
     await page.getByRole("button", { name: "폴더 상세" }).click();
     await expect(page.getByRole("region", { name: "프로젝트 상세" })).toBeVisible();
     await expect(page.getByRole("button", { name: new RegExp(`${SHELL_LABEL}( \\d+)? 세션 보기`) }).first()).toBeVisible();
@@ -742,7 +727,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.press("Enter");
     await expect(pane(`${SHELL_LABEL} 2`).locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
     // The tree has no worktree rows any more: the menu hangs off the 워크트리 card of the folder's
-    // 상세 page. The grid is on the folder itself, so the card lists feature/e2e as one to open.
+    // 상세 page. Pressing the worktree's pane scoped the app to that worktree, so the folder row is
+    // clicked again first — on the folder itself the card lists feature/e2e as one to open, and
+    // only an openable row carries the context menu.
+    await openFolder();
     await page.getByRole("button", { name: "폴더 상세" }).click();
     const worktreeCardRow = page
       .getByRole("region", { name: "워크트리" })

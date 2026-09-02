@@ -170,10 +170,10 @@ const MIN_RIGHT_SIDEBAR_WIDTH = 220;
 const MAX_RIGHT_SIDEBAR_WIDTH = 480;
 const RIGHT_SIDEBAR_RAIL_WIDTH = 36;
 /**
- * Both tree layers persist which nodes are *collapsed*, so a folder or group added later starts
- * expanded rather than hidden. One writer for both keys — see `persistCollapsed`.
+ * 업무 프로젝트 한 층만 저장한다 — 무엇이 *접혔는지*를 적으므로 나중에 생긴 항목은 펼쳐진 채로
+ * 시작한다. `multi-cli-work.projects.v1`은 폴더가 접히던 시절의 키로, 읽지도 지우지도 않는다
+ * (다운그레이드하면 그때의 배치가 그대로 살아 있다).
  */
-const COLLAPSED_PROJECTS_KEY = "multi-cli-work.projects.v1";
 const COLLAPSED_WORK_PROJECTS_KEY = "multi-cli-work.work-projects.v1";
 
 function persistCollapsed(key: string, collapsed: Set<string>): void {
@@ -288,13 +288,6 @@ export function App() {
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const sessionsRef = useRef<TerminalSessionView[]>([]);
   const activityIdRef = useRef(0);
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
-  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(COLLAPSED_PROJECTS_KEY) ?? "{}") as { collapsed?: string[] };
-      return new Set(stored.collapsed ?? []);
-    } catch { return new Set(); }
-  });
   const [workProjectRegistry, setWorkProjectRegistry] = useState<WorkProjectRegistryV1 | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
   const [selectedWorkProjectId, setSelectedWorkProjectId] = useState<string | null>(null);
@@ -704,7 +697,6 @@ export function App() {
           setSnapshot(registrySnapshot);
           setSessions(terminalSessions);
           setAvailability(providers);
-          setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
           setSelectedProjectId(null);
           setSelectedSessionId(restoredSession.id);
           setSelectedWorktreeId(null);
@@ -733,7 +725,6 @@ export function App() {
         setSnapshot(registrySnapshot);
         setSessions(terminalSessions);
         setAvailability(providers);
-        setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
         setSelectedProjectId(initialProject?.id ?? null);
         setSelectedSessionId(initialSession?.id ?? null);
         setSelectedWorktreeId(initialWorktreeId);
@@ -1101,7 +1092,6 @@ export function App() {
     setSelectedWorktreeId(null);
     setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
-    setExpandedProjects((current) => new Set(current).add(projectId));
     setActionError(null);
     persistSelection(projectId, first);
   };
@@ -1153,10 +1143,6 @@ export function App() {
     setFocusedPaneId(target.paneId);
     setActiveView("terminal");
     setActionError(null);
-    if (target.projectId) {
-      const projectId = target.projectId;
-      setExpandedProjects((current) => new Set(current).add(projectId));
-    }
     flashFolder(target.projectId);
     if (target.session) persistSelection(target.projectId, target.session.id);
   };
@@ -1356,24 +1342,11 @@ export function App() {
     setSelectedWorktreeId(worktree.id);
     setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
-    setExpandedProjects((current) => new Set(current).add(worktree.projectId));
     setActionError(null);
     persistSelection(worktree.projectId, first);
   };
 
   const openHome = () => setActiveView("home");
-
-  const toggleProject = (projectId: string) => {
-    setExpandedProjects((current) => {
-      const next = new Set(current);
-      const collapsed = new Set(collapsedProjectIds);
-      if (next.has(projectId)) { next.delete(projectId); collapsed.add(projectId); }
-      else { next.add(projectId); collapsed.delete(projectId); }
-      setCollapsedProjectIds(collapsed);
-      persistCollapsed(COLLAPSED_PROJECTS_KEY, collapsed);
-      return next;
-    });
-  };
 
   const toggleWorkProject = (workProjectId: string) => {
     setCollapsedWorkProjectIds((current) => {
@@ -1386,39 +1359,27 @@ export function App() {
   };
 
   /**
-   * The two layers store expansion differently — 폴더 keeps an expanded set alongside its persisted
-   * collapsed set, while a work project's expanded set is derived from its collapsed set — so a
-   * bulk action has to state what stays open for each and let this fill in both complements.
+   * 업무 프로젝트의 펼침은 저장된 접힘 집합의 여집합이라, 일괄 동작은 "열어 둘 것"만 말하고
+   * 나머지 채우기를 여기 맡긴다. 채널 층은 사이드바가 자기 키에 따로 적는다.
    */
-  const applyExpansion = (expandedProjectIds: Set<string>, expandedWorkProjectIds: Set<string>) => {
-    const collapsedProjects = new Set(
-      projects.filter((project) => !expandedProjectIds.has(project.id)).map((project) => project.id),
-    );
+  const applyExpansion = (expandedWorkProjectIds: Set<string>) => {
     const collapsedWorkProjects = new Set(
       workProjects.filter((workProject) => !expandedWorkProjectIds.has(workProject.id)).map((workProject) => workProject.id),
     );
-    setExpandedProjects(expandedProjectIds);
-    setCollapsedProjectIds(collapsedProjects);
     setCollapsedWorkProjectIds(collapsedWorkProjects);
-    persistCollapsed(COLLAPSED_PROJECTS_KEY, collapsedProjects);
     persistCollapsed(COLLAPSED_WORK_PROJECTS_KEY, collapsedWorkProjects);
   };
 
-  const expandAll = () =>
-    applyExpansion(
-      new Set(projects.map((project) => project.id)),
-      new Set(workProjects.map((workProject) => workProject.id)),
-    );
+  const expandAll = () => applyExpansion(new Set(workProjects.map((workProject) => workProject.id)));
 
-  const collapseAll = () => applyExpansion(new Set(), new Set());
+  const collapseAll = () => applyExpansion(new Set());
 
-  /** 작업중 folders stay open, and a group opens when it still owns one. Worktrees are left alone. */
+  /** 작업중 폴더를 아직 가진 업무 프로젝트만 열어 둔다. 폴더는 잎이라 접히지 않는다. */
   const expandWorking = () => {
     const working = projects.filter((project) =>
       isFolderActive(sessions.filter((session) => session.projectId === project.id)),
     );
     applyExpansion(
-      new Set(working.map((project) => project.id)),
       new Set(
         working
           .map((project) => projectMembership[project.id]?.workProjectId)
@@ -1496,7 +1457,6 @@ export function App() {
           }
         : current,
     );
-    setExpandedProjects((current) => new Set(current).add(result.project.id));
   };
 
   const addProject = async () => {
@@ -1516,7 +1476,6 @@ export function App() {
             }
           : current,
       );
-      setExpandedProjects((current) => new Set(current).add(project.id));
       setSelectedProjectId(project.id);
       setSelectedSessionId(null);
       setSelectedWorktreeId(worktreeId);
@@ -2338,16 +2297,6 @@ export function App() {
   const headerSessionLabel = activeView === "home" ? null : selectedSessionLabel;
 
   /**
-   * The folder the grid is actually showing. Narrower than the highlighted row — that stays lit
-   * behind a 상세 page, a worktree or a 작업공간 — and it is the only case where clicking the row
-   * again says "I am already here", which the tree answers by folding it away.
-   */
-  const gridProjectId =
-    activeView === "terminal" && shelfKind === null && selectedWorktreeId === null
-      ? selectedProjectId
-      : null;
-
-  /**
    * A shelf on screen replaces the folder identity in the header: it belongs to no single folder, so
    * it is named by what it gathers instead. Documents count toward the panes but not the folders —
    * the folder tally is about how many places the work in view comes from.
@@ -2885,17 +2834,14 @@ export function App() {
         onCancelRename={() => setRenameTarget(null)}
         unread={unread}
         selectedProjectId={activeView === "home" ? null : selectedProjectId}
-        gridProjectId={gridProjectId}
         isHome={activeView === "home"}
         onOpenHome={openHome}
-        expandedProjects={expandedProjects}
         editingProjectId={editingProjectId}
         loading={loading}
         loadError={loadError}
         onReload={() => void loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId, view: activeView })}
         onAddProject={() => void addProject()}
         onSelectProject={selectProject}
-        onToggleProject={toggleProject}
         onExpandAll={expandAll}
         onCollapseAll={collapseAll}
         onExpandWorking={expandWorking}
@@ -3276,10 +3222,7 @@ export function App() {
             void runProjectAction(() => window.multiCliWork.projects.openOnGitHub(contextMenu.project.id))
           }
           onCreateWorktree={() => setWorktreeCreateProject(contextMenu.project)}
-          onRename={() => {
-            setExpandedProjects((current) => new Set(current).add(contextMenu.project.id));
-            setEditingProjectId(contextMenu.project.id);
-          }}
+          onRename={() => setEditingProjectId(contextMenu.project.id)}
           onRelink={() => void relinkProject(contextMenu.project)}
           onRemove={() => requestRemoval(contextMenu.project)}
           onClose={() => setContextMenu(null)}

@@ -2676,23 +2676,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 @keyframes pr-line-flash { from { background-color: color-mix(in srgb, #d29922 45%, transparent); } }
 @media (max-width: 760px) { .pr-detail-header { flex-direction: column; }.pr-summary-grid { grid-template-columns: repeat(3, 1fr); }.pr-review-actions { flex-wrap: wrap; } }
 
-.worktree-row.two-line {
-  padding: 2px 4px;
-}
-
 .workspace-copy {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
-}
-
-.workspace-meta {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--type-caption-size);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .worktree-create-dialog form,
@@ -2711,19 +2699,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .worktree-row:hover {
   background: var(--surface-hover);
 }
-
-.worktree-row.selected {
-  background: var(--surface-raised);
-  color: var(--text);
-}
-
-.worktree-branch {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 
 /* Tab row, then the grid taking whatever height is left — the layout row moved into the header. */
 .workspace-panes {

@@ -176,6 +176,49 @@ const removedAgentSession: TerminalSessionView = {
   updatedAt: "2026-07-11T03:00:00.000Z",
 };
 
+/**
+ * ws-root 워크스페이스 픽스처. 채널 한 겹은 트리의 맨 위 층이라 "채널 + 프로젝트" 두 층을 한꺼번에
+ * 다루는 테스트가 여러 describe에 걸쳐 있으므로, 픽스처는 파일 맨 위에 둔다.
+ */
+// 3형제 배치: work·dev 는 드라이브 직하위 형제 폴더다.
+const WS_ROOT = "C:" + String.fromCharCode(92) + "work";
+const DEV_ROOT = "C:" + String.fromCharCode(92) + "dev";
+const join = (...parts: string[]) => parts.join(String.fromCharCode(92));
+const shellInfo = (channel: string, name: string, title: string, repos: string[] = []) => ({
+  root: WS_ROOT,
+  ref: channel + "/" + name,
+  channel,
+  channelLetter: channel.charAt(0),
+  channelLabel: channel.startsWith("O") ? "용역" : "개인",
+  shell: name,
+  title,
+  status: "active",
+  path: join(WS_ROOT, channel, name),
+  repos,
+  externalPaths: [],
+  data: [],
+});
+const VSP = shellInfo("O_SMCH", "24_SMCH_VSP-1", "가상수술계획", ["VSP_FastAPI"]);
+const CAREER = shellInfo("P_Personal", "26_Personal_Career-1", "진로");
+const workspaceSnapshot = (
+  shells: Array<ReturnType<typeof shellInfo>>,
+  links: Array<{ workProjectId: string; channel: string; shell: string }>,
+): WorkspaceSnapshot => ({
+  registry: {
+    schemaVersion: 1,
+    updatedAt: "2026-08-30T00:00:00.000Z",
+    roots: [{ work: WS_ROOT, dev: DEV_ROOT, data: join(WS_ROOT, "data"), label: "work-root" }],
+    shellLinks: links.map((link) => ({ ...link, root: WS_ROOT })),
+  },
+  shells,
+  repoOwners: Object.fromEntries(
+    shells.flatMap((entry) =>
+      entry.repos.map((repo) => [join(DEV_ROOT, repo).toLowerCase(), entry.ref] as const),
+    ),
+  ),
+  warnings: [],
+});
+
 function registry(projects: SharedProject[] = [atlas]): ProjectWorkspaceSnapshot {
   return {
     source: "primary",
@@ -663,7 +706,6 @@ describe("folder workspace", () => {
     render(<App />);
 
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    fireEvent.click(screen.getByRole("button", { name: "Atlas 접기" }));
     fireEvent.click(screen.getByRole("button", { name: "Dashboard 폴더 선택" }));
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(dashboardSession.id, PANE_SIZE));
 
@@ -1634,45 +1676,6 @@ describe("work project categories", () => {
    * 그 아래로 들어가고, 손으로 만든 것과 미분류는 있던 자리에 그대로 남는다.
    */
   describe("ws-root 채널", () => {
-    // 3형제 배치: work·dev 는 드라이브 직하위 형제 폴더다.
-    const WS_ROOT = "C:" + String.fromCharCode(92) + "work";
-    const DEV_ROOT = "C:" + String.fromCharCode(92) + "dev";
-    const join = (...parts: string[]) => parts.join(String.fromCharCode(92));
-    const shellInfo = (channel: string, name: string, title: string, repos: string[] = []) => ({
-      root: WS_ROOT,
-      ref: channel + "/" + name,
-      channel,
-      channelLetter: channel.charAt(0),
-      channelLabel: channel.startsWith("O") ? "용역" : "개인",
-      shell: name,
-      title,
-      status: "active",
-      path: join(WS_ROOT, channel, name),
-      repos,
-      externalPaths: [],
-      data: [],
-    });
-    const VSP = shellInfo("O_SMCH", "24_SMCH_VSP-1", "가상수술계획", ["VSP_FastAPI"]);
-    const CAREER = shellInfo("P_Personal", "26_Personal_Career-1", "진로");
-    const workspaceSnapshot = (
-      shells: Array<ReturnType<typeof shellInfo>>,
-      links: Array<{ workProjectId: string; channel: string; shell: string }>,
-    ): WorkspaceSnapshot => ({
-      registry: {
-        schemaVersion: 1,
-        updatedAt: "2026-08-30T00:00:00.000Z",
-        roots: [{ work: WS_ROOT, dev: DEV_ROOT, data: join(WS_ROOT, "data"), label: "work-root" }],
-        shellLinks: links.map((link) => ({ ...link, root: WS_ROOT })),
-      },
-      shells,
-      repoOwners: Object.fromEntries(
-        shells.flatMap((entry) =>
-          entry.repos.map((repo) => [join(DEV_ROOT, repo).toLowerCase(), entry.ref] as const),
-        ),
-      ),
-      warnings: [],
-    });
-
     it("groups shells under their channel and names them by the shell title", async () => {
       const harness = createApi({
         projects: [atlas],
@@ -3559,13 +3562,14 @@ describe("folder colour", () => {
 
   const folderRow = (name: string) =>
     screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-row") as HTMLElement;
-  const folderNode = (name: string) =>
-    screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-node")!;
   // Home dashboard cards carry the same aria-label, so group lookups stay scoped to the sidebar.
   const groupNode = (name: string) =>
     within(screen.getByRole("navigation", { name: "프로젝트" }))
       .getByRole("button", { name: `${name} 프로젝트 열기` })
       .closest(".work-project-node")!;
+  /** 채널 줄은 접혀 있어도 서 있으므로, 이름 그대로 찾으면 접힘 상태와 무관하게 잡힌다. */
+  const channelNode = (channel: string) =>
+    within(screen.getByRole("navigation", { name: "프로젝트" })).getByText(channel).closest(".channel-node")!;
 
   it("follows the folder's own agents rather than a hand-set flag", async () => {
     const harness = createApi({ projects: [atlas], sessions: [powershellSession] });
@@ -3644,68 +3648,83 @@ describe("folder colour", () => {
     expect(harness.api.projects.update).not.toHaveBeenCalled();
   });
 
-  it("keeps folders with a running agent open and closes the rest, across the group and folder layers alike", async () => {
+  it("keeps folders with a running agent open and closes the rest, across the group and channel layers", async () => {
     const working: TerminalSessionView = { ...powershellSession, status: "working" };
     const harness = createApi({
       projects: [atlas, dashboard, archive],
-      // Only Atlas has an agent running, so only Atlas — and the group holding it — stays open.
+      // Only Atlas has an agent running, so only its group — and the channel above it — stays open.
       sessions: [working],
-      workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0), workProject("wp-archive", "끝난 과제", archive.id, 1)],
+      workProjects: [
+        workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", atlas.id, 0),
+        workProject("wp-career", "P_Personal/26_Personal_Career-1", archive.id, 1),
+      ],
+      workspace: workspaceSnapshot([VSP, CAREER], [
+        { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+        { workProjectId: "wp-career", channel: "P_Personal", shell: "26_Personal_Career-1" },
+      ]),
     });
     window.multiCliWork = harness.api;
     render(<App />);
 
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    fireEvent.click(screen.getByTitle("작업중인 폴더만 펼치고 나머지는 접기"));
+    fireEvent.click(screen.getByTitle("작업중인 폴더가 있는 채널과 프로젝트만 펼치기"));
 
-    await waitFor(() => expect(groupNode("끝난 과제")).toHaveAttribute("aria-expanded", "false"));
-    expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "true");
-    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
-    // Dashboard is 미분류 and idle, so it closes on its own without a group to close it.
-    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
+    // 작업중 폴더가 없는 채널은 통째로 접히고, 그 안의 폴더도 화면에서 사라진다.
+    await waitFor(() => expect(channelNode("P_Personal")).toHaveAttribute("aria-expanded", "false"));
+    expect(screen.queryByRole("button", { name: "Archive 폴더 선택" })).not.toBeInTheDocument();
+
+    expect(channelNode("O_SMCH")).toHaveAttribute("aria-expanded", "true");
+    expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
+    // Dashboard is 미분류 and idle, but 폴더는 접히는 층이 아니라 그대로 서 있다.
+    expect(screen.getByRole("button", { name: "Dashboard 폴더 선택" })).toBeInTheDocument();
   });
 
   it("collapses and re-expands both layers at once, and remembers it across a restart", async () => {
-    const harness = createApi({
-      projects: [atlas, dashboard],
-      sessions: [],
-      workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0)],
-    });
-    window.multiCliWork = harness.api;
+    // 손으로 만든 묶음은 최상위에, 셸에서 온 묶음은 채널 아래에 — 두 층이 한 화면에 같이 선다.
+    const harness = () =>
+      createApi({
+        projects: [atlas, dashboard],
+        sessions: [],
+        workProjects: [
+          workProject("wp-manual", "손으로 만든 묶음", dashboard.id, 0),
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", atlas.id, 1),
+        ],
+        workspace: workspaceSnapshot([VSP], [
+          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+        ]),
+      });
+    window.multiCliWork = harness().api;
     const view = render(<App />);
 
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 접기"));
+    fireEvent.click(screen.getByTitle("모든 채널과 프로젝트 접기"));
 
-    await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
-    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "false"));
+    expect(channelNode("O_SMCH")).toHaveAttribute("aria-expanded", "false");
 
-    // What persists is the collapsed set on both keys, so the arrangement survives a restart.
+    // 프로젝트 접힘은 App이, 채널 접힘은 사이드바가 각자의 키에 적으므로 재시작해도 그대로다.
     view.unmount();
-    const restart = createApi({
-      projects: [atlas, dashboard],
-      sessions: [],
-      workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0)],
-    });
-    window.multiCliWork = restart.api;
+    window.multiCliWork = harness().api;
     render(<App />);
 
-    await screen.findByRole("button", { name: "Dashboard 폴더 선택" });
-    expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false");
-    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "false"));
+    expect(channelNode("O_SMCH")).toHaveAttribute("aria-expanded", "false");
 
-    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 펼치기"));
+    fireEvent.click(screen.getByTitle("모든 채널과 프로젝트 펼치기"));
 
-    await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "true"));
-    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
-    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "true"));
+    expect(channelNode("O_SMCH")).toHaveAttribute("aria-expanded", "true");
+    expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
   });
 
   /**
    * Clicking the row of the place already on screen used to re-select what was selected, which
    * showed nothing. It now folds that row away, so the click that cannot open anything closes it.
+   * 폴더 행은 접을 것이 없으므로(잎이다) 이 규칙은 프로젝트 층에만 남는다.
    */
-  it("folds the row already on screen instead of opening it again, on both layers", async () => {
+  it("folds the row already on screen instead of opening it again, on the group layer", async () => {
     const harness = createApi({
       projects: [atlas, dashboard],
       sessions: [powershellSession],
@@ -3714,30 +3733,15 @@ describe("folder colour", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
-    // Atlas's grid is what the app boots into, so its row is the one with nothing left to open.
     await screen.findByRole("region", { name: "powershell 터미널" });
-    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
-    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "false"));
-    // Folding the tree row does not take the folder's work off the grid.
-    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
-    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true"));
-
-    // Another folder is not on screen, so its row still opens — and unfolds — as before.
-    fireEvent.click(screen.getByRole("button", { name: "Dashboard 폴더 선택" }));
-    await waitFor(() => expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true"));
-    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
-
-    // The group layer answers the same way: its page opens with the group unfolded, and the next
-    // click on it folds the group without leaving the page.
+    // The group layer: its page opens with the group unfolded, and the next click on it folds the
+    // group without leaving the page.
     const group = () =>
       within(screen.getByRole("navigation", { name: "프로젝트" })).getByRole("button", {
         name: "진행 과제 프로젝트 열기",
       });
-    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 접기"));
+    fireEvent.click(screen.getByTitle("모든 채널과 프로젝트 접기"));
     await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
 
     fireEvent.click(group());
@@ -3745,6 +3749,27 @@ describe("folder colour", () => {
 
     fireEvent.click(group());
     await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
+  });
+
+  it("폴더 행은 잎이다 — 체버론이 없고 클릭하면 그리드가 열린다", async () => {
+    const harness = createApi({ projects: [atlas, dashboard], sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    // 체버론은 접힌 쪽·펼친 쪽 이름을 번갈아 쓰므로 둘 다 없어야 잎이다.
+    expect(within(nav).queryByRole("button", { name: /^Dashboard (펼치기|접기)$/ })).not.toBeInTheDocument();
+    const row = within(nav).getByRole("button", { name: "Dashboard 폴더 선택" });
+    expect(row.closest(".project-node")).not.toHaveAttribute("aria-expanded");
+
+    fireEvent.click(row);
+    await waitFor(() => expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard"));
+    expect(row.closest(".project-row")).toHaveClass("selected");
+
+    // 이미 그리드가 떠 있는 폴더를 다시 눌러도 접을 것이 없으니 아무 일도 일어나지 않는다.
+    fireEvent.click(row);
+    await waitFor(() => expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard"));
+    expect(row.closest(".project-row")).toHaveClass("selected");
   });
 });
 
