@@ -55,6 +55,9 @@
   --category-research: #e08ac0;
   --category-product: #6aa6e0;
   --category-etc: #9aa49f;
+  /* 태그·구분 공용 팔레트의 6·7번째 색 — 5개짜리 구분 팔레트에는 없는 두 계열(청록·보라)이다. */
+  --accent-6: #4fb8ac;
+  --accent-7: #b088d4;
 }
 
 /* One place maps a category to its colour — see work-project-accent.ts for the class it picks. */
@@ -76,6 +79,38 @@
 
 .category-etc {
   --category-accent: var(--category-etc);
+}
+
+/*
+ * 태그가 쓰는 7색 공용 팔레트(accent-palette.ts) — 1~5는 위 구분 팔레트의 별칭이라 태그도 구분도
+ * 같은 색이면 같은 뜻으로 읽힌다. 5번은 회색(etc), 6·7은 구분에 없는 청록·보라로 새로 늘린 칸이다.
+ */
+.accent-1 {
+  --category-accent: var(--category-government);
+}
+
+.accent-2 {
+  --category-accent: var(--category-outsourcing);
+}
+
+.accent-3 {
+  --category-accent: var(--category-research);
+}
+
+.accent-4 {
+  --category-accent: var(--category-product);
+}
+
+.accent-5 {
+  --category-accent: var(--category-etc);
+}
+
+.accent-6 {
+  --category-accent: var(--accent-6);
+}
+
+.accent-7 {
+  --category-accent: var(--accent-7);
 }
 
 /*
