@@ -5,6 +5,7 @@ import type { MultiCliWorkApi, ProjectWorkspaceSnapshot, TerminalSessionView, Wi
 import type { FileTreeEntry } from "@shared/file-explorer-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1 } from "@shared/work-project-types";
+import type { ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
@@ -267,6 +268,8 @@ function createApi(options?: {
   writable?: boolean;
   missingRootProjectIds?: string[];
   workProjects?: WorkProject[];
+  /** 업무 프로젝트 자유 태그. 기본값은 빈 레지스트리 — 이 기능이 없던 때와 같은 화면이다. */
+  projectTags?: Record<string, string[]>;
   /** ws-root 워크스페이스. 기본값은 "루트 미등록" — 이 기능이 없던 때와 같은 화면이다. */
   workspace?: WorkspaceSnapshot;
   selection?: Pick<AppStateSnapshot["state"], "selectedProjectId" | "selectedSessionId">;
@@ -318,6 +321,11 @@ function createApi(options?: {
       (options?.workProjects ?? []).map((workProject) => [workProject.id, workProject]),
     ),
   };
+  let projectTagsRegistry: ProjectTagsV1 = {
+    schemaVersion: 1,
+    updatedAt: "2026-07-11T04:00:00.000Z",
+    tags: { ...(options?.projectTags ?? {}) },
+  };
   const workspaceSnapshot: WorkspaceSnapshot = options?.workspace ?? {
     registry: { schemaVersion: 1, updatedAt: "2026-08-30T00:00:00.000Z", roots: [], shellLinks: [] },
     shells: [],
@@ -353,6 +361,13 @@ function createApi(options?: {
       revealLocalFolder: vi.fn().mockResolvedValue(undefined),
       chooseTeamsSyncRoot: vi.fn().mockResolvedValue(null),
       clearTeamsSyncRoot: vi.fn().mockResolvedValue(workProjectRegistry),
+    },
+    projectTags: {
+      list: vi.fn().mockImplementation(async () => projectTagsRegistry),
+      set: vi.fn().mockImplementation(async (workProjectId: string, tags: string[]) => {
+        projectTagsRegistry = { ...projectTagsRegistry, tags: { ...projectTagsRegistry.tags, [workProjectId]: tags } };
+        return projectTagsRegistry;
+      }),
     },
     workspace: {
       list: vi.fn().mockResolvedValue(workspaceSnapshot),

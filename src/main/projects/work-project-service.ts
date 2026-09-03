@@ -53,6 +53,8 @@ export interface WorkProjectServiceOptions {
   registryUpdater?: RegistryUpdater;
   /** ws-root 연동에만 쓴다 — 자동 생성분의 출처(`shellLinks`)가 사는 파일. */
   workspaceRegistryPath?: string;
+  /** 업무 프로젝트 자유 태그 레지스트리 경로. 이 서비스는 아직 읽지 않는다(Task 4에서 소비). */
+  projectTagsPath?: string;
   platform?: NodeJS.Platform;
 }
 

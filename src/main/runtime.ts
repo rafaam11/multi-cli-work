@@ -59,6 +59,7 @@ import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
 import { WorkProjectService } from "./projects/work-project-service";
 import { readWorkProjectRegistry } from "./projects/work-project-registry";
+import { readProjectTags, setProjectTags } from "./projects/project-tags-registry";
 import {
   renderWorkProjectBrief,
   writeSessionBrief,
@@ -163,9 +164,13 @@ export async function createDesktopRuntime(
   // Like MULTI_CLI_WORK_REGISTRY_PATH: only overridden so tests can point at a fixture.
   const workProjectRegistryPath = process.env.MULTI_CLI_WORK_WORK_PROJECTS_PATH;
   const workspaceRegistryPath = process.env.MULTI_CLI_WORK_WORKSPACE_PATH;
+  // Like MULTI_CLI_WORK_REGISTRY_PATH: only overridden so tests can point at a fixture.
+  const projectTagsPath = process.env.MULTI_CLI_WORK_PROJECT_TAGS_PATH;
+  const projectTagsOptions = projectTagsPath ? { registryPath: projectTagsPath } : {};
   const workProjectService = new WorkProjectService({
     ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
     ...(workspaceRegistryPath ? { workspaceRegistryPath } : {}),
+    ...(projectTagsPath ? { projectTagsPath } : {}),
     platform: process.platform,
   });
   // ws-root 워크스페이스 루트. 등록된 루트가 없으면 이 기능 전체가 잠자코 있는다 — 아무것도
@@ -432,6 +437,10 @@ export async function createDesktopRuntime(
       readWorkProjectRegistry({
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
       }),
+    projectTags: {
+      list: () => readProjectTags(projectTagsOptions),
+      set: (workProjectId, tags) => setProjectTags(workProjectId, tags, projectTagsOptions),
+    },
     workspace: {
       snapshot: workspaceSnapshot,
       async addRoot(rootPath: string) {

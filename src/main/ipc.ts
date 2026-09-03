@@ -38,6 +38,7 @@ import type {
 } from "../shared/github-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "../shared/notion-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
+import type { ProjectTagsV1 } from "../shared/project-tags-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "../shared/work-project-types";
 import type { WorkspaceSnapshot } from "../shared/workspace-types";
 import type {
@@ -84,6 +85,12 @@ interface WorkspaceGateway {
   addRoot(rootPath: string): Promise<WorkspaceSnapshot>;
   removeRoot(rootPath: string): Promise<WorkspaceSnapshot>;
   sync(): Promise<WorkspaceSnapshot>;
+}
+
+/** 업무 프로젝트 자유 태그. `work-projects.json`과 별도 파일에 사는 이유는 registry 쪽 주석 참고. */
+interface ProjectTagsGateway {
+  list(): Promise<ProjectTagsV1>;
+  set(workProjectId: string, tags: readonly string[]): Promise<ProjectTagsV1>;
 }
 
 interface TerminalCoordinatorGateway {
@@ -235,6 +242,7 @@ interface MainIpcDependencies {
   workProjectService: WorkProjectServiceGateway;
   readWorkProjectRegistry(): Promise<WorkProjectRegistryV1>;
   workspace: WorkspaceGateway;
+  projectTags: ProjectTagsGateway;
   coordinator: TerminalCoordinatorGateway;
   updater: UpdaterGateway;
   projectActions: ProjectActionsGateway;
@@ -798,6 +806,20 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     return dependencies.workProjectService.setTeamsSyncRoot(rootPath);
   });
   ipc.handle("work-projects:clear-teams-root", () => dependencies.workProjectService.setTeamsSyncRoot(null));
+
+  ipc.handle("project-tags:list", () => dependencies.projectTags.list());
+  ipc.handle("project-tags:set", async (_event, workProjectId: unknown, tags: unknown) => {
+    if (!Array.isArray(tags)) throw new Error("Project tags must be an array");
+    // 빈 문자열은 여기서 거부하지 않는다 — 지우는 일은 normalizeTags의 몫이고, 칩 편집기가
+    // 공백 하나를 흘렸다고 오류 배너가 뜨면 안 된다.
+    return dependencies.projectTags.set(
+      nonEmptyString(workProjectId, "Work project id"),
+      tags.map((tag) => {
+        if (typeof tag !== "string") throw new Error("Project tag must be a string");
+        return tag;
+      }),
+    );
+  });
 
   // 워크스페이스 루트를 바꾸면 업무 프로젝트 묶음도 따라 바뀌므로, 두 스냅샷을 함께 돌려준다.
   const workspaceResult = async (workspace: WorkspaceSnapshot) => ({
