@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "../../shared/workspace-types";
 import { workspacePathKey } from "../../shared/workspace-path";
+import { readProjectTags, setProjectTags, updateProjectTags } from "./project-tags-registry";
 import { readWorkProjectRegistry } from "./work-project-registry";
 import { WorkProjectService } from "./work-project-service";
 import { readWorkspaceRegistry } from "./workspace-registry";
@@ -23,16 +24,22 @@ const DATA_ROOT = "C:\\data";
 const IDS = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "cccccccc-cccc-4ccc-8ccc-cccccccccccc"];
 const MANUAL_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
-async function tempPaths(name: string): Promise<{ registryPath: string; workspaceRegistryPath: string }> {
+async function tempPaths(
+  name: string,
+): Promise<{ registryPath: string; workspaceRegistryPath: string; projectTagsPath: string }> {
   const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), `mcw-${name}-`));
   tempRoots.push(root);
   return {
     registryPath: path.join(root, "work-projects.json"),
     workspaceRegistryPath: path.join(root, "workspace.json"),
+    projectTagsPath: path.join(root, "project-tags.json"),
   };
 }
 
-function service(paths: { registryPath: string; workspaceRegistryPath: string }, ids = [...IDS]): WorkProjectService {
+function service(
+  paths: { registryPath: string; workspaceRegistryPath: string; projectTagsPath: string },
+  ids = [...IDS],
+): WorkProjectService {
   const queue = [...ids];
   return new WorkProjectService({
     ...paths,
@@ -276,5 +283,82 @@ describe("syncFromWorkspace", () => {
     const result = await service(paths).syncFromWorkspace(snapshot([]), [REPO_PROJECT]);
     expect(result).toMatchObject({ created: 0, skipped: [] });
     expect(result.workProjects.workProjects).toEqual({});
+  });
+
+  it("seeds the channel label as a tag on a newly created work project", async () => {
+    const paths = await tempPaths("tags-seed-created");
+    await service(paths).syncFromWorkspace(snapshot([VSP, CAREER]), []);
+
+    const tags = await readProjectTags({ registryPath: paths.projectTagsPath });
+    expect(tags.tags).toEqual({
+      [IDS[0]]: ["용역"],
+      [IDS[1]]: ["개인"],
+    });
+  });
+
+  it("backfills the channel label once for a work project that already exists but has no tag row yet", async () => {
+    const paths = await tempPaths("tags-seed-upgrade");
+    await service(paths).syncFromWorkspace(snapshot([VSP]), []);
+    const links = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+
+    // project-tags.json이 아직 없던 상황(이 기능이 생기기 전)을 흉내 낸다: 행을 지운다.
+    await updateProjectTags((registry) => ({ ...registry, tags: {} }), {
+      registryPath: paths.projectTagsPath,
+      now: () => "2026-08-30T00:00:00.000Z",
+    });
+
+    await service(paths, [IDS[1]]).syncFromWorkspace(snapshot([VSP], links), []);
+
+    const tags = await readProjectTags({ registryPath: paths.projectTagsPath });
+    expect(tags.tags).toEqual({ [IDS[0]]: ["용역"] });
+  });
+
+  it("leaves an emptied tag row alone instead of re-seeding the channel label", async () => {
+    const paths = await tempPaths("tags-seed-cleared");
+    await service(paths).syncFromWorkspace(snapshot([VSP]), []);
+    const links = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+
+    // 사용자가 태그를 전부 지웠다 — 빈 배열 행이 남는다.
+    await setProjectTags(IDS[0], [], {
+      registryPath: paths.projectTagsPath,
+      now: () => "2026-08-30T00:00:01.000Z",
+    });
+
+    await service(paths, [IDS[1]]).syncFromWorkspace(snapshot([VSP], links), []);
+
+    const tags = await readProjectTags({ registryPath: paths.projectTagsPath });
+    expect(tags.tags).toEqual({ [IDS[0]]: [] });
+  });
+
+  it("prunes tag rows for vanished work projects and skips the write when there is nothing to change", async () => {
+    const paths = await tempPaths("tags-prune");
+    const withClock = (nowIso: string, ids = [...IDS]) => {
+      const queue = [...ids];
+      return new WorkProjectService({
+        ...paths,
+        platform: "win32",
+        now: () => nowIso,
+        idFactory: () => queue.shift() ?? "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      });
+    };
+
+    await withClock("2026-08-30T00:00:00.000Z").syncFromWorkspace(snapshot([VSP, CAREER]), []);
+    const linksAfterCreate = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+
+    // CAREER 업무 프로젝트를 사용자가 지웠다 — 태그 행도 함께 정리되어야 한다.
+    await withClock("2026-08-30T00:00:00.000Z").removeWorkProject(IDS[1]);
+    const linksAfterRemoval = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+
+    await withClock("2026-08-30T01:00:00.000Z", [IDS[2]]).syncFromWorkspace(snapshot([VSP], linksAfterRemoval), []);
+    const tagsAfterPrune = await readProjectTags({ registryPath: paths.projectTagsPath });
+    expect(tagsAfterPrune.tags).toEqual({ [IDS[0]]: ["용역"] });
+    expect(tagsAfterPrune.updatedAt).toBe("2026-08-30T01:00:00.000Z");
+
+    // 정리할 것도 새로 심을 것도 없으면 태그 파일을 다시 쓰지 않는다 — updatedAt이 그대로다.
+    const linksAfterPrune = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+    await withClock("2026-08-30T02:00:00.000Z").syncFromWorkspace(snapshot([VSP], linksAfterPrune), []);
+    const tagsAfterNoop = await readProjectTags({ registryPath: paths.projectTagsPath });
+    expect(tagsAfterNoop.updatedAt).toBe("2026-08-30T01:00:00.000Z");
+    expect(tagsAfterNoop.tags).toEqual({ [IDS[0]]: ["용역"] });
   });
 });
