@@ -13,7 +13,7 @@ export interface TreeSection {
   projects: SharedProject[];
 }
 
-/** 태그 하나로 모은 줄. `tag: null`은 어느 고른 태그에도 걸리지 않은 것들을 받는 기타 묶음이다. */
+/** 태그 하나로 모은 줄. `tag: null`은 어느 고른 태그에도 걸리지 않은 것들을 받는 나머지 묶음이다. */
 export interface TagGroupNode {
   kind: "group";
   key: string;
@@ -24,11 +24,16 @@ export interface TagGroupNode {
 
 /**
  * 접힘 키의 앞가지. 사이드바의 `expandedWorkspaces`에는 묶음 키도 프로젝트 키도 함께 살기 때문에,
- * "묶음 키만 골라내기"는 이 접두사 하나로 끝난다. 기타 묶음은 태그 이름이 없으므로 접두사가 곧 키다.
+ * "묶음 키만 골라내기"는 이 접두사 하나로 끝난다. 나머지 묶음은 태그 이름이 없으므로 접두사가 곧 키다.
  */
 export const GROUP_KEY_PREFIX = "tag:";
 export const OTHER_GROUP_KEY = GROUP_KEY_PREFIX;
-export const OTHER_GROUP_LABEL = "기타";
+/**
+ * 미일치 묶음의 이름은 `기타`가 **아니다**: `기타`는 ws-root Z_ 채널이 심는 실제 태그이고
+ * `CHANNEL_LABEL_ORDER`에도 들어 있어, 두 이름이 같으면 이름도 토글 접근성 이름도 똑같은 형제
+ * 줄이 나란히 선다. 태그가 아닌 자리라는 뜻만 남기고 이름은 겹치지 않게 `나머지`로 둔다.
+ */
+export const OTHER_GROUP_LABEL = "나머지";
 
 /** 최상위 줄은 태그 묶음이거나, 묶음에 들지 않는 묶음(미분류) 하나다. */
 export type TreeNode = TagGroupNode | { kind: "section"; key: string; section: TreeSection };
@@ -68,11 +73,11 @@ export function buildTreeSections(
 
 /**
  * 태그 한 겹을 얹는다. 고른 태그를 그 순서대로 훑어 **첫 번째로 걸리는 묶음** 아래에 한 번만
- * 세우고, 하나도 걸리지 않으면 기타 묶음이다. 묶음은 **그 묶음의 첫 구성원이 있던 자리**를
- * 차지하므로, 정렬해 둔 순서가 통째로 뒤집히지 않는다 — 다만 기타는 언제나 맨 뒤다.
+ * 세우고, 하나도 걸리지 않으면 나머지 묶음이다. 묶음은 **그 묶음의 첫 구성원이 있던 자리**를
+ * 차지하므로, 정렬해 둔 순서가 통째로 뒤집히지 않는다 — 다만 나머지는 언제나 맨 뒤다.
  *
- * 미분류(어느 업무 프로젝트에도 안 든 폴더)는 묶음 밖 최상위에, 기타보다도 뒤에 남는다:
- * 미분류는 폴더 이야기고 기타는 업무 프로젝트 이야기라 섞지 않는다. 고른 태그가 하나도 없으면
+ * 미분류(어느 업무 프로젝트에도 안 든 폴더)는 묶음 밖 최상위에, 나머지보다도 뒤에 남는다:
+ * 미분류는 폴더 이야기고 나머지는 업무 프로젝트 이야기라 섞지 않는다. 고른 태그가 하나도 없으면
  * 묶음 자체가 서지 않고 모든 줄이 최상위 섹션이 된다.
  */
 export function buildTreeNodes(sections: readonly TreeSection[], grouping: TreeGrouping): TreeNode[] {
@@ -92,7 +97,7 @@ export function buildTreeNodes(sections: readonly TreeSection[], grouping: TreeG
     const own = grouping.tagsByWorkProject[workProject.id] ?? [];
     const tag = grouping.tags.find((candidate) => own.includes(candidate)) ?? null;
     if (tag === null) {
-      // 기타는 자리를 잡지 않는다 — 맨 뒤에 서므로 여기서는 모으기만 한다.
+      // 나머지는 자리를 잡지 않는다 — 맨 뒤에 서므로 여기서는 모으기만 한다.
       other ??= { kind: "group", key: OTHER_GROUP_KEY, tag: null, label: OTHER_GROUP_LABEL, sections: [] };
       other.sections.push(section);
       continue;

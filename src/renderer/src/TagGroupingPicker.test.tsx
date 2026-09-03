@@ -65,6 +65,32 @@ describe("TagGroupingPicker", () => {
     expect(onChange).toHaveBeenCalledWith(["용역"]);
   });
 
+  it("고른 것이 먼저 서고, 그다음이 아직 안 고른 후보다", () => {
+    const { button } = renderPicker(["연구", "개인"]);
+    fireEvent.click(button);
+
+    expect(screen.getAllByRole("menuitemcheckbox").map((item) => item.textContent)).toEqual([
+      "연구",
+      "개인",
+      "용역",
+    ]);
+  });
+
+  /**
+   * 마지막 업무 프로젝트에서 태그가 떨어지면 후보 목록에서는 사라지지만 묶기에는 남아 있다.
+   * 그때도 항목이 서 있어야 해제할 수 있다 — 아니면 버튼에는 보이는데 뺄 길이 없는 묶기가 된다.
+   */
+  it("이제 아무 데도 안 붙은 태그라도 묶기에 남아 있으면 해제할 수 있다", () => {
+    const { onChange, button } = renderPicker(["사라진태그", "용역"], { available: ["용역", "개인"] });
+    fireEvent.click(button);
+
+    const orphan = screen.getByRole("menuitemcheckbox", { name: "사라진태그" });
+    expect(orphan).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(orphan);
+    expect(onChange).toHaveBeenCalledWith(["용역"]);
+  });
+
   it("묶기 해제는 전부 비우고 메뉴를 닫는다", () => {
     const { onChange, button } = renderPicker(["개인", "용역"]);
     fireEvent.click(button);

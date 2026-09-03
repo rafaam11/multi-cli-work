@@ -1689,7 +1689,7 @@ describe("work project categories", () => {
 
   /**
    * 태그로 묶으면 트리에 묶음 한 겹이 더 선다. 고른 태그를 순서대로 훑어 첫 번째로 걸리는 묶음
-   * 아래에 한 번만 서고, 어느 태그에도 걸리지 않으면 기타 묶음이며, 미분류는 묶음 밖에 남는다.
+   * 아래에 한 번만 서고, 어느 태그에도 걸리지 않으면 나머지 묶음이며, 미분류는 묶음 밖에 남는다.
    * ws-root 셸이 있으면 동기화가 심어 둔 채널 라벨 태그가 저장된 선호 없이도 도는 기본값이다.
    */
   describe("태그 묶음", () => {
@@ -1786,7 +1786,7 @@ describe("work project categories", () => {
       expect(within(nav).getByRole("button", { name: "묶기 설정" })).toHaveTextContent("묶기: 없음");
     });
 
-    it("묶기가 돌고 있는데 태그가 없는 업무 프로젝트는 기타 묶음 아래로 간다", async () => {
+    it("묶기가 돌고 있는데 태그가 없는 업무 프로젝트는 나머지 묶음 아래로 간다", async () => {
       const harness = createApi({
         projects: [atlas],
         sessions: [],
@@ -1808,10 +1808,54 @@ describe("work project categories", () => {
       )!;
       const other = manual.closest(".tag-group-node")!;
       expect(other).toHaveClass("tag-group-other");
-      expect(other).toBe(tagGroup(nav, "기타"));
-      // 기타는 언제나 마지막이다 — 태그가 붙은 묶음보다 뒤에 선다.
+      expect(other).toBe(tagGroup(nav, "나머지"));
+      // 나머지는 언제나 마지막이다 — 태그가 붙은 묶음보다 뒤에 선다.
       const groups = [...nav.querySelectorAll(".tag-group-node")];
       expect(groups.at(-1)).toBe(other);
+    });
+
+    /**
+     * `기타`는 ws-root Z_ 채널이 심는 진짜 태그라 미일치 묶음과 이름이 부딪힐 수 있었다. 둘이
+     * 같은 이름이면 트리에 이름도 토글 접근성 이름도 똑같은 형제 줄이 나란히 선다.
+     */
+    it("태그 `기타` 묶음과 미일치 묶음은 이름도 색도 다른 별개의 두 줄이다", async () => {
+      const harness = createApi({
+        projects: [atlas],
+        sessions: [],
+        workProjects: [
+          workProject("wp-etc", "O_SMCH/24_SMCH_VSP-1", "외주개발"),
+          workProject("wp-none", "손으로 만든 묶음", "정부지원과제", { order: 1 }),
+        ],
+        projectTags: { "wp-etc": ["기타"] },
+        workspace: workspaceSnapshot([VSP], [
+          { workProjectId: "wp-etc", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
+        ]),
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" });
+
+      expect([...nav.querySelectorAll(".tag-group-name")].map((node) => node.textContent)).toEqual([
+        "기타",
+        "나머지",
+      ]);
+      const tagged = tagGroup(nav, "기타");
+      const other = tagGroup(nav, "나머지");
+      expect(tagged).not.toBe(other);
+      expect(tagged).toHaveClass(tagAccentClass("기타"));
+      expect(tagged).not.toHaveClass("tag-group-other");
+      expect(other).toHaveClass("tag-group-other");
+      expect(
+        within(tagged).getByRole("button", { name: "가상수술계획 프로젝트 열기" }),
+      ).toBeInTheDocument();
+      expect(
+        within(other).getByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" }),
+      ).toBeInTheDocument();
+      // 두 토글이 서로 다른 이름으로 잡혀야 스크린 리더가 둘을 가른다.
+      expect(within(nav).getByRole("button", { name: "기타 접기" })).toBeInTheDocument();
+      expect(within(nav).getByRole("button", { name: "나머지 접기" })).toBeInTheDocument();
     });
 
     it("묶기 메뉴로 태그 둘을 고르면 그 순서로 묶이고, 재시작해도 그대로다", async () => {
@@ -3872,7 +3916,7 @@ describe("folder colour", () => {
   });
 
   it("collapses and re-expands both layers at once, and remembers it across a restart", async () => {
-    // 태그가 붙은 것은 용역 묶음 아래에, 붙지 않은 것은 기타 묶음 아래에 — 두 층이 한 화면에 같이 선다.
+    // 태그가 붙은 것은 용역 묶음 아래에, 붙지 않은 것은 나머지 묶음 아래에 — 두 층이 한 화면에 같이 선다.
     const harness = () =>
       createApi({
         projects: [atlas, dashboard],
@@ -3895,11 +3939,11 @@ describe("folder colour", () => {
 
     // 묶음이 접히면 그 안의 업무 프로젝트 줄까지 통째로 화면에서 사라진다.
     await waitFor(() => expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "false"));
-    expect(tagGroupNode("기타")).toHaveAttribute("aria-expanded", "false");
+    expect(tagGroupNode("나머지")).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" })).not.toBeInTheDocument();
 
     // 묶음 하나만 도로 펴면 그 안의 프로젝트는 접힌 채로 서 있다 — 두 층은 서로 다른 키에 적힌다.
-    fireEvent.click(within(nav).getByRole("button", { name: "기타 펼치기" }));
+    fireEvent.click(within(nav).getByRole("button", { name: "나머지 펼치기" }));
     expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "false");
 
     // 프로젝트 접힘은 App이, 묶음 접힘은 사이드바가 각자의 키에 적으므로 재시작해도 그대로다.
@@ -3909,7 +3953,7 @@ describe("folder colour", () => {
 
     await waitFor(() => expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "false"));
     expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "false");
-    expect(tagGroupNode("기타")).toHaveAttribute("aria-expanded", "true");
+    expect(tagGroupNode("나머지")).toHaveAttribute("aria-expanded", "true");
 
     fireEvent.click(screen.getByTitle("모든 묶음과 프로젝트 펼치기"));
 

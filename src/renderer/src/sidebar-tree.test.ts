@@ -80,18 +80,30 @@ describe("buildTreeNodes", () => {
     expect(byOther.map((node) => node.key)).toEqual(["tag:용역"]);
   });
 
-  it("고른 태그에 하나도 걸리지 않으면 기타 묶음이고, 기타는 항상 마지막이다", () => {
-    // 태그 없는 wp-none이 먼저 서 있어도 기타는 뒤로 간다.
+  it("고른 태그에 하나도 걸리지 않으면 나머지 묶음이고, 나머지는 항상 마지막이다", () => {
+    // 태그 없는 wp-none이 먼저 서 있어도 나머지는 뒤로 간다.
     const built = sections("wp-none", "wp-s1");
     const nodes = buildTreeNodes(built, {
       tags: ["용역"],
       tagsByWorkProject: { "wp-s1": ["용역"] },
     });
     expect(nodes.map((node) => node.key)).toEqual(["tag:용역", OTHER_GROUP_KEY]);
-    expect(nodes[1]).toMatchObject({ kind: "group", tag: null, label: "기타", sections: [{ key: "wp-none" }] });
+    expect(nodes[1]).toMatchObject({ kind: "group", tag: null, label: "나머지", sections: [{ key: "wp-none" }] });
   });
 
-  it("미분류는 묶음 밖 최상위에, 기타보다도 뒤에 선다", () => {
+  /**
+   * `기타`는 ws-root Z_ 채널이 심는 진짜 태그다(CHANNEL_LABEL_ORDER에도 있다). 미일치 묶음까지
+   * 같은 이름이면 트리에 이름도 접근성 이름도 똑같은 형제 줄이 둘 서므로, 이름은 갈라져 있어야 한다.
+   */
+  it("태그 `기타`와 미일치 묶음은 이름이 다른 별개의 두 묶음이다", () => {
+    const built = sections("wp-etc", "wp-none");
+    const nodes = buildTreeNodes(built, { tags: ["기타"], tagsByWorkProject: { "wp-etc": ["기타"] } });
+    expect(nodes.map((node) => node.key)).toEqual(["tag:기타", OTHER_GROUP_KEY]);
+    expect(nodes[0]).toMatchObject({ kind: "group", tag: "기타", label: "기타", sections: [{ key: "wp-etc" }] });
+    expect(nodes[1]).toMatchObject({ kind: "group", tag: null, label: "나머지", sections: [{ key: "wp-none" }] });
+  });
+
+  it("미분류는 묶음 밖 최상위에, 나머지보다도 뒤에 선다", () => {
     const built = buildTreeSections(
       [workProject("wp-s1", "용역 것"), workProject("wp-none", "태그 없음")],
       [project("a")],

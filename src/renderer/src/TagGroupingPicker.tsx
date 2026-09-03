@@ -20,6 +20,12 @@ export function TagGroupingPicker({ available, selected, isDefault, onChange }: 
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const label = `묶기: ${selected.length > 0 ? selected.join(" › ") : "없음"}${isDefault ? " (자동)" : ""}`;
+  /**
+   * 고른 것이 먼저, 그다음 아직 안 고른 후보. 마지막 업무 프로젝트에서 떨어져 나가 `available`에
+   * 없어진 태그도 아직 묶기에 남아 있으면 여기 서야 한다 — 그러지 않으면 버튼에는 보이는데
+   * 해제할 항목이 메뉴에 없어, 그 묶기에서 빠져나올 길이 사라진다.
+   */
+  const items = [...selected, ...available.filter((tag) => !selected.includes(tag))];
 
   useEffect(() => {
     if (!open) return;
@@ -53,10 +59,10 @@ export function TagGroupingPicker({ available, selected, isDefault, onChange }: 
       </button>
       {open ? (
         <div className="grouping-picker-menu" role="menu" aria-label="묶기 설정">
-          {available.length === 0 ? (
+          {items.length === 0 ? (
             <p className="grouping-picker-empty">태그 없음</p>
           ) : (
-            available.map((tag) => (
+            items.map((tag) => (
               <button
                 key={tag}
                 type="button"
