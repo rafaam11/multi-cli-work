@@ -403,6 +403,8 @@ export async function pruneProjectTags(knownIds, options = {}) {
 
 `sidebar-tree.ts`에서 `ChannelNode`를 없애는 순간 `ProjectSidebar.tsx`의 import가 깨지므로 한 태스크다.
 
+> **개정(R10, 2026-09-03):** 어느 태그에도 걸리지 않은 프로젝트를 담는 묶음의 **표시 이름은 `나머지`**다(키는 `tag:` 그대로). ws-root `Z_` 채널이 심는 채널 라벨 태그가 `기타`라, 이름을 `기타`로 두면 `tag:기타` 묶음과 나란히 같은 이름·같은 토글 접근성 이름(`기타 접기`)이 선다. 아래 본문·테스트의 "기타 묶음"은 전부 `나머지`로 읽는다(라벨·`aria-label`·빈 목록 문구·CSS 주석).
+
 **Files:**
 - Modify: `src/renderer/src/sidebar-tree.ts`(전면), `src/renderer/src/ProjectSidebar.tsx`(props L66 옆, `readSidebarState` L158, 상태 L265-271, `persist` L273-291과 호출부 L295·301·411·864·870, `keepNonChannelKeys` L413·컨트롤 L416-430, `renderChannel` L559-592, 렌더 분기 L1027, tree-controls L983-996), `src/renderer/src/work-project-accent.ts`(L36-54 삭제), `src/renderer/src/index.css`(`.channel-*` L85-103과 채널 노드 스타일 ~L1905-1953 → `.tag-group-*`, `.grouping-picker-*`)
 - Create: `src/renderer/src/TagGroupingPicker.tsx`, Test: `src/renderer/src/TagGroupingPicker.test.tsx`
