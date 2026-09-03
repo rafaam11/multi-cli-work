@@ -114,30 +114,6 @@
 }
 
 /*
- * ws-root 채널은 업무 프로젝트의 상위 묶음이므로 같은 팔레트를 다시 쓴다 — 한 화면에 색 계열이
- * 둘이 되면 색이 무엇을 뜻하는지 흐려진다. 매핑은 work-project-accent.ts의 channelAccentClass에.
- */
-.channel-grant {
-  --category-accent: var(--category-government);
-}
-
-.channel-service {
-  --category-accent: var(--category-outsourcing);
-}
-
-.channel-research {
-  --category-accent: var(--category-research);
-}
-
-.channel-personal {
-  --category-accent: var(--category-product);
-}
-
-.channel-etc {
-  --category-accent: var(--category-etc);
-}
-
-/*
  * The category label wherever it appears (home card, detail form). It always spells the category
  * out, so those screens never leave the colour carrying the meaning on its own. The sidebar
  * deliberately opts out — see .work-project-select.
@@ -1732,14 +1708,17 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
-/* Bulk expansion gets its own row: the heading's four icons are already as many as it holds. */
+/* Bulk expansion gets its own row: the heading's four icons are already as many as it holds. The
+   묶기 picker rides on the same row, so these rules stay on the direct children — the picker's own
+   button and its menu items are buttons too, and must not inherit the pill shape. */
 .tree-controls {
   display: flex;
   gap: 3px;
   padding: 0 6px 5px;
 }
 
-.tree-controls button {
+.tree-controls > button,
+.grouping-picker-button {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -1756,15 +1735,111 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
-.tree-controls button:hover {
+.tree-controls > button:hover,
+.grouping-picker-button:hover {
   color: var(--text);
 }
 
-.tree-controls button > span {
+.tree-controls > button > span,
+.grouping-picker-value {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * 묶기 메뉴. 트리 컨트롤 줄의 넷째 칸이지만 무엇으로 묶여 있는지를 글로 읽어야 하므로, 셋보다
+ * 넓은 몫을 갖는다. 열리면 그 줄 바로 아래에 붙는다 — 컨텍스트 메뉴와 달리 마우스 좌표가 아니라
+ * 누른 버튼에 매달리는 것이라, 위치 계산 없이 position: absolute면 된다.
+ */
+.grouping-picker {
+  position: relative;
+  display: flex;
+  flex: 1.6;
+  min-width: 0;
+}
+
+.grouping-picker-menu {
+  position: absolute;
+  top: calc(100% + 3px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  min-width: 150px;
+  max-width: 220px;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 36%);
+}
+
+.grouping-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  font-size: var(--type-caption-size);
+  cursor: pointer;
+}
+
+.grouping-picker-item:hover {
+  background: var(--surface-hover);
+}
+
+.grouping-picker-swatch {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--category-accent, var(--quiet));
+}
+
+/* 고른 것에만 테두리가 선다 — 체크 표시를 하나 더 놓기에는 줄이 좁고, 색 점이 이미 왼쪽에 있다. */
+.grouping-picker-item[aria-checked="true"] {
+  background: color-mix(in srgb, var(--category-accent, transparent) 18%, var(--surface-hover));
+}
+
+.grouping-picker-tag {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grouping-picker-empty {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+}
+
+.grouping-picker-separator {
+  margin: 4px 2px;
+  border-top: 1px solid var(--line);
+}
+
+.grouping-picker-clear {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--quiet);
+  text-align: left;
+  background: transparent;
+  font-size: var(--type-caption-size);
+  cursor: pointer;
+}
+
+.grouping-picker-clear:hover {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 .icon-button {
@@ -1940,24 +2015,29 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 /*
- * ws-root 채널 줄. 업무 프로젝트 줄보다 한 단 위지만 더 조용하다 — 채널은 열 화면이 없고 접고
+ * 태그 묶음 줄. 업무 프로젝트 줄보다 한 단 위지만 더 조용하다 — 묶음은 열 화면이 없고 접고
  * 펴는 것이 전부라, 눌러야 할 것처럼 보이면 안 된다. 그래서 배경도 선택 상태도 없고, 대문자
- * 캡션과 채널 색 점만 남긴다(미분류 라벨과 같은 급).
+ * 캡션과 태그 색 점만 남긴다(미분류 라벨과 같은 급). 레일 색은 `.accent-n`이 세운
+ * `--category-accent`에서 오고, 어느 태그에도 걸리지 않은 기타 묶음만 회색이다.
  */
-.channel-node + .channel-node,
-.channel-node + .work-project-node,
-.work-project-node + .channel-node {
+.tag-group-node + .tag-group-node,
+.tag-group-node + .work-project-node,
+.work-project-node + .tag-group-node {
   margin-top: 10px;
 }
 
-.channel-row {
+.tag-group-other {
+  --category-accent: var(--category-etc);
+}
+
+.tag-group-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   min-height: 24px;
   align-items: center;
 }
 
-.channel-copy {
+.tag-group-copy {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1965,7 +2045,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--category-accent, var(--quiet));
 }
 
-.channel-name {
+.tag-group-name {
   font: var(--type-caption-semibold);
   letter-spacing: 0.04em;
   overflow: hidden;
@@ -1973,14 +2053,9 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
-.channel-label {
-  color: var(--quiet);
-  font: var(--type-caption);
-}
-
-/* 채널 아래의 셸들은 들여쓰기 없이 선다 — 채널 줄 자체가 이미 낮고 조용해서, 한 단 더 밀면
-   폴더 이름이 사이드바 폭을 잃는다. 묶음은 각 셸의 색 레일이 이어 준다. */
-.channel-group {
+/* 묶음 아래의 프로젝트들은 들여쓰기 없이 선다 — 묶음 줄 자체가 이미 낮고 조용해서, 한 단 더
+   밀면 폴더 이름이 사이드바 폭을 잃는다. 묶임은 각 프로젝트의 색 레일이 이어 준다. */
+.tag-group-children {
   margin: 2px 0 0;
   padding: 0;
   list-style: none;

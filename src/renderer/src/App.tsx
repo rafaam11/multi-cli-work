@@ -12,6 +12,7 @@ import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-ty
 import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
+import { tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
 import { pathStyleFor, resolveShellRefForPath } from "@shared/workspace-path";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
@@ -289,6 +290,7 @@ export function App() {
   const sessionsRef = useRef<TerminalSessionView[]>([]);
   const activityIdRef = useRef(0);
   const [workProjectRegistry, setWorkProjectRegistry] = useState<WorkProjectRegistryV1 | null>(null);
+  const [projectTags, setProjectTags] = useState<ProjectTagsV1 | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
   const [selectedWorkProjectId, setSelectedWorkProjectId] = useState<string | null>(null);
   const [collapsedWorkProjectIds, setCollapsedWorkProjectIds] = useState<Set<string>>(() => {
@@ -383,9 +385,15 @@ export function App() {
     );
   }, [workProjectRegistry]);
 
+  /** 업무 프로젝트 id → 태그. 사이드바가 태그 한 겹을 얹는 근거다. 사라진 행은 그냥 빠진다. */
+  const tagsByWorkProjectId = useMemo(
+    () => tagsByWorkProject(projectTags, workProjects.map((workProject) => workProject.id)),
+    [projectTags, workProjects],
+  );
+
   /**
-   * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 사이드바가 채널 한 겹을 얹고 셸의
-   * 한글 이름을 쓰는 근거이며, 대응하는 업무 프로젝트가 사라진 연결은 그냥 빠진다.
+   * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 사이드바가 셸의 한글 이름을 쓰고
+   * 기본 묶기를 켜는 근거이며, 대응하는 업무 프로젝트가 사라진 연결은 그냥 빠진다.
    */
   const workspaceShells = useMemo(() => {
     const map: Record<string, WorkspaceShellInfo> = {};
@@ -628,7 +636,7 @@ export function App() {
       setLoadError(null);
       const forceHome = preservedSelection?.view === "home";
       try {
-        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList, workProjectList, workspaceSnapshot] =
+        const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList, workProjectList, projectTagList, workspaceSnapshot] =
           await Promise.all([
             window.multiCliWork.projects.list(),
             window.multiCliWork.terminals.list(),
@@ -638,12 +646,14 @@ export function App() {
             window.multiCliWork.worktrees.list(),
             window.multiCliWork.github.activeReviews(),
             window.multiCliWork.workProjects.list(),
+            window.multiCliWork.projectTags.list(),
             window.multiCliWork.workspace.list(),
           ]);
         // The project registry is the primary sidebar data. Publish it before optional selection
         // restoration and Git enrichment so either concern cannot blank the whole tree.
         setSnapshot(registrySnapshot);
         setWorkProjectRegistry(workProjectList);
+        setProjectTags(projectTagList);
         setWorkspace(workspaceSnapshot);
         setSessions(terminalSessions);
         setAvailability(providers);
@@ -2824,6 +2834,7 @@ export function App() {
         projects={projects}
         workProjects={workProjects}
         workspaceShells={workspaceShells}
+        tagsByWorkProject={tagsByWorkProjectId}
         projectMembership={projectMembership}
         expandedWorkProjects={expandedWorkProjects}
         selectedWorkProjectId={activeView === "work-project" ? selectedWorkProjectId : null}
