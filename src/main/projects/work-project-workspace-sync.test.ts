@@ -343,7 +343,6 @@ describe("syncFromWorkspace", () => {
     };
 
     await withClock("2026-08-30T00:00:00.000Z").syncFromWorkspace(snapshot([VSP, CAREER]), []);
-    const linksAfterCreate = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
 
     // CAREER 업무 프로젝트를 사용자가 지웠다 — 태그 행도 함께 정리되어야 한다.
     await withClock("2026-08-30T00:00:00.000Z").removeWorkProject(IDS[1]);
