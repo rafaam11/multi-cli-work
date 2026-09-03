@@ -52,6 +52,7 @@ import {
   type TagGroupNode,
   type TreeSection,
 } from "./sidebar-tree";
+import { TagChips } from "./TagChips";
 import { TagGroupingPicker } from "./TagGroupingPicker";
 import { tagAccentClass } from "./tag-color";
 import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
@@ -705,6 +706,7 @@ export function ProjectSidebar({
                 <span className="project-name" title={workProject.name}>
                   {workProjectLabel(workProject)}
                 </span>
+                <TagChips tags={tagsByWorkProject[workProject.id] ?? []} />
               </span>
             </button>
           </div>

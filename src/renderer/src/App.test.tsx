@@ -2027,6 +2027,28 @@ describe("work project categories", () => {
     expect(await groupOf("A사 관제")).toHaveClass("category-outsourcing");
   });
 
+  it("업무 프로젝트 행에 태그 칩을 달고, 넘치면 +N으로 접는다", async () => {
+    const harness = createApi({
+      projects: [atlas],
+      sessions: [],
+      workProjects: [
+        workProject("wp-vsp", "가상수술계획", "외주개발", {
+          members: [{ projectId: atlas.id, role: "repo" }],
+        }),
+      ],
+      projectTags: { "wp-vsp": ["용역", "긴급", "고객사", "내부"] },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    const button = await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" });
+    // 4개 중 3개만 칩으로 서고, 나머지는 +1 배지로 접힌다 — 그래도 버튼의 접근성 이름은 그대로다.
+    expect(button.querySelectorAll(".tag-chip")).toHaveLength(3);
+    expect(button.querySelector(".tag-chip-more")).toHaveTextContent("+1");
+    expect(button).toHaveAccessibleName("가상수술계획 프로젝트 열기");
+  });
+
   /** A session name says nothing about where the session lives; the line above it does. */
   it("opens a pane header with the folder the session runs in and the work project that owns it", async () => {
     const harness = createApi({
@@ -3800,9 +3822,15 @@ describe("folder colour", () => {
     within(screen.getByRole("navigation", { name: "프로젝트" }))
       .getByRole("button", { name: `${name} 프로젝트 열기` })
       .closest(".work-project-node")!;
-  /** 태그 묶음 줄은 접혀 있어도 서 있으므로, 이름 그대로 찾으면 접힘 상태와 무관하게 잡힌다. */
+  /**
+   * 태그 묶음 줄은 접혀 있어도 서 있으므로, 이름 그대로 찾으면 접힘 상태와 무관하게 잡힌다.
+   * 묶음 라벨 칸(`.tag-group-name`)으로 좁힌다 — 같은 태그 글자가 이제 업무 프로젝트 행의
+   * 칩에도 나오므로, 그냥 `getByText`는 두 곳 다 잡아 버린다.
+   */
   const tagGroupNode = (label: string) =>
-    within(screen.getByRole("navigation", { name: "프로젝트" })).getByText(label).closest(".tag-group-node")!;
+    [...screen.getByRole("navigation", { name: "프로젝트" }).querySelectorAll<HTMLElement>(".tag-group-node")].find(
+      (node) => node.querySelector(".tag-group-name")?.textContent === label,
+    )!;
 
   it("follows the folder's own agents rather than a hand-set flag", async () => {
     const harness = createApi({ projects: [atlas], sessions: [powershellSession] });

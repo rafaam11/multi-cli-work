@@ -12,7 +12,7 @@ import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-ty
 import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
-import { tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
+import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
 import { pathStyleFor, resolveShellRefForPath } from "@shared/workspace-path";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
@@ -390,6 +390,9 @@ export function App() {
     () => tagsByWorkProject(projectTags, workProjects.map((workProject) => workProject.id)),
     [projectTags, workProjects],
   );
+
+  /** 상세 페이지 태그 편집기의 자동완성 후보 — 다른 업무 프로젝트가 이미 쓰고 있는 태그. */
+  const tagSuggestions = useMemo(() => knownTags(tagsByWorkProjectId), [tagsByWorkProjectId]);
 
   /**
    * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 사이드바가 셸의 한글 이름을 쓰고
@@ -3093,9 +3096,12 @@ export function App() {
                 selectedWorkProjectMembers.some((member) => member.project.id === session.projectId),
               )}
               agents={agents}
+              tags={tagsByWorkProjectId[selectedWorkProject.id] ?? []}
+              tagSuggestions={tagSuggestions}
               onSelectSession={selectSession}
               onSelectProject={selectProject}
               onRegistryChanged={setWorkProjectRegistry}
+              onTagsChanged={setProjectTags}
               onMemberFolderAdded={handleMemberFolderAdded}
               onRemoveWorkProject={() => {
                 if (window.confirm(`"${selectedWorkProject.name}" 프로젝트를 삭제할까요? 폴더와 세션은 남습니다.`)) {
@@ -3163,6 +3169,7 @@ export function App() {
               projects={projects}
               workProjects={workProjects}
               projectMembership={projectMembership}
+              tagsByWorkProject={tagsByWorkProjectId}
               sessions={sessions}
               agents={agents}
               activityLog={activityLog}

@@ -84,10 +84,10 @@ interface WorkProjectDetailPageProps {
   /** Sessions belonging to any member folder. */
   sessions: TerminalSessionView[];
   agents: AgentView[];
-  /** 이 업무 프로젝트에 붙은 자유 태그. Task 9가 App에서 내려준다. */
-  tags?: readonly string[];
-  /** 다른 업무 프로젝트가 이미 쓰고 있는 태그 — 자동완성 후보. Task 9가 App에서 내려준다. */
-  tagSuggestions?: readonly string[];
+  /** 이 업무 프로젝트에 붙은 자유 태그. App이 레지스트리에서 내려준다. */
+  tags: readonly string[];
+  /** 다른 업무 프로젝트가 이미 쓰고 있는 태그 — 자동완성 후보. App이 내려준다. */
+  tagSuggestions: readonly string[];
   onSelectSession(session: TerminalSessionView): void;
   onSelectProject(projectId: string): void;
   onRegistryChanged(registry: WorkProjectRegistryV1): void;
@@ -96,8 +96,8 @@ interface WorkProjectDetailPageProps {
   onOpenNotion(url: string): void;
   onRevealProject(projectId: string): void;
   onRevealLocalFolder(folderPath: string): void;
-  /** 태그 저장이 돌려준 레지스트리를 위로 올린다. Task 9가 App에서 배선한다. */
-  onTagsChanged?(registry: ProjectTagsV1): void;
+  /** 태그 저장이 돌려준 레지스트리를 위로 올린다. App이 배선한다. */
+  onTagsChanged(registry: ProjectTagsV1): void;
 }
 
 export function WorkProjectDetailPage({
@@ -106,9 +106,8 @@ export function WorkProjectDetailPage({
   teamsSyncRoot,
   sessions,
   agents,
-  // Task 9 wires these from App — 그때 필수 props가 된다.
-  tags: savedTags = [],
-  tagSuggestions = [],
+  tags: savedTags,
+  tagSuggestions,
   onSelectSession,
   onSelectProject,
   onRegistryChanged,
@@ -117,7 +116,7 @@ export function WorkProjectDetailPage({
   onOpenNotion,
   onRevealProject,
   onRevealLocalFolder,
-  onTagsChanged = () => {},
+  onTagsChanged,
 }: WorkProjectDetailPageProps) {
   const [name, setName] = useState(workProject.name);
   const [category, setCategory] = useState(workProject.category);

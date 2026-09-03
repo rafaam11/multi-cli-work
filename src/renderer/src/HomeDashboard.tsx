@@ -7,6 +7,7 @@ import { Briefcase, Clock, Info, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, agentAccentClass } from "./brand-icons";
 import { recentProjects } from "./recent-folders";
+import { TagChips } from "./TagChips";
 import {
   TOOL_AGENT_ID,
   findAgent,
@@ -64,6 +65,11 @@ interface HomeDashboardProps {
   agents: AgentView[];
   activityLog: ActivityEntry[];
   pendingAction: boolean;
+  /**
+   * 업무 프로젝트 id → 붙은 태그. 카드에 얹는 용도라 기본값 `{}`를 둔다 — 이 프롭을 모르는 기존
+   * 렌더는 그냥 칩 없는 카드를 그린다.
+   */
+  tagsByWorkProject?: Record<string, readonly string[]>;
   onSelectSession(session: TerminalSessionView): void;
   onSelectWorkProject(workProjectId: string): void;
   onStartSession(project: SharedProject, kind: TerminalKind): void;
@@ -78,6 +84,7 @@ export function HomeDashboard({
   agents,
   activityLog,
   pendingAction,
+  tagsByWorkProject = {},
   onSelectSession,
   onSelectWorkProject,
   onStartSession,
@@ -137,6 +144,7 @@ export function HomeDashboard({
                         <span className="work-project-card-name">{workProject.name}</span>
                         <span className="work-project-card-meta">
                           <span className="category-chip">{workProject.category}</span>
+                          <TagChips tags={tagsByWorkProject[workProject.id] ?? []} />
                           <span className="meta-counts">
                             {workProject.status ? `${workProject.status} · ` : ""}폴더 {memberIds.size}개 · 활성 세션{" "}
                             {activeSessionCount}개
