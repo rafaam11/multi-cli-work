@@ -148,6 +148,48 @@ describe("프로젝트 탭", () => {
     fireEvent.change(screen.getByLabelText("기본 구분"), { target: { value: "연구" } });
     await waitFor(() => expect(update).toHaveBeenCalledWith({ projects: { defaultCategory: "연구" } }));
   });
+
+  it("기본 구분을 지우면 목록만 보내고, 화면은 첫 항목을 새 기본 구분으로 보여준다", async () => {
+    openProjects(); // 기본 구분은 DEFAULT_SETTINGS 기준 "기타"(4번째 행)
+    fireEvent.click(screen.getByRole("button", { name: "기타 삭제" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        projects: { categories: DEFAULT_CATEGORIES.slice(0, 3) },
+      }),
+    );
+    expect(screen.getByLabelText("기본 구분")).toHaveValue("업무");
+  });
+
+  it("기본 구분의 이름을 바꾸면 한 패치에 목록과 새 기본 구분을 함께 보낸다", async () => {
+    openProjects();
+    const input = screen.getByLabelText("구분 4 이름"); // "기타" — 기본 구분
+    fireEvent.change(input, { target: { value: "잡무" } });
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        projects: {
+          categories: [...DEFAULT_CATEGORIES.slice(0, 3), { name: "잡무", color: 5 }],
+          defaultCategory: "잡무",
+        },
+      }),
+    );
+    expect(screen.getByLabelText("기본 구분")).toHaveValue("잡무");
+  });
+
+  it("Enter는 이름을 커밋하고, 조합 중 Enter는 무시한다", async () => {
+    openProjects();
+    const input = screen.getByLabelText("구분 1 이름");
+    input.focus(); // blur()는 실제로 포커스된 엘리먼트에서만 이벤트를 낸다
+    fireEvent.change(input, { target: { value: "영업" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        projects: { categories: [{ name: "영업", color: 1 }, ...DEFAULT_CATEGORIES.slice(1)] },
+      }),
+    );
+  });
 });
 
 describe("노션 탭", () => {

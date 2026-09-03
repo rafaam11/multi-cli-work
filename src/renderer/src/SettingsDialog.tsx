@@ -327,11 +327,29 @@ function ProjectsSettings({
     setPendingFocusIndex(null);
   }, [pendingFocusIndex]);
 
-  /** 목록을 바꾸는 모든 동작(색·순서·추가·삭제·이름 커밋)이 지나는 한 곳 — 로컬 사본과 드래프트를
-   *  함께 새 목록에 맞추고서야 저장을 보낸다. */
-  const applyCategories = (next: ProjectCategorySetting[]) => {
+  /**
+   * 목록을 바꾸는 모든 동작(색·순서·추가·삭제·이름 커밋)이 지나는 한 곳 — 로컬 사본과 드래프트를
+   * 함께 새 목록에 맞추고서야 저장을 보낸다.
+   *
+   * 기본 구분이 살아남으면 목록만 보낸다. 기본 구분이 사라졌는데 `renamedTo`가 있으면(이름 바꾸기가
+   * 하필 기본 구분 행이었던 경우) 파서가 조용히 첫 항목으로 되돌리는 놀라움을 피하려고 같은 패치에
+   * 새 이름을 함께 보낸다. `renamedTo`가 없으면(삭제) 브리핑 계약대로 목록만 보내고 — 화면과 select만
+   * 파서가 낼 결과(첫 항목)에 미리 맞춰 둔다.
+   */
+  const applyCategories = (next: ProjectCategorySetting[], renamedTo?: string) => {
     setCategories(next);
     setDrafts(next.map((category) => category.name));
+
+    if (next.some((category) => category.name === defaultCategory)) {
+      onChange({ categories: next });
+      return;
+    }
+    if (renamedTo !== undefined) {
+      setDefaultCategory(renamedTo);
+      onChange({ categories: next, defaultCategory: renamedTo });
+      return;
+    }
+    setDefaultCategory(next[0]!.name);
     onChange({ categories: next });
   };
 
@@ -375,7 +393,10 @@ function ProjectsSettings({
       setDrafts((current) => current.map((draft, at) => (at === index ? original : draft)));
       return;
     }
-    applyCategories(categories.map((category, at) => (at === index ? { ...category, name: trimmed } : category)));
+    applyCategories(
+      categories.map((category, at) => (at === index ? { ...category, name: trimmed } : category)),
+      trimmed,
+    );
   };
 
   const changeDefault = (name: string) => {
