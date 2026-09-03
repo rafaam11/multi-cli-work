@@ -2473,6 +2473,40 @@ describe("quick open palette", () => {
     fireEvent.keyDown(within(reopened).getByRole("textbox", { name: "빠른 열기 검색" }), { key: "Enter" });
     expect(screen.getByRole("region", { name: "홈 대시보드" })).toBeInTheDocument();
   });
+
+  it("finds a work project by #tag and opens its detail page", async () => {
+    const workProject: WorkProject = {
+      id: "wp-personal",
+      name: "진로",
+      category: "기타",
+      status: "진행중",
+      memo: "",
+      notionLinks: [],
+      localFolders: [],
+      members: [],
+      order: 0,
+      createdAt: "2026-07-11T00:00:00.000Z",
+      updatedAt: "2026-07-11T00:00:00.000Z",
+    };
+    const harness = createApi({
+      projects: [atlas],
+      workProjects: [workProject],
+      projectTags: { "wp-personal": ["개인"] },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "빠른 열기" });
+    const input = within(dialog).getByRole("textbox", { name: "빠른 열기 검색" });
+
+    fireEvent.change(input, { target: { value: "#개인" } });
+    expect(await within(dialog).findByText("진로")).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByRole("region", { name: "업무 프로젝트 상세" })).toBeInTheDocument();
+  });
 });
 
 describe("unread badges", () => {

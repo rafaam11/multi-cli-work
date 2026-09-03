@@ -57,4 +57,17 @@ describe("rankQuickOpen", () => {
     const twins = [item("a", "Session"), item("b", "Session")];
     expect(rankQuickOpen(twins, "ses").map((entry) => entry.key)).toEqual(["a", "b"]);
   });
+
+  it("matches a work project's #tag detail with or without the # prefix", () => {
+    const tagged: QuickOpenItem = {
+      key: "work-project:wp1",
+      kind: "workProject",
+      label: "가상수술계획",
+      detail: "#연구",
+    };
+    const withHash = rankQuickOpen([...items, tagged], "#연구").map((entry) => entry.key);
+    const withoutHash = rankQuickOpen([...items, tagged], "연구").map((entry) => entry.key);
+    expect(withHash).toContain("work-project:wp1");
+    expect(withoutHash).toContain("work-project:wp1");
+  });
 });

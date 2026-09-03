@@ -2316,6 +2316,14 @@ export function App() {
       label: workspace.kind === "main" ? `${nameById.get(workspace.projectId) ?? "프로젝트"} · 메인` : workspace.branch ?? `detached @ ${workspace.head?.slice(0, 7) ?? "unknown"}`,
       detail: workspace.path,
     }));
+    const workProjectItems = workProjects.map(
+      (workProject): QuickOpenItem => ({
+        key: `work-project:${workProject.id}`,
+        kind: "workProject",
+        label: workspaceShells[workProject.id]?.title ?? workProject.name,
+        detail: (tagsByWorkProjectId[workProject.id] ?? []).map((tag) => `#${tag}`).join(" ") || null,
+      }),
+    );
     const commandItems: QuickOpenItem[] = [
       { key: "command:home", kind: "command", label: "홈 대시보드 열기", detail: null },
       ...(selectedProject && !selectedProjectMissing
@@ -2334,8 +2342,19 @@ export function App() {
       { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
       { key: "command:settings", kind: "command", label: "설정 열기", detail: null },
     ];
-    return [...sessionItems, ...workspaceItems, ...projectItems, ...commandItems];
-  }, [quickOpenVisible, sessions, projects, workspaceViews, agents, selectedProject, selectedProjectMissing]);
+    return [...sessionItems, ...workspaceItems, ...projectItems, ...workProjectItems, ...commandItems];
+  }, [
+    quickOpenVisible,
+    sessions,
+    projects,
+    workspaceViews,
+    workProjects,
+    workspaceShells,
+    tagsByWorkProjectId,
+    agents,
+    selectedProject,
+    selectedProjectMissing,
+  ]);
 
   const handleQuickOpenSelect = (item: QuickOpenItem) => {
     setQuickOpenVisible(false);
@@ -2350,6 +2369,8 @@ export function App() {
     } else if (prefix === "workspace" && rest[0] === "worktree") {
       const worktree = worktrees.find((candidate) => candidate.id === rest.slice(1).join(":"));
       if (worktree) selectWorktree(worktree);
+    } else if (prefix === "work-project") {
+      selectWorkProject(rest.join(":"));
     } else if (item.key === "command:home") {
       openHome();
     } else if (item.key === "command:edit-agents") {
