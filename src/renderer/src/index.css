@@ -4307,6 +4307,33 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: default;
 }
 
+.settings-category-row {
+  gap: 8px;
+}
+
+.settings-category-row > input[type="text"] {
+  width: 140px;
+}
+
+.settings-swatches {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.settings-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--category-accent, var(--muted));
+  cursor: pointer;
+}
+
+.settings-swatch.selected {
+  border-color: var(--text);
+}
+
 .settings-conflict {
   margin-top: 12px;
   padding: 12px;

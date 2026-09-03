@@ -1,11 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NotionTokenStatus } from "@shared/notion-types";
-import type { AppSettings, AppSettingsPatch, NotifiableStatus } from "@shared/settings-types";
+import type {
+  AppSettings,
+  AppSettingsPatch,
+  NotifiableStatus,
+  ProjectCategorySetting,
+  ProjectSettings,
+} from "@shared/settings-types";
 import {
+  MAX_CATEGORY_NAME_LENGTH,
   TERMINAL_FONT_SIZE_RANGE,
   TERMINAL_LINE_HEIGHT_RANGE,
   TERMINAL_SCROLLBACK_RANGE,
 } from "@shared/settings-types";
+import { ACCENT_COLOR_COUNT, ACCENT_INDEXES, accentClass } from "@shared/accent-palette";
 import {
   KEYMAP_ACTIONS,
   KEYMAP_CATEGORY_ORDER,
@@ -18,12 +26,13 @@ import {
 import { publishNotionTokenStatus } from "./notion-token-status";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
 
-type SettingsTab = "general" | "terminal" | "notifications" | "workspace" | "notion" | "keybindings";
+type SettingsTab = "general" | "terminal" | "notifications" | "projects" | "workspace" | "notion" | "keybindings";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "general", label: "일반" },
   { id: "terminal", label: "터미널" },
   { id: "notifications", label: "알림" },
+  { id: "projects", label: "프로젝트" },
   { id: "workspace", label: "워크스페이스" },
   { id: "notion", label: "노션" },
   { id: "keybindings", label: "단축키" },
@@ -292,6 +301,172 @@ function WorkspaceSettings() {
 }
 
 /**
+ * 구분 목록·기본 구분 편집. 다른 즉시 저장 탭과 달리 목록 자체(순서·존재 여부)가 편집 대상이라
+ * `settings.projects`를 그대로 렌더하지 않고 로컬 사본을 든다 — 이 다이얼로그는 저장 왕복 후에도
+ * 같은 `settings` prop을 받을 수 있어(테스트가 그렇듯), 화면이 자기 손으로 만든 값을 스스로
+ * 신뢰해야 다음 조작(순서 변경 뒤 삭제 등)이 최신 목록을 대상으로 한다. `onChange`가 실제 저장을
+ * 맡고, 이 컴포넌트는 "지금 화면이 뭘 보여줄지"만 안다.
+ */
+function ProjectsSettings({
+  projects,
+  onChange,
+}: {
+  projects: ProjectSettings;
+  onChange(next: AppSettingsPatch["projects"]): void;
+}) {
+  const [categories, setCategories] = useState<ProjectCategorySetting[]>(projects.categories);
+  // 이름 입력의 타이핑 중 값 — blur까지는 categories(=이미 저장된 값)와 분리해 둔다.
+  const [drafts, setDrafts] = useState<string[]>(() => projects.categories.map((category) => category.name));
+  const [defaultCategory, setDefaultCategory] = useState(projects.defaultCategory);
+  const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(null);
+  const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  useEffect(() => {
+    if (pendingFocusIndex === null) return;
+    inputRefs.current[pendingFocusIndex]?.focus();
+    setPendingFocusIndex(null);
+  }, [pendingFocusIndex]);
+
+  /** 목록을 바꾸는 모든 동작(색·순서·추가·삭제·이름 커밋)이 지나는 한 곳 — 로컬 사본과 드래프트를
+   *  함께 새 목록에 맞추고서야 저장을 보낸다. */
+  const applyCategories = (next: ProjectCategorySetting[]) => {
+    setCategories(next);
+    setDrafts(next.map((category) => category.name));
+    onChange({ categories: next });
+  };
+
+  const changeColor = (index: number, color: number) => {
+    applyCategories(categories.map((category, at) => (at === index ? { ...category, color } : category)));
+  };
+
+  const moveUp = (index: number) => {
+    if (index === 0) return;
+    const next = [...categories];
+    [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+    applyCategories(next);
+  };
+
+  const moveDown = (index: number) => {
+    if (index === categories.length - 1) return;
+    const next = [...categories];
+    [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
+    applyCategories(next);
+  };
+
+  const removeCategory = (index: number) => {
+    if (categories.length <= 1) return;
+    applyCategories(categories.filter((_, at) => at !== index));
+  };
+
+  const addCategory = () => {
+    const taken = new Set(categories.map((category) => category.name));
+    let candidate = "새 구분";
+    for (let suffix = 2; taken.has(candidate); suffix += 1) candidate = `새 구분 ${suffix}`;
+    const color = (categories.length % ACCENT_COLOR_COUNT) + 1;
+    const next = [...categories, { name: candidate, color }];
+    applyCategories(next);
+    setPendingFocusIndex(next.length - 1);
+  };
+
+  const commitName = (index: number) => {
+    const original = categories[index]!.name;
+    const trimmed = (drafts[index] ?? "").trim();
+    if (trimmed.length === 0 || trimmed === original) {
+      setDrafts((current) => current.map((draft, at) => (at === index ? original : draft)));
+      return;
+    }
+    applyCategories(categories.map((category, at) => (at === index ? { ...category, name: trimmed } : category)));
+  };
+
+  const changeDefault = (name: string) => {
+    setDefaultCategory(name);
+    onChange({ defaultCategory: name });
+  };
+
+  return (
+    <>
+      <h2>프로젝트 구분</h2>
+      <p className="settings-hint">
+        업무 프로젝트의 구분입니다. 사이드바 레일, 홈 카드, 상세 페이지 칩의 색을 정합니다.
+      </p>
+      <ul className="settings-list" aria-label="구분 목록">
+        {categories.map((category, index) => (
+          <li key={index} className="settings-row settings-category-row">
+            <input
+              type="text"
+              aria-label={`구분 ${index + 1} 이름`}
+              maxLength={MAX_CATEGORY_NAME_LENGTH}
+              value={drafts[index] ?? category.name}
+              ref={(element) => {
+                inputRefs.current[index] = element;
+              }}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDrafts((current) => current.map((draft, at) => (at === index ? value : draft)));
+              }}
+              onBlur={() => commitName(index)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) event.currentTarget.blur();
+              }}
+            />
+            <span role="radiogroup" aria-label={`${category.name} 색`} className="settings-swatches">
+              {ACCENT_INDEXES.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={category.color === n}
+                  aria-label={`색 ${n}`}
+                  className={`settings-swatch ${accentClass(n)}${category.color === n ? " selected" : ""}`}
+                  onClick={() => changeColor(index, n)}
+                />
+              ))}
+            </span>
+            <span className="settings-key-controls">
+              <button type="button" disabled={index === 0} onClick={() => moveUp(index)}>
+                {`${category.name} 위로`}
+              </button>
+              <button type="button" disabled={index === categories.length - 1} onClick={() => moveDown(index)}>
+                {`${category.name} 아래로`}
+              </button>
+              <button type="button" disabled={categories.length === 1} onClick={() => removeCategory(index)}>
+                {`${category.name} 삭제`}
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="settings-row">
+        <span />
+        <span className="settings-key-controls">
+          <button type="button" onClick={addCategory}>
+            구분 추가
+          </button>
+        </span>
+      </div>
+      <div className="settings-row">
+        <label htmlFor="settings-default-category">기본 구분</label>
+        <select
+          id="settings-default-category"
+          value={defaultCategory}
+          onChange={(event) => changeDefault(event.target.value)}
+        >
+          {categories.map((category) => (
+            <option key={category.name} value={category.name}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="settings-hint">
+        새로 만들어지는 업무 프로젝트가 받는 구분입니다. 이미 있는 프로젝트의 구분은 바뀌지 않습니다. 이름을
+        바꿔도 마찬가지입니다 — 목록에서 빠진 구분은 회색으로 보이고, 상세 페이지에서 다시 고를 수 있습니다.
+      </p>
+    </>
+  );
+}
+
+/**
  * 저장 버튼이 없는 즉시 적용 폼. 컨트롤 변경 → settings:update → settings:changed 브로드캐스트로
  * App의 사본이 갱신되어 되돌아온다 — 이 다이얼로그 자신도 그 사본을 props로 받는다.
  */
@@ -514,6 +689,9 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
                 </div>
               ))}
             </>
+          ) : null}
+          {tab === "projects" ? (
+            <ProjectsSettings projects={settings.projects} onChange={(next) => update({ projects: next })} />
           ) : null}
           {tab === "workspace" ? <WorkspaceSettings /> : null}
           {tab === "notion" ? <NotionSettings /> : null}

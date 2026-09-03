@@ -4,6 +4,8 @@ import type { MultiCliWorkApi } from "@shared/api-types";
 import { DEFAULT_SETTINGS } from "@shared/settings-types";
 import { SettingsDialog } from "./SettingsDialog";
 
+const DEFAULT_CATEGORIES = DEFAULT_SETTINGS.projects.categories;
+
 const update = vi.fn().mockResolvedValue(DEFAULT_SETTINGS);
 const notion = {
   status: vi.fn(),
@@ -64,6 +66,87 @@ describe("SettingsDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.mouseDown(document.querySelector(".modal-backdrop")!);
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("프로젝트 탭", () => {
+  function openProjects(settings = DEFAULT_SETTINGS) {
+    render(<SettingsDialog settings={settings} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트" }));
+  }
+
+  it("기본 목록 4행을 순서대로 보여주고, 첫 행의 색이 선택돼 있다", () => {
+    openProjects();
+    const list = screen.getByRole("list", { name: "구분 목록" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(4);
+    expect(screen.getByLabelText("구분 1 이름")).toHaveValue("업무");
+    const swatches = within(rows[0]!).getByRole("radiogroup", { name: "업무 색" });
+    expect(within(swatches).getByRole("radio", { name: "색 1" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("색을 클릭하면 그 행만 바뀐 전체 목록을 즉시 저장한다", async () => {
+    openProjects();
+    const firstRow = screen.getAllByRole("listitem")[0]!;
+    fireEvent.click(within(firstRow).getByRole("radio", { name: "색 6" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        projects: { categories: [{ name: "업무", color: 6 }, ...DEFAULT_CATEGORIES.slice(1)] },
+      }),
+    );
+  });
+
+  it("위로 버튼이 항목 순서를 바꾼다", async () => {
+    openProjects();
+    fireEvent.click(screen.getByRole("button", { name: "개인 위로" }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    const sent = update.mock.calls.at(-1)![0];
+    expect(sent.projects.categories[0].name).toBe("개인");
+    expect(screen.getByLabelText("구분 1 이름")).toHaveValue("개인");
+  });
+
+  it("하나만 남으면 삭제가 비활성화된다", async () => {
+    openProjects();
+    fireEvent.click(screen.getByRole("button", { name: "개인 삭제" }));
+    fireEvent.click(screen.getByRole("button", { name: "연구 삭제" }));
+    fireEvent.click(screen.getByRole("button", { name: "기타 삭제" }));
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "업무 삭제" })).toBeDisabled();
+  });
+
+  it("구분 추가는 새 구분을 끝에 붙이고 그 입력에 포커스한다", () => {
+    openProjects();
+    fireEvent.click(screen.getByRole("button", { name: "구분 추가" }));
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(5);
+    const newInput = screen.getByLabelText("구분 5 이름");
+    expect(newInput).toHaveValue("새 구분");
+    expect(newInput).toHaveFocus();
+  });
+
+  it("이름은 blur에서만 저장되고, 빈 값 blur는 저장 없이 원복한다", async () => {
+    openProjects();
+    const input = screen.getByLabelText("구분 1 이름");
+    fireEvent.change(input, { target: { value: "영업" } });
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        projects: { categories: [{ name: "영업", color: 1 }, ...DEFAULT_CATEGORIES.slice(1)] },
+      }),
+    );
+    update.mockClear();
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(update).not.toHaveBeenCalled();
+    expect(input).toHaveValue("영업");
+  });
+
+  it("기본 구분 선택이 즉시 저장된다", async () => {
+    openProjects();
+    fireEvent.change(screen.getByLabelText("기본 구분"), { target: { value: "연구" } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ projects: { defaultCategory: "연구" } }));
   });
 });
 
