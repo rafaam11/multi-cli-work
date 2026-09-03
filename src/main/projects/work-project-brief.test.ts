@@ -100,6 +100,19 @@ describe("renderWorkProjectBrief", () => {
     expect(brief).not.toContain("참고 로컬 폴더");
     expect(brief).not.toContain("## 메모");
   });
+
+  it("lists tags on the line right after status when tags are given", () => {
+    const brief = renderWorkProjectBrief(WORK_PROJECT, [], ["개인", "AI"]);
+    const lines = brief.split("\n");
+    const statusLineIndex = lines.indexOf("- 상태: 진행중");
+    expect(statusLineIndex).toBeGreaterThanOrEqual(0);
+    expect(lines[statusLineIndex + 1]).toBe("- 태그: 개인, AI");
+  });
+
+  it("omits the tag line when there are no tags", () => {
+    const brief = renderWorkProjectBrief(WORK_PROJECT, []);
+    expect(brief).not.toContain("- 태그:");
+  });
 });
 
 describe("writeSessionBrief", () => {

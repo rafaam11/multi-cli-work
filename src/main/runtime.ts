@@ -60,6 +60,7 @@ import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./project
 import { WorkProjectService } from "./projects/work-project-service";
 import { readWorkProjectRegistry } from "./projects/work-project-registry";
 import { readProjectTags, setProjectTags } from "./projects/project-tags-registry";
+import { tagsOf } from "../shared/project-tags-types";
 import {
   renderWorkProjectBrief,
   writeSessionBrief,
@@ -278,12 +279,14 @@ export async function createDesktopRuntime(
       const workProject = Object.values(workProjectRegistry.workProjects).find((candidate) =>
         candidate.members.some((member) => member.projectId === projectId),
       );
+      const tags = workProject ? tagsOf(await readProjectTags(projectTagsOptions), workProject.id) : [];
       const workProjectSection = workProject
         ? renderWorkProjectBrief(
             workProject,
             workProject.members
               .map((member) => ({ project: registry.projects[member.projectId] ?? null, role: member.role }))
               .filter((member): member is WorkProjectBriefMember => member.project !== null),
+            tags,
           )
         : null;
       const project = registry.projects[projectId] ?? null;
