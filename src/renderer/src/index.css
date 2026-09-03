@@ -5453,6 +5453,78 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-ui-size);
 }
 
+/* 태그 편집기: 칩과 입력칸이 한 칸처럼 보여야 다른 폼 행과 높이가 맞는다. 테두리는 상자가 지고,
+   입력칸은 그 안에서 남는 폭을 먹는다. */
+.tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  /* 옆 행의 input·select(13px + 6px 안팎 + 테두리)와 같은 높이에서 출발한다. */
+  min-height: 30px;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+}
+
+.tag-editor:focus-within {
+  border-color: color-mix(in srgb, var(--category-accent, var(--teal)) 55%, var(--line));
+}
+
+/* 색은 뜻이 아니라 구별 표시라(tag-color.ts), 칩은 언제나 태그 이름을 글자로 그대로 보여준다.
+   `.accent-n`이 심어 준 --category-accent를 .category-chip과 같은 농도로 쓴다. */
+.tag-editor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 3px 1px 7px;
+  border-radius: 999px;
+  color: var(--category-accent, var(--muted));
+  background: color-mix(in srgb, var(--category-accent, var(--muted)) 12%, transparent);
+  font: var(--type-caption-semibold);
+  white-space: nowrap;
+}
+
+.tag-editor-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tag-editor-chip button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--category-accent, var(--muted)) 22%, transparent);
+}
+
+.tag-editor-chip button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 상자가 이미 테두리를 가졌으니 입력칸은 벗는다 — .work-project-form input보다 선택자가 좁아야
+   그 규칙을 이긴다. */
+.tag-editor .tag-editor-input {
+  flex: 1 1 88px;
+  min-width: 88px;
+  padding: 2px 3px;
+  border: 0;
+  background: transparent;
+}
+
+.tag-editor .tag-editor-input:focus {
+  outline: none;
+}
+
 /* 노션 링크 목록과 참고 로컬 폴더 목록은 같은 행 레이아웃을 공유한다 — 라벨 칸 + 값 칸 + 아이콘들. */
 .work-project-notion-list,
 .work-project-local-list {

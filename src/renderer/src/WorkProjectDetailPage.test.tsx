@@ -1,5 +1,6 @@
 import type { MultiCliWorkApi } from "@shared/api-types";
 import { notionLinkCheck, type NotionLinkCheck } from "@shared/notion-types";
+import type { ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkProject, WorkProjectRegistryV1 } from "@shared/work-project-types";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -42,15 +43,26 @@ function installApi(
     .fn()
     .mockResolvedValue({ configured: notionOptions.configured ?? false, encryptionAvailable: true });
   const inspectLink = vi.fn().mockResolvedValue(notionOptions.check ?? notionLinkCheck("ok", "삼성서울병원 채널"));
+  const tagRegistry: ProjectTagsV1 = {
+    schemaVersion: 1,
+    updatedAt: WORK_PROJECT.updatedAt,
+    tags: { [WORK_PROJECT.id]: ["개인"] },
+  };
+  const setTags = vi.fn().mockResolvedValue(tagRegistry);
   window.multiCliWork = {
     workProjects: { update, chooseLocalFolder },
     notion: { status, setToken: vi.fn(), clearToken: vi.fn(), inspectLink },
+    projectTags: { list: vi.fn().mockResolvedValue(tagRegistry), set: setTags },
   } as unknown as MultiCliWorkApi;
-  return { update, chooseLocalFolder, status, inspectLink };
+  return { update, chooseLocalFolder, status, inspectLink, setTags, tagRegistry };
 }
 
-function renderPage(workProject: WorkProject = WORK_PROJECT) {
+function renderPage(
+  workProject: WorkProject = WORK_PROJECT,
+  tagProps: { tags?: string[]; tagSuggestions?: string[] } = {},
+) {
   const onRevealLocalFolder = vi.fn();
+  const onTagsChanged = vi.fn();
   render(
     <WorkProjectDetailPage
       workProject={workProject}
@@ -58,6 +70,8 @@ function renderPage(workProject: WorkProject = WORK_PROJECT) {
       teamsSyncRoot={null}
       sessions={[]}
       agents={[]}
+      tags={tagProps.tags ?? []}
+      tagSuggestions={tagProps.tagSuggestions ?? []}
       onSelectSession={vi.fn()}
       onSelectProject={vi.fn()}
       onRegistryChanged={vi.fn()}
@@ -66,9 +80,10 @@ function renderPage(workProject: WorkProject = WORK_PROJECT) {
       onOpenNotion={vi.fn()}
       onRevealProject={vi.fn()}
       onRevealLocalFolder={onRevealLocalFolder}
+      onTagsChanged={onTagsChanged}
     />,
   );
-  return { onRevealLocalFolder };
+  return { onRevealLocalFolder, onTagsChanged };
 }
 
 describe("WorkProjectDetailPage 참고 로컬 폴더", () => {
@@ -289,5 +304,19 @@ describe("WorkProjectDetailPage 노션 링크 검증", () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     expect(inspectLink).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "노션 링크 1 제목 조회" })).toBeDisabled();
+  });
+});
+
+describe("WorkProjectDetailPage 태그", () => {
+  it("칩을 추가하면 곧바로 저장하고 새 레지스트리를 올려보낸다", async () => {
+    const { setTags, tagRegistry } = installApi();
+    const { onTagsChanged } = renderPage();
+
+    const input = screen.getByLabelText("태그 추가");
+    fireEvent.change(input, { target: { value: "개인" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(setTags).toHaveBeenCalledWith("wp-1", ["개인"]));
+    await waitFor(() => expect(onTagsChanged).toHaveBeenCalledWith(tagRegistry));
   });
 });

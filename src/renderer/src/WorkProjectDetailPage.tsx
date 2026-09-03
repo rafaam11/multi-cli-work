@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, WorkProjectMemberFolderAddResult, WorkProjectMetadataPatch } from "@shared/api-types";
 import type { NotionLinkCheck } from "@shared/notion-types";
+import type { ProjectTagsV1 } from "@shared/project-tags-types";
 import type { ProjectStatus, SharedProject } from "@shared/project-types";
 import type {
   WorkProject,
@@ -15,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { GitHubIcon, TeamsIcon } from "./brand-icons";
 import { subscribeNotionTokenStatus } from "./notion-token-status";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
+import { TagEditor } from "./TagEditor";
 import { categoryAccentClass } from "./work-project-accent";
 
 const STATUS_OPTIONS: Array<ProjectStatus | ""> = ["", "진행중", "보류", "완료", "보관"];
@@ -82,6 +84,10 @@ interface WorkProjectDetailPageProps {
   /** Sessions belonging to any member folder. */
   sessions: TerminalSessionView[];
   agents: AgentView[];
+  /** 이 업무 프로젝트에 붙은 자유 태그. Task 9가 App에서 내려준다. */
+  tags?: readonly string[];
+  /** 다른 업무 프로젝트가 이미 쓰고 있는 태그 — 자동완성 후보. Task 9가 App에서 내려준다. */
+  tagSuggestions?: readonly string[];
   onSelectSession(session: TerminalSessionView): void;
   onSelectProject(projectId: string): void;
   onRegistryChanged(registry: WorkProjectRegistryV1): void;
@@ -90,6 +96,8 @@ interface WorkProjectDetailPageProps {
   onOpenNotion(url: string): void;
   onRevealProject(projectId: string): void;
   onRevealLocalFolder(folderPath: string): void;
+  /** 태그 저장이 돌려준 레지스트리를 위로 올린다. Task 9가 App에서 배선한다. */
+  onTagsChanged?(registry: ProjectTagsV1): void;
 }
 
 export function WorkProjectDetailPage({
@@ -98,6 +106,9 @@ export function WorkProjectDetailPage({
   teamsSyncRoot,
   sessions,
   agents,
+  // Task 9 wires these from App — 그때 필수 props가 된다.
+  tags: savedTags = [],
+  tagSuggestions = [],
   onSelectSession,
   onSelectProject,
   onRegistryChanged,
@@ -106,12 +117,14 @@ export function WorkProjectDetailPage({
   onOpenNotion,
   onRevealProject,
   onRevealLocalFolder,
+  onTagsChanged = () => {},
 }: WorkProjectDetailPageProps) {
   const [name, setName] = useState(workProject.name);
   const [category, setCategory] = useState(workProject.category);
   const [notionLinks, setNotionLinks] = useState<WorkProjectNotionLink[]>(workProject.notionLinks);
   const [localFolders, setLocalFolders] = useState<WorkProjectLocalFolder[]>(workProject.localFolders);
   const [memo, setMemo] = useState(workProject.memo);
+  const [tags, setTags] = useState<string[]>([...savedTags]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [notionTokenReady, setNotionTokenReady] = useState<boolean | null>(null);
@@ -128,11 +141,32 @@ export function WorkProjectDetailPage({
     setMemo(workProject.memo);
   }, [workProject.id]);
 
+  // 태그는 업무 프로젝트가 아니라 별도 레지스트리에 살아서, 프로젝트를 바꾸지 않아도 위에서
+  // 새 목록이 내려온다(저장 응답, 다른 화면의 편집). 그때마다 화면을 그 값에 맞춘다.
+  const savedTagsSignature = JSON.stringify(savedTags);
+  useEffect(() => {
+    setTags([...savedTags]);
+  }, [savedTagsSignature]);
+
   const save = async (patch: WorkProjectMetadataPatch) => {
     setSaveError(null);
     try {
       onRegistryChanged(await window.multiCliWork.workProjects.update(workProject.id, patch));
     } catch (error) {
+      setSaveError(errorMessage(error));
+    }
+  };
+
+  // 칩은 누른 즉시 보여야 해서 화면을 먼저 바꾸고 저장한다. 저장이 실패하면 붙지도 않은 칩이
+  // 남지 않도록 되돌린다.
+  const saveTags = async (next: string[]) => {
+    const previous = tags;
+    setTags(next);
+    setSaveError(null);
+    try {
+      onTagsChanged(await window.multiCliWork.projectTags.set(workProject.id, next));
+    } catch (error) {
+      setTags(previous);
       setSaveError(errorMessage(error));
     }
   };
@@ -377,6 +411,10 @@ export function WorkProjectDetailPage({
                 </option>
               ))}
             </select>
+            <label id={`wp-tags-${workProject.id}`}>태그</label>
+            <div role="group" aria-labelledby={`wp-tags-${workProject.id}`}>
+              <TagEditor tags={tags} suggestions={tagSuggestions} onChange={(next) => void saveTags(next)} />
+            </div>
             <label id={`wp-notion-${workProject.id}`}>노션 페이지</label>
             <div className="work-project-notion-list" role="group" aria-labelledby={`wp-notion-${workProject.id}`}>
               {notionLinks.map((link, index) => {
