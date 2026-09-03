@@ -266,6 +266,33 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     expect(folderRowLayout.iconInset).toBeGreaterThanOrEqual(8);
     await expect(page.locator(".project-row .project-name").first()).toBeVisible();
 
+    // The session panel header's title button must own the remaining width between the collapse
+    // toggle and the scope buttons, not just its text — the same "row is the click target" rule as
+    // the folder row above, applied to `.session-panel-title`.
+    const sessionHeaderLayout = await page.locator(".session-panel-heading").first().evaluate((heading) => {
+      const headingBounds = heading.getBoundingClientRect();
+      const titleBounds = heading.querySelector<HTMLElement>(".session-panel-title")?.getBoundingClientRect();
+      const scopeBounds = heading.querySelector<HTMLElement>(".session-panel-scope")?.getBoundingClientRect();
+      return {
+        headingWidth: headingBounds.width,
+        headingHeight: headingBounds.height,
+        titleWidth: titleBounds?.width ?? 0,
+        titleHeight: titleBounds?.height ?? 0,
+        gapToScope: scopeBounds && titleBounds ? scopeBounds.left - titleBounds.right : Number.POSITIVE_INFINITY,
+      };
+    });
+    // The title's flex-grow gives it every pixel left after the fixed-width toggle (26px) and scope
+    // buttons, so its share depends on how wide those neighbors happen to be — at the default 264px
+    // sidebar it lands at ~49%, not quite half; 0.45 still fails the old flex:0 0 auto layout (which
+    // sized to the two-character "세션" label alone, well under 20%) while tolerating that split.
+    expect(sessionHeaderLayout.titleWidth).toBeGreaterThanOrEqual(sessionHeaderLayout.headingWidth * 0.45);
+    expect(sessionHeaderLayout.gapToScope).toBeLessThanOrEqual(8);
+    // `.session-panel-heading` carries a 1px transparent border (shared with every row's
+    // selected/drop-target treatment) that eats 2px of the border-box height align-self: stretch can
+    // fill, plus a hair more from line-height — headingHeight - 3 still fails the old unstretched
+    // button, which sized to its text alone at well under 30px.
+    expect(sessionHeaderLayout.titleHeight).toBeGreaterThanOrEqual(sessionHeaderLayout.headingHeight - 3);
+
     await openFolder();
 
     // A folder opened before it has a single session: the start page stands in for the grid, and the
@@ -902,6 +929,15 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
    * otherwise the one screen a pane cannot be left out of.
    */
   test("moves panes by sidebar row, layout and page, and puts one away on 숨김", async () => {
+    await openFolder();
+
+    // The title button owns the whole remaining width of the header, badge included — a click near
+    // its right edge (where the badge or dead space used to sit) opens 작업공간 same as the text does.
+    const titleBox = await page.locator(".session-panel-title").boundingBox();
+    if (!titleBox) throw new Error(".session-panel-title has no box");
+    await page.mouse.click(titleBox.x + titleBox.width - 4, titleBox.y + titleBox.height / 2);
+    await expect(page.locator(".workspace-title")).toHaveText("작업공간");
+
     const layoutBar = page.locator(".layout-bar");
     const hiddenRow = page.getByRole("button", { name: /숨김 열기/ });
 

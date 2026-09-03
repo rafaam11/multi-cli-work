@@ -2354,12 +2354,19 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .session-panel-title {
-  flex: 0 0 auto;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-self: stretch;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
   padding: 0;
   border: 0;
   color: inherit;
   background: transparent;
   font: inherit;
+  text-align: left;
   text-transform: inherit;
   cursor: pointer;
 }
@@ -2368,18 +2375,27 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--text);
 }
 
-/* 접혀 있어도 남는 배지라, 색은 승인 대기 점과 같은 것을 쓴다. */
+.session-panel-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 접혀 있어도 남는 배지라, 색은 승인 대기 점과 같은 것을 쓴다. 제목 버튼 안이라 헤더 직계가 아니게
+   되어 `.section-heading > span` 말줄임 규칙이 안 닿으니 nowrap을 직접 건다. */
 .session-panel-wait {
+  flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: 999px;
   color: #111;
   background: var(--amber);
   font-size: var(--type-caption-size);
+  white-space: nowrap;
 }
 
 .session-panel-scope {
   display: inline-flex;
-  margin-left: auto;
+  flex: 0 0 auto;
   gap: 2px;
 }
 
