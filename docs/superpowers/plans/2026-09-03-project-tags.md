@@ -568,9 +568,45 @@ export const DEFAULT_PROJECT_CATEGORIES: readonly ProjectCategorySetting[] = [{ 
 
 - [ ] **Step 1: 문서 수정·초안 작성** / **Step 2: 커밋** — `docs: 구분 설정과 세션 헤더 변경을 문서·릴리스 노트에 반영`.
 
+### Task 18: 폴더 아래 세션·문서 행과 worktree 층 복원 (사용자 피드백 2026-09-03; T8·T9 뒤, T15 앞)
+
+> 사용자 결정: 좌측 트리에서 **폴더 아래에 세션(·문서) 행을 다시** 보이고, worktree가 있는 레포는 폴더 아래에 `메인 · branch` / `⎇ branch` 층으로 나눠 그 안에 세션을, **worktree가 하나도 없으면 그 층 없이** 바로 세션 행을 둔다. 상단 세션(작업공간) 패널은 **그대로**(작업공간에 담긴 패인 + 대기 N + 전체/여기). 같은 세션이 두 곳에 보이되 역할이 다르다(위 = 지금 화면에 모은 것, 아래 = 어느 폴더의 것).
+>
+> 판정 **R8** 접근성 이름 분리: 트리 행은 v1.26의 이름 `{라벨} 세션 열기[ (읽지 않음)]` / `{라벨} 문서 열기[ (저장 안 됨)]` / `{라벨} 닫기`, 상단 패널 행은 v1.26 셸프의 이름 `{라벨} 패인 열기`(문서도)로 바꾼다 — 한 화면에 같은 이름의 버튼이 둘이면 `getByRole` 정확 일치가 전부 깨진다. 패널 행을 겨냥하던 테스트(App.test·e2e)는 `패인 열기`로, 트리 행 테스트는 `세션 열기`로. **R9** 폴더 접힘·"이미 보는 행을 다시 누르면 접힘"(`gridProjectId`)을 v1.26 그대로 되살리고, 접힘 저장 키는 일부러 지우지 않았던 `multi-cli-work.projects.v1`(`COLLAPSED_PROJECTS_KEY`)을 다시 읽는다 — 업그레이드 전 배치가 그대로 돌아온다.
+
+**Files:**
+- Create: `src/renderer/src/PaneRows.tsx`(+`.test.tsx`) — `SessionRow`·`DocumentRow`를 `SessionPanel.tsx`의 `renderSession`(L110-158)·`renderDocument`(L165-195)에서 추출해 패널·트리가 공유
+- Modify: `src/renderer/src/SessionPanel.tsx`(행 렌더를 `PaneRows`로 교체, 접근성 이름 `패인 열기`), `src/renderer/src/ProjectSidebar.tsx`(폴더 노드 L692-795: 체버론·`aria-expanded` 복원, 폴더/worktree 아래 `session-tree`; worktree 층 블록은 `git show v1.26.2:src/renderer/src/ProjectSidebar.tsx` L932-990을 본으로; props `worktrees`·`activeReviews`·`workspaceViews`·`selectedWorktreeId`·`onSelectWorktree`·`onWorktreeContextMenu`·`expandedProjects`·`onToggleProject`·`gridProjectId`·`documentPanes`·`onSelectSession`·`onSelectDocument`·`onCloseDocument`·`unread` 복원), `src/renderer/src/App.tsx`(`COLLAPSED_PROJECTS_KEY = "multi-cli-work.projects.v1"`, `expandedProjects`/`collapsedProjectIds`/`toggleProject`/`applyExpansion(expandedProjectIds, expandedWorkProjectIds)`/`expandAll`/`collapseAll`/`expandWorking`(폴더 포함), `gridProjectId`, 복원 시 `setExpandedProjects` — `git show v1.26.2:src/renderer/src/App.tsx` L175, L290-298, L1365-1427, L2344-2347과 호출부(`selectProject`·`revealPane`·`selectWorktree`·복원 2곳·폴더 추가/재연결·컨텍스트 메뉴 이름변경)를 본으로; 사이드바 props 전달), `src/renderer/src/index.css`(v1.26.2의 `.worktree-tree`(L2488-2492)·`.worktree-row.two-line`(L2581-2584)·`.workspace-select`(L2585-2603)·`.workspace-meta`(L2605-2618)·`.worktree-row.selected`(L2638-2642)·`.worktree-sessions`(L2307) 규칙 복원 — `git show v1.26.2:src/renderer/src/index.css`)
+- Test: `src/renderer/src/App.test.tsx`(v1.26.2의 `nests worktree sessions under a third tree level and scopes the grid and detail page to it`·`hangs an opened document under its folder in the tree, and closes it from there`·`keeps folders with a running agent open and closes the rest, across the group and folder layers alike`·`collapses and re-expands both layers at once, and remembers it across a restart`·`folds the row already on screen instead of opening it again, on both layers`를 `git show v1.26.2:src/renderer/src/App.test.tsx`에서 가져와 채널 대신 태그 묶음(T8) 기준으로 손본다; 패널 행을 겨냥하던 기존 테스트는 `패인 열기`로; 신규: `worktree가 없는 폴더는 세션이 폴더 바로 아래에 선다(worktree 층 없음)`, `worktree가 하나라도 있으면 메인·worktree 층이 생기고 각자 자기 세션만 품는다`), `e2e/desktop.spec.ts`(`paneRow`(L77)는 트리 행(`세션 열기`)을 겨냥하므로 그대로; 패널 행을 누르던 단계가 있으면 `패인 열기`로; worktree 카드 경로(Task 4 이전 작업)는 그대로 두되 트리 worktree 행 우클릭이 다시 가능해졌으므로 스모크는 손대지 않는다)
+
+**Interfaces:**
+```tsx
+// src/renderer/src/PaneRows.tsx — 마크업·클래스(session-row, status-*, current, on-screen, .status-dot, .session-name, .session-status, .unread-dot, .file-tab-row/.file-tab-open/.file-tab-close/.file-tab-dot)는 지금 SessionPanel의 것 그대로
+export interface SessionRowProps {
+  session: TerminalSessionView; label: string; place?: string | null; branch?: string | null;
+  agent: AgentView | undefined; tool: boolean; attention: SessionAttention | null;
+  current: boolean; onScreen: boolean;
+  /** 접근성 이름의 동사 — 트리는 "세션 열기", 패널은 "패인 열기"(R8). */
+  verb: "세션 열기" | "패인 열기";
+  onSelect(): void; onContextMenu(event: ReactMouseEvent): void;
+  renaming: boolean; initialName: string; onRename(name: string | null): void; onCancelRename(): void;
+  dragProps: { draggable: boolean; onDragStart(e: ReactDragEvent<HTMLElement>): void; onDragEnd(): void };
+  /** 행 오른쪽 끝 — 패널은 숨김(눈) 버튼, 트리는 없음. */
+  trailing?: ReactNode;
+}
+export function SessionRow(props: SessionRowProps): JSX.Element;
+export interface DocumentRowProps { pane: DocumentPane; label: string; place?: string | null; branch?: string | null; current: boolean; onScreen: boolean; verb: "문서 열기" | "패인 열기"; onOpen(): void; dragProps: …; trailing?: ReactNode /* 트리: `{label} 닫기` ✕, 패널: 숨김 버튼 */ }
+export function DocumentRow(props: DocumentRowProps): JSX.Element;
+```
+사이드바 트리: 폴더 `<li className="project-node" role="treeitem" aria-expanded={expanded}>`에 `tree-toggle`(`"{이름} 접기/펼치기"`) 복원; `showing = gridProjectId === project.id`면 클릭이 접기. `projectWorktrees.length === 0`이면 `<ul className="session-tree" role="group" aria-label="{이름} 패인">`에 폴더 세션(`worktreeId === undefined`)·문서(`owner.kind === "project"`); 있으면 `<ul className="worktree-tree" role="group" aria-label="{이름} worktree">`에 `메인 · {branch}` 행(`workspace-select`, `"{이름} 메인 선택"`… v1.26의 `메인 펼치기/접기` 토글, 클릭 `onSelectProject`)과 worktree 행(`"{branch} worktree 선택"`, 우클릭 `onWorktreeContextMenu`, `변경 N · 세션 N`, `PR #n · 임시`·locked·missing·prunable)이 각자 `session-tree worktree-sessions`에 자기 세션·문서를 품는다. 접힘 키는 옛 `main:<workspaceKey>`/`worktree:<id>`(`expandedWorkspaces`, 키 있으면 접힘; 선택 중이면 항상 펼침 — v1.26 L944·986). 세션 행: `label = sessionLabel(session, projectSessions, agents)`, `attention = unread[session.id]`, `current = focusedPaneId === id`, `onScreen = onScreenPaneIds.has(id)`, 클릭 `onSelectSession(session)`(=`revealSession`), 드래그 `paneDragProps`.
+
+- [ ] **Step 1: 실패하는 테스트** — `PaneRows.test.tsx`(세션 행: 접근성 이름이 `verb`에 따라 `X 세션 열기`/`X 패인 열기`, 읽지 않음 접미, `current`/`on-screen` 클래스, 이름 변경 모드에서 `SessionNameInput`, `trailing` 렌더; 문서 행: `문서 열기`/`닫기`, dirty 접미) + App.test 재작성·신규(위 목록) + 패널 테스트의 이름 교체.
+- [ ] **Step 2: 실패 확인** / **Step 3: 구현** / **Step 4: 통과 확인** — `npm test`, `npm run typecheck`, `npx playwright test --list`.
+- [ ] **Step 5: 커밋** — `feat(sidebar): 폴더 아래 세션·문서 행과 worktree 층을 되살린다`.
+
 ---
 
 ## 검증 (전체)
 
-- `npm test`(기준선 106 파일/1153), `npm run typecheck`, `npm run test:e2e:smoke`(채널 참조가 없어 e2e 수정 불필요; Task 13의 헤더 배치 단언은 여기서 돈다), `npm run test:e2e`(Task 13의 헤더 클릭 단언).
+- `npm test`(기준선 106 파일/1153), `npm run typecheck`, `npm run test:e2e:smoke`(채널 참조가 없어 e2e 수정 불필요; Task 13의 헤더 배치 단언은 여기서 돈다), `npm run test:e2e`(Task 13의 헤더 클릭 단언, Task 18 뒤 트리 행 경로).
 - 설치 후 수동: 상세 페이지 태그 추가/제거·자동완성·한글 Enter, 묶기로 둘 고르면 순서대로 묶이고 기타·미분류 위치, 업그레이드 직후 채널 라벨 묶음 `(자동)`, 묶기 해제 시 평면, 재시작 후 유지, 트리 행·홈 카드 칩, `Ctrl+P` `#태그`, Claude 세션 브리프 `- 태그:` 줄.
