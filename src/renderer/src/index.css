@@ -2453,6 +2453,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   content: "";
 }
 
+/* worktree 층 아래의 세션 목록은 한 칸 더 들어간다 — 폴더 바로 아래 목록과 구별되어야 한다. */
+.worktree-sessions {
+  padding-left: 14px;
+}
+
 /* 작업공간 선반을 대신하는 세션 패널. 프로젝트 트리 위에서 상태와 선반 동작을 한 줄로 묶는다. */
 .session-panel {
   display: flex;
@@ -2757,6 +2762,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--amber);
 }
 
+/* 폴더 아래의 worktree 층: 메인 체크아웃 한 줄과 worktree 한 줄씩, 각자 자기 세션을 품는다. */
+.worktree-tree {
+  margin: 0;
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+
 .worktree-row {
   display: flex;
   width: 100%;
@@ -2770,6 +2782,44 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-ui-size);
   text-align: left;
   cursor: pointer;
+}
+
+/* 브랜치와 `변경 N · 세션 N`이 두 줄로 서므로 세로 여백을 줄여 한 행 높이를 지킨다. */
+.worktree-row.two-line {
+  padding: 2px 4px;
+}
+
+.worktree-row.selected {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.workspace-select {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.worktree-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--type-caption-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .git-panel-tabs, .pr-detail-tabs { display: flex; gap: 2px; padding: 7px 8px 0; border-bottom: 1px solid var(--line); }

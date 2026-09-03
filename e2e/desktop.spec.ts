@@ -70,21 +70,30 @@ async function computedFontSize(selector: string): Promise<string> {
 const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`);
 
 /**
- * A session's row in the sidebar's 세션 패널. Every session has one whatever page its pane sits on —
- * or whether it has a pane at all — and the accessible name may carry an unread suffix after the
- * label, so the label is matched at the start of it.
+ * A session's row in the tree, under the folder (or worktree) it runs in. The accessible name may
+ * carry an unread suffix after the label, so the label is matched at the start of it. The same
+ * session also has a row in the 세션 패널 above, named `패인 열기` instead — see `panelRow`.
  */
 const paneRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 세션 열기`) });
 
+/** The same pane's row in the 세션 패널: it opens the 작업공간 shelf rather than the pane's folder. */
+const panelRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 패인 열기`) });
+
 /**
- * Puts a folder on screen. The folder row is a leaf — one click is the whole action, and clicking
- * the folder already up does nothing rather than folding anything away. What lands is the folder's
- * grid, or its start page while it has no session yet, so the header is what says it arrived.
+ * Puts a folder on screen: its grid, or its start page while it has no session yet, so the header
+ * is what says it arrived. Clicking the folder whose grid is already up folds its tree row instead
+ * of re-selecting it, so the row is unfolded again afterwards — the steps below reach for session
+ * rows that only exist while the folder is open.
  */
 async function openFolder(name = "Sample Project"): Promise<void> {
   const row = page.getByRole("button", { name: `${name} 폴더 선택` });
   await row.click();
   await expect(page.locator(".workspace-title")).toContainText(name);
+  const node = page.locator(`.project-node:has(button[aria-label="${name} 폴더 선택"])`);
+  if ((await node.getAttribute("aria-expanded")) === "false") {
+    await page.getByRole("button", { name: `${name} 펼치기` }).click();
+  }
+  await expect(node).toHaveAttribute("aria-expanded", "true");
 }
 
 /**
@@ -772,10 +781,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     ));
     await page.keyboard.press("Enter");
     await expect(pane(`${SHELL_LABEL} 2`).locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
-    // The tree has no worktree rows any more: the menu hangs off the 워크트리 card of the folder's
-    // 상세 page. Pressing the worktree's pane scoped the app to that worktree, so the folder row is
-    // clicked again first — on the folder itself the card lists feature/e2e as one to open, and
-    // only an openable row carries the context menu.
+    // The 워크트리 card of the folder's 상세 page is the path taken here; the tree's own worktree row
+    // opens the same menu and is covered by App.test. Pressing the worktree's pane scoped the app to
+    // that worktree, so the folder row is clicked again first — on the folder itself the card lists
+    // feature/e2e as one to open, and only an openable row carries the context menu.
     await openFolder();
     await page.getByRole("button", { name: "폴더 상세" }).click();
     const worktreeCardRow = page
@@ -815,7 +824,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // exact: the right sidebar's "파일 목록 새로고침" also matches the substring.
     await page.getByRole("button", { name: "목록 새로고침", exact: true }).click();
-    // A discovered worktree shows up on the folder's 워크트리 card, the tree having no layer for it.
+    // A discovered worktree shows up on the folder's 워크트리 card, which is the path driven here.
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: "폴더 상세" }).click();
     const row = page
@@ -941,8 +950,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const layoutBar = page.locator(".layout-bar");
     const hiddenRow = page.getByRole("button", { name: /숨김 열기/ });
 
-    // The session panel replaces 작업공간: a row opens that shelf and focuses the chosen pane.
-    await paneRow(SHELL_LABEL).click();
+    // The session panel replaces 작업공간: a row opens that shelf and focuses the chosen pane. The
+    // tree row of the same session goes to its folder instead, which is why the two are named apart.
+    await panelRow(SHELL_LABEL).click();
     await expect(page.locator(".workspace-title")).toHaveText("작업공간");
     await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", SHELL_LABEL);
 

@@ -171,10 +171,11 @@ const MIN_RIGHT_SIDEBAR_WIDTH = 220;
 const MAX_RIGHT_SIDEBAR_WIDTH = 480;
 const RIGHT_SIDEBAR_RAIL_WIDTH = 36;
 /**
- * 업무 프로젝트 한 층만 저장한다 — 무엇이 *접혔는지*를 적으므로 나중에 생긴 항목은 펼쳐진 채로
- * 시작한다. `multi-cli-work.projects.v1`은 폴더가 접히던 시절의 키로, 읽지도 지우지도 않는다
- * (다운그레이드하면 그때의 배치가 그대로 살아 있다).
+ * 두 층 모두 무엇이 *접혔는지*를 적는다 — 그래야 나중에 생긴 폴더나 프로젝트가 펼쳐진 채로
+ * 시작한다. 폴더 키는 v1.27에서 세션 행이 트리를 떠났을 때 읽기를 멈췄을 뿐 지우지는 않았으므로,
+ * 다시 읽는 지금 업그레이드 전의 배치가 그대로 돌아온다. 두 키의 기록자는 `persistCollapsed` 하나다.
  */
+const COLLAPSED_PROJECTS_KEY = "multi-cli-work.projects.v1";
 const COLLAPSED_WORK_PROJECTS_KEY = "multi-cli-work.work-projects.v1";
 
 function persistCollapsed(key: string, collapsed: Set<string>): void {
@@ -289,6 +290,13 @@ export function App() {
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const sessionsRef = useRef<TerminalSessionView[]>([]);
   const activityIdRef = useRef(0);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(COLLAPSED_PROJECTS_KEY) ?? "{}") as { collapsed?: string[] };
+      return new Set(stored.collapsed ?? []);
+    } catch { return new Set(); }
+  });
   const [workProjectRegistry, setWorkProjectRegistry] = useState<WorkProjectRegistryV1 | null>(null);
   const [projectTags, setProjectTags] = useState<ProjectTagsV1 | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
@@ -727,6 +735,7 @@ export function App() {
           setSnapshot(registrySnapshot);
           setSessions(terminalSessions);
           setAvailability(providers);
+          setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
           setSelectedProjectId(null);
           setSelectedSessionId(restoredSession.id);
           setSelectedWorktreeId(null);
@@ -755,6 +764,7 @@ export function App() {
         setSnapshot(registrySnapshot);
         setSessions(terminalSessions);
         setAvailability(providers);
+        setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
         setSelectedProjectId(initialProject?.id ?? null);
         setSelectedSessionId(initialSession?.id ?? null);
         setSelectedWorktreeId(initialWorktreeId);
@@ -1122,6 +1132,8 @@ export function App() {
     setSelectedWorktreeId(null);
     setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
+    // 폴더를 여는 것은 그 폴더의 일을 보겠다는 뜻이라, 트리에서도 펼쳐진다.
+    setExpandedProjects((current) => new Set(current).add(projectId));
     setActionError(null);
     persistSelection(projectId, first);
   };
@@ -1173,6 +1185,11 @@ export function App() {
     setFocusedPaneId(target.paneId);
     setActiveView("terminal");
     setActionError(null);
+    // 가리킨 패인이 접힌 폴더 안이면 그 폴더를 펴 준다 — 아니면 깜빡임이 안 보이는 곳에서 난다.
+    if (target.projectId) {
+      const projectId = target.projectId;
+      setExpandedProjects((current) => new Set(current).add(projectId));
+    }
     flashFolder(target.projectId);
     if (target.session) persistSelection(target.projectId, target.session.id);
   };
@@ -1372,11 +1389,24 @@ export function App() {
     setSelectedWorktreeId(worktree.id);
     setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
+    setExpandedProjects((current) => new Set(current).add(worktree.projectId));
     setActionError(null);
     persistSelection(worktree.projectId, first);
   };
 
   const openHome = () => setActiveView("home");
+
+  const toggleProject = (projectId: string) => {
+    setExpandedProjects((current) => {
+      const next = new Set(current);
+      const collapsed = new Set(collapsedProjectIds);
+      if (next.has(projectId)) { next.delete(projectId); collapsed.add(projectId); }
+      else { next.add(projectId); collapsed.delete(projectId); }
+      setCollapsedProjectIds(collapsed);
+      persistCollapsed(COLLAPSED_PROJECTS_KEY, collapsed);
+      return next;
+    });
+  };
 
   const toggleWorkProject = (workProjectId: string) => {
     setCollapsedWorkProjectIds((current) => {
@@ -1389,27 +1419,39 @@ export function App() {
   };
 
   /**
-   * 업무 프로젝트의 펼침은 저장된 접힘 집합의 여집합이라, 일괄 동작은 "열어 둘 것"만 말하고
-   * 나머지 채우기를 여기 맡긴다. 채널 층은 사이드바가 자기 키에 따로 적는다.
+   * 두 층이 펼침을 다르게 갖는다 — 폴더는 저장된 접힘 집합과 나란히 펼침 집합을 들고 있고, 업무
+   * 프로젝트의 펼침은 접힘 집합의 여집합이다. 그래서 일괄 동작은 각 층에서 "열어 둘 것"만 말하고
+   * 나머지 채우기를 여기 맡긴다. 태그 묶음 층은 사이드바가 자기 키에 따로 적는다.
    */
-  const applyExpansion = (expandedWorkProjectIds: Set<string>) => {
+  const applyExpansion = (expandedProjectIds: Set<string>, expandedWorkProjectIds: Set<string>) => {
+    const collapsedProjects = new Set(
+      projects.filter((project) => !expandedProjectIds.has(project.id)).map((project) => project.id),
+    );
     const collapsedWorkProjects = new Set(
       workProjects.filter((workProject) => !expandedWorkProjectIds.has(workProject.id)).map((workProject) => workProject.id),
     );
+    setExpandedProjects(expandedProjectIds);
+    setCollapsedProjectIds(collapsedProjects);
     setCollapsedWorkProjectIds(collapsedWorkProjects);
+    persistCollapsed(COLLAPSED_PROJECTS_KEY, collapsedProjects);
     persistCollapsed(COLLAPSED_WORK_PROJECTS_KEY, collapsedWorkProjects);
   };
 
-  const expandAll = () => applyExpansion(new Set(workProjects.map((workProject) => workProject.id)));
+  const expandAll = () =>
+    applyExpansion(
+      new Set(projects.map((project) => project.id)),
+      new Set(workProjects.map((workProject) => workProject.id)),
+    );
 
-  const collapseAll = () => applyExpansion(new Set());
+  const collapseAll = () => applyExpansion(new Set(), new Set());
 
-  /** 작업중 폴더를 아직 가진 업무 프로젝트만 열어 둔다. 폴더는 잎이라 접히지 않는다. */
+  /** 작업중 폴더는 열어 두고, 그런 폴더를 아직 가진 업무 프로젝트도 함께. worktree 층은 건드리지 않는다. */
   const expandWorking = () => {
     const working = projects.filter((project) =>
       isFolderActive(sessions.filter((session) => session.projectId === project.id)),
     );
     applyExpansion(
+      new Set(working.map((project) => project.id)),
       new Set(
         working
           .map((project) => projectMembership[project.id]?.workProjectId)
@@ -1487,6 +1529,7 @@ export function App() {
           }
         : current,
     );
+    setExpandedProjects((current) => new Set(current).add(result.project.id));
   };
 
   const addProject = async () => {
@@ -1506,6 +1549,7 @@ export function App() {
             }
           : current,
       );
+      setExpandedProjects((current) => new Set(current).add(project.id));
       setSelectedProjectId(project.id);
       setSelectedSessionId(null);
       setSelectedWorktreeId(worktreeId);
@@ -2327,6 +2371,16 @@ export function App() {
   const headerSessionLabel = activeView === "home" ? null : selectedSessionLabel;
 
   /**
+   * The folder the grid is actually showing. Narrower than the highlighted row — that stays lit
+   * behind a 상세 page, a worktree or a 작업공간 — and it is the only case where clicking the row
+   * again says "I am already here", which the tree answers by folding it away.
+   */
+  const gridProjectId =
+    activeView === "terminal" && shelfKind === null && selectedWorktreeId === null
+      ? selectedProjectId
+      : null;
+
+  /**
    * A shelf on screen replaces the folder identity in the header: it belongs to no single folder, so
    * it is named by what it gathers instead. Documents count toward the panes but not the folders —
    * the folder tally is about how many places the work in view comes from.
@@ -2847,6 +2901,22 @@ export function App() {
         onMoveProjectToWorkProject={(projectId, workProjectId) => void moveProjectToWorkProject(projectId, workProjectId)}
         sessions={sessions}
         agents={agents}
+        documentPanes={documentPanes}
+        onSelectSession={revealSession}
+        onSelectDocument={revealDocument}
+        onCloseDocument={closePane}
+        worktrees={worktrees}
+        activeReviews={activeReviews}
+        workspaceViews={workspaceViews}
+        selectedWorktreeId={activeView === "home" ? null : selectedWorktreeId}
+        onSelectWorktree={selectWorktree}
+        onWorktreeContextMenu={(worktree, event) => {
+          event.preventDefault();
+          setWorktreeMenu({ worktree, x: event.clientX, y: event.clientY });
+        }}
+        expandedProjects={expandedProjects}
+        onToggleProject={toggleProject}
+        gridProjectId={gridProjectId}
         sessionPanelItems={sessionPanelItems}
         sessionScopeTarget={sessionScopeTarget}
         focusedPaneId={activeView === "terminal" ? focusedPaneId : null}
@@ -3258,7 +3328,11 @@ export function App() {
             void runProjectAction(() => window.multiCliWork.projects.openOnGitHub(contextMenu.project.id))
           }
           onCreateWorktree={() => setWorktreeCreateProject(contextMenu.project)}
-          onRename={() => setEditingProjectId(contextMenu.project.id)}
+          onRename={() => {
+            // 편집칸이 폴더 아래에 붙으므로, 접혀 있었다면 먼저 펴야 보인다.
+            setExpandedProjects((current) => new Set(current).add(contextMenu.project.id));
+            setEditingProjectId(contextMenu.project.id);
+          }}
           onRelink={() => void relinkProject(contextMenu.project)}
           onRemove={() => requestRemoval(contextMenu.project)}
           onClose={() => setContextMenu(null)}

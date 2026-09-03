@@ -2289,16 +2289,49 @@ describe("file viewer", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
-    const row = await screen.findByRole("button", { name: "README.md 문서 열기" });
+    // 패널 행은 `패인 열기`다 — 같은 문서가 트리에도 `문서 열기`로 서므로 이름이 갈린다(R8).
+    const row = await screen.findByRole("button", { name: "README.md 패인 열기" });
     expect(row.closest(".session-panel")).not.toBeNull();
     expect(within(row).getByText("Atlas")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "README.md 작업공간에서 숨기기" }));
     await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "README.md 문서 열기" })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: "README.md 패인 열기" })).not.toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: "숨김 열기 (패인 1개)" })).toBeInTheDocument();
     expect(document.querySelector('.grid-pane[aria-label="README.md"]')).toBeInTheDocument();
+  });
+
+  /**
+   * 같은 문서가 트리에도 선다 — 어느 폴더에서 연 것인지가 그 자리로 말해진다. 트리 행의 ✕는
+   * 패널의 눈 버튼과 달리 문서를 정말 닫는다.
+   */
+  it("hangs an opened document under its folder in the tree, and closes it from there", async () => {
+    const harness = createApi({ sessions: [] });
+    vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([markdownEntry]);
+    vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
+      relativePath: "README.md",
+      encoding: "utf8",
+      content: "# Readme",
+      truncated: false,
+      sizeBytes: 9,
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
+    const row = await screen.findByRole("button", { name: "README.md 문서 열기" });
+    expect(row.closest(".session-tree")).toBeTruthy();
+    expect(
+      within(screen.getByRole("navigation", { name: "프로젝트" })).getByRole("group", { name: "Atlas 패인" }),
+    ).toContainElement(row);
+
+    fireEvent.click(screen.getByRole("button", { name: "README.md 닫기" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "README.md 문서 열기" })).not.toBeInTheDocument(),
+    );
+    // 닫힌 문서는 패널에서도 사라진다 — 숨기기와 달리 패인 자체가 없어진다.
+    expect(screen.queryByRole("button", { name: "README.md 패인 열기" })).not.toBeInTheDocument();
   });
 
   /**
@@ -2531,9 +2564,10 @@ describe("세션 패널", () => {
     updatedAt: "2026-07-11T03:00:00.000Z",
   };
   const panel = () => screen.getByRole("region", { name: "세션 패널" });
+  // 패널 행의 동사는 `패인 열기`다 — 트리에도 같은 세션의 행이 `세션 열기`로 서니까(R8).
   const rows = () =>
     within(panel())
-      .getAllByRole("button", { name: /세션 열기/ })
+      .getAllByRole("button", { name: /패인 열기/ })
       .map((button) => button.getAttribute("aria-label"));
 
   it("상단에서 작업공간 선반을 대체하고 숨김 패인은 제외한다", async () => {
@@ -2550,8 +2584,8 @@ describe("세션 패널", () => {
     const projectNavigation = screen.getByRole("navigation", { name: "프로젝트" });
     expect(sessionPanel.compareDocumentPosition(projectNavigation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^작업공간 열기/ })).not.toBeInTheDocument();
-    expect(within(sessionPanel).getByRole("button", { name: "PowerShell 세션 열기" })).toBeInTheDocument();
-    expect(within(sessionPanel).queryByRole("button", { name: "Claude Code 세션 열기" })).not.toBeInTheDocument();
+    expect(within(sessionPanel).getByRole("button", { name: "PowerShell 패인 열기" })).toBeInTheDocument();
+    expect(within(sessionPanel).queryByRole("button", { name: "Claude Code 패인 열기" })).not.toBeInTheDocument();
 
     fireEvent.click(within(sessionPanel).getByRole("button", { name: "세션 작업공간 열기 (패인 1개)" }));
     expect([...container.querySelectorAll(".workspace-grid .grid-pane")].map((pane) => pane.getAttribute("aria-label"))).toEqual([
@@ -2565,13 +2599,20 @@ describe("세션 패널", () => {
     render(<App />);
 
     await screen.findByRole("region", { name: "세션 패널" });
-    expect(rows()).toEqual(["돌아가는 중 세션 열기", "PowerShell 세션 열기", "승인 필요 세션 열기"]);
-    const row = within(panel()).getByRole("button", { name: "승인 필요 세션 열기" });
+    expect(rows()).toEqual(["돌아가는 중 패인 열기", "PowerShell 패인 열기", "승인 필요 패인 열기"]);
+    const row = within(panel()).getByRole("button", { name: "승인 필요 패인 열기" });
     expect(within(row).getByText("Atlas")).toBeInTheDocument();
     expect(within(panel()).getByText("대기 1")).toBeInTheDocument();
-    // 트리에는 세션 행이 더 이상 없다. (파일 탐색기도 tree라서 사이드바 안으로 좁힌다.)
+    // 같은 세션이 트리에도 서지만 이름의 동사가 다르고 순서도 다르다 — 위는 "지금 화면에 모은
+    // 것"을 급한 순으로, 아래는 "어느 폴더의 것"을 만든 순으로 세운다. (파일 탐색기도 tree라서
+    // 사이드바 안으로 좁힌다.)
     const tree = within(screen.getByRole("navigation", { name: "프로젝트" })).getByRole("tree");
-    expect(within(tree).queryByRole("button", { name: /세션 열기/ })).not.toBeInTheDocument();
+    expect(
+      within(tree)
+        .getAllByRole("button", { name: /세션 열기/ })
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["승인 필요 세션 열기", "PowerShell 세션 열기", "돌아가는 중 세션 열기"]);
+    expect(within(tree).queryByRole("button", { name: /패인 열기/ })).not.toBeInTheDocument();
   });
 
   it("도구 세션이 '도구' 소속으로 같은 패널에 서고, 별도 도구 그룹은 없다", async () => {
@@ -2580,7 +2621,7 @@ describe("세션 패널", () => {
     render(<App />);
 
     await screen.findByRole("region", { name: "세션 패널" });
-    const row = within(panel()).getByRole("button", { name: "Claude Code 업데이트 세션 열기" });
+    const row = within(panel()).getByRole("button", { name: "Claude Code 업데이트 패인 열기" });
     expect(within(row).getByText("도구")).toBeInTheDocument();
     expect(document.querySelector(".tools-group")).toBeNull();
   });
@@ -2604,7 +2645,7 @@ describe("세션 패널", () => {
     await screen.findByRole("region", { name: "세션 패널" });
     expect(rows()).toHaveLength(2);
     fireEvent.click(within(panel()).getByRole("button", { name: "여기" }));
-    expect(rows()).toEqual(["PowerShell 세션 열기"]);
+    expect(rows()).toEqual(["PowerShell 패인 열기"]);
 
     fireEvent.click(screen.getByRole("button", { name: "홈 대시보드 열기" }));
     expect(within(panel()).getByRole("button", { name: "여기" })).toBeDisabled();
@@ -2617,7 +2658,7 @@ describe("세션 패널", () => {
     await waitFor(() =>
       expect(within(panel()).getByRole("button", { name: "여기" })).toHaveAttribute("aria-pressed", "true"),
     );
-    expect(rows()).toEqual(["PowerShell 세션 열기"]);
+    expect(rows()).toEqual(["PowerShell 패인 열기"]);
   });
 
   it("전체를 보고 있으면 폴더 이름을 대지 않고 그냥 비었다고 말한다", async () => {
@@ -2682,7 +2723,7 @@ describe("worktrees", () => {
     render(<App />);
 
     const panel = await screen.findByRole("region", { name: "세션 패널" });
-    const row = await within(panel).findByRole("button", { name: "WT 세션 세션 열기" });
+    const row = await within(panel).findByRole("button", { name: "WT 세션 패인 열기" });
     // 브랜치가 행에 붙어 있어 어느 체크아웃인지 읽힌다.
     expect(within(row).getByText("feature-x")).toBeInTheDocument();
     fireEvent.click(row);
@@ -2732,18 +2773,81 @@ describe("worktrees", () => {
     expect(within(card).getByText("아직 워크트리가 없습니다")).toBeInTheDocument();
   });
 
-  it("draws no worktree rows in the tree — the folder page's card and the session panel carry them", async () => {
-    const harness = createApi({ sessions: [worktreeSession], worktrees: [atlasWorktree] });
+  it("nests worktree sessions under a third tree level and scopes the grid and detail page to it", async () => {
+    const harness = createApi({
+      sessions: [powershellSession, worktreeSession],
+      worktrees: [atlasWorktree],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const worktreeButton = await screen.findByRole("button", { name: "feature-x worktree 선택" });
+    fireEvent.click(worktreeButton);
+
+    // A worktree behaves like a folder: it fills the grid with its own sessions and nothing else.
+    expect(await screen.findByRole("region", { name: "WT 세션" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "PowerShell" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "폴더 상세" }));
+    const detail = await screen.findByRole("region", { name: "프로젝트 상세" });
+    expect(within(detail).getByRole("button", { name: "WT 세션 세션 보기" })).toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: /PowerShell.*세션 보기/ })).not.toBeInTheDocument();
+
+    // A session started while the worktree is selected runs in the worktree, not the root.
+    fireEvent.click(screen.getByRole("button", { name: "새 PowerShell 세션" }));
+    await waitFor(() =>
+      expect(harness.api.terminals.create).toHaveBeenCalledWith(
+        expect.objectContaining({ worktreeId: atlasWorktree.id }),
+      ),
+    );
+  });
+
+  /**
+   * worktree 층은 있을 때만 값을 한다 — 체크아웃이 하나뿐인 폴더에서는 "메인" 한 줄이 폴더 줄을
+   * 되풀이할 뿐이라, 세션이 폴더 바로 아래에 선다.
+   */
+  it("worktree가 없는 폴더는 세션이 폴더 바로 아래에 선다", async () => {
+    const harness = createApi({ sessions: [powershellSession], worktrees: [] });
     window.multiCliWork = harness.api;
     render(<App />);
 
     const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-    const panel = screen.getByRole("region", { name: "세션 패널" });
-    // worktree 세션의 패널 행이 서면 worktrees와 sessions가 같은 배치로 다 들어온 것이다 —
-    // 그러고도 트리에 worktree 층이 없다는 뜻이라야 아래 단언이 공허하지 않다.
-    await within(panel).findByRole("button", { name: "WT 세션 세션 열기" });
-    expect(within(nav).queryByRole("button", { name: /worktree 선택/ })).not.toBeInTheDocument();
+    const row = await within(nav).findByRole("button", { name: "PowerShell 세션 열기" });
+    expect(row.closest(".session-tree")).toBeTruthy();
+    expect(row.closest(".worktree-sessions")).toBeNull();
+    expect(within(nav).getByRole("group", { name: "Atlas 패인" })).toContainElement(row);
     expect(nav.querySelector(".worktree-tree")).toBeNull();
+  });
+
+  it("worktree가 하나라도 있으면 메인·worktree 층이 생기고 각자 자기 세션만 품는다", async () => {
+    const harness = createApi({
+      sessions: [powershellSession, worktreeSession],
+      worktrees: [atlasWorktree],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    await within(nav).findByRole("button", { name: "feature-x worktree 선택" });
+    expect(nav.querySelector(".worktree-tree")).not.toBeNull();
+
+    // 루트 체크아웃의 세션은 메인 아래, worktree의 세션은 그 worktree 아래. 서로 섞이지 않는다.
+    const main = within(nav).getByRole("group", { name: "Atlas 메인 패인" });
+    expect(within(main).getByRole("button", { name: "PowerShell 세션 열기" })).toBeInTheDocument();
+    expect(within(main).queryByRole("button", { name: "WT 세션 세션 열기" })).not.toBeInTheDocument();
+
+    const branch = within(nav).getByRole("group", { name: "feature-x 패인" });
+    expect(within(branch).getByRole("button", { name: "WT 세션 세션 열기" })).toBeInTheDocument();
+    expect(within(branch).queryByRole("button", { name: "PowerShell 세션 열기" })).not.toBeInTheDocument();
+
+    // 폴더 바로 아래의 평면 목록은 이때 서지 않는다 — 층이 그 자리를 대신한다.
+    expect(within(nav).queryByRole("group", { name: "Atlas 패인" })).not.toBeInTheDocument();
+
+    // 트리의 worktree 줄도 상세 페이지 카드와 같은 메뉴를 연다.
+    fireEvent.contextMenu(within(nav).getByRole("button", { name: "feature-x worktree 선택" }));
+    expect(await screen.findByRole("menu", { name: "feature-x worktree 작업" })).toBeInTheDocument();
   });
 });
 
@@ -2829,7 +2933,8 @@ describe("workspace grid", () => {
     const row = screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")!;
     expect(row).not.toHaveClass("flash");
 
-    fireEvent.click(screen.getByRole("button", { name: /PowerShell 세션 열기/ }));
+    // 패널 행이다 — 트리 행은 폴더로 데려가며 그 줄을 깜빡이지만, 패널 행은 선반을 열 뿐이다.
+    fireEvent.click(screen.getByRole("button", { name: /PowerShell 패인 열기/ }));
     expect(row).not.toHaveClass("flash");
     expect(screen.getByRole("region", { name: "PowerShell" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "claude 터미널" })).toBeInTheDocument();
@@ -3042,9 +3147,9 @@ describe("sidebar panes", () => {
     await screen.findByRole("button", { name: "세션 작업공간 열기 (패인 2개)" });
 
     const panes = screen.getByRole("group", { name: "세션 목록" });
-    expect(within(panes).getAllByRole("button", { name: /세션 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
-      "PowerShell 세션 열기",
-      "Claude Code 세션 열기",
+    expect(within(panes).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
+      "PowerShell 패인 열기",
+      "Claude Code 패인 열기",
     ]);
 
     fireEvent.click(within(panes).getByRole("button", { name: "PowerShell 작업공간에서 숨기기" }));
@@ -3079,8 +3184,8 @@ describe("sidebar panes", () => {
     fireEvent.click(within(panel).getByRole("button", { name: "세션 작업공간 열기 (패인 3개)" }));
     await waitFor(() => expect(harness.api.terminals.setSlotViews).toHaveBeenCalled());
     vi.mocked(harness.api.terminals.setSlotViews).mockClear();
-    const source = within(panel).getByRole("button", { name: "Codex 세션 열기" }).closest(".session-row") as HTMLElement;
-    const target = within(panel).getByRole("button", { name: "PowerShell 세션 열기" }).closest(".session-row") as HTMLElement;
+    const source = within(panel).getByRole("button", { name: "Codex 패인 열기" }).closest(".session-row") as HTMLElement;
+    const target = within(panel).getByRole("button", { name: "PowerShell 패인 열기" }).closest(".session-row") as HTMLElement;
     const dataTransfer = dragPayload();
     fireEvent.dragStart(source, { dataTransfer });
     dragAtShelfRow(target, "dragover", "before", dataTransfer);
@@ -3089,9 +3194,9 @@ describe("sidebar panes", () => {
 
     expect(
       within(panel)
-        .getAllByRole("button", { name: /세션 열기/ })
+        .getAllByRole("button", { name: /패인 열기/ })
         .map((row) => row.getAttribute("aria-label")),
-    ).toEqual(["Codex 세션 열기", "PowerShell 세션 열기", "Claude Code 세션 열기"]);
+    ).toEqual(["Codex 패인 열기", "PowerShell 패인 열기", "Claude Code 패인 열기"]);
     expect(paneLabelsOnGrid(container)).toEqual(["Codex", "PowerShell", "Claude Code"]);
     await waitFor(() =>
       expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(
@@ -3188,7 +3293,7 @@ describe("sidebar panes", () => {
     const { container } = render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "README.md" }));
-    await screen.findByRole("button", { name: "README.md 문서 열기" });
+    await screen.findByRole("button", { name: "README.md 패인 열기" });
     await screen.findByRole("button", { name: "세션 작업공간 열기 (패인 2개)" });
     fireEvent.click(screen.getByRole("button", { name: "숨김 펼치기" }));
     const active = screen.getByRole("group", { name: "세션 목록" });
@@ -3196,15 +3301,15 @@ describe("sidebar panes", () => {
     await waitFor(() => expect(harness.api.terminals.setSlotViews).toHaveBeenCalled());
     vi.mocked(harness.api.terminals.setSlotViews).mockClear();
 
-    const source = within(active).getByRole("button", { name: "README.md 문서 열기" }).closest(".session-row") as HTMLElement;
+    const source = within(active).getByRole("button", { name: "README.md 패인 열기" }).closest(".session-row") as HTMLElement;
     const target = shelfPaneRow(hidden, "Claude Code");
     const dataTransfer = dragPayload();
     fireEvent.dragStart(source, { dataTransfer });
     dragAtShelfRow(target, "dragover", "before", dataTransfer);
     dragAtShelfRow(target, "drop", "before", dataTransfer);
 
-    expect(within(active).getAllByRole("button", { name: /(?:세션|문서) 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
-      "PowerShell 세션 열기",
+    expect(within(active).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
+      "PowerShell 패인 열기",
     ]);
     expect(within(hidden).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
       "README.md 패인 열기",
@@ -3384,9 +3489,9 @@ describe("작업공간 and 숨김", () => {
     expect(screen.getByRole("button", { name: "숨김 열기 (패인 1개)" })).toBeInTheDocument();
 
     const panes = screen.getByRole("group", { name: "세션 목록" });
-    expect(within(panes).getAllByRole("button", { name: /세션 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
-      "Claude Code 세션 열기",
-      "Codex 세션 열기",
+    expect(within(panes).getAllByRole("button", { name: /패인 열기$/ }).map((pane) => pane.getAttribute("aria-label"))).toEqual([
+      "Claude Code 패인 열기",
+      "Codex 패인 열기",
     ]);
   });
 
@@ -3817,6 +3922,8 @@ describe("folder colour", () => {
 
   const folderRow = (name: string) =>
     screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-row") as HTMLElement;
+  const folderNode = (name: string) =>
+    screen.getByRole("button", { name: `${name} 폴더 선택` }).closest(".project-node") as HTMLElement;
   // Home dashboard cards carry the same aria-label, so group lookups stay scoped to the sidebar.
   const groupNode = (name: string) =>
     within(screen.getByRole("navigation", { name: "프로젝트" }))
@@ -3910,7 +4017,7 @@ describe("folder colour", () => {
     expect(harness.api.projects.update).not.toHaveBeenCalled();
   });
 
-  it("keeps folders with a running agent open and closes the rest, across the group and tag layers", async () => {
+  it("keeps folders with a running agent open and closes the rest, across the tag, group and folder layers", async () => {
     const working: TerminalSessionView = { ...powershellSession, status: "working" };
     const harness = createApi({
       projects: [atlas, dashboard, archive],
@@ -3938,12 +4045,12 @@ describe("folder colour", () => {
 
     expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "true");
     expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
-    // Dashboard is 미분류 and idle, but 폴더는 접히는 층이 아니라 그대로 서 있다.
-    expect(screen.getByRole("button", { name: "Dashboard 폴더 선택" })).toBeInTheDocument();
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
+    // Dashboard is 미분류 and idle, so it closes on its own without a group to close it.
+    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("collapses and re-expands both layers at once, and remembers it across a restart", async () => {
+  it("collapses and re-expands every layer at once, and remembers it across a restart", async () => {
     // 태그가 붙은 것은 용역 묶음 아래에, 붙지 않은 것은 나머지 묶음 아래에 — 두 층이 한 화면에 같이 선다.
     const harness = () =>
       createApi({
@@ -3970,11 +4077,11 @@ describe("folder colour", () => {
     expect(tagGroupNode("나머지")).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" })).not.toBeInTheDocument();
 
-    // 묶음 하나만 도로 펴면 그 안의 프로젝트는 접힌 채로 서 있다 — 두 층은 서로 다른 키에 적힌다.
+    // 묶음 하나만 도로 펴면 그 안의 프로젝트도 폴더도 접힌 채로 서 있다 — 세 층은 서로 다른 키에 적힌다.
     fireEvent.click(within(nav).getByRole("button", { name: "나머지 펼치기" }));
     expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "false");
 
-    // 프로젝트 접힘은 App이, 묶음 접힘은 사이드바가 각자의 키에 적으므로 재시작해도 그대로다.
+    // 폴더·프로젝트 접힘은 App이, 묶음 접힘은 사이드바가 각자의 키에 적으므로 재시작해도 그대로다.
     view.unmount();
     window.multiCliWork = harness().api;
     render(<App />);
@@ -3988,15 +4095,15 @@ describe("folder colour", () => {
     await waitFor(() => expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "true"));
     expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "true");
     expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
+    expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true");
   });
 
   /**
    * Clicking the row of the place already on screen used to re-select what was selected, which
    * showed nothing. It now folds that row away, so the click that cannot open anything closes it.
-   * 폴더 행은 접을 것이 없으므로(잎이다) 이 규칙은 프로젝트 층에만 남는다.
    */
-  it("folds the row already on screen instead of opening it again, on the group layer", async () => {
+  it("folds the row already on screen instead of opening it again, on both layers", async () => {
     const harness = createApi({
       projects: [atlas, dashboard],
       sessions: [powershellSession],
@@ -4005,10 +4112,25 @@ describe("folder colour", () => {
     window.multiCliWork = harness.api;
     render(<App />);
 
+    // Atlas's grid is what the app boots into, so its row is the one with nothing left to open.
     await screen.findByRole("region", { name: "powershell 터미널" });
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
 
-    // The group layer: its page opens with the group unfolded, and the next click on it folds the
-    // group without leaving the page.
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "false"));
+    // Folding the tree row does not take the folder's work off the grid.
+    expect(screen.getByRole("region", { name: "powershell 터미널" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true"));
+
+    // Another folder is not on screen, so its row still opens — and unfolds — as before.
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true"));
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
+
+    // The group layer answers the same way: its page opens with the group unfolded, and the next
+    // click on it folds the group without leaving the page.
     const group = () =>
       within(screen.getByRole("navigation", { name: "프로젝트" })).getByRole("button", {
         name: "진행 과제 프로젝트 열기",
@@ -4023,25 +4145,24 @@ describe("folder colour", () => {
     await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
   });
 
-  it("폴더 행은 잎이다 — 체버론이 없고 클릭하면 그리드가 열린다", async () => {
+  it("폴더 체버론은 선택과 따로 논다 — 접어도 그리드는 그대로다", async () => {
     const harness = createApi({ projects: [atlas, dashboard], sessions: [powershellSession] });
     window.multiCliWork = harness.api;
     render(<App />);
 
     const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-    // 체버론은 접힌 쪽·펼친 쪽 이름을 번갈아 쓰므로 둘 다 없어야 잎이다.
-    expect(within(nav).queryByRole("button", { name: /^Dashboard (펼치기|접기)$/ })).not.toBeInTheDocument();
-    const row = within(nav).getByRole("button", { name: "Dashboard 폴더 선택" });
-    expect(row.closest(".project-node")).not.toHaveAttribute("aria-expanded");
-
-    fireEvent.click(row);
+    fireEvent.click(within(nav).getByRole("button", { name: "Dashboard 폴더 선택" }));
     await waitFor(() => expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard"));
-    expect(row.closest(".project-row")).toHaveClass("selected");
+    expect(folderRow("Dashboard")).toHaveClass("selected");
 
-    // 이미 그리드가 떠 있는 폴더를 다시 눌러도 접을 것이 없으니 아무 일도 일어나지 않는다.
-    fireEvent.click(row);
-    await waitFor(() => expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard"));
-    expect(row.closest(".project-row")).toHaveClass("selected");
+    // 체버론은 접기만 한다 — 보고 있던 폴더를 접어도 화면은 그 폴더에 그대로 머문다.
+    fireEvent.click(within(nav).getByRole("button", { name: "Dashboard 접기" }));
+    await waitFor(() => expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "false"));
+    expect(document.querySelector(".workspace-title")).toHaveTextContent("Dashboard");
+    expect(folderRow("Dashboard")).toHaveClass("selected");
+
+    fireEvent.click(within(nav).getByRole("button", { name: "Dashboard 펼치기" }));
+    await waitFor(() => expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true"));
   });
 });
 
