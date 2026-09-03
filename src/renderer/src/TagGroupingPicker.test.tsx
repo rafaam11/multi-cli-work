@@ -6,15 +6,21 @@ afterEach(cleanup);
 
 function renderPicker(selected: string[] = [], options?: { available?: string[]; isDefault?: boolean }) {
   const onChange = vi.fn();
-  render(
+  const picker = (tags: readonly string[]) => (
     <TagGroupingPicker
       available={options?.available ?? ["용역", "개인", "연구"]}
-      selected={selected}
+      selected={tags}
       isDefault={options?.isDefault ?? false}
       onChange={onChange}
-    />,
+    />
   );
-  return { onChange, button: screen.getByRole("button", { name: "묶기 설정" }) };
+  const view = render(picker(selected));
+  return {
+    onChange,
+    button: screen.getByRole("button", { name: "묶기 설정" }),
+    /** 부모가 선택을 돌려준 뒤 다시 그리는 것 — 열려 있던 메뉴는 그대로 열려 있다. */
+    rerender: (tags: readonly string[]) => view.rerender(picker(tags)),
+  };
 }
 
 describe("TagGroupingPicker", () => {
@@ -65,15 +71,33 @@ describe("TagGroupingPicker", () => {
     expect(onChange).toHaveBeenCalledWith(["용역"]);
   });
 
-  it("고른 것이 먼저 서고, 그다음이 아직 안 고른 후보다", () => {
-    const { button } = renderPicker(["연구", "개인"]);
+  /**
+   * 고른 것을 앞으로 끌어내면 방금 누른 줄이 발밑에서 자리를 옮긴다. 연달아 둘을 고르는 메뉴라
+   * 그것은 조준을 다시 하게 만든다 — 고른 순서는 버튼 텍스트가 따로 말한다.
+   */
+  it("줄 순서는 후보 순서로 고정이고, 사라진 태그만 맨 뒤에 붙는다", () => {
+    const { button } = renderPicker(["연구", "사라진태그"]);
     fireEvent.click(button);
 
     expect(screen.getAllByRole("menuitemcheckbox").map((item) => item.textContent)).toEqual([
-      "연구",
-      "개인",
       "용역",
+      "개인",
+      "연구",
+      "사라진태그",
     ]);
+  });
+
+  it("고르거나 해제해도 줄이 자리를 옮기지 않는다", () => {
+    const order = () => screen.getAllByRole("menuitemcheckbox").map((item) => item.textContent);
+    const { rerender, button } = renderPicker([]);
+    fireEvent.click(button);
+    expect(order()).toEqual(["용역", "개인", "연구"]);
+
+    // 부모가 선택을 돌려주며 다시 그려도 목록은 그대로다.
+    rerender(["연구"]);
+    expect(order()).toEqual(["용역", "개인", "연구"]);
+    rerender(["연구", "용역"]);
+    expect(order()).toEqual(["용역", "개인", "연구"]);
   });
 
   /**

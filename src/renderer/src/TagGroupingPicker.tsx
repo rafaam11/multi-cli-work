@@ -21,11 +21,14 @@ export function TagGroupingPicker({ available, selected, isDefault, onChange }: 
   const root = useRef<HTMLDivElement>(null);
   const label = `묶기: ${selected.length > 0 ? selected.join(" › ") : "없음"}${isDefault ? " (자동)" : ""}`;
   /**
-   * 고른 것이 먼저, 그다음 아직 안 고른 후보. 마지막 업무 프로젝트에서 떨어져 나가 `available`에
-   * 없어진 태그도 아직 묶기에 남아 있으면 여기 서야 한다 — 그러지 않으면 버튼에는 보이는데
-   * 해제할 항목이 메뉴에 없어, 그 묶기에서 빠져나올 길이 사라진다.
+   * 줄 순서는 후보 순서로 고정이다 — 고른 것을 앞으로 끌어내면 방금 누른 줄이 발밑에서 자리를
+   * 옮기고, 연달아 둘을 고르는 이 메뉴에서 그것은 조준을 다시 하게 만든다. 고른 **순서**는
+   * 버튼 텍스트(`묶기: a › b`)가 따로 말해 주므로 목록까지 그 일을 할 필요가 없다.
+   *
+   * 뒤에 붙는 것은 마지막 업무 프로젝트에서 떨어져 나가 `available`에서 사라진 태그다. 아직
+   * 묶기에 남아 있으면 항목이 서야 해제할 수 있다 — 아니면 버튼에는 보이는데 뺄 길이 없어진다.
    */
-  const items = [...selected, ...available.filter((tag) => !selected.includes(tag))];
+  const items = [...available, ...selected.filter((tag) => !available.includes(tag))];
 
   useEffect(() => {
     if (!open) return;
