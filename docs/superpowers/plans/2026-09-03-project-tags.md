@@ -325,23 +325,41 @@ export async function pruneProjectTags(knownIds, options = {}) {
 
 ### Task 6: 태그 색 (`tag-color.ts`) + CSS 토큰
 
+> 2026-09-03 개정(Task 14의 D1): 팔레트는 태그·구분이 **공용**으로 쓴다. 클래스는 `accent-n`, 인덱스→클래스 매핑은 `src/shared/accent-palette.ts`(Task 14가 만든다; Task 6이 먼저면 Task 6이 만든다)에 하나만 둔다.
+
 **Files:**
+- Create(없으면): `src/shared/accent-palette.ts`(`ACCENT_COLOR_COUNT = 7`, `ACCENT_INDEXES = [1..7]`, `accentClass(index: number): string /* "accent-n", 범위 밖은 "accent-1" */`) + `src/shared/accent-palette.test.ts`
 - Create: `src/renderer/src/tag-color.ts`, Test: `src/renderer/src/tag-color.test.ts`
-- Modify: `src/renderer/src/index.css`(`:root`에 `--tag-accent-6`·`--tag-accent-7` 토큰, `.category-*`(L61-79) 뒤에 `.tag-accent-1`…`.tag-accent-7`이 `--category-accent`를 세팅 — 1~5는 기존 `--category-*` 별칭)
+- Modify: `src/renderer/src/index.css`(`:root`에 `--accent-6`·`--accent-7` 토큰, `.category-*`(L61-79) 뒤에 `.accent-1`…`.accent-7`이 `--category-accent`를 세팅 — 1~5는 기존 `--category-government/outsourcing/research/product/etc` 별칭. 5번은 회색이다)
 
 **Interfaces:**
-- Produces: `export const TAG_ACCENT_COUNT = 7; export function tagAccentIndex(tag: string): number /* 1..7 */; export function tagAccentClass(tag: string): string /* "tag-accent-n" */;` — FNV-1a 32bit over `tag.trim()`.
+- Produces: `export const TAG_ACCENT_COUNT = ACCENT_COLOR_COUNT; export function tagAccentIndex(tag: string): number /* 1..7 */; export function tagAccentClass(tag: string): string /* accentClass(tagAccentIndex(tag)) = "accent-n" */;` — FNV-1a 32bit over `tag.trim()`.
 
-- [ ] **Step 1: 실패하는 테스트** — 같은 입력 → 같은 클래스(고정 입력 3개 `"개인"`, `"AI"`, `"연구"`의 결과 문자열을 **하드코딩**해 해시 변경을 잡는다; 구현 후 실제 값으로 채운다) / 100개 임의 문자열이 전부 `1..7` / 앞뒤 공백 무시(`"AI"`와 `" AI "` 같음) / 한국어 태그 8개(`개인·회사·대학원·연구실·AI·로보틱스·재무·건강`)가 5종 이상으로 흩어진다.
-- [ ] **Step 2: 실패 확인** — `npx vitest run src/renderer/src/tag-color.test.ts`.
+- [ ] **Step 1: 실패하는 테스트** — 같은 입력 → 같은 클래스(고정 입력 3개 `"개인"`, `"AI"`, `"연구"`의 결과 문자열 `"accent-n"`을 **하드코딩**해 해시 변경을 잡는다; 구현 후 실제 값으로 채운다) / 100개 임의 문자열이 전부 `1..7` / 앞뒤 공백 무시(`"AI"`와 `" AI "` 같음) / 한국어 태그 8개(`개인·회사·대학원·연구실·AI·로보틱스·재무·건강`)가 5종 이상으로 흩어진다. `accent-palette.test.ts`: `accentClass(1) === "accent-1"`, `accentClass(7) === "accent-7"`, 범위 밖(`0`, `8`, `1.5`, `NaN`)은 `"accent-1"`, `ACCENT_INDEXES`가 `[1..7]`.
+- [ ] **Step 2: 실패 확인** — `npx vitest run src/renderer/src/tag-color.test.ts src/shared/accent-palette.test.ts`.
 - [ ] **Step 3: 구현**
   ```ts
+  // src/shared/accent-palette.ts
+  /**
+   * 태그와 구분이 함께 쓰는 팔레트. 한 화면에 색 계열이 둘이면 색이 무엇을 뜻하는지 흐려진다 —
+   * 채널 색이 구분 팔레트를 다시 쓴 것과 같은 이유다. shared에 사는 것은 설정 파서(1..7 검증)와
+   * 렌더러(클래스 이름) 둘 다 이 숫자를 알아야 하기 때문이다.
+   */
+  export const ACCENT_COLOR_COUNT = 7;
+  export const ACCENT_INDEXES: readonly number[] = [1, 2, 3, 4, 5, 6, 7];
+  /** 1..7 → CSS 클래스. 범위 밖은 1로 접는다 — 파서가 이미 막으므로 여기는 마지막 그물이다. */
+  export function accentClass(index: number): string {
+    const safe = Number.isInteger(index) && index >= 1 && index <= ACCENT_COLOR_COUNT ? index : 1;
+    return `accent-${safe}`;
+  }
+
+  // src/renderer/src/tag-color.ts
+  import { ACCENT_COLOR_COUNT, accentClass } from "@shared/accent-palette";
   /**
    * 태그 색은 뜻이 아니라 구별 표시다 — 자유 문자열에 의미론적 이름을 붙일 수 없으므로 클래스도
-   * 번호다. 팔레트는 index.css의 --category-* 계열을 다시 쓴다: 한 화면에 색 계열이 둘이면 색이
-   * 무엇을 뜻하는지 흐려진다(채널 색이 같은 이유로 그 팔레트를 썼다).
+   * 번호다. 팔레트는 구분과 같은 것이다(accent-palette.ts).
    */
-  export const TAG_ACCENT_COUNT = 7;
+  export const TAG_ACCENT_COUNT = ACCENT_COLOR_COUNT;
   /** FNV-1a — 로케일·플랫폼과 무관해야 같은 태그가 어느 화면에서나 같은 색이 된다. */
   export function tagAccentIndex(tag: string): number {
     let hash = 0x811c9dc5;
@@ -351,7 +369,7 @@ export async function pruneProjectTags(knownIds, options = {}) {
     }
     return (hash % TAG_ACCENT_COUNT) + 1;
   }
-  export function tagAccentClass(tag: string): string { return `tag-accent-${tagAccentIndex(tag)}`; }
+  export function tagAccentClass(tag: string): string { return accentClass(tagAccentIndex(tag)); }
   ```
 - [ ] **Step 4: 통과 확인** — PASS(하드코딩 값 채운 뒤), `npm run typecheck`.
 - [ ] **Step 5: 커밋** — `feat(tags): 태그 이름 해시 팔레트`.
@@ -410,7 +428,7 @@ export async function pruneProjectTags(knownIds, options = {}) {
 
 - [ ] **Step 1: 실패하는 테스트** — `sidebar-tree.test.ts` 전면: 묶기 비면 전부 section / 고른 순서대로 묶이고 묶음이 첫 구성원 자리 / 태그 둘 가진 프로젝트가 **앞 태그 묶음에만** / 없으면 기타, 기타 마지막 / 미분류는 묶음 밖·기타 뒤 / `groupKeys` / `collapsedGroupKeysForWorking` / `defaultGroupingTags`(셸 없으면 `[]`, 있으면 존재하는 라벨만 고정 순서). `TagGroupingPicker.test.tsx`: 열기·고르기(끝에 추가)·해제·묶기 해제·Escape. `App.test.tsx`: `"ws-root 채널"` describe를 `"태그 묶음"`으로 — `.channel-node`→`.tag-group-node`, `toHaveClass("channel-service")`→`toHaveClass(tagAccentClass("용역"))`(import해서 호출), `"O_SMCH 접기/펼치기"`→`"용역 접기/펼치기"`, "손으로 만든 것은 최상위" 케이스를 (a) 묶기 비면 최상위 (b) 묶기 있고 태그 없으면 `기타` 아래로 분리(`createApi({ projectTags: {...} })`로 태그 주입 — 셸 기반 프로젝트에는 동기화가 아니라 픽스처로 라벨 태그를 준다), `channelNode()`→`groupNode(label)`, `getByTitle` 4곳 문구 교체; 신규: 묶기 메뉴로 둘을 고르면 그 순서로 묶이고 재시작 후 유지(localStorage `groupingTags`) / 저장된 선호 없고 셸+라벨 태그 있으면 채널 라벨 기본값으로 묶인다(버튼 텍스트에 `(자동)`).
 - [ ] **Step 2: 실패 확인** — `npx vitest run src/renderer/src/sidebar-tree.test.ts src/renderer/src/TagGroupingPicker.test.tsx` 그리고 `npx vitest run src/renderer/src/App.test.tsx -t "태그 묶음"`.
-- [ ] **Step 3: 구현** — 위 Interfaces대로. CSS: `.channel-*`(L85-103) 삭제, 채널 노드 스타일을 `.tag-group-node/.tag-group-row/.tag-group-copy/.tag-group-name/.tag-group-children`로 옮기고(레일 색은 `--category-accent`를 `.tag-accent-n`이 세팅), `.tag-group-other`는 회색, `.grouping-picker`·`.grouping-picker-menu`·`.grouping-picker-item` 신규.
+- [ ] **Step 3: 구현** — 위 Interfaces대로. CSS: `.channel-*`(L85-103) 삭제, 채널 노드 스타일을 `.tag-group-node/.tag-group-row/.tag-group-copy/.tag-group-name/.tag-group-children`로 옮기고(레일 색은 `--category-accent`를 `.accent-n`이 세팅), `.tag-group-other`는 회색, `.grouping-picker`·`.grouping-picker-menu`·`.grouping-picker-item` 신규.
 - [ ] **Step 4: 통과 확인** — `npm test`, `npm run typecheck`. 접근성 이름 동결 테스트(세션 행·폴더 행)가 손대지 않고 통과해야 한다.
 - [ ] **Step 5: 커밋** — `refactor(sidebar): 채널 묶음을 태그 묶음으로 일반화하고 묶기 메뉴를 단다`.
 
@@ -460,7 +478,99 @@ export async function pruneProjectTags(knownIds, options = {}) {
 
 ---
 
+---
+
+# 후속 (2026-09-03 승인): Task 13~17 — 세션 헤더 클릭 범위 + 업무 프로젝트 "구분" 범용화
+
+> 사용자 인터뷰 결정: 구분은 **유지**(프로젝트당 하나, 레일·카드·칩 색 결정)하되 목록은 **설정 창 "프로젝트" 탭**의 사용자 정의 목록(이름·색·순서·기본 구분); 기본 목록은 **범용값 업무·개인·연구·기타**(목록에 없는 옛 값은 그대로 표시, 회색); ws-root 동기화의 채널 글자→구분 매핑은 **제거**(새 프로젝트는 설정의 기본 구분; 채널 라벨은 Task 4대로 태그로만).
+>
+> 선행 결정 — **D1** 팔레트 공용화: `src/shared/accent-palette.ts`의 `accentClass(index) → "accent-n"`을 태그·구분이 함께 쓴다(Task 6 개정 참조). **D2** 팔레트 5번은 회색(`--category-etc`): 기본 목록의 `기타`가 지금과 같은 색. **D3** 구분 이름 편집은 허용하되 기존 프로젝트의 `category` 문자열은 이관하지 않는다(설정 탭에 안내; 자동 이관은 별도 작업).
+>
+> 실행 순서: T3 → T4 → T5 → **T13** → **T14** → T6 → T7 → T8 → T9 → T10 → **T15** → **T16** → T11 → **T17** → (선택) T12. Task 13은 태그 태스크와 파일이 겹치지 않는다. Task 16은 반드시 T6·T8 뒤.
+
+### Task 13: 세션 패널 헤더의 남는 폭 전체로 작업공간 열기
+
+**Files:**
+- Modify: `src/renderer/src/SessionPanel.tsx`(L217-226 제목 버튼·배지), `src/renderer/src/index.css`(L2356-2388 `.session-panel-title`·`.session-panel-wait`·`.session-panel-scope`)
+- Create: `src/renderer/src/SessionPanel.test.tsx`(콜로케이션 테스트가 아직 없다 — `renderPanel(overrides?: Partial<SessionPanelProps>)` 헬퍼로 필수 props 전부 `vi.fn`/기본값)
+- Modify: `e2e/desktop.spec.ts`(@smoke 테스트의 폴더 행 배치 블록(~L254-267) 뒤에 배치 측정; 비-smoke `moves panes by sidebar row…`(~L904) 앞머리에 실제 클릭)
+
+**Interfaces:** `SessionPanelProps` 불변. 접근성 이름 `세션 작업공간 열기 (패인 N개)` 불변(e2e 3곳·App.test 15곳이 이 문자열에 걸려 있다).
+
+- [ ] **Step 1: 실패하는 테스트** — `SessionPanel.test.tsx`: (1) `대기 배지가 제목 버튼 안에 있어 배지를 눌러도 작업공간이 열린다` — `title = getByRole("button", { name: "세션 작업공간 열기 (패인 2개)" })`, `within(title).getByText("대기 1")`, 배지 클릭 → `onSelectWorkspace` 1회 (2) `접기 토글과 범위 버튼은 제목 버튼 밖에 남는다` — `title.querySelector(".tree-toggle")`·`.session-panel-scope`가 null, 헤더 직계 자식 순서 `tree-toggle → session-panel-title → session-panel-scope`(jsdom엔 레이아웃이 없으니 실제 폭은 e2e가 잰다고 주석) (3) `토글과 범위 버튼은 각자만 부른다` (4) `접근성 이름에 대기 수가 새지 않는다` — `toHaveAccessibleName("세션 작업공간 열기 (패인 2개)")`. e2e: @smoke에 `.session-panel-heading` 안 `.session-panel-title`/`.session-panel-scope`의 `getBoundingClientRect`로 제목 폭 ≥ 헤더 폭×0.5, 범위 버튼과의 간격 ≤ 8px, 제목 높이 ≥ 헤더 높이−1; 비-smoke에 `await openFolder(); const box = await page.locator(".session-panel-title").boundingBox(); await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2); await expect(page.locator(".workspace-title")).toHaveText("작업공간");`.
+- [ ] **Step 2: 실패 확인** — `npx vitest run src/renderer/src/SessionPanel.test.tsx`.
+- [ ] **Step 3: 구현** — 마크업:
+  ```tsx
+  {/* 제목 버튼이 토글과 범위 버튼 사이의 남는 폭을 전부 먹는다 — 숨김 셸프 행(.workspace-shelf-select)이
+      아이콘·이름·개수를 한 버튼에 품는 것과 같은 구조다. 배지가 버튼 밖이면 헤더에서 가장 눌리기 쉬운
+      자리가 죽은 공간이 된다. */}
+  <button className="session-panel-title" type="button" onClick={onSelectWorkspace} aria-label={`세션 작업공간 열기 (패인 ${items.length}개)`}>
+    <span className="session-panel-name">세션</span>
+    {/* 접혀 있어도 보인다 — 그래야 접어 둔 채로도 무엇이 기다리는지 알 수 있다. */}
+    {waiting > 0 ? <span className="session-panel-wait">대기 {waiting}</span> : null}
+  </button>
+  ```
+  CSS: `.session-panel-title { display: flex; min-width: 0; flex: 1 1 auto; align-self: stretch; align-items: center; justify-content: flex-start; gap: 6px; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; text-transform: inherit; cursor: pointer; }`, `.session-panel-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }`, `.session-panel-wait { flex: 0 0 auto; white-space: nowrap; …기존 값 }`(헤더 직계가 아니게 되어 `.section-heading > span` 말줄임 규칙이 안 닿는다), `.session-panel-scope { flex: 0 0 auto; display: inline-flex; gap: 2px; }`(`margin-left: auto` 제거). 드롭 핸들러는 헤더 div에 그대로 — 버튼 위 이벤트가 버블링하므로 App.test의 헤더 drop 테스트는 그대로 통과.
+- [ ] **Step 4: 통과 확인** — `npm test`, `npm run typecheck`, `npx playwright test --list`.
+- [ ] **Step 5: 커밋** — `fix(session-panel): 세션 헤더의 남는 폭 전체로 작업공간을 연다`.
+
+### Task 14: 설정 모델 — `projects.categories` / `defaultCategory`
+
+**Files:**
+- Create(없으면): `src/shared/accent-palette.ts`(+test) — Task 6 개정 참조
+- Modify: `src/shared/settings-types.ts`(타입 L36-53, `DEFAULT_SETTINGS`, `parseSettings` L97-164, `mergeSettingsPatch` L166-177), `src/main/ipc.ts`(`validateSettingsPatch` ~L494-582)
+- Test: `src/shared/settings-types.test.ts`, `src/main/ipc.test.ts`
+
+**Interfaces:**
+```ts
+export interface ProjectCategorySetting { name: string; /** 팔레트 인덱스 1..ACCENT_COLOR_COUNT — 색이 아니라 인덱스인 것은 테마가 색을 정하기 때문 */ color: number }
+export interface ProjectSettings { categories: ProjectCategorySetting[]; /** 항상 categories 안의 이름(파서가 보장) */ defaultCategory: string }
+export interface AppSettings { …; projects: ProjectSettings }
+export interface AppSettingsPatch { …; /** categories는 통째 교체 — 삭제·순서 변경은 부분 병합으로 표현할 수 없다 */ projects?: { categories?: ProjectCategorySetting[]; defaultCategory?: string } }
+export const MAX_CATEGORY_NAME_LENGTH = 32;
+export const DEFAULT_PROJECT_CATEGORIES: readonly ProjectCategorySetting[] = [{ name: "업무", color: 1 }, { name: "개인", color: 4 }, { name: "연구", color: 3 }, { name: "기타", color: 5 }];
+// DEFAULT_SETTINGS.projects = { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타" }
+```
+파서 규칙(`readProjectSettings(raw.projects)`): ① `categories`가 배열이 아니면 기본 목록 ② 항목: 객체가 아니거나 `name`이 문자열이 아니면 버림 → `name.trim().slice(0, 32)` → 빈 값·중복(첫 등장 유지) 버림 ③ `color`가 정수 1..7이 아니면 순환 기본 `((살아남은 인덱스) % 7) + 1` ④ 살아남은 목록이 비면 기본 목록 ⑤ `defaultCategory` trim, 목록에 있으면 그대로, 없으면 `categories[0].name`. `mergeSettingsPatch`는 얕은 병합(`projects: { ...current.projects, ...patch.projects }`) — 정규화는 파서 몫이고 `json-store`가 쓰기 경로에서도 파서를 돌리므로(`updateJsonStore`) 디스크와 `current()` 모두 고쳐진 값을 갖는다(주석+테스트). IPC `validateSettingsPatch`: `exactObject` 키에 `projects`; 하위 `exactObject(["categories","defaultCategory"])`; `categories`는 배열이어야 하고 항목은 `exactObject(["name","color"])`에 `name` nonEmptyString, `color` 정수 1..7; `defaultCategory` nonEmptyString(엄격 — 파서가 고쳐 주는 것과 IPC가 받아 주는 것은 다른 문제).
+
+- [ ] **Step 1: 실패하는 테스트** — `accent-palette.test.ts`(Task 6 개정의 4건); `settings-types.test.ts` 7건: 기본 목록이 범용값·기본 구분 기타·색 4개 서로 다름 / `parseSettings({}).projects`가 기본값(구버전 파일) / `{categories:[{name:" 업무 ",color:2},{name:"업무",color:3},{name:"",color:1},{name:"연구",color:0},{name:"기타",color:"파랑"}], defaultCategory:"없는 것"}` → `[{업무,2},{연구,2},{기타,3}]`·`defaultCategory === "업무"` / 빈 목록 → 기본 목록(+`defaultCategory:"업무"`는 기본 목록에 있으므로 유지) / `parseSettings(mergeSettingsPatch(DEFAULT_SETTINGS, { projects: { categories: [{ name: "업무", color: 1 }] } })).projects.defaultCategory === "업무"` / `projects` 없는 패치는 기존 목록 유지 / 이름 32자 절단. `ipc.test.ts`: `settings:update`가 `{ projects: { categories: [{name:"업무",color:1}], defaultCategory:"업무" } }`를 그대로 전달; 거부 5종(`color: 9`, `name: ""`, 항목에 모르는 키, `projects: { theme: 1 }`, `categories: "업무"`) — 전부 게이트웨이 미호출.
+- [ ] **Step 2: 실패 확인** / **Step 3: 구현** / **Step 4: 통과 확인** — `npm test`, `npm run typecheck`.
+- [ ] **Step 5: 커밋** — `feat(settings): 업무 프로젝트 구분 목록을 설정 스키마에 넣는다`.
+
+### Task 15: 설정 창 "프로젝트" 탭
+
+**Files:**
+- Modify: `src/renderer/src/SettingsDialog.tsx`(`SettingsTab`·`TABS` L21-30에 `{ id: "projects", label: "프로젝트" }`를 워크스페이스 앞에; `WorkspaceSettings` 뒤에 `ProjectsSettings`; 본문 분기), `src/renderer/src/index.css`(`.settings-category-row { gap: 8px }`, `.settings-category-row > input[type="text"] { width: 140px }`, `.settings-swatches { display: inline-flex; gap: 4px }`, `.settings-swatch { width: 16px; height: 16px; padding: 0; border: 2px solid transparent; border-radius: 50%; background: var(--category-accent, var(--muted)); cursor: pointer }`, `.settings-swatch.selected { border-color: var(--text) }`)
+- Test: `src/renderer/src/SettingsDialog.test.tsx`
+
+**Interfaces:** `function ProjectsSettings({ projects, onChange }: { projects: ProjectSettings; onChange(next: AppSettingsPatch["projects"]): void })`; 본문 `tab === "projects"` → `<ProjectsSettings projects={settings.projects} onChange={(next) => update({ projects: next })} />`. 저장 버튼 없음(다른 탭과 같이 즉시).
+
+마크업/문구: `<h2>프로젝트 구분</h2>`, 힌트 `업무 프로젝트의 구분입니다. 사이드바 레일, 홈 카드, 상세 페이지 칩의 색을 정합니다.`; `<ul className="settings-list" aria-label="구분 목록">` 행마다 `<li className="settings-row settings-category-row">`: 이름 `<input type="text" aria-label={`구분 ${index+1} 이름`} maxLength={32}>`(로컬 드래프트, blur 커밋, Enter는 `isComposing` 아니면 blur, 빈 값이면 원복 — `WorkProjectDetailPage`의 이름 필드 관례), 색 `<span role="radiogroup" aria-label={`${name} 색`}>`에 `ACCENT_INDEXES.map` → `<button type="button" role="radio" aria-checked aria-label={`색 ${n}`} className={`settings-swatch ${accentClass(n)}${selected ? " selected" : ""}`}>`(즉시 저장), 동작 `<span className="settings-key-controls">`에 `"{name} 위로"`(첫 행 disabled)·`"{name} 아래로"`(끝 행 disabled)·`"{name} 삭제"`(목록이 1개면 disabled); 목록 아래 `구분 추가`(끝에 `새 구분`/`새 구분 2`…, 색 `((길이 % 7) + 1)`, 새 행 입력에 포커스); `<label htmlFor="settings-default-category">기본 구분</label><select id=…>`(목록 이름만, 즉시 저장); 힌트 `새로 만들어지는 업무 프로젝트가 받는 구분입니다. 이미 있는 프로젝트의 구분은 바뀌지 않습니다. 이름을 바꿔도 마찬가지입니다 — 목록에서 빠진 구분은 회색으로 보이고, 상세 페이지에서 다시 고를 수 있습니다.` 삭제한 항목이 기본 구분이면 목록만 보내고 파서가 첫 항목으로 되돌린다(UI가 중복 계산하지 않음).
+
+- [ ] **Step 1: 실패하는 테스트** — `openProjects()` = `프로젝트` 탭 버튼 클릭. (1) 기본 목록 4행 순서·첫 행 이름 `업무`·`radiogroup "업무 색"`의 `radio "색 1"`이 `aria-checked="true"` (2) `색 6` 클릭 → `update({ projects: { categories: [{name:"업무",color:6}, …나머지 그대로] } })` (3) `개인 위로` → `categories[0].name === "개인"` (4) 삭제가 항목을 빼고 하나 남으면 `삭제` disabled (5) `구분 추가` → 5개, 마지막 `새 구분` (6) 이름은 blur에 저장(change만으로는 미호출), 빈 값 blur는 미호출+원복 (7) 기본 구분 select → `update({ projects: { defaultCategory: "연구" } })` (8) 기존 탭 회귀 — 기존 케이스 무변경 통과.
+- [ ] **Step 2~4** — `npx vitest run src/renderer/src/SettingsDialog.test.tsx`, `npm test`, `npm run typecheck`.
+- [ ] **Step 5: 커밋** — `feat(settings): 설정 창 프로젝트 탭에서 구분 목록을 편집한다`.
+
+### Task 16: 소비처 전환 + 채널 매핑 제거 + 기본 구분 주입 (T6·T8 뒤)
+
+**Files:**
+- Modify: `src/renderer/src/work-project-accent.ts`(`WorkProjectAccent`·`CATEGORY_ACCENTS` 삭제, `categoryAccentClass(category, categories)`), `src/renderer/src/ProjectSidebar.tsx`(prop `categories`, 업무 프로젝트 노드 레일), `src/renderer/src/HomeDashboard.tsx`(prop `categories`, 카드·칩), `src/renderer/src/WorkProjectDetailPage.tsx`(prop `categories`; select 옵션 = 설정 목록 + 현재 값; 칩), `src/renderer/src/pane-context.ts`(`PaneContextSources.categories` — **다섯 번째 소비처**), `src/renderer/src/App.tsx`(`const projectCategories = appSettings.projects.categories;`를 사이드바·홈·상세·`paneContexts` sources/deps에), `src/shared/work-project-types.ts`(`WORK_PROJECT_CATEGORIES` 삭제 — `WorkProjectDetailPage` import도 같은 커밋), `src/renderer/src/index.css`(`.category-government/outsourcing/research/product` 클래스 삭제; `.category-etc`와 `--category-*` 토큰 5개는 유지 — `.accent-1..5` 별칭), `src/main/projects/work-project-service.ts`(`CHANNEL_CATEGORY`·`ChannelLetter` import 삭제; 옵션 `defaultCategory?: () => string`(게터 — 설정이 언제든 바뀌므로); `private defaultCategory()`가 게터 값 trim → 비면 `DEFAULT_SETTINGS.projects.defaultCategory`; `createWorkProject`의 `input.category === undefined ? this.defaultCategory() : input.category`; `syncFromWorkspace` 시작에서 한 번 뽑아 `category: defaultCategory`), `src/main/runtime.ts`(`new WorkProjectService({ …, defaultCategory: () => settingsService.current().projects.defaultCategory })` — 동기 캐시)
+- Test: `work-project-accent.test.ts`(재작성: 목록 이름→`accent-n`, 없는 값·빈 문자열→`category-etc`, 공백 무시, 서로 다른 색은 서로 다른 클래스, 빈 목록이면 전부 회색), `pane-context.test.ts`(`SOURCES.categories`, `category-government`→`accent-1`), `WorkProjectDetailPage.test.tsx`(`renderPage`에 `categories`; 픽스처 `정부지원과제`는 그대로 — 옛 값 사례; 신규: 옛 구분은 현재 값으로 남고 회색 / 목록에서 고르면 즉시 `accent-3`), `HomeDashboard.test.tsx`(`baseProps.categories`; 신규: 카드가 설정 색·없는 값은 회색), `App.test.tsx`(`describe("work project categories")`의 어휘 교체 `정부지원과제→업무, 외주개발→개인, 상품개발→연구`; `toHaveClass("category-government")`→`"accent-1"` 등; "reads a legacy or custom 구분 as 기타"는 제목만 `설정 목록에 없는 구분은 회색으로 남는다`로, `category-etc` 단언 유지; 신규: `emitSettings({ ...DEFAULT_SETTINGS, projects: { categories: [{name:"업무",color:6}], defaultCategory:"업무" } })` 뒤 그룹 노드가 `accent-6`), `work-project-workspace-sync.test.ts`(`service()`에 `defaultCategory` 통과; 채널→구분 단언을 전부 기본 구분으로; "maps every channel letter onto a category" 삭제 → `셸에서 만들어지는 업무 프로젝트는 설정의 기본 구분을 받는다`(`defaultCategory: () => "업무"`); 사용자가 손본 구분이 살아남는 테스트는 그대로), `work-project-service.test.ts`(신규: `defaultCategory: () => "업무"`면 `createWorkProject({ name })`이 `업무`, 명시 `category: "연구"`가 이김).
+
+- [ ] **Step 1: 실패하는 테스트** / **Step 2: 실패 확인** / **Step 3: 구현**(`categoryAccentClass`: `const key = category.trim(); const found = categories.find((c) => c.name === key); return found ? accentClass(found.color) : "category-etc";` — 두 번째 인자는 **필수**(옵셔널이면 빠진 소비처가 조용히 회색이 된다); 상세 페이지 `const names = categories.map(c => c.name); const categoryOptions = names.includes(category) ? names : [category, ...names];` 주석: 목록에서 빠진 옛 구분도 사라지지 않는다 — 화면에 없는 값을 담은 select는 다음 저장 때 조용히 값을 바꾼다) / **Step 4: 통과 확인** — `npm test`, `npm run typecheck`(필수 인자가 소비처 5곳을 잡는지가 핵심 신호).
+- [ ] **Step 5: 커밋** — `refactor(work-projects): 구분 색과 기본값을 설정 목록에서 읽는다`.
+
+### Task 17: 문서 · 릴리스 노트
+
+**Files:**
+- Modify: `docs/local-data.md`(`work-projects.json` 설명에서 "카테고리 색" 제거 → "업무 프로젝트(폴더 묶음)와 소속 폴더"; `userData` 표에 `settings.json | 언어·터미널·알림·단축키·업무 프로젝트 구분 목록` 행), `docs/superpowers/specs/2026-08-13-settings-window-design.md`(설정 분류에 "프로젝트" 한 줄), `docs/superpowers/specs/registry-contract.md` §8(Task 11과 합쳐도 됨)
+- Create: `docs/release/v1.29.0.md` 초안 — 변경 사항(구분을 설정에서 직접 만든다: 설정 › 프로젝트 탭에서 이름·색(7색)·순서·기본 구분 / 기본 목록이 범용값 업무·개인·연구·기타 / ws-root 셸의 새 업무 프로젝트는 채널 글자가 아니라 설정의 기본 구분, 채널 정보는 태그로 / 세션 패널 헤더의 남는 폭 전체를 눌러 작업공간을 연다(숨김 행과 같은 규칙), 대기 배지도 같은 과녁) + 태그 플랜의 릴리즈 노트 초안 병합. **업그레이드 시 보이는 변화**: v1.28 이전에 만든 `정부지원과제`·`외주개발`·`상품개발` 프로젝트는 새 기본 목록에 없어 회색으로 보인다 — 값은 그대로고 상세 select에 현재 값으로 남으며, 설정 › 프로젝트에서 같은 이름을 추가하거나 프로젝트마다 새 구분을 고르면 색을 되찾는다 / `기타`는 지금까지와 같은 회색 / 구버전으로 되돌리면 `settings.json`의 구분 목록이 지워질 수 있다(모르는 필드를 버리는 파일; 업무 프로젝트에 저장된 구분 값은 무관).
+
+- [ ] **Step 1: 문서 수정·초안 작성** / **Step 2: 커밋** — `docs: 구분 설정과 세션 헤더 변경을 문서·릴리스 노트에 반영`.
+
+---
+
 ## 검증 (전체)
 
-- `npm test`(기준선 106 파일/1153), `npm run typecheck`, `npm run test:e2e:smoke`(채널 참조가 없어 e2e 수정 불필요).
+- `npm test`(기준선 106 파일/1153), `npm run typecheck`, `npm run test:e2e:smoke`(채널 참조가 없어 e2e 수정 불필요; Task 13의 헤더 배치 단언은 여기서 돈다), `npm run test:e2e`(Task 13의 헤더 클릭 단언).
 - 설치 후 수동: 상세 페이지 태그 추가/제거·자동완성·한글 Enter, 묶기로 둘 고르면 순서대로 묶이고 기타·미분류 위치, 업그레이드 직후 채널 라벨 묶음 `(자동)`, 묶기 해제 시 평면, 재시작 후 유지, 트리 행·홈 카드 칩, `Ctrl+P` `#태그`, Claude 세션 브리프 `- 태그:` 줄.
