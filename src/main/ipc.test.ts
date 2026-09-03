@@ -752,6 +752,17 @@ describe("main IPC boundary", () => {
     });
   });
 
+  it("passes a projects patch through unchanged", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("settings:update")!({}, {
+      projects: { categories: [{ name: "업무", color: 1 }], defaultCategory: "업무" },
+    });
+    expect(settingsGateway.update).toHaveBeenCalledWith({
+      projects: { categories: [{ name: "업무", color: 1 }], defaultCategory: "업무" },
+    });
+  });
+
   it("rejects unknown fields, out-of-range values, and mistyped settings patches", () => {
     const { handlers, settingsGateway } = setup();
 
@@ -763,6 +774,28 @@ describe("main IPC boundary", () => {
     expect(() => handlers.get("settings:update")!({}, { keybindings: { "view.quick-open": 5 } })).toThrow(/keybinding/i);
     expect(() => handlers.get("settings:update")!({}, { notifications: { statuses: { finished: true } } })).toThrow(
       /notification statuses/i,
+    );
+    expect(settingsGateway.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid projects patches", () => {
+    const { handlers, settingsGateway } = setup();
+
+    expect(() =>
+      handlers.get("settings:update")!({}, { projects: { categories: [{ name: "업무", color: 9 }] } }),
+    ).toThrow(/color/i);
+    expect(() =>
+      handlers.get("settings:update")!({}, { projects: { categories: [{ name: "", color: 1 }] } }),
+    ).toThrow(/name/i);
+    expect(() =>
+      handlers.get("settings:update")!(
+        {},
+        { projects: { categories: [{ name: "업무", color: 1, icon: "star" }] } },
+      ),
+    ).toThrow(/unknown fields/i);
+    expect(() => handlers.get("settings:update")!({}, { projects: { theme: 1 } })).toThrow(/unknown fields/i);
+    expect(() => handlers.get("settings:update")!({}, { projects: { categories: "업무" } })).toThrow(
+      /categories.*array/i,
     );
     expect(settingsGateway.update).not.toHaveBeenCalled();
   });

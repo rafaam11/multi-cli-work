@@ -28,7 +28,9 @@ import {
   type AppSettings,
   type AppSettingsPatch,
   type NotifiableStatus,
+  type ProjectCategorySetting,
 } from "../shared/settings-types";
+import { ACCENT_COLOR_COUNT } from "../shared/accent-palette";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
@@ -500,7 +502,11 @@ function numberInRange(value: unknown, min: number, max: number, label: string):
 }
 
 function validateSettingsPatch(value: unknown): AppSettingsPatch {
-  const raw = exactObject(value, ["language", "general", "terminal", "notifications", "keybindings"], "Settings patch");
+  const raw = exactObject(
+    value,
+    ["language", "general", "terminal", "notifications", "keybindings", "projects"],
+    "Settings patch",
+  );
   const patch: AppSettingsPatch = {};
   if (raw.language !== undefined) {
     if (raw.language !== "ko" && raw.language !== "en") throw new Error('Settings language must be "ko" or "en"');
@@ -585,6 +591,27 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
       keybindings[actionId] = accelerator as string | null;
     }
     patch.keybindings = keybindings;
+  }
+  if (raw.projects !== undefined) {
+    // IPC는 엄격하다(exactObject·nonEmptyString) — 파서가 고쳐 주는 것(공백 정리, 잘못된 색
+    // 순환 기본값)과 게이트웨이가 애초에 받아 주는 것은 다른 문제라, 여기서는 모양이 어긋나면
+    // 바로 던지고 정규화는 하지 않는다.
+    const projects = exactObject(raw.projects, ["categories", "defaultCategory"], "Settings projects");
+    patch.projects = {};
+    if (projects.categories !== undefined) {
+      if (!Array.isArray(projects.categories)) throw new Error("Settings projects.categories must be an array");
+      patch.projects.categories = projects.categories.map((item, index): ProjectCategorySetting => {
+        const category = exactObject(item, ["name", "color"], `Settings projects.categories[${index}]`);
+        const color = integer(category.color, `Settings projects.categories[${index}].color`);
+        if (color < 1 || color > ACCENT_COLOR_COUNT) {
+          throw new Error(`Settings projects.categories[${index}].color must be between 1 and ${ACCENT_COLOR_COUNT}`);
+        }
+        return { name: nonEmptyString(category.name, `Settings projects.categories[${index}].name`), color };
+      });
+    }
+    if (projects.defaultCategory !== undefined) {
+      patch.projects.defaultCategory = nonEmptyString(projects.defaultCategory, "Settings projects.defaultCategory");
+    }
   }
   return patch;
 }
