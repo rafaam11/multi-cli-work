@@ -251,7 +251,7 @@ npm run dev        # electron-vite dev (main/preload/renderer HMR + Electron 창
 
 **요구사항** — Windows 10 1809 이상 또는 Ubuntu 22.04 x64. 개발에는 Node.js 22.12+가 필요하다. macOS, Ubuntu 20.04 이하, 기타 CPU 아키텍처, headless 환경은 현재 공식 범위가 아니다.
 
-**릴리스** — `v*` 태그를 푸시하면 태그와 `package.json` 버전을 먼저 비교한 뒤 Windows 2022와 Ubuntu 22.04 x64에서 전체 Electron E2E와 패키징을 수행한다. 결과는 한 작업이 모아 동일한 **draft 릴리스**에 올린다. 최신 변경은 [`docs/release/v1.29.0.md`](docs/release/v1.29.0.md)에서 확인한다.
+**릴리스** — `v*` 태그를 푸시하면 태그와 `package.json` 버전을 먼저 비교한 뒤 Windows 2022와 Ubuntu 22.04 x64에서 전체 Electron E2E와 패키징을 수행한다. 결과는 한 작업이 모아 동일한 **draft 릴리스**에 올린다. 최신 변경은 [`docs/release/v1.29.1.md`](docs/release/v1.29.1.md)에서 확인한다.
 
 개발·설치·로컬 데이터 세부 문서: [`docs/development.md`](docs/development.md) · [`docs/installation.md`](docs/installation.md) · [`docs/local-data.md`](docs/local-data.md)
 </content>
