@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { normalizeTags } from "../../shared/project-tags-types";
 import type { ProjectStatus, SharedProject } from "../../shared/project-types";
+import { DEFAULT_SETTINGS } from "../../shared/settings-types";
 import type {
   WorkProject,
   WorkProjectLocalFolder,
@@ -15,24 +17,12 @@ import {
   relativeSegments,
   resolveShellRefForPath,
   workspacePathKey,
-  type ChannelLetter,
 } from "../../shared/workspace-path";
+import { readProjectTags, updateProjectTags, type ProjectTagsOptions } from "./project-tags-registry";
 import { updateWorkProjectRegistry } from "./work-project-registry";
 import { setWorkspaceShellLinks, type WorkspaceRegistryOptions } from "./workspace-registry";
 
 const METADATA_KEYS = ["name", "category", "status", "memo", "notionLinks", "localFolders", "order"] as const;
-
-/**
- * 채널 글자 → 업무 프로젝트 구분. 루트 CLAUDE.md §1의 채널 어휘를 앱의 어휘로 옮긴 것뿐이며,
- * 만들 때 한 번만 쓴다 — 사용자가 나중에 구분을 바꾸면 그 선택이 이긴다.
- */
-const CHANNEL_CATEGORY: Record<ChannelLetter, string> = {
-  G: "정부지원과제",
-  O: "외주개발",
-  R: "연구",
-  Z: "기타",
-  P: "기타",
-};
 
 type RegistryUpdater = typeof updateWorkProjectRegistry;
 
@@ -53,6 +43,13 @@ export interface WorkProjectServiceOptions {
   registryUpdater?: RegistryUpdater;
   /** ws-root 연동에만 쓴다 — 자동 생성분의 출처(`shellLinks`)가 사는 파일. */
   workspaceRegistryPath?: string;
+  /** 업무 프로젝트 자유 태그 레지스트리 경로. ws-root 연동에만 쓴다(`syncFromWorkspace`). */
+  projectTagsPath?: string;
+  /**
+   * 새 업무 프로젝트의 구분(설정 › 프로젝트 › 기본 구분). 설정이 언제든 바뀌므로 값이 아니라 게터로
+   * 받는다. 만들 때 한 번만 쓰고, 사용자가 나중에 구분을 바꾸면 그 선택이 이긴다.
+   */
+  defaultCategory?: () => string;
   platform?: NodeJS.Platform;
 }
 
@@ -131,11 +128,17 @@ export class WorkProjectService {
     this.options = options;
   }
 
+  /** 게터가 없거나 빈 문자열을 주면 설정 기본값의 기본 구분으로 떨어진다 — 빈 구분은 만들지 않는다. */
+  private defaultCategory(): string {
+    const category = this.options.defaultCategory?.().trim() ?? "";
+    return category.length > 0 ? category : DEFAULT_SETTINGS.projects.defaultCategory;
+  }
+
   async createWorkProject(input: { name: string; category?: string }): Promise<WorkProjectRegistryV1> {
     if (typeof input?.name !== "string" || input.name.trim().length === 0) {
       throw new WorkProjectServiceError("Work project name must be a non-empty string");
     }
-    const category = input.category === undefined ? "기타" : input.category;
+    const category = input.category === undefined ? this.defaultCategory() : input.category;
     if (typeof category !== "string" || category.trim().length === 0) {
       throw new WorkProjectServiceError("Work project category must be a non-empty string");
     }
@@ -323,6 +326,12 @@ export class WorkProjectService {
   ): Promise<WorkspaceSyncResult> {
     const style = pathStyleFor(this.options.platform ?? process.platform);
     const now = this.now();
+    const tagOptions: ProjectTagsOptions = {
+      ...(this.options.projectTagsPath ? { registryPath: this.options.projectTagsPath } : {}),
+      now: () => now,
+    };
+    // 쓰기 전의 사실이어야 한다 — "행이 있었는지"는 이번 실행의 쓰기가 끼어들기 전에 정해진다.
+    const tagRegistry = await readProjectTags(tagOptions);
     const shellByRef = new Map(snapshot.shells.map((shell) => [shell.ref, shell]));
     const lookup = { roots: snapshot.registry.roots, repoOwners: snapshot.repoOwners };
 
@@ -345,10 +354,12 @@ export class WorkProjectService {
     let created = 0;
     const skipped: string[] = [];
     let nextLinks: WorkspaceShellLink[] = [];
+    const tagSeeds = new Map<string, string[]>();
 
     const workProjects = await this.updateRegistry((registry) => {
       created = 0;
       skipped.length = 0;
+      tagSeeds.clear();
       const next = { ...registry.workProjects };
       // 대응하는 업무 프로젝트가 사라진 연결은 흔적만 남은 것이므로 버린다.
       const surviving = snapshot.registry.shellLinks.filter((link) => next[link.workProjectId]);
@@ -375,7 +386,7 @@ export class WorkProjectService {
           target = {
             id,
             name,
-            category: CHANNEL_CATEGORY[shell.channelLetter as ChannelLetter] ?? "기타",
+            category: this.defaultCategory(),
             status: null,
             memo: "",
             notionLinks: [],
@@ -393,6 +404,12 @@ export class WorkProjectService {
             shell: shell.shell,
           });
           created += 1;
+        }
+        // 채널 라벨을 태그로 한 번만 심는다. 표식은 "행이 아직 없다"는 사실 하나다 — 사용자가 태그를
+        // 전부 지우면 빈 행이 남고, 그때부터 여기는 손대지 않는다. 구분(category)이 만들 때 한 번만
+        // 정해지는 것(위 L26-27)과 같은 약속이다.
+        if (!Object.prototype.hasOwnProperty.call(tagRegistry.tags, target.id)) {
+          tagSeeds.set(target.id, normalizeTags([shell.channelLabel]));
         }
         const members = (membersByRef.get(shell.ref) ?? []).filter(
           (member) => !manualOwned.has(member.projectId),
@@ -423,6 +440,23 @@ export class WorkProjectService {
         now: () => now,
       };
       await setWorkspaceShellLinks(nextLinks, workspaceOptions);
+    }
+
+    // 업무 프로젝트 → 셸 연결 → 태그 순. 태그는 업무 프로젝트 id를 가리키므로 가장 나중에 쓴다.
+    const known = new Set(Object.keys(workProjects.workProjects));
+    const stale = Object.keys(tagRegistry.tags).some((id) => !known.has(id));
+    if (tagSeeds.size > 0 || stale) {
+      await updateProjectTags(
+        (registry) => ({
+          ...registry,
+          updatedAt: now,
+          tags: {
+            ...Object.fromEntries(Object.entries(registry.tags).filter(([id]) => known.has(id))),
+            ...Object.fromEntries(tagSeeds),
+          },
+        }),
+        tagOptions,
+      );
     }
     return { workProjects, created, skipped };
   }

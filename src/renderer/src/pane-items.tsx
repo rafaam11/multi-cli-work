@@ -67,12 +67,15 @@ export function paneRowClass(
   onScreenPaneIds: ReadonlySet<string>,
   ...extra: string[]
 ): string {
-  return [
-    "session-row",
-    ...extra,
-    focusedPaneId === paneId ? "current" : "",
-    onScreenPaneIds.has(paneId) ? "on-screen" : "",
-  ]
+  return paneRowClassOf(focusedPaneId === paneId, onScreenPaneIds.has(paneId), ...extra);
+}
+
+/**
+ * 같은 세 클래스를, 두 참·거짓이 이미 정해진 곳에서 쓰는 형태. 공용 행 컴포넌트(`PaneRows`)는
+ * 자기 패인 하나만 알면 되므로 전체 집합 대신 답을 받는다 — 클래스의 주인은 여전히 여기 하나다.
+ */
+export function paneRowClassOf(current: boolean, onScreen: boolean, ...extra: string[]): string {
+  return ["session-row", ...extra, current ? "current" : "", onScreen ? "on-screen" : ""]
     .filter(Boolean)
     .join(" ");
 }

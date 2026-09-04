@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { MultiCliWorkApi, TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import { DEFAULT_PROJECT_CATEGORIES } from "@shared/settings-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -104,6 +105,22 @@ function installUpdatesApi(initial: UpdaterStatus = { state: "idle" }) {
   };
 }
 
+function workProjectFixture(id: string, name: string, category: string): WorkProject {
+  return {
+    id,
+    name,
+    category,
+    status: "진행중",
+    memo: "",
+    notionLinks: [],
+    localFolders: [],
+    members: [],
+    order: 0,
+    createdAt: "2026-07-11T00:00:00.000Z",
+    updatedAt: "2026-07-11T00:00:00.000Z",
+  };
+}
+
 function baseProps() {
   return {
     projects: [atlas, dashboard],
@@ -113,6 +130,7 @@ function baseProps() {
     agents,
     activityLog: [] as ActivityEntry[],
     pendingAction: false,
+    categories: [...DEFAULT_PROJECT_CATEGORIES],
     onSelectSession: vi.fn(),
     onSelectWorkProject: vi.fn(),
     onStartSession: vi.fn(),
@@ -121,6 +139,19 @@ function baseProps() {
 }
 
 describe("HomeDashboard", () => {
+  it("colours a card by the settings list and leaves an unlisted 구분 grey", () => {
+    installUpdatesApi();
+    render(
+      <HomeDashboard
+        {...baseProps()}
+        workProjects={[workProjectFixture("wp-a", "알파", "개인"), workProjectFixture("wp-b", "베타", "정부지원과제")]}
+        categories={[{ name: "개인", color: 6 }]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "알파 프로젝트 열기" })).toHaveClass("accent-6");
+    expect(screen.getByRole("button", { name: "베타 프로젝트 열기" })).toHaveClass("category-etc");
+  });
+
   it("orders the session monitor by how urgently each status needs attention", () => {
     installUpdatesApi();
     const idle = makeSession({ id: "s-idle", status: "idle", name: "Idle one" });
@@ -161,6 +192,22 @@ describe("HomeDashboard", () => {
     const items = within(list).getAllByRole("listitem");
     expect(items).toHaveLength(5);
     expect(items[0]).toHaveTextContent("Project 5");
+  });
+
+  it("업무 프로젝트 카드에 태그 칩을 단다", () => {
+    installUpdatesApi();
+    const workProject = workProjectFixture("wp-vsp", "가상수술계획", "외주개발");
+    render(
+      <HomeDashboard
+        {...baseProps()}
+        workProjects={[workProject]}
+        tagsByWorkProject={{ "wp-vsp": ["용역", "긴급"] }}
+      />,
+    );
+
+    const card = screen.getByRole("button", { name: "가상수술계획 프로젝트 열기" });
+    expect(within(card).getAllByText(/용역|긴급/)).toHaveLength(2);
+    expect(card.querySelectorAll(".tag-chip")).toHaveLength(2);
   });
 
   it("starts a session in the right project from quick launch", () => {

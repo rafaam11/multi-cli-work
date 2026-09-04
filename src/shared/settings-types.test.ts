@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, mergeSettingsPatch, parseSettings } from "./settings-types";
+import { DEFAULT_SETTINGS, DEFAULT_PROJECT_CATEGORIES, mergeSettingsPatch, parseSettings } from "./settings-types";
 
 describe("parseSettings", () => {
   it("빈 입력을 기본값으로 채운다 — settings.json 없는 기동은 오늘의 앱과 같다", () => {
@@ -75,5 +75,68 @@ describe("mergeSettingsPatch", () => {
     const merged = mergeSettingsPatch(base, { language: "en" });
     expect(merged.keybindings).toEqual({ "view.quick-open": "Ctrl+K" });
     expect(merged.language).toBe("en");
+  });
+});
+
+describe("projects 구분 설정", () => {
+  it("기본 구분 목록은 범용값이고 기본 구분은 '기타'이며 색 4개가 서로 다르다", () => {
+    expect(DEFAULT_PROJECT_CATEGORIES.map((category) => category.name)).toEqual(["업무", "개인", "연구", "기타"]);
+    expect(DEFAULT_SETTINGS.projects.defaultCategory).toBe("기타");
+    const colors = DEFAULT_PROJECT_CATEGORIES.map((category) => category.color);
+    expect(new Set(colors).size).toBe(colors.length);
+  });
+
+  it("projects가 없는 구버전 파일은 기본 구분 설정을 그대로 쓴다", () => {
+    expect(parseSettings({}).projects).toEqual(DEFAULT_SETTINGS.projects);
+  });
+
+  it("이름 공백을 정리하고 중복을 버리며, 잘못된 색은 순환 기본값으로, 없는 기본 구분은 첫 항목으로 떨어진다", () => {
+    const parsed = parseSettings({
+      projects: {
+        categories: [
+          { name: " 업무 ", color: 2 },
+          { name: "업무", color: 3 },
+          { name: "", color: 1 },
+          { name: "연구", color: 0 },
+          { name: "기타", color: "파랑" },
+        ],
+        defaultCategory: "없는 것",
+      },
+    });
+    expect(parsed.projects.categories).toEqual([
+      { name: "업무", color: 2 },
+      { name: "연구", color: 2 },
+      { name: "기타", color: 3 },
+    ]);
+    expect(parsed.projects.defaultCategory).toBe("업무");
+  });
+
+  it("빈 구분 목록은 기본 목록으로 되돌아가고, 기본 목록에 있는 기본 구분은 유지된다", () => {
+    const parsed = parseSettings({ projects: { categories: [], defaultCategory: "업무" } });
+    expect(parsed.projects.categories).toEqual(DEFAULT_PROJECT_CATEGORIES);
+    expect(parsed.projects.defaultCategory).toBe("업무");
+  });
+
+  it("patch로 지워진 기본 구분은 write 경로의 파서가 남은 목록의 첫 항목으로 되돌린다", () => {
+    // json-store의 updateJsonStore가 mergeSettingsPatch 결과에도 parseSettings를 돌리므로,
+    // 얕은 병합만으로 저장해도 디스크·current() 둘 다 정규화된 값을 갖는다.
+    const merged = mergeSettingsPatch(DEFAULT_SETTINGS, {
+      projects: { categories: [{ name: "업무", color: 1 }] },
+    });
+    expect(parseSettings(merged).projects.defaultCategory).toBe("업무");
+  });
+
+  it("projects 없는 패치는 기존 구분 목록을 유지한다", () => {
+    const base = parseSettings({
+      projects: { categories: [{ name: "커스텀", color: 3 }], defaultCategory: "커스텀" },
+    });
+    const merged = mergeSettingsPatch(base, { language: "en" });
+    expect(merged.projects).toEqual(base.projects);
+  });
+
+  it("구분 이름은 32자로 잘린다", () => {
+    const longName = "a".repeat(40);
+    const parsed = parseSettings({ projects: { categories: [{ name: longName, color: 1 }] } });
+    expect(parsed.projects.categories[0]!.name).toBe("a".repeat(32));
   });
 });

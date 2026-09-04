@@ -59,6 +59,8 @@ import { ProjectService } from "./projects/project-service";
 import { readProjectRegistry, restoreProjectRegistryFromBackup } from "./projects/project-registry";
 import { WorkProjectService } from "./projects/work-project-service";
 import { readWorkProjectRegistry } from "./projects/work-project-registry";
+import { readProjectTags, setProjectTags } from "./projects/project-tags-registry";
+import { tagsOf } from "../shared/project-tags-types";
 import {
   renderWorkProjectBrief,
   writeSessionBrief,
@@ -163,9 +165,15 @@ export async function createDesktopRuntime(
   // Like MULTI_CLI_WORK_REGISTRY_PATH: only overridden so tests can point at a fixture.
   const workProjectRegistryPath = process.env.MULTI_CLI_WORK_WORK_PROJECTS_PATH;
   const workspaceRegistryPath = process.env.MULTI_CLI_WORK_WORKSPACE_PATH;
+  // Like MULTI_CLI_WORK_REGISTRY_PATH: only overridden so tests can point at a fixture.
+  const projectTagsPath = process.env.MULTI_CLI_WORK_PROJECT_TAGS_PATH;
+  const projectTagsOptions = projectTagsPath ? { registryPath: projectTagsPath } : {};
   const workProjectService = new WorkProjectService({
     ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
     ...(workspaceRegistryPath ? { workspaceRegistryPath } : {}),
+    ...(projectTagsPath ? { projectTagsPath } : {}),
+    // 동기 캐시라 게터가 매번 최신 설정을 준다 — 설정 창에서 기본 구분을 바꾸면 다음 생성부터 반영된다.
+    defaultCategory: () => settingsService.current().projects.defaultCategory,
     platform: process.platform,
   });
   // ws-root 워크스페이스 루트. 등록된 루트가 없으면 이 기능 전체가 잠자코 있는다 — 아무것도
@@ -273,12 +281,14 @@ export async function createDesktopRuntime(
       const workProject = Object.values(workProjectRegistry.workProjects).find((candidate) =>
         candidate.members.some((member) => member.projectId === projectId),
       );
+      const tags = workProject ? tagsOf(await readProjectTags(projectTagsOptions), workProject.id) : [];
       const workProjectSection = workProject
         ? renderWorkProjectBrief(
             workProject,
             workProject.members
               .map((member) => ({ project: registry.projects[member.projectId] ?? null, role: member.role }))
               .filter((member): member is WorkProjectBriefMember => member.project !== null),
+            tags,
           )
         : null;
       const project = registry.projects[projectId] ?? null;
@@ -432,6 +442,10 @@ export async function createDesktopRuntime(
       readWorkProjectRegistry({
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
       }),
+    projectTags: {
+      list: () => readProjectTags(projectTagsOptions),
+      set: (workProjectId, tags) => setProjectTags(workProjectId, tags, projectTagsOptions),
+    },
     workspace: {
       snapshot: workspaceSnapshot,
       async addRoot(rootPath: string) {

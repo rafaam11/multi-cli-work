@@ -20,7 +20,11 @@ function memberLine(member: WorkProjectBriefMember): string {
  * Absolute paths are intentional — the brief is personal to this machine (see the v1 sharing
  * decision in the design doc).
  */
-export function renderWorkProjectBrief(workProject: WorkProject, members: WorkProjectBriefMember[]): string {
+export function renderWorkProjectBrief(
+  workProject: WorkProject,
+  members: WorkProjectBriefMember[],
+  tags: readonly string[] = [],
+): string {
   const repos = members.filter((member) => member.role === "repo");
   const docs = members.filter((member) => member.role === "docs");
   const lines = [
@@ -28,6 +32,7 @@ export function renderWorkProjectBrief(workProject: WorkProject, members: WorkPr
     "",
     `- 구분: ${workProject.category}`,
     ...(workProject.status ? [`- 상태: ${workProject.status}`] : []),
+    ...(tags.length > 0 ? [`- 태그: ${tags.join(", ")}`] : []),
     ...workProject.notionLinks.map((link) => `- 노션(${link.label}): ${link.url}`),
   ];
   if (docs.length > 0) {

@@ -70,21 +70,30 @@ async function computedFontSize(selector: string): Promise<string> {
 const pane = (label: string) => page.locator(`.grid-pane[aria-label="${label}"]`);
 
 /**
- * A session's row in the sidebar's 세션 패널. Every session has one whatever page its pane sits on —
- * or whether it has a pane at all — and the accessible name may carry an unread suffix after the
- * label, so the label is matched at the start of it.
+ * A session's row in the tree, under the folder (or worktree) it runs in. The accessible name may
+ * carry an unread suffix after the label, so the label is matched at the start of it. The same
+ * session also has a row in the 세션 패널 above, named `패인 열기` instead — see `panelRow`.
  */
 const paneRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 세션 열기`) });
 
+/** The same pane's row in the 세션 패널: it opens the 작업공간 shelf rather than the pane's folder. */
+const panelRow = (label: string) => page.getByRole("button", { name: new RegExp(`^${label} 패인 열기`) });
+
 /**
- * Puts a folder on screen. The folder row is a leaf — one click is the whole action, and clicking
- * the folder already up does nothing rather than folding anything away. What lands is the folder's
- * grid, or its start page while it has no session yet, so the header is what says it arrived.
+ * Puts a folder on screen: its grid, or its start page while it has no session yet, so the header
+ * is what says it arrived. Clicking the folder whose grid is already up folds its tree row instead
+ * of re-selecting it, so the row is unfolded again afterwards — the steps below reach for session
+ * rows that only exist while the folder is open.
  */
 async function openFolder(name = "Sample Project"): Promise<void> {
   const row = page.getByRole("button", { name: `${name} 폴더 선택` });
   await row.click();
   await expect(page.locator(".workspace-title")).toContainText(name);
+  const node = page.locator(`.project-node:has(button[aria-label="${name} 폴더 선택"])`);
+  if ((await node.getAttribute("aria-expanded")) === "false") {
+    await page.getByRole("button", { name: `${name} 펼치기` }).click();
+  }
+  await expect(node).toHaveAttribute("aria-expanded", "true");
 }
 
 /**
@@ -265,6 +274,33 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // The 4px activity rail belongs at the row's edge; the folder icon must not sit on top of it.
     expect(folderRowLayout.iconInset).toBeGreaterThanOrEqual(8);
     await expect(page.locator(".project-row .project-name").first()).toBeVisible();
+
+    // The session panel header's title button must own the remaining width between the collapse
+    // toggle and the scope buttons, not just its text — the same "row is the click target" rule as
+    // the folder row above, applied to `.session-panel-title`.
+    const sessionHeaderLayout = await page.locator(".session-panel-heading").first().evaluate((heading) => {
+      const headingBounds = heading.getBoundingClientRect();
+      const titleBounds = heading.querySelector<HTMLElement>(".session-panel-title")?.getBoundingClientRect();
+      const scopeBounds = heading.querySelector<HTMLElement>(".session-panel-scope")?.getBoundingClientRect();
+      return {
+        headingWidth: headingBounds.width,
+        headingHeight: headingBounds.height,
+        titleWidth: titleBounds?.width ?? 0,
+        titleHeight: titleBounds?.height ?? 0,
+        gapToScope: scopeBounds && titleBounds ? scopeBounds.left - titleBounds.right : Number.POSITIVE_INFINITY,
+      };
+    });
+    // The title's flex-grow gives it every pixel left after the fixed-width toggle (26px) and scope
+    // buttons, so its share depends on how wide those neighbors happen to be — at the default 264px
+    // sidebar it lands at ~49%, not quite half; 0.45 still fails the old flex:0 0 auto layout (which
+    // sized to the two-character "세션" label alone, well under 20%) while tolerating that split.
+    expect(sessionHeaderLayout.titleWidth).toBeGreaterThanOrEqual(sessionHeaderLayout.headingWidth * 0.45);
+    expect(sessionHeaderLayout.gapToScope).toBeLessThanOrEqual(8);
+    // `.session-panel-heading` carries a 1px transparent border (shared with every row's
+    // selected/drop-target treatment) that eats 2px of the border-box height align-self: stretch can
+    // fill, plus a hair more from line-height — headingHeight - 3 still fails the old unstretched
+    // button, which sized to its text alone at well under 30px.
+    expect(sessionHeaderLayout.titleHeight).toBeGreaterThanOrEqual(sessionHeaderLayout.headingHeight - 3);
 
     await openFolder();
 
@@ -469,7 +505,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       await page.keyboard.press("Enter");
       await expect(page.locator(".active-status")).toHaveText("종료됨");
     } else if ((await page.locator(".pane-context-folder").count()) === 0) {
-      await page.locator(".session-row").first().click();
+      // 트리 행이라야 그 세션을 자기 폴더의 그리드로 도로 데려온다 — 위 세션 패널의 같은 행은
+      // 작업공간 선반을 열 뿐이라, 아래 단계들이 폴더 그리드가 아닌 선반을 보게 된다.
+      await page.getByRole("button", { name: /세션 열기/ }).first().click();
     }
     await expect(page.locator(".pane-context-folder").first()).toBeVisible();
     await page.getByRole("tab", { name: "Git" }).click();
@@ -745,10 +783,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     ));
     await page.keyboard.press("Enter");
     await expect(pane(`${SHELL_LABEL} 2`).locator(".xterm-rows")).toContainText("MCW_WROTE_DONE");
-    // The tree has no worktree rows any more: the menu hangs off the 워크트리 card of the folder's
-    // 상세 page. Pressing the worktree's pane scoped the app to that worktree, so the folder row is
-    // clicked again first — on the folder itself the card lists feature/e2e as one to open, and
-    // only an openable row carries the context menu.
+    // The 워크트리 card of the folder's 상세 page is the path taken here; the tree's own worktree row
+    // opens the same menu and is covered by App.test. Pressing the worktree's pane scoped the app to
+    // that worktree, so the folder row is clicked again first — on the folder itself the card lists
+    // feature/e2e as one to open, and only an openable row carries the context menu.
     await openFolder();
     await page.getByRole("button", { name: "폴더 상세" }).click();
     const worktreeCardRow = page
@@ -788,7 +826,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // exact: the right sidebar's "파일 목록 새로고침" also matches the substring.
     await page.getByRole("button", { name: "목록 새로고침", exact: true }).click();
-    // A discovered worktree shows up on the folder's 워크트리 card, the tree having no layer for it.
+    // A discovered worktree shows up on the folder's 워크트리 card, which is the path driven here.
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: "폴더 상세" }).click();
     const row = page
@@ -902,11 +940,21 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
    * otherwise the one screen a pane cannot be left out of.
    */
   test("moves panes by sidebar row, layout and page, and puts one away on 숨김", async () => {
+    await openFolder();
+
+    // The title button owns the whole remaining width of the header, badge included — a click near
+    // its right edge (where the badge or dead space used to sit) opens 작업공간 same as the text does.
+    const titleBox = await page.locator(".session-panel-title").boundingBox();
+    if (!titleBox) throw new Error(".session-panel-title has no box");
+    await page.mouse.click(titleBox.x + titleBox.width - 4, titleBox.y + titleBox.height / 2);
+    await expect(page.locator(".workspace-title")).toHaveText("작업공간");
+
     const layoutBar = page.locator(".layout-bar");
     const hiddenRow = page.getByRole("button", { name: /숨김 열기/ });
 
-    // The session panel replaces 작업공간: a row opens that shelf and focuses the chosen pane.
-    await paneRow(SHELL_LABEL).click();
+    // The session panel replaces 작업공간: a row opens that shelf and focuses the chosen pane. The
+    // tree row of the same session goes to its folder instead, which is why the two are named apart.
+    await panelRow(SHELL_LABEL).click();
     await expect(page.locator(".workspace-title")).toHaveText("작업공간");
     await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", SHELL_LABEL);
 
@@ -1054,11 +1102,15 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const dashboard = page.getByRole("region", { name: "홈 대시보드" });
     await expect(dashboard).toBeVisible();
 
-    const rows = page.locator(".session-row");
+    // 같은 세션이 트리와 세션 패널에 한 줄씩 서므로, 수는 패널 목록으로 좁혀 센다.
+    const panelList = page.getByRole("group", { name: "세션 목록" });
+    const rows = panelList.locator(".session-row");
     const before = await rows.count();
     // The row the focus is on, if any — the session that quietly starts must not take it over.
     const focusedRowLabels = () =>
-      page.locator(".session-row.current").evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")));
+      panelList
+        .locator(".session-row.current .file-tab-open")
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")));
     const focusedBefore = await focusedRowLabels();
 
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });

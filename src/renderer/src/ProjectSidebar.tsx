@@ -1,11 +1,14 @@
 import type { AgentView } from "@shared/agent-types";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
+import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { WorkspaceShellInfo } from "@shared/workspace-types";
+import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
+import { knownTags } from "@shared/project-tags-types";
 import {
   Briefcase,
-  Boxes,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
@@ -16,12 +19,15 @@ import {
   FolderOpen,
   FolderPlus,
   FolderX,
+  GitBranch,
   LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   SquareTerminal,
+  Tag,
   TriangleAlert,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -32,24 +38,30 @@ import {
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { DocumentRow, SessionRow } from "./PaneRows";
 import { reorderIds, type DropPosition } from "./project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { SessionPanel } from "./SessionPanel";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
-import { DocumentPaneIcon, paneRowClass, type PaneRow } from "./pane-items";
-import { findAgent, projectName } from "./session-labels";
+import { DocumentPaneIcon, paneRowClass, type DocumentPane, type PaneRow } from "./pane-items";
+import { findAgent, projectName, sessionLabel } from "./session-labels";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import type { SessionPanelItem, SessionScope, SessionScopeTarget } from "./session-panel";
 import {
   buildTreeNodes,
   buildTreeSections,
-  channelKeys,
-  collapsedChannelKeysForWorking,
-  type ChannelNode,
+  collapsedGroupKeysForWorking,
+  defaultGroupingTags,
+  groupKeys,
+  GROUP_KEY_PREFIX,
+  type TagGroupNode,
   type TreeSection,
 } from "./sidebar-tree";
-import { categoryAccentClass, channelAccentClass, isWorkProjectDormant } from "./work-project-accent";
+import { TagChips } from "./TagChips";
+import { TagGroupingPicker } from "./TagGroupingPicker";
+import { tagAccentClass } from "./tag-color";
+import { categoryAccentClass, isWorkProjectDormant } from "./work-project-accent";
 import { folderActivityClass, isFolderActive } from "./folder-status";
 import { SHELF_KINDS, SHELF_TEXT, type ShelfKind } from "./shelves";
 
@@ -59,11 +71,15 @@ interface ProjectSidebarProps {
   /** Work projects in display order; folders whose id is absent from every membership are 미분류. */
   workProjects: WorkProject[];
   /**
-   * ws-root 워크스페이스의 셸에서 만들어진 업무 프로젝트만, id → 그 셸. 여기 있는 항목은 채널
-   * 아래로 한 겹 더 들어가고 셸의 한글 `title:`로 불린다. 비어 있으면(루트 미등록) 트리는
-   * 이 기능이 없던 때와 똑같이 그려진다.
+   * ws-root 워크스페이스의 셸에서 만들어진 업무 프로젝트만, id → 그 셸. 여기 있는 항목은 셸의
+   * 한글 `title:`로 불린다. 하나라도 있으면 저장된 묶기 선호가 없을 때 채널 라벨 태그가 기본
+   * 묶기로 돌고, 비어 있으면(루트 미등록) 트리는 이 기능이 없던 때와 똑같이 평면으로 그려진다.
    */
   workspaceShells: Record<string, WorkspaceShellInfo>;
+  /** 업무 프로젝트 id → 붙어 있는 태그. 묶기의 후보이자 어느 묶음에 설지의 근거다. */
+  tagsByWorkProject: Record<string, readonly string[]>;
+  /** 설정의 구분 목록 — 묶음 레일 색은 여기서 찾고, 목록에 없는 구분은 회색이다. */
+  categories: readonly ProjectCategorySetting[];
   projectMembership: Record<string, { workProjectId: string; role: WorkProjectRole }>;
   expandedWorkProjects: Set<string>;
   selectedWorkProjectId: string | null;
@@ -73,11 +89,27 @@ interface ProjectSidebarProps {
   /** Null moves the folder back to 미분류. Also the drop action for cross-group drags. */
   onMoveProjectToWorkProject(projectId: string, workProjectId: string | null): void;
   /**
-   * Every session, tool sessions included: 폴더 활동색·세션 수·레일·푸터·작업중 계산에 쓴다. 행은
-   * 세션 패널이 그린다.
+   * Every session, tool sessions included: 폴더 활동색·세션 수·레일·푸터·작업중 계산에 쓰고, 폴더
+   * (또는 그 worktree) 아래 한 줄씩 세운다. 상단 세션 패널도 같은 세션을 그리지만 역할이 다르다 —
+   * 위는 "지금 화면에 모은 것", 아래는 "어느 폴더의 것".
    */
   sessions: TerminalSessionView[];
   agents: AgentView[];
+  /** Every open document, listed under the folder or worktree it was opened from. */
+  documentPanes: DocumentPane[];
+  onSelectSession(session: TerminalSessionView): void;
+  onSelectDocument(pane: DocumentPane): void;
+  onCloseDocument(pane: DocumentPane): void;
+  worktrees: SharedWorktree[];
+  activeReviews: ActivePullRequestReview[];
+  workspaceViews: GitWorkspaceView[];
+  selectedWorktreeId: string | null;
+  onSelectWorktree(worktree: SharedWorktree): void;
+  onWorktreeContextMenu(worktree: SharedWorktree, event: ReactMouseEvent): void;
+  expandedProjects: Set<string>;
+  onToggleProject(projectId: string): void;
+  /** The folder whose grid is on screen; its row folds on click instead of re-selecting. */
+  gridProjectId: string | null;
   /** 세션 패널이 그리는 줄. App이 정렬까지 끝내 넘긴다 — 어느 id가 무엇인지는 App만 안다. */
   sessionPanelItems: readonly SessionPanelItem[];
   /** "여기" 토글이 가리키는 곳. 페이지가 없는 선택이면 none이고 토글은 비활성이다. */
@@ -99,14 +131,14 @@ interface ProjectSidebarProps {
   loadError: string | null;
   onReload(): void;
   onAddProject(): void;
-  /** A folder is a leaf: its row only ever opens the grid, so there is nothing to fold. */
+  /** 이미 그리드가 떠 있는 폴더면 이 대신 `onToggleProject`가 불린다 — 접힘이 그때의 답이다(R9). */
   onSelectProject(projectId: string): void;
-  /** The 프로젝트 half of 모두/접기; the 채널 half is the sidebar's own and rides along. */
+  /** The 프로젝트 half of 모두/접기; the 묶음 half is the sidebar's own and rides along. */
   onExpandAll(): void;
   onCollapseAll(): void;
   /**
    * One-shot tidy: leaves the 프로젝트 owning a 작업중 folder open and closes the rest. Not a mode
-   * that stays on. The channels holding those projects are opened here in the sidebar.
+   * that stays on. The tag groups holding those projects are opened here in the sidebar.
    */
   onExpandWorking(): void;
   onReorderProjects(orderedIds: string[]): void;
@@ -142,31 +174,49 @@ interface ProjectSidebarProps {
  * Which tree nodes are folded away, and which shelf rows are unfolded. The two are stored in one
  * record because they are one thing to the user — how much of the sidebar is showing.
  *
- * The polarities differ on purpose: a channel in `expandedWorkspaces` is *collapsed* (so a channel
- * that appears later starts open, showing what it gathers), while a shelf in `openShelves` is
+ * The polarities differ on purpose: a 묶음 in `expandedWorkspaces` is *collapsed* (so a group that
+ * appears later starts open, showing what it gathers), while a shelf in `openShelves` is
  * *expanded* (so the shelf stays a one-line summary until asked otherwise).
  *
- * `expandedWorkspaces` also holds `worktree:*`/`main:*` keys written before the tree's worktree
- * layer was removed. Nothing reads them any more; they cost one string each and are left alone.
+ * `expandedWorkspaces` holds three kinds of key. `묶음:*` is the tag group above; `main:*` and
+ * `worktree:*` name the worktree layer under a folder, and they too are *collapsed* when present —
+ * v1.27 stopped reading them but never wrote over them, so a folder folded before the upgrade comes
+ * back folded. Old `channel:*` keys from before 묶음 replaced 채널 are still nobody's; they cost one
+ * string each and are left alone.
  */
 const SIDEBAR_STATE_KEY = "multi-cli-work.sidebar.v1";
+
+interface SidebarPrefs {
+  expandedWorkspaces: string[];
+  openShelves: ShelfKind[];
+  sessionPanelOpen: boolean;
+  sessionScope: SessionScope;
+  /**
+   * 묶기에 쓸 태그를 고른 순서대로. `null`은 **저장된 선호 없음**이고, 그때만 파생 기본값이
+   * 돈다 — 기본값 자체는 렌더마다 만들어지는 값이라 저장하지 않는다.
+   */
+  groupingTags: string[] | null;
+}
 
 /**
  * Up to v1.19 `openShelves` held the indexes of 작업공간1/2/3. Those numbers name nothing now, so a
  * file written back then simply arrives with no shelves open — the same state a new install has.
  */
-function readSidebarState(): {
-  expandedWorkspaces: string[];
-  openShelves: ShelfKind[];
-  sessionPanelOpen: boolean;
-  sessionScope: SessionScope;
-} {
+function readSidebarState(): SidebarPrefs {
+  const empty: SidebarPrefs = {
+    expandedWorkspaces: [],
+    openShelves: [],
+    sessionPanelOpen: true,
+    sessionScope: "all",
+    groupingTags: null,
+  };
   try {
     const value = JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) ?? "{}") as {
       expandedWorkspaces?: string[];
       openShelves?: unknown[];
       sessionPanelOpen?: unknown;
       sessionScope?: unknown;
+      groupingTags?: unknown;
     };
     return {
       expandedWorkspaces: value.expandedWorkspaces ?? [],
@@ -176,15 +226,27 @@ function readSidebarState(): {
       // 세션 패널은 열려 있는 것이 기본이다 — 이 키를 모르는 파일에서도 패널이 보여야 한다.
       sessionPanelOpen: value.sessionPanelOpen !== false,
       sessionScope: value.sessionScope === "here" ? "here" : "all",
+      // 빈 배열은 "묶지 않기를 골랐다"는 뜻이라 기본값으로 되돌아가지 않는다.
+      groupingTags: Array.isArray(value.groupingTags)
+        ? value.groupingTags.filter((tag): tag is string => typeof tag === "string")
+        : null,
     };
   } catch {
-    return { expandedWorkspaces: [], openShelves: [], sessionPanelOpen: true, sessionScope: "all" };
+    return empty;
   }
 }
 
 /**
- * With no session rows left in the tree, a folder's own badge is the only unread signal the
- * sidebar has — so it rolls up its sessions and keeps the loudest of them, 승인 대기 first.
+ * Sessions keep the order they were created in. Sorting by updatedAt would shuffle the tree every
+ * time a session emitted a status change, so merely opening one would jump it to the top.
+ */
+function byCreation(left: TerminalSessionView, right: TerminalSessionView): number {
+  return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+}
+
+/**
+ * 접힌 폴더는 자기 세션 행을 감추므로, 폴더 줄의 배지가 그 안에서 기다리는 것을 대신 말한다 —
+ * 가장 급한 것 하나로 굴려 올린다(승인 대기가 먼저).
  */
 function rollUpAttention(
   sessions: TerminalSessionView[],
@@ -206,6 +268,8 @@ export function ProjectSidebar({
   projects,
   workProjects,
   workspaceShells,
+  tagsByWorkProject,
+  categories,
   projectMembership,
   expandedWorkProjects,
   selectedWorkProjectId,
@@ -215,6 +279,19 @@ export function ProjectSidebar({
   onMoveProjectToWorkProject,
   sessions,
   agents,
+  documentPanes,
+  onSelectSession,
+  onSelectDocument,
+  onCloseDocument,
+  worktrees,
+  activeReviews,
+  workspaceViews,
+  selectedWorktreeId,
+  onSelectWorktree,
+  onWorktreeContextMenu,
+  expandedProjects,
+  onToggleProject,
+  gridProjectId,
   sessionPanelItems,
   sessionScopeTarget,
   focusedPaneId,
@@ -261,7 +338,7 @@ export function ProjectSidebar({
     position: DropPosition;
   } | null>(null);
   const flashRow = useRef<HTMLDivElement | null>(null);
-  // 네 값이 한 레코드에서 오므로 마운트 때 한 번만 읽는다.
+  // 다섯 값이 한 레코드에서 오므로 마운트 때 한 번만 읽는다.
   const [savedSidebarState] = useState(readSidebarState);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(
     () => new Set(savedSidebarState.expandedWorkspaces),
@@ -269,22 +346,26 @@ export function ProjectSidebar({
   const [openShelves, setOpenShelves] = useState<Set<ShelfKind>>(() => new Set(savedSidebarState.openShelves));
   const [sessionPanelOpen, setSessionPanelOpen] = useState(savedSidebarState.sessionPanelOpen);
   const [sessionScope, setSessionScope] = useState<SessionScope>(savedSidebarState.sessionScope);
-  // Every toggle writes the whole record, so none can drop another's share of it.
-  const persist = (
-    workspaces: Set<string>,
-    shelves: Set<ShelfKind>,
-    panelOpen: boolean,
-    scope: SessionScope,
-  ) => {
+  const [groupingTags, setGroupingTags] = useState<string[] | null>(savedSidebarState.groupingTags);
+  /**
+   * 마지막으로 적어 둔 레코드. 토글은 상태 갱신 함수 안에서도 저장을 부르므로 클로저에 잡힌 값이
+   * 한 박자 낡을 수 있는데, 여기 모아 두면 자기 몫만 얹어도 남의 몫이 지워지지 않는다.
+   */
+  const prefsRef = useRef<SidebarPrefs>(savedSidebarState);
+  const persist = (patch: Partial<SidebarPrefs>) => {
+    const next = { ...prefsRef.current, ...patch };
+    prefsRef.current = next;
     try {
       localStorage.setItem(
         SIDEBAR_STATE_KEY,
         JSON.stringify({
           version: 1,
-          expandedWorkspaces: [...workspaces],
-          openShelves: [...shelves],
-          sessionPanelOpen: panelOpen,
-          sessionScope: scope,
+          expandedWorkspaces: next.expandedWorkspaces,
+          openShelves: next.openShelves,
+          sessionPanelOpen: next.sessionPanelOpen,
+          sessionScope: next.sessionScope,
+          // 저장된 선호가 없으면 키 자체를 남기지 않는다 — 그 부재가 "기본값을 돌려라"는 뜻이다.
+          ...(next.groupingTags === null ? {} : { groupingTags: next.groupingTags }),
         }),
       );
     } catch { /* unavailable storage */ }
@@ -292,13 +373,13 @@ export function ProjectSidebar({
   const toggleWorkspace = (key: string) => setExpandedWorkspaces((current) => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key); else next.add(key);
-    persist(next, openShelves, sessionPanelOpen, sessionScope);
+    persist({ expandedWorkspaces: [...next] });
     return next;
   });
   const toggleShelf = (kind: ShelfKind) => setOpenShelves((current) => {
     const next = new Set(current);
     if (next.has(kind)) next.delete(kind); else next.add(kind);
-    persist(expandedWorkspaces, next, sessionPanelOpen, sessionScope);
+    persist({ openShelves: [...next] });
     return next;
   });
 
@@ -399,25 +480,39 @@ export function ProjectSidebar({
     () => buildTreeSections(workProjects, projects, projectMembership),
     [workProjects, projects, projectMembership],
   );
-  const treeNodes = useMemo(() => buildTreeNodes(treeSections, workspaceShells), [treeSections, workspaceShells]);
+  /** 고를 수 있는 태그. 많이 쓰인 것이 앞이라 메뉴가 예측 가능하다. */
+  const availableTags = useMemo(() => knownTags(tagsByWorkProject), [tagsByWorkProject]);
+  /**
+   * 저장된 선호(`groupingTags`)가 있으면 그것이 이기고, 없을 때만 파생 기본값이 돈다 — 셸이
+   * 하나라도 있으면 채널 라벨 태그로, 없으면 평면으로.
+   */
+  const hasWorkspaceShells = Object.keys(workspaceShells).length > 0;
+  const effectiveGrouping = useMemo(
+    () => groupingTags ?? defaultGroupingTags(tagsByWorkProject, hasWorkspaceShells),
+    [groupingTags, tagsByWorkProject, hasWorkspaceShells],
+  );
+  const treeNodes = useMemo(
+    () => buildTreeNodes(treeSections, { tags: effectiveGrouping, tagsByWorkProject }),
+    [treeSections, effectiveGrouping, tagsByWorkProject],
+  );
 
   /**
-   * 트리 컨트롤이 닿는 층은 채널과 프로젝트 둘뿐이다(폴더는 잎이다). 프로젝트 접힘은 App이,
-   * 채널 접힘은 여기가 갖고 있으므로 App 콜백을 부른 뒤 채널 키를 함께 갱신한다. 채널이 아닌
-   * 키(`worktree:*`·`main:*`)는 아무도 읽지 않으므로 손대지 않고 남겨 둔다.
+   * 트리 컨트롤이 닿는 층은 묶음과 프로젝트 둘뿐이다(폴더는 잎이다). 프로젝트 접힘은 App이,
+   * 묶음 접힘은 여기가 갖고 있으므로 App 콜백을 부른 뒤 묶음 키를 함께 갱신한다. 묶음이 아닌
+   * 키(`worktree:*`·`main:*`·옛 `channel:*`)는 아무도 읽지 않으므로 손대지 않고 남겨 둔다.
    */
   const persistWorkspaces = (next: Set<string>) => {
     setExpandedWorkspaces(next);
-    persist(next, openShelves, sessionPanelOpen, sessionScope);
+    persist({ expandedWorkspaces: [...next] });
   };
-  const keepNonChannelKeys = () => [...expandedWorkspaces].filter((key) => !key.startsWith("channel:"));
+  const keepNonGroupKeys = () => [...expandedWorkspaces].filter((key) => !key.startsWith(GROUP_KEY_PREFIX));
   const runExpandAll = () => {
     onExpandAll();
-    persistWorkspaces(new Set(keepNonChannelKeys()));
+    persistWorkspaces(new Set(keepNonGroupKeys()));
   };
   const runCollapseAll = () => {
     onCollapseAll();
-    persistWorkspaces(new Set([...expandedWorkspaces, ...channelKeys(treeNodes)]));
+    persistWorkspaces(new Set([...expandedWorkspaces, ...groupKeys(treeNodes)]));
   };
   const runExpandWorking = () => {
     onExpandWorking();
@@ -427,11 +522,15 @@ export function ProjectSidebar({
         .map((project) => project.id),
     );
     persistWorkspaces(
-      new Set([...keepNonChannelKeys(), ...collapsedChannelKeysForWorking(treeNodes, working)]),
+      new Set([...keepNonGroupKeys(), ...collapsedGroupKeysForWorking(treeNodes, working)]),
     );
   };
 
   const attentionOf = (candidates: TerminalSessionView[]) => rollUpAttention(candidates, unread);
+
+  /** Documents hang under the folder or worktree they were opened from, beside that place's sessions. */
+  const documentsOf = (kind: "project" | "worktree", id: string) =>
+    documentPanes.filter((pane) => pane.owner?.kind === kind && pane.owner.id === id);
 
   /**
    * Every row standing for a pane can be dragged onto a 작업공간 row or onto a slot in the grid. The
@@ -452,6 +551,59 @@ export function ProjectSidebar({
 
   const rowClass = (paneId: string, ...extra: string[]) =>
     paneRowClass(paneId, focusedPaneId, onScreenPaneIds, ...extra);
+
+  /**
+   * 트리의 세션 줄. 상단 패널과 같은 컴포넌트지만 동사가 `세션 열기`이고(R8) 소속 칸이 없다 —
+   * 어느 폴더의 것인지는 이 줄이 서 있는 자리가 이미 말한다.
+   */
+  const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
+    const label = sessionLabel(session, peers, agents);
+    return (
+      <SessionRow
+        key={session.id}
+        session={session}
+        label={label}
+        agent={findAgent(agents, session.kind)}
+        tool={session.tool !== null}
+        attention={unread[session.id] ?? null}
+        current={focusedPaneId === session.id}
+        onScreen={onScreenPaneIds.has(session.id)}
+        verb="세션 열기"
+        onSelect={() => onSelectSession(session)}
+        onContextMenu={(event) => onSessionContextMenu(session, event)}
+        renaming={renamingSessionId === session.id}
+        initialName={session.name ?? label}
+        onRename={(name) => onRenameSession(session.id, name)}
+        onCancelRename={onCancelRename}
+        dragProps={paneDragProps(session.id)}
+      />
+    );
+  };
+
+  /** 트리의 문서 줄. ✕는 문서를 정말 닫는다 — 패널의 눈 버튼(숨기기)과 다른 동작이다. */
+  const renderDocument = (pane: DocumentPane) => (
+    <DocumentRow
+      key={pane.id}
+      pane={pane}
+      label={pane.label}
+      current={focusedPaneId === pane.id}
+      onScreen={onScreenPaneIds.has(pane.id)}
+      verb="문서 열기"
+      onOpen={() => onSelectDocument(pane)}
+      dragProps={paneDragProps(pane.id)}
+      trailing={
+        <button
+          type="button"
+          className="file-tab-close"
+          onClick={() => onCloseDocument(pane)}
+          aria-label={`${pane.label} 닫기`}
+          title="닫기"
+        >
+          <X size={12} />
+        </button>
+      }
+    />
+  );
 
   /**
    * A pane inside an expanded shelf row. It is the same row as in the tree, but it answers to the
@@ -553,37 +705,36 @@ export function ProjectSidebar({
     workspaceShells[workProject.id]?.title ?? workProject.name;
 
   /**
-   * 채널 줄. 업무 프로젝트 줄과 달리 열 화면이 없으므로 접고 펴는 것이 전부다 — 채널은 폴더도
-   * 세션도 직접 갖지 않는, 셸을 모아 두는 이름일 뿐이기 때문.
+   * 태그 묶음 줄. 업무 프로젝트 줄과 달리 열 화면이 없으므로 접고 펴는 것이 전부다 — 묶음은
+   * 폴더도 세션도 직접 갖지 않는, 업무 프로젝트를 모아 두는 이름일 뿐이기 때문.
    */
-  const renderChannel = (node: ChannelNode) => {
-    // 키가 있으면 접힌 것이다 — 그래야 새로 생긴 채널이 펼쳐진 채로 시작한다.
-    const collapsedChannel = expandedWorkspaces.has(node.key);
+  const renderGroup = (node: TagGroupNode) => {
+    // 키가 있으면 접힌 것이다 — 그래야 새로 생긴 묶음이 펼쳐진 채로 시작한다.
+    const collapsedGroup = expandedWorkspaces.has(node.key);
     return (
       <li
-        className={`channel-node ${channelAccentClass(node.letter)}`}
+        className={`tag-group-node ${node.tag ? tagAccentClass(node.tag) : "tag-group-other"}`}
         key={node.key}
         role="treeitem"
-        aria-expanded={!collapsedChannel}
+        aria-expanded={!collapsedGroup}
       >
-        <div className="channel-row">
+        <div className="tag-group-row">
           <button
             className="tree-toggle"
             type="button"
             onClick={() => toggleWorkspace(node.key)}
-            aria-label={`${node.channel} ${collapsedChannel ? "펼치기" : "접기"}`}
-            title={`${node.channel} ${collapsedChannel ? "펼치기" : "접기"}`}
+            aria-label={`${node.label} ${collapsedGroup ? "펼치기" : "접기"}`}
+            title={`${node.label} ${collapsedGroup ? "펼치기" : "접기"}`}
           >
-            {collapsedChannel ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+            {collapsedGroup ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
           </button>
-          <span className="channel-copy">
-            <Boxes size={13} aria-hidden="true" />
-            <span className="channel-name">{node.channel}</span>
-            <span className="channel-label">{node.label}</span>
+          <span className="tag-group-copy">
+            <Tag size={13} aria-hidden="true" />
+            <span className="tag-group-name">{node.label}</span>
           </span>
         </div>
-        {collapsedChannel ? null : (
-          <ul className="channel-group" role="group" aria-label={node.channel}>
+        {collapsedGroup ? null : (
+          <ul className="tag-group-children" role="group" aria-label={node.label}>
             {node.sections.map(renderSection)}
           </ul>
         )}
@@ -592,7 +743,7 @@ export function ProjectSidebar({
   };
 
   /**
-   * 트리의 한 묶음 — 업무 프로젝트 하나(또는 미분류)와 그 아래 폴더들. 채널 밑에 들어가든
+   * 트리의 한 묶음 — 업무 프로젝트 하나(또는 미분류)와 그 아래 폴더들. 태그 묶음 밑에 들어가든
    * 최상위에 서든 같은 줄이라, 그리는 코드는 하나다.
    */
   const renderSection = (section: TreeSection) => {
@@ -607,7 +758,7 @@ export function ProjectSidebar({
       <li
         className={[
           "work-project-node",
-          workProject ? categoryAccentClass(workProject.category) : "unassigned-node",
+          workProject ? categoryAccentClass(workProject.category, categories) : "unassigned-node",
           railed ? "categorized" : "",
           workProject && isWorkProjectDormant(workProject.status) ? "dormant" : "",
         ]
@@ -660,6 +811,7 @@ export function ProjectSidebar({
                 <span className="project-name" title={workProject.name}>
                   {workProjectLabel(workProject)}
                 </span>
+                <TagChips tags={tagsByWorkProject[workProject.id] ?? []} />
               </span>
             </button>
           </div>
@@ -691,14 +843,25 @@ export function ProjectSidebar({
             <ul className="project-group" role="group" aria-label={workProject ? workProjectLabel(workProject) : "미분류"}>
               {section.projects.map((project) => {
                 const name = projectName(project);
+                const expanded = expandedProjects.has(project.id);
+                // Its grid is already on screen, so the row folds rather than re-selecting the folder.
+                const showing = gridProjectId === project.id;
                 const rootMissing = snapshot?.missingRootProjectIds.includes(project.id) ?? false;
-                const projectSessions = sessions.filter((session) => session.projectId === project.id);
-                // The folder row shows the strongest wait among its sessions — the tree has no
-                // session rows of its own to say it instead.
+                const projectSessions = sessions
+                  .filter((session) => session.projectId === project.id)
+                  .sort(byCreation);
+                const projectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
+                const projectWorkspaceViews = workspaceViews.filter(
+                  (workspace) => workspace.projectId === project.id,
+                );
+                const mainWorkspace = projectWorkspaceViews.find((workspace) => workspace.kind === "main") ?? null;
+                // The main node only adds useful hierarchy when another worktree exists.
+                const isGitProject = projectWorktrees.length > 0;
+                // The folder row shows the strongest wait among its sessions, so a collapsed
+                // folder cannot hide an agent asking for approval.
                 const projectAttention = attentionOf(projectSessions);
-                // 잎이라 `aria-expanded`가 없다 — 열고 닫을 하위 층이 없다는 뜻이다.
                 return (
-                  <li className="project-node" key={project.id} role="treeitem">
+                  <li className="project-node" key={project.id} role="treeitem" aria-expanded={expanded}>
                     <div
                       ref={flashProjectId === project.id ? flashRow : undefined}
                       className={[
@@ -743,9 +906,18 @@ export function ProjectSidebar({
                       onDragEnd={endDrag}
                     >
                       <button
+                        className="tree-toggle"
+                        type="button"
+                        onClick={() => onToggleProject(project.id)}
+                        aria-label={`${name} ${expanded ? "접기" : "펼치기"}`}
+                        title={`${name} ${expanded ? "접기" : "펼치기"}`}
+                      >
+                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                      <button
                         className="project-select"
                         type="button"
-                        onClick={() => onSelectProject(project.id)}
+                        onClick={() => (showing ? onToggleProject(project.id) : onSelectProject(project.id))}
                         aria-label={`${name} 폴더 선택`}
                         title={project.rootPath}
                       >
@@ -755,7 +927,7 @@ export function ProjectSidebar({
                           <TeamsIcon size={15} className="brand-icon-teams" />
                         ) : projectMembership[project.id]?.role === "repo" ? (
                           <GitHubIcon size={15} className="brand-icon-github" />
-                        ) : selectedProjectId === project.id ? (
+                        ) : expanded ? (
                           <FolderOpen size={15} />
                         ) : (
                           <Folder size={15} />
@@ -777,7 +949,7 @@ export function ProjectSidebar({
                           ) : null}
                           {rootMissing ? <span className="project-status missing-status">없음</span> : null}
                           {/* Its worktrees' sessions count too: the folder answers "how much is
-                              running here", and the 폴더 상세 워크트리 카드 breaks that down. */}
+                              running here", and each worktree row below breaks that down. */}
                           {projectSessions.length > 0 ? (
                             <span className="folder-session-count" title={`세션 ${projectSessions.length}개`}>
                               {projectSessions.length}
@@ -788,6 +960,161 @@ export function ProjectSidebar({
                     </div>
                     {editingProjectId === project.id ? (
                       <ProjectMetadataEditor project={project} onSaved={onProjectSaved} onClose={onCloseEditor} />
+                    ) : null}
+                    {/* A plain folder opens straight onto its work; a git folder puts a worktree
+                        layer in between, because there a session belongs to a checkout, not a path. */}
+                    {expanded && !isGitProject ? (
+                      <ul className="session-tree" role="group" aria-label={`${name} 패인`}>
+                        {projectSessions
+                          .filter((session) => session.worktreeId === undefined)
+                          .map((session) => renderSession(session, projectSessions))}
+                        {documentsOf("project", project.id).map(renderDocument)}
+                      </ul>
+                    ) : null}
+                    {expanded && isGitProject ? (
+                      <ul className="worktree-tree" role="group" aria-label={`${name} worktree`}>
+                        {mainWorkspace ? (
+                          <li className="worktree-node main-workspace-node" key={mainWorkspace.workspaceKey}>
+                            <div
+                              className={`worktree-row two-line ${selectedProjectId === project.id && selectedWorktreeId === null ? "selected" : ""}`}
+                            >
+                              <button
+                                className="tree-toggle"
+                                type="button"
+                                onClick={() => toggleWorkspace(mainWorkspace.workspaceKey)}
+                                aria-label={`메인 ${expandedWorkspaces.has(mainWorkspace.workspaceKey) ? "펼치기" : "접기"}`}
+                              >
+                                {expandedWorkspaces.has(mainWorkspace.workspaceKey) ? (
+                                  <ChevronRight size={13} />
+                                ) : (
+                                  <ChevronDown size={13} />
+                                )}
+                              </button>
+                              <button
+                                className="workspace-select"
+                                type="button"
+                                onClick={() => onSelectProject(project.id)}
+                                title={mainWorkspace.path}
+                              >
+                                <GitBranch size={13} />
+                                <span className="workspace-copy">
+                                  <span className="worktree-branch">
+                                    메인 · {mainWorkspace.branch ?? `detached @ ${mainWorkspace.head?.slice(0, 7) ?? "unknown"}`}
+                                  </span>
+                                  <span className="workspace-meta">
+                                    변경 {mainWorkspace.changedFileCount} · 세션{" "}
+                                    {projectSessions.filter((session) => session.worktreeId === undefined).length}
+                                  </span>
+                                </span>
+                              </button>
+                            </div>
+                            {/* A node the user folded stays folded unless it is the one on screen —
+                                the selected place always shows what it holds. */}
+                            {!expandedWorkspaces.has(mainWorkspace.workspaceKey) ||
+                            (selectedProjectId === project.id && selectedWorktreeId === null) ? (
+                              <ul
+                                className="session-tree worktree-sessions"
+                                role="group"
+                                aria-label={`${name} 메인 패인`}
+                              >
+                                {projectSessions
+                                  .filter((session) => session.worktreeId === undefined)
+                                  .map((session) => renderSession(session, projectSessions))}
+                                {documentsOf("project", project.id).map(renderDocument)}
+                              </ul>
+                            ) : null}
+                          </li>
+                        ) : null}
+                        {projectWorktrees
+                          .slice()
+                          .sort((left, right) => {
+                            const leftReview = activeReviews.find((review) => review.worktreeId === left.id);
+                            const rightReview = activeReviews.find((review) => review.worktreeId === right.id);
+                            if (leftReview && rightReview) {
+                              return leftReview.pullRequestNumber - rightReview.pullRequestNumber;
+                            }
+                            // 임시 PR 리뷰 체크아웃은 아래로 — 내가 만든 worktree가 먼저 보여야 한다.
+                            if (leftReview) return 1;
+                            if (rightReview) return -1;
+                            return left.branch.localeCompare(right.branch);
+                          })
+                          .map((worktree) => {
+                            const view = projectWorkspaceViews.find(
+                              (workspace) => workspace.worktreeId === worktree.id,
+                            );
+                            const pullRequestReview = activeReviews.find(
+                              (review) => review.worktreeId === worktree.id,
+                            );
+                            const worktreeSessions = projectSessions.filter(
+                              (session) => session.worktreeId === worktree.id,
+                            );
+                            const worktreeAttention = attentionOf(worktreeSessions);
+                            const worktreeDocuments = documentsOf("worktree", worktree.id);
+                            return (
+                              <li className="worktree-node" key={worktree.id}>
+                                <div
+                                  className={`worktree-row two-line ${selectedWorktreeId === worktree.id ? "selected" : ""}`}
+                                  onContextMenu={(event) => onWorktreeContextMenu(worktree, event)}
+                                >
+                                  <button
+                                    className="tree-toggle"
+                                    type="button"
+                                    onClick={() => toggleWorkspace(`worktree:${worktree.id}`)}
+                                    aria-label={`${worktree.branch} ${expandedWorkspaces.has(`worktree:${worktree.id}`) ? "펼치기" : "접기"}`}
+                                  >
+                                    {expandedWorkspaces.has(`worktree:${worktree.id}`) ? (
+                                      <ChevronRight size={13} />
+                                    ) : (
+                                      <ChevronDown size={13} />
+                                    )}
+                                  </button>
+                                  <button
+                                    className="workspace-select"
+                                    type="button"
+                                    onClick={() => onSelectWorktree(worktree)}
+                                    aria-label={`${worktree.branch} worktree 선택`}
+                                    title={worktree.path}
+                                  >
+                                    <GitBranch size={13} aria-hidden="true" />
+                                    <span className="workspace-copy">
+                                      <span className="worktree-branch">
+                                        {pullRequestReview
+                                          ? `PR #${pullRequestReview.pullRequestNumber} · 임시`
+                                          : (view?.branch ??
+                                            (view?.head ? `detached @ ${view.head.slice(0, 7)}` : worktree.branch))}
+                                        {view?.lockedReason ? " · locked" : ""}
+                                        {view?.availability === "missing" ? " · missing" : ""}
+                                        {view?.prunableReason ? " · prunable" : ""}
+                                      </span>
+                                      <span className="workspace-meta">
+                                        변경 {view?.changedFileCount ?? 0} · 세션 {worktreeSessions.length}
+                                      </span>
+                                    </span>
+                                    {worktreeAttention ? (
+                                      <span
+                                        className={`unread-dot unread-${worktreeAttention}`}
+                                        title="응답 대기"
+                                        aria-hidden="true"
+                                      />
+                                    ) : null}
+                                  </button>
+                                </div>
+                                {(!expandedWorkspaces.has(`worktree:${worktree.id}`) ||
+                                  selectedWorktreeId === worktree.id) &&
+                                (worktreeSessions.length > 0 || worktreeDocuments.length > 0) ? (
+                                  <ul
+                                    className="session-tree worktree-sessions"
+                                    role="group"
+                                    aria-label={`${worktree.branch} 패인`}
+                                  >
+                                    {worktreeSessions.map((session) => renderSession(session, projectSessions))}
+                                    {worktreeDocuments.map(renderDocument)}
+                                  </ul>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                      </ul>
                     ) : null}
                   </li>
                 );
@@ -861,13 +1188,13 @@ export function ProjectSidebar({
             scope={sessionScope}
             onChangeScope={(next) => {
               setSessionScope(next);
-              persist(expandedWorkspaces, openShelves, sessionPanelOpen, next);
+              persist({ sessionScope: next });
             }}
             open={sessionPanelOpen}
             onToggleOpen={() => {
               const next = !sessionPanelOpen;
               setSessionPanelOpen(next);
-              persist(expandedWorkspaces, openShelves, next, sessionScope);
+              persist({ sessionPanelOpen: next });
             }}
             selected={selectedShelf === "active"}
             dropTarget={shelfDropKind === "active"}
@@ -979,20 +1306,30 @@ export function ProjectSidebar({
         </div>
 
         {/* Bulk expansion, on its own row rather than crowding the heading's four icons. It reaches
-            the 채널 and 프로젝트 layers, which is every layer that folds — 폴더 is a leaf. */}
+            the 묶음 and 프로젝트 layers, which is every layer that folds — 폴더 is a leaf. 묶기는
+            같은 줄 오른쪽에 붙는다: 무엇으로 묶여 있는지와 얼마나 펼쳐져 있는지는 한 이야기다. */}
         <div className="tree-controls">
-          <button type="button" onClick={runExpandAll} title="모든 채널과 프로젝트 펼치기">
+          <button type="button" onClick={runExpandAll} title="모든 묶음과 프로젝트 펼치기">
             <ChevronsUpDown size={13} />
             <span>모두</span>
           </button>
-          <button type="button" onClick={runCollapseAll} title="모든 채널과 프로젝트 접기">
+          <button type="button" onClick={runCollapseAll} title="모든 묶음과 프로젝트 접기">
             <ChevronsDownUp size={13} />
             <span>접기</span>
           </button>
-          <button type="button" onClick={runExpandWorking} title="작업중인 폴더가 있는 채널과 프로젝트만 펼치기">
+          <button type="button" onClick={runExpandWorking} title="작업중인 폴더가 있는 묶음과 프로젝트만 펼치기">
             <Zap size={13} />
             <span>작업중</span>
           </button>
+          <TagGroupingPicker
+            available={availableTags}
+            selected={effectiveGrouping}
+            isDefault={groupingTags === null}
+            onChange={(tags) => {
+              setGroupingTags(tags);
+              persist({ groupingTags: tags });
+            }}
+          />
         </div>
 
         {loading ? (
@@ -1024,7 +1361,7 @@ export function ProjectSidebar({
             }}
           >
             {treeNodes.map((node) =>
-              node.kind === "channel" ? renderChannel(node) : renderSection(node.section),
+              node.kind === "group" ? renderGroup(node) : renderSection(node.section),
             )}
           </ul>
         )}

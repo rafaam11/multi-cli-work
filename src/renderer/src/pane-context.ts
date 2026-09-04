@@ -1,4 +1,5 @@
 import type { SharedProject } from "@shared/project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { WorkProject } from "@shared/work-project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { PaneOwner } from "./pane-items";
@@ -32,6 +33,8 @@ export interface PaneContextSources {
   workProjects: readonly WorkProject[];
   /** projectId → owning work project, the map App derives from the memberships. */
   membership: Readonly<Record<string, { workProjectId: string }>>;
+  /** 설정의 구분 목록 — 헤더 색은 여기서 찾고, 목록에 없는 구분은 회색이다. */
+  categories: readonly ProjectCategorySetting[];
 }
 
 /** A folder that is no longer registered still names itself, from the directory the pane runs in. */
@@ -67,7 +70,7 @@ export function paneContextOf(
     folder,
     branch: worktree?.branch ?? null,
     workProject: workProject?.name ?? null,
-    accentClass: workProject ? categoryAccentClass(workProject.category) : null,
+    accentClass: workProject ? categoryAccentClass(workProject.category, sources.categories) : null,
     title: parts.join(" · "),
     tool: false,
   };

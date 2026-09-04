@@ -54,6 +54,21 @@ describe("WorkProjectService", () => {
     await expect(service(registryPath).createWorkProject({ name: "  " })).rejects.toThrow(WorkProjectServiceError);
   });
 
+  it("takes the default 구분 from the settings getter, and lets an explicit one win", async () => {
+    const registryPath = await tempRegistryPath("wps-default-category");
+    const queue = [IDS.first, IDS.second];
+    const withDefault = new WorkProjectService({
+      registryPath,
+      now: () => "2026-08-03T00:00:00.000Z",
+      idFactory: () => queue.shift() ?? IDS.third,
+      defaultCategory: () => "업무",
+    });
+    await withDefault.createWorkProject({ name: "기본" });
+    const registry = await withDefault.createWorkProject({ name: "명시", category: "연구" });
+    expect(registry.workProjects[IDS.first]?.category).toBe("업무");
+    expect(registry.workProjects[IDS.second]?.category).toBe("연구");
+  });
+
   it("updates metadata, normalizing notion link rows and rejecting unknown fields", async () => {
     const registryPath = await tempRegistryPath("wps-update");
     const workProjectService = service(registryPath);

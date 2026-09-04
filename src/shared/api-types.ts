@@ -8,6 +8,7 @@ import type {
 import type { AppStateSnapshot, PersistedTerminalSession, SlotViewState } from "./app-state-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
+import type { ProjectTagsV1 } from "./project-tags-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
 import type {
   WorkProjectLocalFolder,
@@ -319,6 +320,15 @@ export interface MultiCliWorkApi {
     /** Opens the folder dialog and stores the choice; `clear` resets it. Null when cancelled. */
     chooseTeamsSyncRoot(): Promise<WorkProjectRegistryV1 | null>;
     clearTeamsSyncRoot(): Promise<WorkProjectRegistryV1>;
+  };
+  /**
+   * 업무 프로젝트 자유 태그(`~/.multi-cli-work/project-tags.json`). `workProjects`와 별도 파일에
+   * 사는 이유는 `src/shared/project-tags-types.ts` 상단 주석 참고.
+   */
+  projectTags: {
+    list(): Promise<ProjectTagsV1>;
+    /** 한 업무 프로젝트의 태그 목록을 통째로 덮어쓴다. 편집기가 칩을 커밋할 때 쓰는 그 형태다. */
+    set(workProjectId: string, tags: string[]): Promise<ProjectTagsV1>;
   };
   /**
    * ws-root 워크스페이스 루트(`~/.multi-cli-work/workspace.json`). 등록된 루트가 없으면 스냅샷은

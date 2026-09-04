@@ -219,6 +219,11 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     removeRoot: vi.fn(async (_rootPath: string) => workspaceSnapshot),
     sync: vi.fn(async () => workspaceSnapshot),
   };
+  const projectTagsRegistry = { schemaVersion: 1 as const, updatedAt: project.updatedAt, tags: {} as Record<string, string[]> };
+  const projectTagsGateway = {
+    list: vi.fn(async () => projectTagsRegistry),
+    set: vi.fn(async (_workProjectId: string, _tags: readonly string[]) => projectTagsRegistry),
+  };
   const settingsGateway = {
     get: vi.fn(() => DEFAULT_SETTINGS),
     update: vi.fn(async (patch: unknown) => ({ ...DEFAULT_SETTINGS, patched: patch })),
@@ -235,6 +240,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     workProjectService,
     readWorkProjectRegistry: vi.fn(async () => workProjectRegistry),
     workspace: workspaceGateway,
+    projectTags: projectTagsGateway,
     coordinator,
     updater,
     projectActions,
@@ -268,6 +274,8 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     workProjectRegistry,
     workspaceGateway,
     workspaceSnapshot,
+    projectTagsGateway,
+    projectTagsRegistry,
     coordinator,
     project,
     worktree,
@@ -562,6 +570,23 @@ describe("main IPC boundary", () => {
     await expect(handlers.get("work-projects:choose-teams-root")!({})).resolves.toBeNull();
   });
 
+  it("reads project tags from the gateway and forwards a validated set, rejecting bad input", async () => {
+    const { handlers, projectTagsGateway, projectTagsRegistry } = setup();
+
+    await expect(handlers.get("project-tags:list")!({})).resolves.toBe(projectTagsRegistry);
+    expect(projectTagsGateway.list).toHaveBeenCalledOnce();
+
+    await expect(handlers.get("project-tags:set")!({}, "wp", ["a"])).resolves.toBe(projectTagsRegistry);
+    expect(projectTagsGateway.set).toHaveBeenCalledWith("wp", ["a"]);
+
+    // 빈 문자열은 여기서 거부하지 않는다 — normalizeTags가 지운다.
+    await handlers.get("project-tags:set")!({}, "wp", [""]);
+    expect(projectTagsGateway.set).toHaveBeenCalledWith("wp", [""]);
+
+    await expect(handlers.get("project-tags:set")!({}, "wp", "not-an-array")).rejects.toThrow(/array/i);
+    await expect(handlers.get("project-tags:set")!({}, "wp", [1])).rejects.toThrow(/string/i);
+  });
+
   it("picks a reference folder without storing it and reveals only registered ones", async () => {
     const { handlers, workProjectService, workProjectRegistry, projectActions, chooseDirectory } = setup();
     const localFolders = [{ label: "자료", path: "D:\\Work\\자료" }];
@@ -727,6 +752,17 @@ describe("main IPC boundary", () => {
     });
   });
 
+  it("passes a projects patch through unchanged", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("settings:update")!({}, {
+      projects: { categories: [{ name: "업무", color: 1 }], defaultCategory: "업무" },
+    });
+    expect(settingsGateway.update).toHaveBeenCalledWith({
+      projects: { categories: [{ name: "업무", color: 1 }], defaultCategory: "업무" },
+    });
+  });
+
   it("rejects unknown fields, out-of-range values, and mistyped settings patches", () => {
     const { handlers, settingsGateway } = setup();
 
@@ -738,6 +774,28 @@ describe("main IPC boundary", () => {
     expect(() => handlers.get("settings:update")!({}, { keybindings: { "view.quick-open": 5 } })).toThrow(/keybinding/i);
     expect(() => handlers.get("settings:update")!({}, { notifications: { statuses: { finished: true } } })).toThrow(
       /notification statuses/i,
+    );
+    expect(settingsGateway.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid projects patches", () => {
+    const { handlers, settingsGateway } = setup();
+
+    expect(() =>
+      handlers.get("settings:update")!({}, { projects: { categories: [{ name: "업무", color: 9 }] } }),
+    ).toThrow(/color/i);
+    expect(() =>
+      handlers.get("settings:update")!({}, { projects: { categories: [{ name: "", color: 1 }] } }),
+    ).toThrow(/name/i);
+    expect(() =>
+      handlers.get("settings:update")!(
+        {},
+        { projects: { categories: [{ name: "업무", color: 1, icon: "star" }] } },
+      ),
+    ).toThrow(/unknown fields/i);
+    expect(() => handlers.get("settings:update")!({}, { projects: { theme: 1 } })).toThrow(/unknown fields/i);
+    expect(() => handlers.get("settings:update")!({}, { projects: { categories: "업무" } })).toThrow(
+      /categories.*array/i,
     );
     expect(settingsGateway.update).not.toHaveBeenCalled();
   });

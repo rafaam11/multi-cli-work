@@ -5,6 +5,7 @@ const KIND_LABELS: Record<QuickOpenItem["kind"], string> = {
   session: "세션",
   project: "폴더",
   workspace: "작업공간",
+  workProject: "프로젝트",
   command: "명령",
 };
 

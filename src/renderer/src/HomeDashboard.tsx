@@ -1,12 +1,14 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import { Briefcase, Clock, Info, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, agentAccentClass } from "./brand-icons";
 import { recentProjects } from "./recent-folders";
+import { TagChips } from "./TagChips";
 import {
   TOOL_AGENT_ID,
   findAgent,
@@ -64,6 +66,13 @@ interface HomeDashboardProps {
   agents: AgentView[];
   activityLog: ActivityEntry[];
   pendingAction: boolean;
+  /** 설정의 구분 목록 — 카드 색의 근거. 목록에 없는 구분은 회색 카드다. */
+  categories: readonly ProjectCategorySetting[];
+  /**
+   * 업무 프로젝트 id → 붙은 태그. 카드에 얹는 용도라 기본값 `{}`를 둔다 — 이 프롭을 모르는 기존
+   * 렌더는 그냥 칩 없는 카드를 그린다.
+   */
+  tagsByWorkProject?: Record<string, readonly string[]>;
   onSelectSession(session: TerminalSessionView): void;
   onSelectWorkProject(workProjectId: string): void;
   onStartSession(project: SharedProject, kind: TerminalKind): void;
@@ -78,6 +87,8 @@ export function HomeDashboard({
   agents,
   activityLog,
   pendingAction,
+  categories,
+  tagsByWorkProject = {},
   onSelectSession,
   onSelectWorkProject,
   onStartSession,
@@ -124,7 +135,7 @@ export function HomeDashboard({
                       type="button"
                       className={[
                         "work-project-card",
-                        categoryAccentClass(workProject.category),
+                        categoryAccentClass(workProject.category, categories),
                         isWorkProjectDormant(workProject.status) ? "dormant" : "",
                       ]
                         .filter(Boolean)
@@ -137,6 +148,7 @@ export function HomeDashboard({
                         <span className="work-project-card-name">{workProject.name}</span>
                         <span className="work-project-card-meta">
                           <span className="category-chip">{workProject.category}</span>
+                          <TagChips tags={tagsByWorkProject[workProject.id] ?? []} />
                           <span className="meta-counts">
                             {workProject.status ? `${workProject.status} · ` : ""}폴더 {memberIds.size}개 · 활성 세션{" "}
                             {activeSessionCount}개

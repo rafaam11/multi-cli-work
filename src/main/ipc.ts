@@ -28,7 +28,9 @@ import {
   type AppSettings,
   type AppSettingsPatch,
   type NotifiableStatus,
+  type ProjectCategorySetting,
 } from "../shared/settings-types";
+import { ACCENT_COLOR_COUNT } from "../shared/accent-palette";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
@@ -38,6 +40,7 @@ import type {
 } from "../shared/github-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "../shared/notion-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
+import type { ProjectTagsV1 } from "../shared/project-tags-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "../shared/work-project-types";
 import type { WorkspaceSnapshot } from "../shared/workspace-types";
 import type {
@@ -84,6 +87,12 @@ interface WorkspaceGateway {
   addRoot(rootPath: string): Promise<WorkspaceSnapshot>;
   removeRoot(rootPath: string): Promise<WorkspaceSnapshot>;
   sync(): Promise<WorkspaceSnapshot>;
+}
+
+/** 업무 프로젝트 자유 태그. `work-projects.json`과 별도 파일에 사는 이유는 registry 쪽 주석 참고. */
+interface ProjectTagsGateway {
+  list(): Promise<ProjectTagsV1>;
+  set(workProjectId: string, tags: readonly string[]): Promise<ProjectTagsV1>;
 }
 
 interface TerminalCoordinatorGateway {
@@ -235,6 +244,7 @@ interface MainIpcDependencies {
   workProjectService: WorkProjectServiceGateway;
   readWorkProjectRegistry(): Promise<WorkProjectRegistryV1>;
   workspace: WorkspaceGateway;
+  projectTags: ProjectTagsGateway;
   coordinator: TerminalCoordinatorGateway;
   updater: UpdaterGateway;
   projectActions: ProjectActionsGateway;
@@ -492,7 +502,11 @@ function numberInRange(value: unknown, min: number, max: number, label: string):
 }
 
 function validateSettingsPatch(value: unknown): AppSettingsPatch {
-  const raw = exactObject(value, ["language", "general", "terminal", "notifications", "keybindings"], "Settings patch");
+  const raw = exactObject(
+    value,
+    ["language", "general", "terminal", "notifications", "keybindings", "projects"],
+    "Settings patch",
+  );
   const patch: AppSettingsPatch = {};
   if (raw.language !== undefined) {
     if (raw.language !== "ko" && raw.language !== "en") throw new Error('Settings language must be "ko" or "en"');
@@ -577,6 +591,27 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
       keybindings[actionId] = accelerator as string | null;
     }
     patch.keybindings = keybindings;
+  }
+  if (raw.projects !== undefined) {
+    // IPC는 엄격하다(exactObject·nonEmptyString) — 파서가 고쳐 주는 것(공백 정리, 잘못된 색
+    // 순환 기본값)과 게이트웨이가 애초에 받아 주는 것은 다른 문제라, 여기서는 모양이 어긋나면
+    // 바로 던지고 정규화는 하지 않는다.
+    const projects = exactObject(raw.projects, ["categories", "defaultCategory"], "Settings projects");
+    patch.projects = {};
+    if (projects.categories !== undefined) {
+      if (!Array.isArray(projects.categories)) throw new Error("Settings projects.categories must be an array");
+      patch.projects.categories = projects.categories.map((item, index): ProjectCategorySetting => {
+        const category = exactObject(item, ["name", "color"], `Settings projects.categories[${index}]`);
+        const color = integer(category.color, `Settings projects.categories[${index}].color`);
+        if (color < 1 || color > ACCENT_COLOR_COUNT) {
+          throw new Error(`Settings projects.categories[${index}].color must be between 1 and ${ACCENT_COLOR_COUNT}`);
+        }
+        return { name: nonEmptyString(category.name, `Settings projects.categories[${index}].name`), color };
+      });
+    }
+    if (projects.defaultCategory !== undefined) {
+      patch.projects.defaultCategory = nonEmptyString(projects.defaultCategory, "Settings projects.defaultCategory");
+    }
   }
   return patch;
 }
@@ -798,6 +833,20 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     return dependencies.workProjectService.setTeamsSyncRoot(rootPath);
   });
   ipc.handle("work-projects:clear-teams-root", () => dependencies.workProjectService.setTeamsSyncRoot(null));
+
+  ipc.handle("project-tags:list", () => dependencies.projectTags.list());
+  ipc.handle("project-tags:set", async (_event, workProjectId: unknown, tags: unknown) => {
+    if (!Array.isArray(tags)) throw new Error("Project tags must be an array");
+    // 빈 문자열은 여기서 거부하지 않는다 — 지우는 일은 normalizeTags의 몫이고, 칩 편집기가
+    // 공백 하나를 흘렸다고 오류 배너가 뜨면 안 된다.
+    return dependencies.projectTags.set(
+      nonEmptyString(workProjectId, "Work project id"),
+      tags.map((tag) => {
+        if (typeof tag !== "string") throw new Error("Project tag must be a string");
+        return tag;
+      }),
+    );
+  });
 
   // 워크스페이스 루트를 바꾸면 업무 프로젝트 묶음도 따라 바뀌므로, 두 스냅샷을 함께 돌려준다.
   const workspaceResult = async (workspace: WorkspaceSnapshot) => ({

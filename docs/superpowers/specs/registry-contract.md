@@ -104,7 +104,7 @@
 **그래서 순서는 이렇다:**
 
 1. **새 개념은 별도 파일에 담는다.** 구버전은 모르는 파일을 그냥 무시하고, `projects.json`은 멀쩡히 읽는다. 다운그레이드가 안전하다.
-   예: worktree는 `~/.multi-cli-work/worktrees.json`, 에이전트 정의는 `~/.multi-cli-work/agents.json`.
+   예: worktree는 `~/.multi-cli-work/worktrees.json`, 에이전트 정의는 `~/.multi-cli-work/agents.json`, 업무 프로젝트 태그는 `~/.multi-cli-work/project-tags.json`.
    별도 파일도 이 문서의 잠금·원자적 쓰기·`.bak` 프로토콜(4·5·6절)을 똑같이 따른다.
 2. **`projects.json`에 필드를 추가하는 것은 최후수단이다.** 정말 필요하다면 `schemaVersion`을 올리고, 구버전이 새 파일을 **거부하지 않도록** 먼저 "알 수 없는 필드 무시" 파서를 배포한 뒤 한 릴리스를 기다렸다가 필드를 채우기 시작한다. 이 두 단계를 건너뛰면 롤백한 사용자가 목록을 잃는다.
 3. **필드를 빼는 것도 같은 문제다** (구버전이 필수 필드의 부재로 거부한다). 2절의 흔적기관을 그대로 두는 이유가 이것이다.

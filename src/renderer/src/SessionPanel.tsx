@@ -1,11 +1,9 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import { ChevronDown, ChevronRight, EyeOff, GitBranch, Wrench } from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff } from "lucide-react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
-import { SessionNameInput } from "./SessionNameInput";
-import { AgentIcon } from "./brand-icons";
-import { DocumentPaneIcon, paneRowClass } from "./pane-items";
-import { findAgent, statusLabels } from "./session-labels";
+import { DocumentRow, SessionRow } from "./PaneRows";
+import { findAgent } from "./session-labels";
 import {
   matchesScope,
   sessionPanelWaitCount,
@@ -86,112 +84,72 @@ export function SessionPanel({
   const visible = effectiveScope === "all" ? items : items.filter((item) => matchesScope(item, scopeTarget));
   const waiting = sessionPanelWaitCount(items);
 
-  const rowClass = (paneId: string, ...extra: string[]) =>
-    paneRowClass(paneId, focusedPaneId, onScreenPaneIds, ...extra);
-
   /**
-   * 소속은 눈에 보이는 별도 span과 `title`에만 넣는다. 접근성 이름에 넣으면 세션 행을 찾는 기존
-   * 테스트와 e2e 헬퍼가 통째로 깨지므로, 그것은 별도 작업으로 남긴다(설계 문서 "하지 않는 것").
+   * 행 오른쪽 끝의 숨김(눈) 버튼. 트리 행에는 없는, 이 패널만의 동작이라 `trailing`으로 붙인다.
    */
-  const placeOf = (item: SessionPanelItem) => (
-    <>
-      {item.place ? <span className="session-row-place">{item.place}</span> : null}
-      {item.branch ? (
-        <span className="session-row-branch">
-          <GitBranch size={11} aria-hidden="true" />
-          {item.branch}
-        </span>
-      ) : null}
-    </>
+  const hideButton = (item: SessionPanelItem) => (
+    <button
+      type="button"
+      className="file-tab-close"
+      onClick={() => onMovePaneToHidden(item.id)}
+      aria-label={`${item.label} 작업공간에서 숨기기`}
+      title={
+        item.kind === "session"
+          ? "작업공간에서 숨기기 (세션은 계속 실행됩니다)"
+          : "작업공간에서 숨기기 (문서는 계속 열려 있습니다)"
+      }
+    >
+      <EyeOff size={12} />
+    </button>
   );
-  const titleOf = (item: SessionPanelItem) =>
-    [item.place, item.branch ? `⎇ ${item.branch}` : null, item.label].filter(Boolean).join(" · ");
-
-  const renderSession = (item: Extract<SessionPanelItem, { kind: "session" }>) => {
-    if (renamingSessionId === item.id) {
-      return (
-        <li key={item.id}>
-          <SessionNameInput
-            initialName={item.session.name ?? item.label}
-            onSubmit={(name) => onRenameSession(item.id, name)}
-            onCancel={onCancelRename}
-          />
-        </li>
-      );
-    }
-    return (
-      <li key={item.id}>
-        <div
-          className={rowClass(item.id, "file-tab-row", `status-${item.status}`, paneDropClass(item.id))}
-          {...paneDragProps(item.id)}
-          {...paneDropProps(item.id)}
-        >
-          <button
-            className="file-tab-open"
-            type="button"
-            onClick={() => onSelectPane(item.id)}
-            onContextMenu={(event) => onSessionContextMenu(item.session, event)}
-            aria-label={`${item.label} 세션 열기${item.attention ? " (읽지 않음)" : ""}`}
-            title={titleOf(item)}
-          >
-            <span className={`status-dot status-${item.status}`} aria-hidden="true" />
-            {item.tool ? <Wrench size={14} /> : <AgentIcon agent={findAgent(agents, item.agent)} size={14} />}
-            {placeOf(item)}
-            <span className="session-name">{item.label}</span>
-            {item.attention ? (
-              <span className={`unread-dot unread-${item.attention}`} title="응답 대기" aria-hidden="true" />
-            ) : null}
-            <span className="session-status">{statusLabels[item.status]}</span>
-          </button>
-          <button
-            type="button"
-            className="file-tab-close"
-            onClick={() => onMovePaneToHidden(item.id)}
-            aria-label={`${item.label} 작업공간에서 숨기기`}
-            title="작업공간에서 숨기기 (세션은 계속 실행됩니다)"
-          >
-            <EyeOff size={12} />
-          </button>
-        </div>
-      </li>
-    );
-  };
 
   /**
-   * A file, diff, commit graph or pull request. A sibling pair of buttons inside the row, not a
-   * button nesting a button (invalid HTML — the trap `.brand-block`'s toggle hit before), so 닫기
-   * can sit on the same line as 열기.
+   * 트리 행과 같은 컴포넌트를 쓰되 동사만 `패인 열기`다(R8) — 트리에도 같은 세션의 행이 서므로
+   * 한 화면에 같은 접근성 이름이 둘이면 안 된다. 소속(폴더·브랜치)은 여기서만 보인다: 이 목록은
+   * 여러 폴더의 패인을 한데 모으니까.
    */
+  const renderSession = (item: Extract<SessionPanelItem, { kind: "session" }>) => (
+    <SessionRow
+      key={item.id}
+      session={item.session}
+      label={item.label}
+      place={item.place}
+      branch={item.branch}
+      agent={findAgent(agents, item.agent)}
+      tool={item.tool}
+      attention={item.attention}
+      current={focusedPaneId === item.id}
+      onScreen={onScreenPaneIds.has(item.id)}
+      verb="패인 열기"
+      onSelect={() => onSelectPane(item.id)}
+      onContextMenu={(event) => onSessionContextMenu(item.session, event)}
+      renaming={renamingSessionId === item.id}
+      initialName={item.session.name ?? item.label}
+      onRename={(name) => onRenameSession(item.id, name)}
+      onCancelRename={onCancelRename}
+      dragProps={paneDragProps(item.id)}
+      dropClass={paneDropClass(item.id)}
+      dropProps={paneDropProps(item.id)}
+      trailing={hideButton(item)}
+    />
+  );
+
   const renderDocument = (item: Extract<SessionPanelItem, { kind: "document" }>) => (
-    <li key={item.id}>
-      <div
-        className={rowClass(item.id, "file-tab-row", paneDropClass(item.id))}
-        {...paneDragProps(item.id)}
-        {...paneDropProps(item.id)}
-      >
-        <button
-          type="button"
-          className="file-tab-open"
-          onClick={() => onSelectPane(item.id)}
-          aria-label={`${item.label} 문서 열기${item.dirty ? " (저장 안 됨)" : ""}`}
-          title={titleOf(item)}
-        >
-          <span className={`file-tab-dot ${item.dirty ? "dirty" : ""}`} aria-hidden="true" />
-          <DocumentPaneIcon kind={item.document} size={13} />
-          {placeOf(item)}
-          <span className="session-name">{item.label}</span>
-        </button>
-        <button
-          type="button"
-          className="file-tab-close"
-          onClick={() => onMovePaneToHidden(item.id)}
-          aria-label={`${item.label} 작업공간에서 숨기기`}
-          title="작업공간에서 숨기기 (문서는 계속 열려 있습니다)"
-        >
-          <EyeOff size={12} />
-        </button>
-      </div>
-    </li>
+    <DocumentRow
+      key={item.id}
+      pane={item.pane}
+      label={item.label}
+      place={item.place}
+      branch={item.branch}
+      current={focusedPaneId === item.id}
+      onScreen={onScreenPaneIds.has(item.id)}
+      verb="패인 열기"
+      onOpen={() => onSelectPane(item.id)}
+      dragProps={paneDragProps(item.id)}
+      dropClass={paneDropClass(item.id)}
+      dropProps={paneDropProps(item.id)}
+      trailing={hideButton(item)}
+    />
   );
 
   return (
@@ -214,16 +172,19 @@ export function SessionPanel({
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
+        {/* 제목 버튼이 토글과 범위 버튼 사이의 남는 폭을 전부 먹는다 — 숨김 셸프 행(.workspace-shelf-select)이
+            아이콘·이름·개수를 한 버튼에 품는 것과 같은 구조다. 배지가 버튼 밖이면 헤더에서 가장 눌리기 쉬운
+            자리가 죽은 공간이 된다. */}
         <button
           className="session-panel-title"
           type="button"
           onClick={onSelectWorkspace}
           aria-label={`세션 작업공간 열기 (패인 ${items.length}개)`}
         >
-          세션
+          <span className="session-panel-name">세션</span>
+          {/* 접혀 있어도 보인다 — 그래야 접어 둔 채로도 무엇이 기다리는지 알 수 있다. */}
+          {waiting > 0 ? <span className="session-panel-wait">대기 {waiting}</span> : null}
         </button>
-        {/* 접혀 있어도 보인다 — 그래야 접어 둔 채로도 무엇이 기다리는지 알 수 있다. */}
-        {waiting > 0 ? <span className="session-panel-wait">대기 {waiting}</span> : null}
         <div className="session-panel-scope" role="group" aria-label="세션 범위">
           <button type="button" aria-pressed={effectiveScope === "all"} onClick={() => onChangeScope("all")}>
             전체

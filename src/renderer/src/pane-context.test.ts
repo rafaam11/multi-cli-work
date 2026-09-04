@@ -53,6 +53,7 @@ const SOURCES: PaneContextSources = {
   worktrees: [worktree("worktree-fix", "project-atlas", "feature/fix")],
   workProjects: [workProject("wp-1", "지반 모니터링", "정부지원과제")],
   membership: { "project-atlas": { workProjectId: "wp-1" } },
+  categories: [{ name: "정부지원과제", color: 1 }],
 };
 
 describe("paneContextOf", () => {
@@ -74,7 +75,7 @@ describe("paneContextOf", () => {
   it("carries the owning work project and its category colour", () => {
     const context = paneContextOf({ projectId: "project-atlas", cwd: "C:\\work\\atlas" }, SOURCES);
     expect(context.workProject).toBe("지반 모니터링");
-    expect(context.accentClass).toBe("category-government");
+    expect(context.accentClass).toBe("accent-1");
   });
 
   it("leaves a folder no work project claims without a name or a colour", () => {
