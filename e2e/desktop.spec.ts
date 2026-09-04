@@ -257,20 +257,32 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   test("@smoke runs a real native PTY and remains framed at both supported window sizes", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
 
-    // A folder is a leaf now, so its select button is the row's only child and must consume the
-    // whole row. If the old toggle/name/signal parent grid survives, this button is trapped in the
-    // former 26px toggle column and the folder name disappears even though it stays accessible.
+    // The row has two children again — the expand/collapse toggle and the select button — now that
+    // folders can show sessions and worktrees beneath them. A single-column parent grid has no room
+    // for both on one line, so it silently stacks them into two implicit rows: the chevron alone on
+    // top, the icon and name below it, doubling the row's height and reading as a wrapped name.
     const folderRowLayout = await page.locator(".project-row").first().evaluate((row) => {
       const rowBounds = row.getBoundingClientRect();
+      const toggleBounds = row.querySelector<HTMLElement>(".tree-toggle")?.getBoundingClientRect();
       const selectBounds = row.querySelector<HTMLElement>(".project-select")?.getBoundingClientRect();
       const iconBounds = row.querySelector<SVGElement>(".project-select > svg")?.getBoundingClientRect();
       return {
-        rowWidth: rowBounds.width,
+        rowHeight: rowBounds.height,
+        toggleTop: toggleBounds?.top ?? -1,
+        selectTop: selectBounds?.top ?? -2,
+        toggleWidth: toggleBounds?.width ?? 0,
         selectWidth: selectBounds?.width ?? 0,
+        rowWidth: rowBounds.width,
         iconInset: (iconBounds?.left ?? rowBounds.left) - rowBounds.left,
       };
     });
-    expect(folderRowLayout.selectWidth).toBeGreaterThanOrEqual(folderRowLayout.rowWidth - 1);
+    // Same row: the toggle and the select button share one top edge, not two stacked rows.
+    expect(Math.abs(folderRowLayout.toggleTop - folderRowLayout.selectTop)).toBeLessThanOrEqual(1);
+    expect(folderRowLayout.rowHeight).toBeLessThanOrEqual(32);
+    // Nothing between them is unaccounted for: the select button fills whatever the toggle leaves.
+    expect(folderRowLayout.selectWidth).toBeGreaterThanOrEqual(
+      folderRowLayout.rowWidth - folderRowLayout.toggleWidth - 1,
+    );
     // The 4px activity rail belongs at the row's edge; the folder icon must not sit on top of it.
     expect(folderRowLayout.iconInset).toBeGreaterThanOrEqual(8);
     await expect(page.locator(".project-row .project-name").first()).toBeVisible();

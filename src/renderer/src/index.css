@@ -2085,11 +2085,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
  * violet/amber unread dot at the other edge, so activity and attention can be visible together.
  * Quiet folders use a neutral rail; a missing root overrides both with the error colour.
  */
+/* Two children live here: the 26px expand/collapse toggle, then the select button filling the
+   rest. A single-column template has no room for both, so it silently drops the second into an
+   implicit row below the first — the toggle alone on one line, the icon and name on the next. */
 .project-row {
   --folder-accent: var(--line-strong);
 
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr);
   min-height: 30px;
   border-radius: 5px;
   box-shadow: inset 4px 0 0 var(--folder-accent);
