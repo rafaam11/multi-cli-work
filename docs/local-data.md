@@ -12,7 +12,8 @@
 |---|---|
 | `agents.json` | 사용자가 추가한 에이전트 정의. 이 파일만 손으로 편집한다 |
 | `projects.json` | 사이드바에 등록한 폴더 목록과 마지막 사용 시각 |
-| `work-projects.json` | 업무 프로젝트(폴더 묶음)와 카테고리 색 |
+| `work-projects.json` | 업무 프로젝트(폴더 묶음)와 소속 폴더 |
+| `project-tags.json` | 업무 프로젝트에 붙인 자유 태그. 사이드바 "묶기"의 후보 |
 | `worktrees.json` | 앱이 만든 worktree의 원본 저장소·브랜치·경로 |
 | `pr-reviews.json` | PR 리뷰 세션의 진행 상태와 비공개 line note |
 
@@ -27,6 +28,7 @@
 | 경로 | 내용 |
 |---|---|
 | `state.json` | 창 크기, 선택된 폴더, 레이아웃, 패인 배치, 작업공간·숨김 소속 |
+| `settings.json` | 언어·터미널·알림·단축키·업무 프로젝트 구분 목록. 모르는 필드는 버린다 |
 | `shutdown-recovery.json` | 정상 종료 표시. 없으면 지난 실행이 비정상 종료된 것으로 본다 |
 | `session-logs/` | 세션별 스크롤백. 세션마다 상한이 있는 링 버퍼라 무한히 자라지 않는다 |
 | `project-briefs/` | 업무 프로젝트 브리프. Claude 세션 시작 훅이 읽어 초기 컨텍스트로 넣는다 |
