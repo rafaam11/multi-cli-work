@@ -60,23 +60,10 @@
   --accent-7: #b088d4;
 }
 
-/* One place maps a category to its colour — see work-project-accent.ts for the class it picks. */
-.category-government {
-  --category-accent: var(--category-government);
-}
-
-.category-outsourcing {
-  --category-accent: var(--category-outsourcing);
-}
-
-.category-research {
-  --category-accent: var(--category-research);
-}
-
-.category-product {
-  --category-accent: var(--category-product);
-}
-
+/*
+ * 구분은 설정 목록의 색 번호로 아래 .accent-n을 받는다(work-project-accent.ts). 목록에 없는 구분만
+ * 이 회색 클래스로 떨어진다 — 옛 이름의 클래스는 없다.
+ */
 .category-etc {
   --category-accent: var(--category-etc);
 }

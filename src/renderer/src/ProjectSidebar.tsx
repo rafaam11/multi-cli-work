@@ -3,6 +3,7 @@ import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } 
 import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { WorkspaceShellInfo } from "@shared/workspace-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import { knownTags } from "@shared/project-tags-types";
@@ -77,6 +78,8 @@ interface ProjectSidebarProps {
   workspaceShells: Record<string, WorkspaceShellInfo>;
   /** 업무 프로젝트 id → 붙어 있는 태그. 묶기의 후보이자 어느 묶음에 설지의 근거다. */
   tagsByWorkProject: Record<string, readonly string[]>;
+  /** 설정의 구분 목록 — 묶음 레일 색은 여기서 찾고, 목록에 없는 구분은 회색이다. */
+  categories: readonly ProjectCategorySetting[];
   projectMembership: Record<string, { workProjectId: string; role: WorkProjectRole }>;
   expandedWorkProjects: Set<string>;
   selectedWorkProjectId: string | null;
@@ -266,6 +269,7 @@ export function ProjectSidebar({
   workProjects,
   workspaceShells,
   tagsByWorkProject,
+  categories,
   projectMembership,
   expandedWorkProjects,
   selectedWorkProjectId,
@@ -754,7 +758,7 @@ export function ProjectSidebar({
       <li
         className={[
           "work-project-node",
-          workProject ? categoryAccentClass(workProject.category) : "unassigned-node",
+          workProject ? categoryAccentClass(workProject.category, categories) : "unassigned-node",
           railed ? "categorized" : "",
           workProject && isWorkProjectDormant(workProject.status) ? "dormant" : "",
         ]

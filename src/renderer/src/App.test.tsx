@@ -1704,7 +1704,7 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발", {
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", {
             members: [{ projectId: atlas.id, role: "repo" }],
           }),
           workProject("wp-career", "P_Personal/26_Personal_Career-1", "기타", { order: 1 }),
@@ -1742,7 +1742,7 @@ describe("work project categories", () => {
       const harness = createApi({
         projects: [atlas],
         sessions: [],
-        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발")],
+        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인")],
         projectTags: { "wp-vsp": ["용역"] },
         workspace: workspaceSnapshot([VSP], [
           { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
@@ -1766,8 +1766,8 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-manual", "손으로 만든 묶음", "정부지원과제"),
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발", { order: 1 }),
+          workProject("wp-manual", "손으로 만든 묶음", "업무"),
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", { order: 1 }),
         ],
         // 셸은 있지만 태그가 하나도 없다 — 기본 묶기가 빌 것이 없어 트리는 평면이다.
         workspace: workspaceSnapshot([VSP], [
@@ -1791,8 +1791,8 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-manual", "손으로 만든 묶음", "정부지원과제"),
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발", { order: 1 }),
+          workProject("wp-manual", "손으로 만든 묶음", "업무"),
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", { order: 1 }),
         ],
         projectTags: { "wp-vsp": ["용역"] },
         workspace: workspaceSnapshot([VSP], [
@@ -1823,8 +1823,8 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-etc", "O_SMCH/24_SMCH_VSP-1", "외주개발"),
-          workProject("wp-none", "손으로 만든 묶음", "정부지원과제", { order: 1 }),
+          workProject("wp-etc", "O_SMCH/24_SMCH_VSP-1", "개인"),
+          workProject("wp-none", "손으로 만든 묶음", "업무", { order: 1 }),
         ],
         projectTags: { "wp-etc": ["기타"] },
         workspace: workspaceSnapshot([VSP], [
@@ -1865,7 +1865,7 @@ describe("work project categories", () => {
           projects: [atlas, dashboard],
           sessions: [],
           workProjects: [
-            workProject("wp-alpha", "알파", "외주개발", { members: [{ projectId: atlas.id, role: "repo" }] }),
+            workProject("wp-alpha", "알파", "개인", { members: [{ projectId: atlas.id, role: "repo" }] }),
             workProject("wp-beta", "베타", "기타", {
               order: 1,
               members: [{ projectId: dashboard.id, role: "repo" }],
@@ -1917,7 +1917,7 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발"),
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인"),
           workProject("wp-career", "P_Personal/26_Personal_Career-1", "기타", { order: 1 }),
         ],
         projectTags: { "wp-vsp": ["용역"], "wp-career": ["개인"] },
@@ -1948,7 +1948,7 @@ describe("work project categories", () => {
       const harness = createApi({
         projects: [atlas],
         sessions: [],
-        workProjects: [workProject("wp-grant", "스마트팩토리 과제", "정부지원과제")],
+        workProjects: [workProject("wp-grant", "스마트팩토리 과제", "업무")],
       });
       window.multiCliWork = harness.api;
       render(<App />);
@@ -1964,7 +1964,7 @@ describe("work project categories", () => {
         projects: [repo],
         sessions: [],
         // 이 폴더는 어느 업무 프로젝트의 members에도 없다 — 방금 연 레포와 같은 상황.
-        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발")],
+        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인")],
         workspace: workspaceSnapshot([VSP], [
           { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
         ]),
@@ -1984,7 +1984,7 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "외주개발", {
+          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", {
             members: [{ projectId: atlas.id, role: "repo" }],
           }),
         ],
@@ -2011,20 +2011,20 @@ describe("work project categories", () => {
       projects: [atlas, dashboard],
       sessions: [],
       workProjects: [
-        workProject("wp-grant", "스마트팩토리 과제", "정부지원과제", {
+        workProject("wp-grant", "스마트팩토리 과제", "업무", {
           members: [{ projectId: atlas.id, role: "repo" }],
         }),
-        workProject("wp-vendor", "A사 관제", "외주개발", { order: 1 }),
+        workProject("wp-vendor", "A사 관제", "개인", { order: 1 }),
       ],
     });
     window.multiCliWork = harness.api;
     render(<App />);
 
     const grant = await groupOf("스마트팩토리 과제");
-    expect(grant).toHaveClass("category-government", "categorized");
+    expect(grant).toHaveClass("accent-1", "categorized");
     // The folder sits inside the group node, so the rail on that node runs past it.
     expect(grant.querySelector(".project-row")).toBeInTheDocument();
-    expect(await groupOf("A사 관제")).toHaveClass("category-outsourcing");
+    expect(await groupOf("A사 관제")).toHaveClass("accent-4");
   });
 
   it("업무 프로젝트 행에 태그 칩을 달고, 넘치면 +N으로 접는다", async () => {
@@ -2032,7 +2032,7 @@ describe("work project categories", () => {
       projects: [atlas],
       sessions: [],
       workProjects: [
-        workProject("wp-vsp", "가상수술계획", "외주개발", {
+        workProject("wp-vsp", "가상수술계획", "개인", {
           members: [{ projectId: atlas.id, role: "repo" }],
         }),
       ],
@@ -2055,7 +2055,7 @@ describe("work project categories", () => {
       projects: [atlas],
       sessions: [powershellSession],
       workProjects: [
-        workProject("wp-grant", "스마트팩토리 과제", "정부지원과제", {
+        workProject("wp-grant", "스마트팩토리 과제", "업무", {
           members: [{ projectId: atlas.id, role: "repo" }],
         }),
       ],
@@ -2070,7 +2070,7 @@ describe("work project categories", () => {
     expect(context).toHaveTextContent("Atlas");
     expect(context).toHaveTextContent("스마트팩토리 과제");
     expect(context).toHaveAttribute("title", "Atlas · 스마트팩토리 과제");
-    expect(header).toHaveClass("category-government");
+    expect(header).toHaveClass("accent-1");
   });
 
   it("marks a member folder with the brand of what it holds — Teams for 문서, GitHub for 레포", async () => {
@@ -2078,7 +2078,7 @@ describe("work project categories", () => {
       projects: [atlas, dashboard],
       sessions: [],
       workProjects: [
-        workProject("wp-grant", "스마트팩토리 과제", "정부지원과제", {
+        workProject("wp-grant", "스마트팩토리 과제", "업무", {
           members: [
             { projectId: atlas.id, role: "repo" },
             { projectId: dashboard.id, role: "docs" },
@@ -2100,7 +2100,7 @@ describe("work project categories", () => {
     const harness = createApi({
       projects: [atlas],
       sessions: [],
-      workProjects: [workProject("wp-grant", "스마트팩토리 과제", "정부지원과제")],
+      workProjects: [workProject("wp-grant", "스마트팩토리 과제", "업무")],
     });
     window.multiCliWork = harness.api;
     render(<App />);
@@ -2115,20 +2115,20 @@ describe("work project categories", () => {
     const harness = createApi({
       projects: [],
       sessions: [],
-      workProjects: [workProject("wp-product", "사내 제품", "상품개발")],
+      workProjects: [workProject("wp-product", "사내 제품", "연구")],
     });
     window.multiCliWork = harness.api;
     render(<App />);
 
     const group = (await groupOf("사내 제품")) as HTMLElement;
-    expect(group).toHaveClass("category-product");
+    expect(group).toHaveClass("accent-3");
     // groupOf scopes to the sidebar nav, so the home card's chip cannot satisfy this.
-    expect(within(group).queryByText("상품개발")).not.toBeInTheDocument();
+    expect(within(group).queryByText("연구")).not.toBeInTheDocument();
     // The word itself still exists on screen — just not in the sidebar.
-    expect(screen.getByText("상품개발")).toHaveClass("category-chip");
+    expect(screen.getByText("연구")).toHaveClass("category-chip");
   });
 
-  it("reads a legacy or custom 구분 as 기타 rather than dropping the colour", async () => {
+  it("설정 목록에 없는 구분은 회색으로 남는다", async () => {
     const harness = createApi({
       projects: [],
       sessions: [],
@@ -2140,13 +2140,32 @@ describe("work project categories", () => {
     expect(await groupOf("사내연구 과제")).toHaveClass("category-etc");
   });
 
+  it("recolours the rail the moment the settings list changes", async () => {
+    const harness = createApi({
+      projects: [],
+      sessions: [],
+      workProjects: [workProject("wp-grant", "스마트팩토리 과제", "업무")],
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    expect(await groupOf("스마트팩토리 과제")).toHaveClass("accent-1");
+
+    act(() => {
+      harness.emitSettings({
+        ...DEFAULT_SETTINGS,
+        projects: { categories: [{ name: "업무", color: 6 }], defaultCategory: "업무" },
+      });
+    });
+    await waitFor(async () => expect(await groupOf("스마트팩토리 과제")).toHaveClass("accent-6"));
+  });
+
   it("dims a 완료 group so live work stays in front", async () => {
     const harness = createApi({
       projects: [],
       sessions: [],
       workProjects: [
-        workProject("wp-done", "종료된 과제", "정부지원과제", { status: "완료" }),
-        workProject("wp-live", "진행 과제", "정부지원과제", { order: 1 }),
+        workProject("wp-done", "종료된 과제", "업무", { status: "완료" }),
+        workProject("wp-live", "진행 과제", "업무", { order: 1 }),
       ],
     });
     window.multiCliWork = harness.api;
@@ -2161,7 +2180,7 @@ describe("work project categories", () => {
       projects: [],
       sessions: [],
       workProjects: [
-        workProject("wp-vendor", "A사 관제", "외주개발"),
+        workProject("wp-vendor", "A사 관제", "개인"),
         workProject("wp-done", "종료된 과제", "기타", { status: "보관", order: 1 }),
       ],
     });
@@ -2172,11 +2191,12 @@ describe("work project categories", () => {
     const card = (await home.findByRole("button", { name: "A사 관제 프로젝트 열기" })).closest(
       ".work-project-card",
     )!;
-    expect(card).toHaveClass("category-outsourcing");
+    expect(card).toHaveClass("accent-4");
     expect(card).not.toHaveClass("dormant");
+    // 기타 is a listed default (palette 5, the grey), not the unlisted fallback.
     expect(
       home.getByRole("button", { name: "종료된 과제 프로젝트 열기" }).closest(".work-project-card"),
-    ).toHaveClass("category-etc", "dormant");
+    ).toHaveClass("accent-5", "dormant");
   });
 
   it("leaves the tree unrailed when no work project exists at all", async () => {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { normalizeTags } from "../../shared/project-tags-types";
 import type { ProjectStatus, SharedProject } from "../../shared/project-types";
+import { DEFAULT_SETTINGS } from "../../shared/settings-types";
 import type {
   WorkProject,
   WorkProjectLocalFolder,
@@ -16,25 +17,12 @@ import {
   relativeSegments,
   resolveShellRefForPath,
   workspacePathKey,
-  type ChannelLetter,
 } from "../../shared/workspace-path";
 import { readProjectTags, updateProjectTags, type ProjectTagsOptions } from "./project-tags-registry";
 import { updateWorkProjectRegistry } from "./work-project-registry";
 import { setWorkspaceShellLinks, type WorkspaceRegistryOptions } from "./workspace-registry";
 
 const METADATA_KEYS = ["name", "category", "status", "memo", "notionLinks", "localFolders", "order"] as const;
-
-/**
- * 채널 글자 → 업무 프로젝트 구분. 루트 CLAUDE.md §1의 채널 어휘를 앱의 어휘로 옮긴 것뿐이며,
- * 만들 때 한 번만 쓴다 — 사용자가 나중에 구분을 바꾸면 그 선택이 이긴다.
- */
-const CHANNEL_CATEGORY: Record<ChannelLetter, string> = {
-  G: "정부지원과제",
-  O: "외주개발",
-  R: "연구",
-  Z: "기타",
-  P: "기타",
-};
 
 type RegistryUpdater = typeof updateWorkProjectRegistry;
 
@@ -57,6 +45,11 @@ export interface WorkProjectServiceOptions {
   workspaceRegistryPath?: string;
   /** 업무 프로젝트 자유 태그 레지스트리 경로. ws-root 연동에만 쓴다(`syncFromWorkspace`). */
   projectTagsPath?: string;
+  /**
+   * 새 업무 프로젝트의 구분(설정 › 프로젝트 › 기본 구분). 설정이 언제든 바뀌므로 값이 아니라 게터로
+   * 받는다. 만들 때 한 번만 쓰고, 사용자가 나중에 구분을 바꾸면 그 선택이 이긴다.
+   */
+  defaultCategory?: () => string;
   platform?: NodeJS.Platform;
 }
 
@@ -135,11 +128,17 @@ export class WorkProjectService {
     this.options = options;
   }
 
+  /** 게터가 없거나 빈 문자열을 주면 설정 기본값의 기본 구분으로 떨어진다 — 빈 구분은 만들지 않는다. */
+  private defaultCategory(): string {
+    const category = this.options.defaultCategory?.().trim() ?? "";
+    return category.length > 0 ? category : DEFAULT_SETTINGS.projects.defaultCategory;
+  }
+
   async createWorkProject(input: { name: string; category?: string }): Promise<WorkProjectRegistryV1> {
     if (typeof input?.name !== "string" || input.name.trim().length === 0) {
       throw new WorkProjectServiceError("Work project name must be a non-empty string");
     }
-    const category = input.category === undefined ? "기타" : input.category;
+    const category = input.category === undefined ? this.defaultCategory() : input.category;
     if (typeof category !== "string" || category.trim().length === 0) {
       throw new WorkProjectServiceError("Work project category must be a non-empty string");
     }
@@ -387,7 +386,7 @@ export class WorkProjectService {
           target = {
             id,
             name,
-            category: CHANNEL_CATEGORY[shell.channelLetter as ChannelLetter] ?? "기타",
+            category: this.defaultCategory(),
             status: null,
             memo: "",
             notionLinks: [],

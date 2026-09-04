@@ -1,6 +1,7 @@
 import type { MultiCliWorkApi } from "@shared/api-types";
 import { notionLinkCheck, type NotionLinkCheck } from "@shared/notion-types";
 import type { ProjectTagsV1 } from "@shared/project-tags-types";
+import { DEFAULT_PROJECT_CATEGORIES, type ProjectCategorySetting } from "@shared/settings-types";
 import type { WorkProject, WorkProjectRegistryV1 } from "@shared/work-project-types";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -59,7 +60,7 @@ function installApi(
 
 function renderPage(
   workProject: WorkProject = WORK_PROJECT,
-  tagProps: { tags?: string[]; tagSuggestions?: string[] } = {},
+  tagProps: { tags?: string[]; tagSuggestions?: string[]; categories?: ProjectCategorySetting[] } = {},
 ) {
   const onRevealLocalFolder = vi.fn();
   const onTagsChanged = vi.fn();
@@ -72,6 +73,7 @@ function renderPage(
       agents={[]}
       tags={tagProps.tags ?? []}
       tagSuggestions={tagProps.tagSuggestions ?? []}
+      categories={tagProps.categories ?? DEFAULT_PROJECT_CATEGORIES}
       onSelectSession={vi.fn()}
       onSelectProject={vi.fn()}
       onRegistryChanged={vi.fn()}
@@ -85,6 +87,30 @@ function renderPage(
   );
   return { onRevealLocalFolder, onTagsChanged };
 }
+
+describe("WorkProjectDetailPage 구분", () => {
+  it("keeps a 구분 the settings list no longer has as the current value, in grey", () => {
+    installApi();
+    renderPage();
+    const select = screen.getByLabelText("구분") as HTMLSelectElement;
+    expect(select.value).toBe("정부지원과제");
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      "정부지원과제",
+      "업무",
+      "개인",
+      "연구",
+      "기타",
+    ]);
+    expect(screen.getByRole("region", { name: "업무 프로젝트 상세" })).toHaveClass("category-etc");
+  });
+
+  it("takes the colour off the list the moment a listed 구분 is picked", () => {
+    installApi();
+    renderPage();
+    fireEvent.change(screen.getByLabelText("구분"), { target: { value: "연구" } });
+    expect(screen.getByRole("region", { name: "업무 프로젝트 상세" })).toHaveClass("accent-3");
+  });
+});
 
 describe("WorkProjectDetailPage 참고 로컬 폴더", () => {
   it("saves a hand-typed path when the row loses focus", async () => {

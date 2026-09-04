@@ -172,6 +172,8 @@ export async function createDesktopRuntime(
     ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
     ...(workspaceRegistryPath ? { workspaceRegistryPath } : {}),
     ...(projectTagsPath ? { projectTagsPath } : {}),
+    // 동기 캐시라 게터가 매번 최신 설정을 준다 — 설정 창에서 기본 구분을 바꾸면 다음 생성부터 반영된다.
+    defaultCategory: () => settingsService.current().projects.defaultCategory,
     platform: process.platform,
   });
   // ws-root 워크스페이스 루트. 등록된 루트가 없으면 이 기능 전체가 잠자코 있는다 — 아무것도

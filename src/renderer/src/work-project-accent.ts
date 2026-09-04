@@ -1,28 +1,20 @@
+import { accentClass } from "@shared/accent-palette";
 import type { ProjectStatus } from "@shared/project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 
 /**
- * Every work project carries a 구분 (category), and the sidebar colours the whole group by it so a
- * folder's kind of work is readable at a glance. `WorkProject.category` is a free-form string —
- * only a handful of values are suggested (see WORK_PROJECT_CATEGORIES) — so the mapping to a colour has to
- * tolerate anything, and it lands on an ASCII slug rather than the Korean text itself: class
- * selectors then need no escaping, and a custom category adds no new class.
+ * 구분(category)은 사용자 정의 목록(설정 › 프로젝트)이고 `WorkProject.category`는 자유 문자열이라,
+ * 색은 "지금 목록에서 그 이름을 찾았는가"로만 정해진다. 목록에서 사라졌거나 손으로 넣은 옛 값은
+ * 회색(category-etc)으로 남는다 — 색이 빠진 게 아니라 "분류 밖"이라는 뜻의 색이다. 색은 index.css가
+ * 클래스마다 --category-accent로 푼다(accent-1..7과 category-etc).
  *
- * The colours live in index.css keyed by these classes, the same one-place mapping the session
- * status colours use via --session-accent.
+ * 목록을 두 번째 인자로 강제하는 것은 목록을 안 넘긴 소비처가 조용히 전부 회색이 되지 않게 하려는
+ * 것이다 — 빠뜨리면 typecheck가 잡는다.
  */
-export type WorkProjectAccent = "government" | "outsourcing" | "research" | "product" | "etc";
-
-const CATEGORY_ACCENTS: Record<string, WorkProjectAccent> = {
-  정부지원과제: "government",
-  외주개발: "outsourcing",
-  연구: "research",
-  상품개발: "product",
-  기타: "etc",
-};
-
-/** Anything outside the suggested categories reads as 기타 — grey, not a missing colour. */
-export function categoryAccentClass(category: string): string {
-  return `category-${CATEGORY_ACCENTS[category.trim()] ?? "etc"}`;
+export function categoryAccentClass(category: string, categories: readonly ProjectCategorySetting[]): string {
+  const key = category.trim();
+  const found = categories.find((candidate) => candidate.name === key);
+  return found ? accentClass(found.color) : "category-etc";
 }
 
 /**

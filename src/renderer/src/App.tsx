@@ -553,8 +553,10 @@ export function App() {
    * Where each pane's work lives, for the folder line its header opens with. Keyed by pane id so the
    * grid can look one up without knowing whether the slot holds a terminal or a document.
    */
+  /** 설정의 구분 목록 — 레일·카드·상세·패인 헤더가 같은 목록으로 색을 고른다. */
+  const projectCategories = appSettings.projects.categories;
   const paneContexts = useMemo(() => {
-    const sources = { projects, worktrees, workProjects, membership: projectMembership };
+    const sources = { projects, worktrees, workProjects, membership: projectMembership, categories: projectCategories };
     const map = new Map<string, PaneContext>();
     for (const session of sessions) map.set(session.id, paneContextOf(session, sources));
     for (const pane of documentPanes) {
@@ -562,7 +564,7 @@ export function App() {
       if (context) map.set(pane.id, context);
     }
     return map;
-  }, [sessions, documentPanes, projects, worktrees, workProjects, projectMembership]);
+  }, [sessions, documentPanes, projects, worktrees, workProjects, projectMembership, projectCategories]);
   /** The pull request the focused pane shows, so the sidebar's list can mark it as the open one. */
   const focusedPullRequest =
     documents.find(
@@ -2928,6 +2930,7 @@ export function App() {
         projects={projects}
         workProjects={workProjects}
         workspaceShells={workspaceShells}
+        categories={projectCategories}
         tagsByWorkProject={tagsByWorkProjectId}
         projectMembership={projectMembership}
         expandedWorkProjects={expandedWorkProjects}
@@ -3198,6 +3201,7 @@ export function App() {
               key={selectedWorkProject.id}
               workProject={selectedWorkProject}
               members={selectedWorkProjectMembers}
+              categories={projectCategories}
               teamsSyncRoot={workProjectRegistry?.teamsSyncRoot ?? null}
               sessions={folderSessions.filter((session) =>
                 selectedWorkProjectMembers.some((member) => member.project.id === session.projectId),
@@ -3277,6 +3281,7 @@ export function App() {
               workProjects={workProjects}
               projectMembership={projectMembership}
               tagsByWorkProject={tagsByWorkProjectId}
+              categories={projectCategories}
               sessions={sessions}
               agents={agents}
               activityLog={activityLog}

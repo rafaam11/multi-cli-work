@@ -39,10 +39,12 @@ async function tempPaths(
 function service(
   paths: { registryPath: string; workspaceRegistryPath: string; projectTagsPath: string },
   ids = [...IDS],
+  extra: { defaultCategory?: () => string } = {},
 ): WorkProjectService {
   const queue = [...ids];
   return new WorkProjectService({
     ...paths,
+    ...extra,
     platform: "win32",
     now: () => "2026-08-30T00:00:00.000Z",
     idFactory: () => queue.shift() ?? "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -123,15 +125,16 @@ afterEach(async () => {
 });
 
 describe("syncFromWorkspace", () => {
-  it("creates one work project per shell, categorized by the channel letter", async () => {
+  it("creates one work project per shell, with the default 구분 when no getter is wired", async () => {
     const paths = await tempPaths("sync-create");
     const result = await service(paths).syncFromWorkspace(snapshot([VSP, CAREER]), []);
 
     expect(result.created).toBe(2);
     expect(result.skipped).toEqual([]);
     const created = Object.values(result.workProjects.workProjects);
+    // 채널 글자는 구분을 정하지 않는다 — 채널 라벨은 태그로만 남고, 구분은 설정의 기본값이다.
     expect(created.map((workProject) => [workProject.name, workProject.category])).toEqual([
-      ["O_SMCH/24_SMCH_VSP-1", "외주개발"],
+      ["O_SMCH/24_SMCH_VSP-1", "기타"],
       ["P_Personal/26_Personal_Career-1", "기타"],
     ]);
     // 출처는 workspace.json에만 남는다 — work-projects.json 스키마는 그대로다(계약 §8).
@@ -142,25 +145,20 @@ describe("syncFromWorkspace", () => {
     ]);
   });
 
-  it("maps every channel letter onto a category", async () => {
-    const paths = await tempPaths("sync-categories");
+  it("셸에서 만들어지는 업무 프로젝트는 설정의 기본 구분을 받는다", async () => {
+    const paths = await tempPaths("sync-default-category");
     const shells = [
       shell({ channel: "G_StartupGrowth", shell: "26_StartupGrowth-1" }),
       shell({ channel: "O_SMCH", shell: "24_SMCH_VSP-1" }),
-      shell({ channel: "R_GeomCAS", shell: "26_GeomCAS_Thesis-1" }),
-      shell({ channel: "Z_Lab", shell: "26_Lab_Chores-1" }),
       shell({ channel: "P_Personal", shell: "26_Personal_Career-1" }),
     ];
-    const result = await service(paths, shells.map((_, index) => `${index}${IDS[0].slice(1)}`)).syncFromWorkspace(
-      snapshot(shells),
-      [],
-    );
+    const result = await service(paths, shells.map((_, index) => `${index}${IDS[0].slice(1)}`), {
+      defaultCategory: () => "업무",
+    }).syncFromWorkspace(snapshot(shells), []);
     expect(Object.values(result.workProjects.workProjects).map((workProject) => workProject.category)).toEqual([
-      "정부지원과제",
-      "외주개발",
-      "연구",
-      "기타",
-      "기타",
+      "업무",
+      "업무",
+      "업무",
     ]);
   });
 

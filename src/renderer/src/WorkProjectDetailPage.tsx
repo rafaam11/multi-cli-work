@@ -10,7 +10,7 @@ import type {
   WorkProjectRegistryV1,
   WorkProjectRole,
 } from "@shared/work-project-types";
-import { WORK_PROJECT_CATEGORIES } from "@shared/work-project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 import { AlertTriangle, BookOpen, Check, ExternalLink, FolderOpen, FolderPlus, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GitHubIcon, TeamsIcon } from "./brand-icons";
@@ -88,6 +88,8 @@ interface WorkProjectDetailPageProps {
   tags: readonly string[];
   /** 다른 업무 프로젝트가 이미 쓰고 있는 태그 — 자동완성 후보. App이 내려준다. */
   tagSuggestions: readonly string[];
+  /** 설정의 구분 목록 — select의 선택지이자 색의 근거. 목록에 없는 현재 값도 선택지에 남는다. */
+  categories: readonly ProjectCategorySetting[];
   onSelectSession(session: TerminalSessionView): void;
   onSelectProject(projectId: string): void;
   onRegistryChanged(registry: WorkProjectRegistryV1): void;
@@ -108,6 +110,7 @@ export function WorkProjectDetailPage({
   agents,
   tags: savedTags,
   tagSuggestions,
+  categories,
   onSelectSession,
   onSelectProject,
   onRegistryChanged,
@@ -344,17 +347,17 @@ export function WorkProjectDetailPage({
     }
   };
 
-  // The suggested categories plus whatever legacy/custom value the project already carries.
-  const categoryOptions = WORK_PROJECT_CATEGORIES.includes(category as (typeof WORK_PROJECT_CATEGORIES)[number])
-    ? [...WORK_PROJECT_CATEGORIES]
-    : [category, ...WORK_PROJECT_CATEGORIES];
+  // 설정 목록에 현재 값을 더한다 — 목록에서 빠진 옛 구분도 선택지에서 사라지지 않는다. 화면에 없는
+  // 값을 담은 select는 다음 저장 때 조용히 값을 바꿔 버린다.
+  const categoryNames = categories.map((candidate) => candidate.name);
+  const categoryOptions = categoryNames.includes(category) ? categoryNames : [category, ...categoryNames];
   const docsMembers = members.filter((member) => member.role === "docs");
 
   // The accent tracks the local `category` state, not the saved one, so the chip and the card edge
   // follow the select the moment it changes rather than only after the write lands.
   return (
     <section
-      className={`project-detail work-project-detail ${categoryAccentClass(category)}`}
+      className={`project-detail work-project-detail ${categoryAccentClass(category, categories)}`}
       aria-label="업무 프로젝트 상세"
     >
       <div className="detail-grid">

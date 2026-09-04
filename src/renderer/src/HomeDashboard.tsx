@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import { Briefcase, Clock, Info, Wrench } from "lucide-react";
@@ -65,6 +66,8 @@ interface HomeDashboardProps {
   agents: AgentView[];
   activityLog: ActivityEntry[];
   pendingAction: boolean;
+  /** 설정의 구분 목록 — 카드 색의 근거. 목록에 없는 구분은 회색 카드다. */
+  categories: readonly ProjectCategorySetting[];
   /**
    * 업무 프로젝트 id → 붙은 태그. 카드에 얹는 용도라 기본값 `{}`를 둔다 — 이 프롭을 모르는 기존
    * 렌더는 그냥 칩 없는 카드를 그린다.
@@ -84,6 +87,7 @@ export function HomeDashboard({
   agents,
   activityLog,
   pendingAction,
+  categories,
   tagsByWorkProject = {},
   onSelectSession,
   onSelectWorkProject,
@@ -131,7 +135,7 @@ export function HomeDashboard({
                       type="button"
                       className={[
                         "work-project-card",
-                        categoryAccentClass(workProject.category),
+                        categoryAccentClass(workProject.category, categories),
                         isWorkProjectDormant(workProject.status) ? "dormant" : "",
                       ]
                         .filter(Boolean)
