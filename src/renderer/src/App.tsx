@@ -1116,6 +1116,22 @@ export function App() {
     flashTimer.current = setTimeout(() => setFlashProjectId(null), 3000);
   };
 
+  /**
+   * 탐색으로 폴더를 펼치는 모든 길(선택·세션 드러내기·worktree·폴더 추가·이름 변경)이 지나는 한 곳.
+   * 저장된 접힘도 함께 지운다 — 메모리에서만 펼치고 접힘을 남겨 두면 재시작이 그 폴더를 도로 접어,
+   * 마지막으로 보던 세션 줄이 트리에서 사라진다(R13). 체버론·재클릭의 명시적 접기는 toggleProject가 맡는다.
+   */
+  const expandProject = (projectId: string) => {
+    setExpandedProjects((current) => (current.has(projectId) ? current : new Set(current).add(projectId)));
+    setCollapsedProjectIds((current) => {
+      if (!current.has(projectId)) return current;
+      const next = new Set(current);
+      next.delete(projectId);
+      persistCollapsed(COLLAPSED_PROJECTS_KEY, next);
+      return next;
+    });
+  };
+
   // Opening a folder means opening its work: the grid fills with that folder's sessions, and the
   // 상세 page is a click away in the header rather than a stop on the way.
   const selectProject = (projectId: string) => {
@@ -1133,7 +1149,7 @@ export function App() {
     setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
     // 폴더를 여는 것은 그 폴더의 일을 보겠다는 뜻이라, 트리에서도 펼쳐진다.
-    setExpandedProjects((current) => new Set(current).add(projectId));
+    expandProject(projectId);
     setActionError(null);
     persistSelection(projectId, first);
   };
@@ -1188,7 +1204,7 @@ export function App() {
     // 가리킨 패인이 접힌 폴더 안이면 그 폴더를 펴 준다 — 아니면 깜빡임이 안 보이는 곳에서 난다.
     if (target.projectId) {
       const projectId = target.projectId;
-      setExpandedProjects((current) => new Set(current).add(projectId));
+      expandProject(projectId);
     }
     flashFolder(target.projectId);
     if (target.session) persistSelection(target.projectId, target.session.id);
@@ -1389,7 +1405,7 @@ export function App() {
     setSelectedWorktreeId(worktree.id);
     setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
     setActiveView("terminal");
-    setExpandedProjects((current) => new Set(current).add(worktree.projectId));
+    expandProject(worktree.projectId);
     setActionError(null);
     persistSelection(worktree.projectId, first);
   };
@@ -1529,7 +1545,7 @@ export function App() {
           }
         : current,
     );
-    setExpandedProjects((current) => new Set(current).add(result.project.id));
+    expandProject(result.project.id);
   };
 
   const addProject = async () => {
@@ -1549,7 +1565,7 @@ export function App() {
             }
           : current,
       );
-      setExpandedProjects((current) => new Set(current).add(project.id));
+      expandProject(project.id);
       setSelectedProjectId(project.id);
       setSelectedSessionId(null);
       setSelectedWorktreeId(worktreeId);
@@ -3351,7 +3367,7 @@ export function App() {
           onCreateWorktree={() => setWorktreeCreateProject(contextMenu.project)}
           onRename={() => {
             // 편집칸이 폴더 아래에 붙으므로, 접혀 있었다면 먼저 펴야 보인다.
-            setExpandedProjects((current) => new Set(current).add(contextMenu.project.id));
+            expandProject(contextMenu.project.id);
             setEditingProjectId(contextMenu.project.id);
           }}
           onRelink={() => void relinkProject(contextMenu.project)}

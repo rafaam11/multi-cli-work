@@ -4179,6 +4179,44 @@ describe("folder colour", () => {
     await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
   });
 
+  /**
+   * A fold is remembered across restarts, and so is opening the folder again: a folder the user
+   * navigated back into is not folded any more, so the next start must not hide its rows (R13).
+   */
+  it("opening a folded folder un-folds it for the next start too", async () => {
+    const harness = () =>
+      createApi({
+        projects: [atlas, dashboard],
+        sessions: [powershellSession],
+        workProjects: [workProject("wp-live", "진행 과제", atlas.id, 0)],
+      });
+    window.multiCliWork = harness().api;
+    const view = render(<App />);
+    const stored = () =>
+      (JSON.parse(localStorage.getItem("multi-cli-work.projects.v1") ?? "{}") as { collapsed?: string[] }).collapsed;
+
+    // Fold Atlas while its grid is on screen, then leave for Dashboard — Atlas stays folded.
+    await screen.findByRole("region", { name: "powershell 터미널" });
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "false"));
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true"));
+    expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "false");
+    expect(stored()).toEqual([atlas.id]);
+
+    // Coming back opens the folder — and forgets the fold.
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true"));
+    expect(stored()).toEqual([]);
+
+    view.unmount();
+    window.multiCliWork = harness().api;
+    render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    await waitFor(() => expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true"));
+    expect(within(nav).getByRole("button", { name: "PowerShell 세션 열기" })).toBeInTheDocument();
+  });
+
   it("폴더 체버론은 선택과 따로 논다 — 접어도 그리드는 그대로다", async () => {
     const harness = createApi({ projects: [atlas, dashboard], sessions: [powershellSession] });
     window.multiCliWork = harness.api;

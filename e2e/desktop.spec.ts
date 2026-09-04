@@ -505,7 +505,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       await page.keyboard.press("Enter");
       await expect(page.locator(".active-status")).toHaveText("종료됨");
     } else if ((await page.locator(".pane-context-folder").count()) === 0) {
-      await page.locator(".session-row").first().click();
+      // 트리 행이라야 그 세션을 자기 폴더의 그리드로 도로 데려온다 — 위 세션 패널의 같은 행은
+      // 작업공간 선반을 열 뿐이라, 아래 단계들이 폴더 그리드가 아닌 선반을 보게 된다.
+      await page.getByRole("button", { name: /세션 열기/ }).first().click();
     }
     await expect(page.locator(".pane-context-folder").first()).toBeVisible();
     await page.getByRole("tab", { name: "Git" }).click();
@@ -1100,11 +1102,15 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const dashboard = page.getByRole("region", { name: "홈 대시보드" });
     await expect(dashboard).toBeVisible();
 
-    const rows = page.locator(".session-row");
+    // 같은 세션이 트리와 세션 패널에 한 줄씩 서므로, 수는 패널 목록으로 좁혀 센다.
+    const panelList = page.getByRole("group", { name: "세션 목록" });
+    const rows = panelList.locator(".session-row");
     const before = await rows.count();
     // The row the focus is on, if any — the session that quietly starts must not take it over.
     const focusedRowLabels = () =>
-      page.locator(".session-row.current").evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")));
+      panelList
+        .locator(".session-row.current .file-tab-open")
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")));
     const focusedBefore = await focusedRowLabels();
 
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });

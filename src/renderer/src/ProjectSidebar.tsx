@@ -552,26 +552,29 @@ export function ProjectSidebar({
    * 트리의 세션 줄. 상단 패널과 같은 컴포넌트지만 동사가 `세션 열기`이고(R8) 소속 칸이 없다 —
    * 어느 폴더의 것인지는 이 줄이 서 있는 자리가 이미 말한다.
    */
-  const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => (
-    <SessionRow
-      key={session.id}
-      session={session}
-      label={sessionLabel(session, peers, agents)}
-      agent={findAgent(agents, session.kind)}
-      tool={session.tool !== null}
-      attention={unread[session.id] ?? null}
-      current={focusedPaneId === session.id}
-      onScreen={onScreenPaneIds.has(session.id)}
-      verb="세션 열기"
-      onSelect={() => onSelectSession(session)}
-      onContextMenu={(event) => onSessionContextMenu(session, event)}
-      renaming={renamingSessionId === session.id}
-      initialName={session.name ?? sessionLabel(session, peers, agents)}
-      onRename={(name) => onRenameSession(session.id, name)}
-      onCancelRename={onCancelRename}
-      dragProps={paneDragProps(session.id)}
-    />
-  );
+  const renderSession = (session: TerminalSessionView, peers: TerminalSessionView[]) => {
+    const label = sessionLabel(session, peers, agents);
+    return (
+      <SessionRow
+        key={session.id}
+        session={session}
+        label={label}
+        agent={findAgent(agents, session.kind)}
+        tool={session.tool !== null}
+        attention={unread[session.id] ?? null}
+        current={focusedPaneId === session.id}
+        onScreen={onScreenPaneIds.has(session.id)}
+        verb="세션 열기"
+        onSelect={() => onSelectSession(session)}
+        onContextMenu={(event) => onSessionContextMenu(session, event)}
+        renaming={renamingSessionId === session.id}
+        initialName={session.name ?? label}
+        onRename={(name) => onRenameSession(session.id, name)}
+        onCancelRename={onCancelRename}
+        dragProps={paneDragProps(session.id)}
+      />
+    );
+  };
 
   /** 트리의 문서 줄. ✕는 문서를 정말 닫는다 — 패널의 눈 버튼(숨기기)과 다른 동작이다. */
   const renderDocument = (pane: DocumentPane) => (
@@ -942,7 +945,7 @@ export function ProjectSidebar({
                           ) : null}
                           {rootMissing ? <span className="project-status missing-status">없음</span> : null}
                           {/* Its worktrees' sessions count too: the folder answers "how much is
-                              running here", and the 폴더 상세 워크트리 카드 breaks that down. */}
+                              running here", and each worktree row below breaks that down. */}
                           {projectSessions.length > 0 ? (
                             <span className="folder-session-count" title={`세션 ${projectSessions.length}개`}>
                               {projectSessions.length}
