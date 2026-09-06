@@ -133,6 +133,19 @@ describe("worktree service against a real repo", () => {
     expect((await git(remote.path, "rev-parse", "--abbrev-ref", "@{upstream}")).trim()).toBe("origin/main");
   });
 
+  it("excludes automation refs from creation choices without deleting Git refs", async () => {
+    const { service: worktrees } = service();
+    for (const branch of ["dependabot/npm/pkg", "renovate/pkg", "feature/real", "release/next"]) {
+      await git(repoRoot, "branch", branch);
+    }
+    await git(repoRoot, "update-ref", "refs/remotes/company/dependabot/npm/pkg", "HEAD");
+    await git(repoRoot, "update-ref", "refs/remotes/company/feature/real", "HEAD");
+    const options = await worktrees.creationOptions("project-1");
+    expect(options.localBranches).toEqual(["feature/real", "main", "release/next"]);
+    expect(options.remoteBranches).toEqual(["company/feature/real"]);
+    expect(await git(repoRoot, "branch", "--list", "dependabot/*")).toContain("dependabot/npm/pkg");
+  });
+
   it("creates a git worktree outside the repo and records it", async () => {
     const { service: worktrees } = service();
 

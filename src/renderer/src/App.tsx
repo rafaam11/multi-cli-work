@@ -1,4 +1,5 @@
 import type { AgentView } from "@shared/agent-types";
+import { isWorkingBranch, isWorkingWorktree } from "@shared/working-branches";
 import type { SlotViewState } from "@shared/app-state-types";
 import type {
   GitChangeEntry,
@@ -484,8 +485,8 @@ export function App() {
 
   /** The selected folder's worktrees — 상세 page's 워크트리 카드 and its `sortedWorktrees` derive from this. */
   const selectedProjectWorktrees = useMemo(
-    () => worktrees.filter((candidate) => candidate.projectId === selectedProject?.id),
-    [worktrees, selectedProject?.id],
+    () => worktrees.filter((candidate) => candidate.projectId === selectedProject?.id && isWorkingWorktree(candidate, workspaceViews)),
+    [worktrees, selectedProject?.id, workspaceViews],
   );
   /** worktreeId → session count, for the same card. */
   const worktreeSessionCounts = useMemo(
@@ -2328,7 +2329,7 @@ export function App() {
         detail: project.rootPath,
       }),
     );
-    const workspaceItems = workspaceViews.map((workspace): QuickOpenItem => ({
+    const workspaceItems = workspaceViews.filter((workspace) => workspace.kind === "main" || isWorkingBranch(workspace.branch)).map((workspace): QuickOpenItem => ({
       key: workspace.kind === "main" ? `workspace:main:${workspace.projectId}` : `workspace:worktree:${workspace.worktreeId}`,
       kind: "workspace",
       label: workspace.kind === "main" ? `${nameById.get(workspace.projectId) ?? "프로젝트"} · 메인` : workspace.branch ?? `detached @ ${workspace.head?.slice(0, 7) ?? "unknown"}`,
@@ -2487,7 +2488,7 @@ export function App() {
     ? [
         { worktreeId: null, label: `메인 · ${projectName(fileExplorerOwnerProject)}` },
         ...worktrees
-          .filter((worktree) => worktree.projectId === fileExplorerOwnerProject.id)
+          .filter((worktree) => worktree.projectId === fileExplorerOwnerProject.id && isWorkingWorktree(worktree, workspaceViews))
           .map((worktree) => ({ worktreeId: worktree.id, label: worktree.branch })),
       ]
     : [];
@@ -3168,7 +3169,7 @@ export function App() {
               key={selectedWorktree ? `${selectedProject.id}:${selectedWorktree.id}` : selectedProject.id}
               project={selectedProject}
               worktree={selectedWorktree}
-              worktrees={worktrees.filter((candidate) => candidate.projectId === selectedProject.id)}
+              worktrees={selectedProjectWorktrees}
               agents={agents}
               vscodeAvailable={availability.vscode}
               pendingAction={pendingAction}
@@ -3343,7 +3344,7 @@ export function App() {
           x={newSessionSlot.x}
           y={newSessionSlot.y}
           projects={recentProjects(projects, sessions)}
-          worktrees={worktrees}
+          worktrees={worktrees.filter((worktree) => isWorkingWorktree(worktree, workspaceViews))}
           agents={agents}
           disabledReasonFor={newSessionDisabledReason}
           onStart={(project, agentId, worktreeId) =>

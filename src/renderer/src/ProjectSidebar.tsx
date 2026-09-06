@@ -1,4 +1,5 @@
 import type { AgentView } from "@shared/agent-types";
+import { isWorkingWorktree } from "@shared/working-branches";
 import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
@@ -850,7 +851,12 @@ export function ProjectSidebar({
                 const projectSessions = sessions
                   .filter((session) => session.projectId === project.id)
                   .sort(byCreation);
-                const projectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
+                const allProjectWorktrees = worktrees.filter((worktree) => worktree.projectId === project.id);
+                const ignoredWorktreeIds = new Set(allProjectWorktrees.filter((worktree) => !isWorkingWorktree(worktree, workspaceViews)).map((worktree) => worktree.id));
+                const projectWorktrees = allProjectWorktrees.filter((worktree) => !ignoredWorktreeIds.has(worktree.id));
+                // Hiding a bot branch must not orphan an already running session/open document.
+                const rootSessions = projectSessions.filter((session) => session.worktreeId === undefined || ignoredWorktreeIds.has(session.worktreeId));
+                const rootDocuments = [...documentsOf("project", project.id), ...allProjectWorktrees.filter((worktree) => ignoredWorktreeIds.has(worktree.id)).flatMap((worktree) => documentsOf("worktree", worktree.id))];
                 const projectWorkspaceViews = workspaceViews.filter(
                   (workspace) => workspace.projectId === project.id,
                 );
@@ -965,10 +971,9 @@ export function ProjectSidebar({
                         layer in between, because there a session belongs to a checkout, not a path. */}
                     {expanded && !isGitProject ? (
                       <ul className="session-tree" role="group" aria-label={`${name} 패인`}>
-                        {projectSessions
-                          .filter((session) => session.worktreeId === undefined)
+                        {rootSessions
                           .map((session) => renderSession(session, projectSessions))}
-                        {documentsOf("project", project.id).map(renderDocument)}
+                        {rootDocuments.map(renderDocument)}
                       </ul>
                     ) : null}
                     {expanded && isGitProject ? (
@@ -1003,7 +1008,7 @@ export function ProjectSidebar({
                                   </span>
                                   <span className="workspace-meta">
                                     변경 {mainWorkspace.changedFileCount} · 세션{" "}
-                                    {projectSessions.filter((session) => session.worktreeId === undefined).length}
+                                    {rootSessions.length}
                                   </span>
                                 </span>
                               </button>
@@ -1017,10 +1022,9 @@ export function ProjectSidebar({
                                 role="group"
                                 aria-label={`${name} 메인 패인`}
                               >
-                                {projectSessions
-                                  .filter((session) => session.worktreeId === undefined)
+                                {rootSessions
                                   .map((session) => renderSession(session, projectSessions))}
-                                {documentsOf("project", project.id).map(renderDocument)}
+                                {rootDocuments.map(renderDocument)}
                               </ul>
                             ) : null}
                           </li>

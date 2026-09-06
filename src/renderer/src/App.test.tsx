@@ -2874,6 +2874,42 @@ describe("worktrees", () => {
     expect(nav.querySelector(".worktree-tree")).toBeNull();
   });
 
+  it("자동화 worktree만 있으면 메인 한 개처럼 보이고 열린 세션은 숨기지 않는다", async () => {
+    const harness = createApi({
+      sessions: [powershellSession, worktreeSession],
+      worktrees: [{ ...atlasWorktree, branch: "dependabot/npm_and_yarn/vitest-4" }],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    await within(nav).findByRole("button", { name: "PowerShell 세션 열기" });
+    expect(nav.querySelector(".worktree-tree")).toBeNull();
+    expect(within(nav).getByRole("group", { name: "Atlas 패인" })).toContainElement(
+      within(nav).getByRole("button", { name: "WT 세션 세션 열기" }),
+    );
+    expect(within(nav).queryByText("dependabot/npm_and_yarn/vitest-4")).not.toBeInTheDocument();
+    fireEvent.click(within(nav).getByRole("button", { name: "WT 세션 세션 열기" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Git" }));
+    await waitFor(() => expect(
+      screen.getByTitle("워크트리 전환 — 파일 탐색기도 함께 전환됩니다"),
+    ).toHaveTextContent("Atlas · dependabot/npm_and_yarn/vitest-4"));
+  });
+
+  it("일반 작업 worktree와 자동화 worktree가 섞이면 작업 브랜치만 계층에 남긴다", async () => {
+    const harness = createApi({
+      sessions: [powershellSession],
+      worktrees: [atlasWorktree, { ...atlasWorktree, id: "renovate-wt", branch: "renovate/react", path: "/tmp/renovate" }],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    await within(nav).findByRole("button", { name: "feature-x worktree 선택" });
+    expect(nav.querySelectorAll(".worktree-node")).toHaveLength(2);
+    expect(within(nav).queryByText("renovate/react")).not.toBeInTheDocument();
+  });
+
   it("worktree가 하나라도 있으면 메인·worktree 층이 생기고 각자 자기 세션만 품는다", async () => {
     const harness = createApi({
       sessions: [powershellSession, worktreeSession],

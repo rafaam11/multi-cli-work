@@ -1,4 +1,5 @@
 import type { SharedProject } from "../../shared/project-types";
+import { isWorkingBranch } from "../../shared/working-branches";
 import type {
   GitWorkspaceView,
   SharedWorktree,
@@ -226,8 +227,8 @@ export class WorktreeService {
       (item) => normalizeWorkspacePath(item.path) === normalizeWorkspacePath(project.rootPath),
     );
     return {
-      localBranches: localBranches.sort(),
-      remoteBranches: remoteBranches.sort(),
+      localBranches: localBranches.filter(isWorkingBranch).sort(),
+      remoteBranches: remoteBranches.filter((ref) => isWorkingBranch(ref.slice(ref.indexOf("/") + 1))).sort(),
       checkedOutBranches,
       defaultStartPoint: main?.branch ?? main?.head ?? "HEAD",
     };

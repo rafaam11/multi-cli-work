@@ -1,4 +1,5 @@
 import type { GitChangeEntry, GitPanelData } from "@shared/api-types";
+import { isWorkingBranch } from "@shared/working-branches";
 import type { FileExplorerTarget } from "@shared/file-explorer-types";
 import type { PullRequestListItem } from "@shared/github-types";
 import {
@@ -177,9 +178,10 @@ export function GitPanel({
   const allChecked = changes.length > 0 && checkedPaths.length === changes.length;
   const currentWorktreeId = target?.kind === "worktree" ? target.id : null;
   const currentWorktreeLabel =
-    worktreeOptions.find((option) => option.worktreeId === currentWorktreeId)?.label ?? "메인";
+    worktreeOptions.find((option) => option.worktreeId === currentWorktreeId)?.label ??
+    (currentWorktreeId ? targetLabel ?? "현재 작업 공간" : "메인");
   const filteredBranches = data?.isRepo
-    ? data.branches.filter((branch) => branch.toLowerCase().includes(branchFilter.trim().toLowerCase()))
+    ? data.branches.filter((branch) => isWorkingBranch(branch) && branch.toLowerCase().includes(branchFilter.trim().toLowerCase()))
     : [];
   const canCommit = !busy && summary.trim().length > 0 && checkedPaths.length > 0;
 
