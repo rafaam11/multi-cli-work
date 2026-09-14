@@ -4,15 +4,17 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentEditEntry } from "../providers/agent-edits";
 import {
+  changedPathsForRoot,
   createWorkspaceEntry,
   duplicateWorkspaceEntry,
   isWorkspaceExecutable,
   listWorkspaceDirectory,
+  openWorkspaceEntry,
   readWorkspaceFile,
   renameWorkspaceEntry,
   resolveWorkspaceEntryPath,
-  runWorkspaceExecutable,
   trashWorkspaceEntry,
   workspaceEntryName,
   writeWorkspaceFile,
@@ -47,8 +49,23 @@ describe("listWorkspaceDirectory", () => {
   it("lists a nested directory with a relativePath built from the parent", async () => {
     const entries = await listWorkspaceDirectory(projectRoot, "src");
     expect(entries).toEqual([
-      { name: "index.ts", relativePath: "src/index.ts", kind: "file", extension: "ts", executable: false },
+      {
+        name: "index.ts",
+        relativePath: "src/index.ts",
+        kind: "file",
+        extension: "ts",
+        executable: false,
+        mtimeMs: expect.any(Number),
+      },
     ]);
+  });
+
+  it("reports mtimeMs from fs.stat for files and 0 for directories", async () => {
+    const entries = await listWorkspaceDirectory(projectRoot, "");
+    const dir = entries.find((entry) => entry.name === "src");
+    const file = entries.find((entry) => entry.name === "readme.md");
+    expect(dir?.mtimeMs).toBe(0);
+    expect(file?.mtimeMs).toBe((await fs.stat(path.join(projectRoot, "readme.md"))).mtimeMs);
   });
 
   it("rejects a relative path that escapes the root via ..", async () => {
@@ -108,31 +125,60 @@ describe("readWorkspaceFile", () => {
   });
 });
 
-describe("runWorkspaceExecutable", () => {
-  it("runs a real exe in the root and propagates shell errors", async () => {
+describe("openWorkspaceEntry", () => {
+  it("runs a real exe once confirmed and propagates shell errors", async () => {
     await fs.writeFile(path.join(projectRoot, "tool.exe"), "not really executable");
     await expect(
-      runWorkspaceExecutable(projectRoot, "tool.exe", async () => "Windows blocked this file", "win32"),
+      openWorkspaceEntry(
+        projectRoot,
+        "tool.exe",
+        { confirmedRun: true },
+        async () => "Windows blocked this file",
+        "win32",
+      ),
     ).rejects.toThrow("Windows blocked this file");
   });
 
-  it("runs only regular files with an execute bit on Linux", async () => {
+  it("refuses a run-confirm extension without confirmation, without touching openPath", async () => {
+    await fs.writeFile(path.join(projectRoot, "tool.exe"), "not really executable");
+    const openPath = vi.fn(async () => undefined);
+    await expect(
+      openWorkspaceEntry(projectRoot, "tool.exe", { confirmedRun: false }, openPath, "win32"),
+    ).rejects.toThrow(/confirmation/);
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it("opens a document extension straight through, no confirmation needed", async () => {
+    const openPath = vi.fn(async () => undefined);
+    await openWorkspaceEntry(projectRoot, "readme.md", { confirmedRun: false }, openPath, "win32");
+    expect(openPath).toHaveBeenCalledWith(path.join(projectRoot, "readme.md"));
+  });
+
+  it("gates a Linux execute-bit file on confirmation, and opens a non-executable one straight through", async () => {
     if (process.platform === "win32") return;
     const tool = path.join(projectRoot, "tool");
     await fs.writeFile(tool, "#!/bin/sh\n");
     await fs.chmod(tool, 0o755);
-    const run = vi.fn(async () => undefined);
+    const refused = vi.fn(async () => undefined);
+    await expect(
+      openWorkspaceEntry(projectRoot, "tool", { confirmedRun: false }, refused, "linux"),
+    ).rejects.toThrow(/confirmation/);
+    expect(refused).not.toHaveBeenCalled();
 
-    await runWorkspaceExecutable(projectRoot, "tool", run, "linux");
+    const run = vi.fn(async () => undefined);
+    await openWorkspaceEntry(projectRoot, "tool", { confirmedRun: true }, run, "linux");
     expect(run).toHaveBeenCalledWith(tool);
 
     await fs.chmod(tool, 0o644);
-    await expect(runWorkspaceExecutable(projectRoot, "tool", run, "linux")).rejects.toThrow(/executable permission/);
+    const runUnconfirmed = vi.fn(async () => undefined);
+    await openWorkspaceEntry(projectRoot, "tool", { confirmedRun: false }, runUnconfirmed, "linux");
+    expect(runUnconfirmed).toHaveBeenCalledWith(tool);
   });
 
-  it("refuses non-executables and root escapes", async () => {
-    await expect(runWorkspaceExecutable(projectRoot, "readme.md", async () => "", "win32")).rejects.toThrow(/Only .exe/);
-    await expect(runWorkspaceExecutable(projectRoot, "../secret.exe", async () => "", "win32")).rejects.toThrow(/escapes/);
+  it("rejects a root escape regardless of confirmation", async () => {
+    await expect(
+      openWorkspaceEntry(projectRoot, "../secret.exe", { confirmedRun: true }, async () => "", "win32"),
+    ).rejects.toThrow(/escapes/);
   });
 });
 
@@ -259,5 +305,39 @@ describe("trashWorkspaceEntry", () => {
     await expect(trashWorkspaceEntry(projectRoot, "../secret.txt", trashItem)).rejects.toThrow(/escapes the project root/);
     await expect(trashWorkspaceEntry(projectRoot, "", trashItem)).rejects.toThrow(/root folder cannot be deleted/);
     expect(trashItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("changedPathsForRoot", () => {
+  function entry(at = 1): AgentEditEntry {
+    return { at, kind: "file" };
+  }
+
+  it("keeps only entries inside the root and converts them to forward-slashed relative paths", () => {
+    const agentEdits = new Map<string, AgentEditEntry>([
+      [path.join(projectRoot, "src", "index.ts"), entry(10)],
+      [path.join(tempRoot, "secret.txt"), entry(20)], // sibling, outside projectRoot — must be dropped
+    ]);
+
+    const result = changedPathsForRoot(projectRoot, agentEdits, 5, "win32");
+
+    expect(result).toEqual({
+      agentPaths: [{ relativePath: "src/index.ts", kind: "file", at: 10 }],
+      baselineMs: 5,
+    });
+  });
+
+  it("matches the root itself only as a prefix, not as a bare string match on an unrelated sibling with the same prefix", () => {
+    // "projectRoot-other" starts with the string "projectRoot" but is not inside it.
+    const siblingWithSamePrefix = `${projectRoot}-other`;
+    const agentEdits = new Map<string, AgentEditEntry>([
+      [path.join(siblingWithSamePrefix, "a.ts"), entry()],
+    ]);
+
+    expect(changedPathsForRoot(projectRoot, agentEdits, 0, "win32").agentPaths).toEqual([]);
+  });
+
+  it("passes baselineMs through unchanged for the renderer's mtime comparison", () => {
+    expect(changedPathsForRoot(projectRoot, new Map(), 123456, "win32").baselineMs).toBe(123456);
   });
 });

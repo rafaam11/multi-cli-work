@@ -82,7 +82,8 @@ const api: MultiCliWorkApi = {
     readFile: (target, relativePath) => ipcRenderer.invoke("workspace-files:read-file", target, relativePath),
     writeFile: (target, relativePath, content) =>
       ipcRenderer.invoke("workspace-files:write-file", target, relativePath, content),
-    runExecutable: (target, relativePath) => ipcRenderer.invoke("workspace-files:run-executable", target, relativePath),
+    openEntry: (target, relativePath, options) =>
+      ipcRenderer.invoke("workspace-files:open-entry", target, relativePath, options),
     absolutePath: (target, relativePath) => ipcRenderer.invoke("workspace-files:absolute-path", target, relativePath),
     reveal: (target, relativePath) => ipcRenderer.invoke("workspace-files:reveal", target, relativePath),
     openInEditor: (target, relativePath) => ipcRenderer.invoke("workspace-files:open-in-editor", target, relativePath),
@@ -91,6 +92,8 @@ const api: MultiCliWorkApi = {
     rename: (target, relativePath, name) => ipcRenderer.invoke("workspace-files:rename", target, relativePath, name),
     duplicate: (target, relativePath) => ipcRenderer.invoke("workspace-files:duplicate", target, relativePath),
     trash: (target, relativePath) => ipcRenderer.invoke("workspace-files:trash", target, relativePath),
+    changedPaths: (target) => ipcRenderer.invoke("workspace-files:changed-paths", target),
+    clearChanges: (target) => ipcRenderer.invoke("workspace-files:clear-changes", target),
   },
   git: {
     panelData: (target) => ipcRenderer.invoke("git:panel-data", target),

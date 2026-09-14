@@ -31,7 +31,12 @@ import {
   type ProjectCategorySetting,
 } from "../shared/settings-types";
 import { ACCENT_COLOR_COUNT } from "../shared/accent-palette";
-import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "../shared/file-explorer-types";
+import type {
+  FileExplorerTarget,
+  FileTreeEntry,
+  WorkspaceChangedPaths,
+  WorkspaceFileContent,
+} from "../shared/file-explorer-types";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
   PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
@@ -149,7 +154,8 @@ interface WorkspaceFilesGateway {
   listDirectory(rootPath: string, relativePath: string): Promise<FileTreeEntry[]>;
   readFile(rootPath: string, relativePath: string): Promise<WorkspaceFileContent>;
   writeFile(rootPath: string, relativePath: string, content: string): Promise<void>;
-  runExecutable(rootPath: string, relativePath: string): Promise<void>;
+  /** Opens a file with its OS-associated program; run-confirm extensions need `confirmedRun: true`. */
+  openEntry(rootPath: string, relativePath: string, options: { confirmedRun: boolean }): Promise<void>;
   absolutePath(rootPath: string, relativePath: string): Promise<string>;
   reveal(rootPath: string, relativePath: string): Promise<void>;
   openInEditor(rootPath: string, relativePath: string): Promise<void>;
@@ -157,6 +163,10 @@ interface WorkspaceFilesGateway {
   rename(rootPath: string, relativePath: string, name: string): Promise<string>;
   duplicate(rootPath: string, relativePath: string): Promise<string>;
   trash(rootPath: string, relativePath: string): Promise<void>;
+  /** Agent-edited files within this root, plus the cutoff for "changed since" mtime highlighting. */
+  changedPaths(rootPath: string): Promise<WorkspaceChangedPaths>;
+  /** Clears this root's slice of the agent-edit index and resets its baseline to now. */
+  clearChanges(rootPath: string): Promise<void>;
 }
 
 interface GitGateway {
@@ -444,6 +454,15 @@ function validateWorktreeCreateRequest(value: unknown): WorktreeCreateRequest {
 function relativePathString(value: unknown): string {
   if (typeof value !== "string") throw new Error("Relative path must be a string");
   return value;
+}
+
+/** The renderer only ever raises this flag after its own confirmation modal was accepted. */
+function validateOpenEntryOptions(value: unknown): { confirmedRun: boolean } {
+  const input = exactObject(value, ["confirmedRun"], "Open entry options");
+  if (input.confirmedRun !== undefined && typeof input.confirmedRun !== "boolean") {
+    throw new Error("confirmedRun must be a boolean");
+  }
+  return { confirmedRun: input.confirmedRun === true };
 }
 
 function validateViewBounds(value: unknown): HtmlPreviewBounds {
@@ -1086,11 +1105,18 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     if (typeof text !== "string") throw new Error("Clipboard text must be a string");
     dependencies.clipboard.writeText(text);
   });
-  ipc.handle("workspace-files:run-executable", async (_event, target: unknown, relativePath: unknown) =>
-    dependencies.workspaceFiles.runExecutable(
+  ipc.handle("workspace-files:open-entry", async (_event, target: unknown, relativePath: unknown, options: unknown) =>
+    dependencies.workspaceFiles.openEntry(
       await rootPathForTarget(validateFileExplorerTarget(target)),
       relativePathString(relativePath),
+      validateOpenEntryOptions(options),
     ),
+  );
+  ipc.handle("workspace-files:changed-paths", async (_event, target: unknown) =>
+    dependencies.workspaceFiles.changedPaths(await rootPathForTarget(validateFileExplorerTarget(target))),
+  );
+  ipc.handle("workspace-files:clear-changes", async (_event, target: unknown) =>
+    dependencies.workspaceFiles.clearChanges(await rootPathForTarget(validateFileExplorerTarget(target))),
   );
 
   ipc.handle("providers:availability", () => dependencies.getAvailability());

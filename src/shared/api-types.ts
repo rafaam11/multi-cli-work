@@ -6,7 +6,12 @@ import type {
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "./github-types";
 import type { AppStateSnapshot, PersistedTerminalSession, SlotViewState } from "./app-state-types";
-import type { FileExplorerTarget, FileTreeEntry, WorkspaceFileContent } from "./file-explorer-types";
+import type {
+  FileExplorerTarget,
+  FileTreeEntry,
+  WorkspaceChangedPaths,
+  WorkspaceFileContent,
+} from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { ProjectTagsV1 } from "./project-tags-types";
 import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
@@ -377,7 +382,8 @@ export interface MultiCliWorkApi {
     listDirectory(target: FileExplorerTarget, relativePath: string): Promise<FileTreeEntry[]>;
     readFile(target: FileExplorerTarget, relativePath: string): Promise<WorkspaceFileContent>;
     writeFile(target: FileExplorerTarget, relativePath: string, content: string): Promise<void>;
-    runExecutable(target: FileExplorerTarget, relativePath: string): Promise<void>;
+    /** Opens a file with its OS-associated program; run-confirm extensions need `confirmedRun: true`. */
+    openEntry(target: FileExplorerTarget, relativePath: string, options: { confirmedRun: boolean }): Promise<void>;
     /** Absolute on-disk path of a file or folder, for "copy path" and for the OS shell. */
     absolutePath(target: FileExplorerTarget, relativePath: string): Promise<string>;
     /** Shows the entry selected in the OS file manager. */
@@ -396,6 +402,10 @@ export interface MultiCliWorkApi {
     duplicate(target: FileExplorerTarget, relativePath: string): Promise<string>;
     /** Moves the entry to the OS recycle bin — never an unrecoverable delete. */
     trash(target: FileExplorerTarget, relativePath: string): Promise<void>;
+    /** Files an agent edited in this target since the last clear, plus the "changed since" cutoff. */
+    changedPaths(target: FileExplorerTarget): Promise<WorkspaceChangedPaths>;
+    /** "변경 표시 지우기" — clears this target's highlights and resets its baseline to now. */
+    clearChanges(target: FileExplorerTarget): Promise<void>;
   };
   git: {
     panelData(target: FileExplorerTarget): Promise<GitPanelData>;

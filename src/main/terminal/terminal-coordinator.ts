@@ -116,6 +116,12 @@ interface TerminalCoordinatorOptions {
   now(): string;
   /** Reads what the provider currently calls this session. Absent in tests that do not need titles. */
   readTitle?(session: TerminalSessionView, agent: AgentDefinition, transcriptPath?: string): Promise<string | null>;
+  /**
+   * Scans a session's transcript for files the agent edited since the last poll, folding any new
+   * ones into a shared index. Returns whether anything new was found. Absent in tests that don't
+   * need this; driven by the same timer as `readTitle`.
+   */
+  readAgentEdits?(session: TerminalSessionView, agent: AgentDefinition, transcriptPath?: string): Promise<boolean>;
   titlePollMs?: number;
   appendLog?: typeof appendSessionLog;
   logFlushMs?: number;
@@ -718,10 +724,12 @@ export class TerminalCoordinator {
    * the file does not exist yet. Polling the running sessions sidesteps both the missing-file race
    * and fs.watch's habit of dropping creation events on Windows.
    */
+  /** Drives both title and agent-edit polling — one timer for both, per the plan's "같은 타이머로 구동". */
   private startTitlePolling(): void {
-    if (this.titleTimer || !this.options.readTitle) return;
+    if (this.titleTimer || (!this.options.readTitle && !this.options.readAgentEdits)) return;
     const timer = setInterval(() => {
       void this.refreshTitles();
+      void this.refreshAgentEdits();
     }, this.options.titlePollMs ?? DEFAULT_TITLE_POLL_MS);
     timer.unref?.();
     this.titleTimer = timer;
@@ -731,6 +739,11 @@ export class TerminalCoordinator {
     if (!this.titleTimer) return;
     clearInterval(this.titleTimer);
     this.titleTimer = null;
+  }
+
+  /** Stops the shared timer only once neither poll has anything left to do. */
+  private stopPollingIfIdle(): void {
+    if (this.titleCandidates().length === 0 && this.editCandidates().length === 0) this.stopTitlePolling();
   }
 
   /** Only an agent that writes a transcript we can parse has a title to poll for. */
@@ -744,31 +757,60 @@ export class TerminalCoordinator {
     });
   }
 
+  /**
+   * Every live session whose provider writes a parseable transcript. Unlike `titleCandidates`, a
+   * resolved title never drops a session from this list — edit collection has to keep running for
+   * the whole session, not just until the title is known.
+   */
+  private editCandidates(): Array<{ session: TerminalSessionView; agent: AgentDefinition }> {
+    return this.list().flatMap((session) => {
+      const agent = this.options.getAgent(session.kind);
+      if (!agent || agent.titleSource === "none") return [];
+      if (session.pid === null || session.status === "exited" || session.status === "error") return [];
+      return [{ session, agent }];
+    });
+  }
+
   async refreshTitles(): Promise<void> {
     const readTitle = this.options.readTitle;
-    if (!readTitle) return;
-    const candidates = this.titleCandidates();
-    if (candidates.length === 0) {
-      this.stopTitlePolling();
-      return;
-    }
-    for (const { session: candidate, agent } of candidates) {
-      let title: string | null;
-      try {
-        title = await readTitle(candidate, agent, this.transcriptPaths.get(candidate.id));
-      } catch (error) {
-        this.reportAsyncError("Session title read failed", error);
-        continue;
+    if (readTitle) {
+      for (const { session: candidate, agent } of this.titleCandidates()) {
+        let title: string | null;
+        try {
+          title = await readTitle(candidate, agent, this.transcriptPaths.get(candidate.id));
+        } catch (error) {
+          this.reportAsyncError("Session title read failed", error);
+          continue;
+        }
+        // A read that comes back empty is treated as "nothing new yet", never as "forget the title".
+        if (title === null) continue;
+        const view = this.views.get(candidate.id);
+        if (!view || view.title === title) continue;
+        view.title = title;
+        view.updatedAt = this.options.now();
+        await this.persistView(view);
+        this.publish({ type: "title", sessionId: view.id, title });
       }
-      // A read that comes back empty is treated as "nothing new yet", never as "forget the title".
-      if (title === null) continue;
-      const view = this.views.get(candidate.id);
-      if (!view || view.title === title) continue;
-      view.title = title;
-      view.updatedAt = this.options.now();
-      await this.persistView(view);
-      this.publish({ type: "title", sessionId: view.id, title });
     }
+    this.stopPollingIfIdle();
+  }
+
+  async refreshAgentEdits(): Promise<void> {
+    const readAgentEdits = this.options.readAgentEdits;
+    if (readAgentEdits) {
+      for (const { session: candidate, agent } of this.editCandidates()) {
+        let changed: boolean;
+        try {
+          changed = await readAgentEdits(candidate, agent, this.transcriptPaths.get(candidate.id));
+        } catch (error) {
+          this.reportAsyncError("Agent edit read failed", error);
+          continue;
+        }
+        if (!changed) continue;
+        this.publish({ type: "agent-edits", sessionId: candidate.id });
+      }
+    }
+    this.stopPollingIfIdle();
   }
 
   async rename(sessionId: string, name: string | null): Promise<TerminalSessionView> {

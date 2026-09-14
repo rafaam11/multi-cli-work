@@ -245,6 +245,46 @@ describe("노션 탭", () => {
   });
 });
 
+describe("파일 탭", () => {
+  function openFiles(settings = DEFAULT_SETTINGS) {
+    render(<SettingsDialog settings={settings} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "파일" }));
+  }
+
+  it("미지원 파일 자동 전환 토글이 부분 패치로 저장된다", async () => {
+    openFiles();
+    fireEvent.click(screen.getByLabelText("미리보기를 지원하지 않는 파일은 연결 프로그램으로 열기"));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({ files: { unsupportedOpensWithOs: false } }),
+    );
+  });
+
+  it("확장자를 추가하면 기존 맵에 더해 통째로 저장한다", async () => {
+    openFiles({ ...DEFAULT_SETTINGS, files: { openWith: { md: "os" }, unsupportedOpensWithOs: true } });
+    fireEvent.change(screen.getByPlaceholderText("예: pdf"), { target: { value: "PDF" } });
+    fireEvent.click(screen.getByRole("button", { name: "추가" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({ files: { openWith: { md: "os", pdf: "os" } } }),
+    );
+  });
+
+  it("잘못된 확장자는 추가 버튼을 비활성화한다", () => {
+    openFiles();
+    fireEvent.change(screen.getByPlaceholderText("예: pdf"), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "추가" })).toBeDisabled();
+  });
+
+  it("기존 확장자의 동작을 바꾸거나 삭제할 수 있다", async () => {
+    openFiles({ ...DEFAULT_SETTINGS, files: { openWith: { md: "os" }, unsupportedOpensWithOs: true } });
+    fireEvent.change(screen.getByLabelText(".md 여는 방법"), { target: { value: "vscode" } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ files: { openWith: { md: "vscode" } } }));
+
+    update.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "삭제" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ files: { openWith: {} } }));
+  });
+});
+
 describe("단축키 탭", () => {
   function openKeybindings(settings = DEFAULT_SETTINGS) {
     render(<SettingsDialog settings={settings} onClose={() => undefined} />);

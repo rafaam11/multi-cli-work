@@ -5,9 +5,9 @@ import { FileExplorer } from "./FileExplorer";
 
 const target = { kind: "project", id: "p1" } as const;
 
-const folder: FileTreeEntry = { name: "src", relativePath: "src", kind: "directory", extension: null, executable: false };
-const file: FileTreeEntry = { name: "readme.md", relativePath: "readme.md", kind: "file", extension: "md", executable: false };
-const nested: FileTreeEntry = { name: "main.ts", relativePath: "src/main.ts", kind: "file", extension: "ts", executable: false };
+const folder: FileTreeEntry = { name: "src", relativePath: "src", kind: "directory", extension: null, executable: false, mtimeMs: 0 };
+const file: FileTreeEntry = { name: "readme.md", relativePath: "readme.md", kind: "file", extension: "md", executable: false, mtimeMs: 0 };
+const nested: FileTreeEntry = { name: "main.ts", relativePath: "src/main.ts", kind: "file", extension: "ts", executable: false, mtimeMs: 0 };
 
 const listDirectory = vi.fn();
 const absolutePath = vi.fn();
@@ -19,8 +19,11 @@ const duplicate = vi.fn();
 const trash = vi.fn();
 const panelData = vi.fn();
 const writeText = vi.fn();
+const changedPaths = vi.fn();
+const clearChanges = vi.fn();
 
 const onOpenFile = vi.fn();
+const onOpenFileExternal = vi.fn();
 const onEntryDeleted = vi.fn();
 const onEntryRenamed = vi.fn();
 
@@ -33,6 +36,7 @@ function renderExplorer() {
       selectedRelativePath={null}
       vscodeAvailable
       onOpenFile={onOpenFile}
+      onOpenFileExternal={onOpenFileExternal}
       onEntryDeleted={onEntryDeleted}
       onEntryRenamed={onEntryRenamed}
     />,
@@ -65,9 +69,14 @@ describe("FileExplorer context menu", () => {
       branches: ["main"], changes: [], ignored: [],
     });
     writeText.mockResolvedValue(undefined);
+    changedPaths.mockResolvedValue({ agentPaths: [], baselineMs: 0 });
+    clearChanges.mockResolvedValue(undefined);
     Object.assign(window, {
       multiCliWork: {
-        workspaceFiles: { listDirectory, absolutePath, reveal, openInEditor, create, rename, duplicate, trash },
+        workspaceFiles: {
+          listDirectory, absolutePath, reveal, openInEditor, create, rename, duplicate, trash,
+          changedPaths, clearChanges,
+        },
         git: { panelData },
         clipboard: { writeText },
       },
@@ -200,5 +209,79 @@ describe("FileExplorer context menu", () => {
     await openMenu("readme.md");
     fireEvent.click(screen.getByRole("menuitem", { name: "복제" }));
     await waitFor(() => expect(duplicate).toHaveBeenCalledWith(target, "readme.md"));
+  });
+
+  it("opens a file with its OS-associated program from the context menu", async () => {
+    renderExplorer();
+    await openMenu("readme.md");
+    fireEvent.click(screen.getByRole("menuitem", { name: "연결 프로그램으로 열기" }));
+    expect(onOpenFileExternal).toHaveBeenCalledWith(file);
+
+    // Folders don't offer this item — the shell-open path only ever targets a single file.
+    await openMenu("src");
+    expect(screen.queryByRole("menuitem", { name: "연결 프로그램으로 열기" })).not.toBeInTheDocument();
+  });
+});
+
+describe("FileExplorer change highlighting", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listDirectory.mockImplementation(async (_target, relativePath: string) =>
+      relativePath === "" ? [folder, file] : [nested],
+    );
+    panelData.mockResolvedValue({
+      isRepo: true, currentBranch: "main", upstream: null, ahead: null, behind: null,
+      branches: ["main"], changes: [], ignored: [],
+    });
+    clearChanges.mockResolvedValue(undefined);
+    Object.assign(window, {
+      multiCliWork: {
+        workspaceFiles: {
+          listDirectory, absolutePath, reveal, openInEditor, create, rename, duplicate, trash,
+          changedPaths, clearChanges,
+        },
+        git: { panelData },
+        clipboard: { writeText },
+      },
+    });
+  });
+
+  it("colors an agent-edited file and rolls the mark up to its folder, leaving other rows alone", async () => {
+    changedPaths.mockResolvedValue({ agentPaths: [{ relativePath: "src/main.ts", kind: "file", at: 1 }], baselineMs: 0 });
+    renderExplorer();
+
+    fireEvent.click(await row("src"));
+    const mainRow = await row("main.ts");
+    await waitFor(() => expect(mainRow.className).toContain("change-agent"));
+    expect((await row("src")).className).toContain("change-below-agent");
+    expect((await row("readme.md")).className).not.toMatch(/change-/);
+  });
+
+  it("clears the highlight through the '변경 표시 지우기' button", async () => {
+    changedPaths.mockResolvedValue({ agentPaths: [{ relativePath: "readme.md", kind: "file", at: 1 }], baselineMs: 0 });
+    renderExplorer();
+
+    const readmeRow = await row("readme.md");
+    await waitFor(() => expect(readmeRow.className).toContain("change-agent"));
+
+    changedPaths.mockResolvedValue({ agentPaths: [], baselineMs: Date.now() });
+    fireEvent.click(screen.getByRole("button", { name: "변경 표시 지우기" }));
+
+    await waitFor(() => expect(clearChanges).toHaveBeenCalledWith(target));
+    await waitFor(() => expect(readmeRow.className).not.toMatch(/change-/));
+  });
+
+  it("re-pulls only changedPaths, never the directory listing, on an mcw:agent-edits notification", async () => {
+    changedPaths.mockResolvedValue({ agentPaths: [], baselineMs: 0 });
+    renderExplorer();
+    await row("readme.md");
+    listDirectory.mockClear();
+    changedPaths.mockClear();
+
+    changedPaths.mockResolvedValue({ agentPaths: [{ relativePath: "readme.md", kind: "file", at: 2 }], baselineMs: 0 });
+    fireEvent(window, new Event("mcw:agent-edits"));
+
+    await waitFor(() => expect(changedPaths).toHaveBeenCalledWith(target));
+    expect(listDirectory).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,7 @@ describe("parseSettings", () => {
     });
     expect(DEFAULT_SETTINGS.language).toBe("ko");
     expect(DEFAULT_SETTINGS.keybindings).toEqual({});
+    expect(DEFAULT_SETTINGS.files).toEqual({ openWith: {}, unsupportedOpensWithOs: true });
   });
 
   it("모르는 필드는 버리고, 범위 밖·타입 불일치 값은 필드 단위로 기본값에 되돌린다", () => {
@@ -55,6 +56,35 @@ describe("parseSettings", () => {
     });
     expect(parsed.keybindings).toEqual({ "view.quick-open": "Ctrl+K", "session.refresh": null });
   });
+
+  it("files.openWith는 유효한 키·값 쌍만 남기고 나머지는 버린다", () => {
+    const parsed = parseSettings({
+      files: {
+        openWith: {
+          md: "os",
+          PDF: "os", // 대문자 키는 패턴에 안 맞아 버려진다
+          "": "os", // 빈 키
+          "toolongextensionx": "os", // 16자 초과
+          js: "not-a-target", // 값이 유니온 밖
+          exe: "vscode",
+        },
+        unsupportedOpensWithOs: false,
+      },
+    });
+    expect(parsed.files.openWith).toEqual({ md: "os", exe: "vscode" });
+    expect(parsed.files.unsupportedOpensWithOs).toBe(false);
+  });
+
+  it("files.openWith 항목 수는 상한을 넘지 않는다", () => {
+    const openWith: Record<string, string> = {};
+    for (let i = 0; i < 250; i++) openWith[`ext${i}`.slice(0, 16)] = "os";
+    const parsed = parseSettings({ files: { openWith } });
+    expect(Object.keys(parsed.files.openWith).length).toBeLessThanOrEqual(200);
+  });
+
+  it("files가 빠지면 기본값을 쓴다", () => {
+    expect(parseSettings({ language: "en" }).files).toEqual(DEFAULT_SETTINGS.files);
+  });
 });
 
 describe("mergeSettingsPatch", () => {
@@ -75,6 +105,16 @@ describe("mergeSettingsPatch", () => {
     const merged = mergeSettingsPatch(base, { language: "en" });
     expect(merged.keybindings).toEqual({ "view.quick-open": "Ctrl+K" });
     expect(merged.language).toBe("en");
+  });
+
+  it("files.openWith는 통째로 교체하고, 빠진 패치는 기존 값을 유지한다", () => {
+    const base = parseSettings({ files: { openWith: { md: "os" }, unsupportedOpensWithOs: false } });
+    const merged = mergeSettingsPatch(base, { files: { openWith: { pdf: "os" } } });
+    expect(merged.files.openWith).toEqual({ pdf: "os" });
+    expect(merged.files.unsupportedOpensWithOs).toBe(false);
+
+    const unchanged = mergeSettingsPatch(base, { language: "en" });
+    expect(unchanged.files).toEqual(base.files);
   });
 });
 

@@ -1588,6 +1588,28 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   content: "";
 }
 
+/*
+ * Who changed a file — an agent's own tool call vs. anything else touched this session — is a
+ * different axis from git status, so it gets the one slot git leaves free: the left accent bar.
+ * Agent wins over local on a shared ancestor folder; both get a title attribute too (see TreeNode),
+ * so the distinction never rides on color alone.
+ */
+.file-tree-row.change-agent {
+  box-shadow: inset 2px 0 0 var(--violet);
+}
+
+.file-tree-row.change-local {
+  box-shadow: inset 2px 0 0 var(--blue);
+}
+
+.file-tree-row.change-below-agent {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--violet) 40%, transparent);
+}
+
+.file-tree-row.change-below-local {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--blue) 40%, transparent);
+}
+
 .file-tree-state {
   display: flex;
   align-items: center;

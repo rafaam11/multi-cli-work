@@ -134,7 +134,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     listDirectory: vi.fn(async () => []),
     readFile: vi.fn(async () => ({ relativePath: "readme.md", encoding: "utf8" as const, content: "", truncated: false, sizeBytes: 0 })),
     writeFile: vi.fn(async () => undefined),
-    runExecutable: vi.fn(async () => undefined),
+    openEntry: vi.fn(async () => undefined),
     absolutePath: vi.fn(async () => "C:/project/readme.md"),
     reveal: vi.fn(async () => undefined),
     openInEditor: vi.fn(async () => undefined),
@@ -142,6 +142,8 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     rename: vi.fn(async () => "src/renamed.ts"),
     duplicate: vi.fn(async () => "src/index copy.ts"),
     trash: vi.fn(async () => undefined),
+    changedPaths: vi.fn(async () => ({ agentPaths: [], baselineMs: 0 })),
+    clearChanges: vi.fn(async () => undefined),
   };
   const shellGateway = {
     openExternal: vi.fn(async () => undefined),
@@ -859,12 +861,16 @@ describe("main IPC boundary", () => {
     await handlers.get("workspace-files:list-directory")!({}, { kind: "project", id: project.id }, "src");
     await handlers.get("workspace-files:read-file")!({}, { kind: "project", id: project.id }, "readme.md");
     await handlers.get("workspace-files:write-file")!({}, { kind: "project", id: project.id }, "readme.md", "hi");
-    await handlers.get("workspace-files:run-executable")!({}, { kind: "project", id: project.id }, "tool.exe");
+    await handlers.get("workspace-files:open-entry")!({}, { kind: "project", id: project.id }, "tool.exe", { confirmedRun: true });
+    await handlers.get("workspace-files:changed-paths")!({}, { kind: "project", id: project.id });
+    await handlers.get("workspace-files:clear-changes")!({}, { kind: "project", id: project.id });
 
     expect(workspaceFiles.listDirectory).toHaveBeenCalledWith(project.rootPath, "src");
     expect(workspaceFiles.readFile).toHaveBeenCalledWith(project.rootPath, "readme.md");
     expect(workspaceFiles.writeFile).toHaveBeenCalledWith(project.rootPath, "readme.md", "hi");
-    expect(workspaceFiles.runExecutable).toHaveBeenCalledWith(project.rootPath, "tool.exe");
+    expect(workspaceFiles.openEntry).toHaveBeenCalledWith(project.rootPath, "tool.exe", { confirmedRun: true });
+    expect(workspaceFiles.changedPaths).toHaveBeenCalledWith(project.rootPath);
+    expect(workspaceFiles.clearChanges).toHaveBeenCalledWith(project.rootPath);
   });
 
   it("resolves a worktree file explorer target to its path", async () => {

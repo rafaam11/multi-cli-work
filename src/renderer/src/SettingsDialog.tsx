@@ -3,6 +3,7 @@ import type { NotionTokenStatus } from "@shared/notion-types";
 import type {
   AppSettings,
   AppSettingsPatch,
+  FileOpenTarget,
   NotifiableStatus,
   ProjectCategorySetting,
   ProjectSettings,
@@ -26,7 +27,15 @@ import {
 import { publishNotionTokenStatus } from "./notion-token-status";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
 
-type SettingsTab = "general" | "terminal" | "notifications" | "projects" | "workspace" | "notion" | "keybindings";
+type SettingsTab =
+  | "general"
+  | "terminal"
+  | "notifications"
+  | "projects"
+  | "workspace"
+  | "files"
+  | "notion"
+  | "keybindings";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "general", label: "일반" },
@@ -34,6 +43,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "notifications", label: "알림" },
   { id: "projects", label: "프로젝트" },
   { id: "workspace", label: "워크스페이스" },
+  { id: "files", label: "파일" },
   { id: "notion", label: "노션" },
   { id: "keybindings", label: "단축키" },
 ];
@@ -44,6 +54,16 @@ const STATUS_LABELS: Array<{ status: NotifiableStatus; label: string }> = [
   { status: "exited", label: "종료" },
   { status: "error", label: "오류" },
 ];
+
+const FILE_OPEN_TARGET_LABELS: Record<FileOpenTarget, string> = {
+  "in-app": "인앱",
+  os: "연결 프로그램",
+  vscode: "VS Code",
+};
+
+// UI 힌트용 사본 — settings-types.ts의 FILE_OPEN_WITH_EXTENSION_PATTERN과 같은 규칙이다.
+// 실제 검증은 메인 프로세스의 parseSettings가 맡으므로, 여기서 놓쳐도 저장 단계에서 걸러진다.
+const FILE_EXTENSION_INPUT_PATTERN = /^[a-z0-9]{1,16}$/;
 
 interface SettingsDialogProps {
   settings: AppSettings;
@@ -497,6 +517,8 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
   const [capturingActionId, setCapturingActionId] = useState<string | null>(null);
   const [captureNotice, setCaptureNotice] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ actionId: string; accelerator: string; existing: KeymapAction } | null>(null);
+  const [newExtension, setNewExtension] = useState("");
+  const [newOpenTarget, setNewOpenTarget] = useState<FileOpenTarget>("os");
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -715,6 +737,86 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
             <ProjectsSettings projects={settings.projects} onChange={(next) => update({ projects: next })} />
           ) : null}
           {tab === "workspace" ? <WorkspaceSettings /> : null}
+          {tab === "files" ? (
+            <>
+              <h2>파일</h2>
+              <p className="settings-hint">
+                우측 사이드바에서 파일을 여는 방법입니다. 확장자별로 지정하지 않으면 인앱 판정을 따릅니다.
+              </p>
+              {checkboxRow(
+                "미리보기를 지원하지 않는 파일은 연결 프로그램으로 열기",
+                "settings-unsupported-opens-with-os",
+                settings.files.unsupportedOpensWithOs,
+                (next) => ({ files: { unsupportedOpensWithOs: next } }),
+              )}
+              <h3 className="settings-key-category">확장자별 열기</h3>
+              {Object.entries(settings.files.openWith).length === 0 ? (
+                <p className="settings-hint">지정된 확장자가 없습니다.</p>
+              ) : (
+                Object.entries(settings.files.openWith).map(([extension, openTarget]) => (
+                  <div className="settings-row" key={extension}>
+                    <span>.{extension}</span>
+                    <span className="settings-key-controls">
+                      <select
+                        aria-label={`.${extension} 여는 방법`}
+                        value={openTarget}
+                        onChange={(event) => {
+                          const next = { ...settings.files.openWith, [extension]: event.target.value as FileOpenTarget };
+                          update({ files: { openWith: next } });
+                        }}
+                      >
+                        {(Object.keys(FILE_OPEN_TARGET_LABELS) as FileOpenTarget[]).map((option) => (
+                          <option key={option} value={option}>
+                            {FILE_OPEN_TARGET_LABELS[option]}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = { ...settings.files.openWith };
+                          delete next[extension];
+                          update({ files: { openWith: next } });
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </span>
+                  </div>
+                ))
+              )}
+              <div className="settings-row">
+                <label htmlFor="settings-new-extension">확장자 추가</label>
+                <span className="settings-key-controls">
+                  <input
+                    id="settings-new-extension"
+                    type="text"
+                    placeholder="예: pdf"
+                    value={newExtension}
+                    onChange={(event) => setNewExtension(event.target.value)}
+                  />
+                  <select value={newOpenTarget} onChange={(event) => setNewOpenTarget(event.target.value as FileOpenTarget)}>
+                    {(Object.keys(FILE_OPEN_TARGET_LABELS) as FileOpenTarget[]).map((option) => (
+                      <option key={option} value={option}>
+                        {FILE_OPEN_TARGET_LABELS[option]}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!FILE_EXTENSION_INPUT_PATTERN.test(newExtension.trim().toLowerCase().replace(/^\./, ""))}
+                    onClick={() => {
+                      const extension = newExtension.trim().toLowerCase().replace(/^\./, "");
+                      update({ files: { openWith: { ...settings.files.openWith, [extension]: newOpenTarget } } });
+                      setNewExtension("");
+                    }}
+                  >
+                    추가
+                  </button>
+                </span>
+              </div>
+            </>
+          ) : null}
           {tab === "notion" ? <NotionSettings /> : null}
           {tab === "keybindings" ? (
             <>

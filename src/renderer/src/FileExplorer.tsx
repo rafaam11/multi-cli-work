@@ -1,9 +1,10 @@
 import type { GitPanelData } from "@shared/api-types";
-import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
-import { ChevronDown, ChevronRight, RefreshCw, TriangleAlert } from "lucide-react";
+import type { FileExplorerTarget, FileTreeEntry, WorkspaceChangedPaths } from "@shared/file-explorer-types";
+import { ChevronDown, ChevronRight, Eraser, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { FileIcon, FolderIcon } from "./file-icons";
 import { fileExtensionOf } from "./file-tabs";
+import { buildChangeOverlay, changeOriginLabel, changeRowClass, type FileTreeChangeOverlay } from "./file-tree-changes";
 import { buildGitOverlay, gitRowClass, type FileTreeGitOverlay } from "./file-tree-git";
 import { FileTreeContextMenu, type FileTreeCopyKind } from "./FileTreeContextMenu";
 
@@ -16,6 +17,8 @@ export interface FileExplorerProps {
   /** Greys out "VS Code로 열기" when no editor was found, exactly as the folder menu does. */
   vscodeAvailable: boolean;
   onOpenFile(entry: FileTreeEntry): void;
+  /** Opens the entry with its OS-associated program, same as a double-click in the file explorer. */
+  onOpenFileExternal(entry: FileTreeEntry): void;
   /** A folder reports its own path; every open tab at or below it belongs to the deleted subtree. */
   onEntryDeleted(relativePath: string, kind: FileTreeEntry["kind"]): void;
   onEntryRenamed(relativePath: string, nextRelativePath: string, kind: FileTreeEntry["kind"]): void;
@@ -187,6 +190,7 @@ interface TreeNodeSharedProps {
   childrenByDir: Record<string, DirectoryState>;
   selectedRelativePath: string | null;
   git: FileTreeGitOverlay;
+  changes: FileTreeChangeOverlay;
   editing: EditingState | null;
   menuTargetPath: string | null;
   onToggleDir(relativePath: string): void;
@@ -203,6 +207,7 @@ function TreeNode({
   childrenByDir,
   selectedRelativePath,
   git,
+  changes,
   editing,
   menuTargetPath,
   onToggleDir,
@@ -220,9 +225,14 @@ function TreeNode({
     selected ? "selected" : "",
     menuTargetPath === entry.relativePath ? "menu-target" : "",
     gitRowClass(git, entry.relativePath, entry.kind) ?? "",
+    changeRowClass(changes, entry.relativePath, entry.kind) ?? "",
   ]
     .filter(Boolean)
     .join(" ");
+  // Color alone never carries the meaning — the exact-match origin (not the folder rollup) also
+  // goes into the row's title, alongside the plain file name.
+  const changeOrigin = changes.originByPath.get(entry.relativePath);
+  const rowTitle = changeOrigin ? `${entry.name} · ${changeOriginLabel(changeOrigin)}` : entry.name;
   return (
     <li>
       {renaming ? (
@@ -233,7 +243,7 @@ function TreeNode({
           className={rowClass}
           onClick={() => (isDirectory ? onToggleDir(entry.relativePath) : onOpenFile(entry))}
           onContextMenu={(event) => onOpenMenu(event, entry)}
-          title={entry.name}
+          title={rowTitle}
         >
           {isDirectory ? (
             <span className="file-tree-toggle" aria-hidden="true">
@@ -259,6 +269,7 @@ function TreeNode({
           childrenByDir={childrenByDir}
           selectedRelativePath={selectedRelativePath}
           git={git}
+          changes={changes}
           editing={editing}
           menuTargetPath={menuTargetPath}
           onToggleDir={onToggleDir}
@@ -279,17 +290,22 @@ export function FileExplorer({
   selectedRelativePath,
   vscodeAvailable,
   onOpenFile,
+  onOpenFileExternal,
   onEntryDeleted,
   onEntryRenamed,
 }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [childrenByDir, setChildrenByDir] = useState<Record<string, DirectoryState>>({});
   const [gitData, setGitData] = useState<GitPanelData | null>(null);
+  const [changedPaths, setChangedPaths] = useState<WorkspaceChangedPaths | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const git = useMemo(() => buildGitOverlay(gitData), [gitData]);
+  // `local` status is read straight off `childrenByDir`'s own mtimeMs, so it recomputes for free
+  // whenever a directory listing reloads — only `changedPaths` (agentPaths/baselineMs) needs its own fetch.
+  const changes = useMemo(() => buildChangeOverlay(changedPaths, childrenByDir), [changedPaths, childrenByDir]);
 
   const loadDirectory = (loadTarget: FileExplorerTarget, relativePath: string) => {
     setChildrenByDir((current) => ({ ...current, [relativePath]: "loading" }));
@@ -310,9 +326,18 @@ export function FileExplorer({
       .catch(() => setGitData(null));
   };
 
+  /** Just the agent-edit index + baseline for this root — never a directory re-listing. */
+  const loadChanges = (loadTarget: FileExplorerTarget) => {
+    window.multiCliWork.workspaceFiles
+      .changedPaths(loadTarget)
+      .then(setChangedPaths)
+      .catch(() => setChangedPaths(null));
+  };
+
   const loadTree = (loadTarget: FileExplorerTarget) => {
     loadDirectory(loadTarget, "");
     loadGit(loadTarget);
+    loadChanges(loadTarget);
   };
 
   // A different project/worktree invalidates every cached listing — relative paths are not
@@ -321,6 +346,7 @@ export function FileExplorer({
     setExpandedDirs(new Set());
     setChildrenByDir({});
     setGitData(null);
+    setChangedPaths(null);
     setMenu(null);
     setEditing(null);
     setDeleteRequest(null);
@@ -333,6 +359,17 @@ export function FileExplorer({
     if (target && !hidden && !childrenByDir[""]) loadTree(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hidden]);
+
+  // The main process polls transcripts and tells every renderer window when it finds a new agent
+  // edit (App.tsx forwards `agent-edits` terminal events as this DOM event, mirroring GitPanel's
+  // mcw:git-refresh). No target/session filter travels with it, so just re-pull for whatever is open.
+  useEffect(() => {
+    if (!target || hidden) return;
+    const activeTarget = target;
+    const handler = () => loadChanges(activeTarget);
+    window.addEventListener("mcw:agent-edits", handler);
+    return () => window.removeEventListener("mcw:agent-edits", handler);
+  }, [targetKey(target), hidden]);
 
   const toggleDir = (relativePath: string) => {
     if (!target) return;
@@ -353,6 +390,16 @@ export function FileExplorer({
     setChildrenByDir({});
     setExpandedDirs(new Set());
     loadTree(target);
+  };
+
+  /** "변경 표시 지우기" — resets this root's highlights. Nothing here was ever written to disk. */
+  const clearChangeHighlights = () => {
+    if (!target) return;
+    const activeTarget = target;
+    window.multiCliWork.workspaceFiles
+      .clearChanges(activeTarget)
+      .then(() => loadChanges(activeTarget))
+      .catch((error) => setActionError(errorMessage(error)));
   };
 
   /**
@@ -479,6 +526,16 @@ export function FileExplorer({
         <button
           className="icon-button"
           type="button"
+          onClick={clearChangeHighlights}
+          disabled={!target || changes.originByPath.size === 0}
+          aria-label="변경 표시 지우기"
+          title="변경 표시 지우기"
+        >
+          <Eraser size={16} />
+        </button>
+        <button
+          className="icon-button"
+          type="button"
           onClick={refresh}
           disabled={!target}
           aria-label="파일 목록 새로고침"
@@ -515,6 +572,7 @@ export function FileExplorer({
             childrenByDir={childrenByDir}
             selectedRelativePath={selectedRelativePath}
             git={git}
+            changes={changes}
             editing={editing}
             menuTargetPath={menu?.entry?.relativePath ?? null}
             onToggleDir={toggleDir}
@@ -533,6 +591,7 @@ export function FileExplorer({
           y={menu.y}
           vscodeAvailable={vscodeAvailable}
           onOpen={() => menu.entry && onOpenFile(menu.entry)}
+          onOpenExternal={() => menu.entry && onOpenFileExternal(menu.entry)}
           onToggle={() => menu.entry && toggleDir(menu.entry.relativePath)}
           onCreate={(kind) =>
             startCreate(

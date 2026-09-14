@@ -1,8 +1,13 @@
-import fs from "node:fs/promises";
-import type { Dirent, Stats } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { TitleSource } from "../../shared/agent-types";
+import {
+  defaultTranscriptIo,
+  readTranscriptTail,
+  transcriptFileExists,
+  type TranscriptIo,
+  type TranscriptTailState,
+} from "./transcript-tail";
 
 const MAX_TITLE_LENGTH = 60;
 
@@ -72,49 +77,22 @@ export function parseCodexTitle(transcript: string): string | null {
   return null;
 }
 
-interface SessionTitleIo {
-  stat(filePath: string): Promise<Stats>;
-  readdir(directory: string): Promise<Dirent[]>;
-  read(filePath: string, start: number, length: number): Promise<Buffer>;
-}
-
-const defaultIo: SessionTitleIo = {
-  stat: (filePath) => fs.stat(filePath),
-  readdir: (directory) => fs.readdir(directory, { withFileTypes: true }),
-  async read(filePath, start, length) {
-    const handle = await fs.open(filePath, "r");
-    try {
-      const buffer = Buffer.alloc(length);
-      const { bytesRead } = await handle.read(buffer, 0, length, start);
-      return buffer.subarray(0, bytesRead);
-    } finally {
-      await handle.close();
-    }
-  },
-};
-
-async function exists(io: SessionTitleIo, filePath: string): Promise<boolean> {
-  return io.stat(filePath).then((value) => value.isFile(), () => false);
-}
-
-async function findClaudeTranscript(io: SessionTitleIo, directory: string, cwd: string, conversationId: string): Promise<string | null> {
+/** Exported for agent-edits.ts, which needs the same Claude transcript resolution to scan for edits. */
+export async function findClaudeTranscript(io: TranscriptIo, directory: string, cwd: string, conversationId: string): Promise<string | null> {
   const derived = path.join(directory, claudeProjectSlug(cwd), `${conversationId}.jsonl`);
-  if (await exists(io, derived)) return derived;
+  if (await transcriptFileExists(io, derived)) return derived;
   // The slug rule belongs to Claude, not to us, so a rule change should cost a directory walk
   // rather than the whole feature.
   const entries = await io.readdir(directory).catch(() => []);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const candidate = path.join(directory, entry.name, `${conversationId}.jsonl`);
-    if (await exists(io, candidate)) return candidate;
+    if (await transcriptFileExists(io, candidate)) return candidate;
   }
   return null;
 }
 
-interface TranscriptReadState {
-  offset: number;
-  mtimeMs: number;
-  tail: string;
+interface TranscriptReadState extends TranscriptTailState {
   title: string | null;
   resolved: boolean;
 }
@@ -123,7 +101,7 @@ export class SessionTitleReader {
   private readonly transcriptPaths = new Map<string, string>();
   private readonly reads = new Map<string, TranscriptReadState>();
 
-  constructor(private readonly io: SessionTitleIo = defaultIo) {}
+  constructor(private readonly io: TranscriptIo = defaultTranscriptIo) {}
 
   async read(session: SessionTitleSource, options: SessionTitleOptions = {}): Promise<string | null> {
     if (session.titleSource === "none" || !session.providerConversationId) return null;
@@ -149,29 +127,15 @@ export class SessionTitleReader {
 
     const previous = this.reads.get(transcript);
     if (session.titleSource === "codex-transcript" && previous?.resolved) return previous.title;
-    let stat: Stats;
-    try {
-      stat = await this.io.stat(transcript);
-    } catch {
-      return previous?.title ?? null;
-    }
-    const unchanged = previous && previous.offset === stat.size && previous.mtimeMs === stat.mtimeMs;
-    if (unchanged) return previous.title;
-    const appendOnly = previous && stat.size >= previous.offset && stat.mtimeMs >= previous.mtimeMs;
-    const start = appendOnly ? previous.offset : 0;
-    const chunk = await this.io.read(transcript, start, Math.max(0, stat.size - start));
-    const combined = `${appendOnly ? previous.tail : ""}${chunk.toString("utf8")}`;
-    const finalNewline = Math.max(combined.lastIndexOf("\n"), combined.lastIndexOf("\r"));
-    const complete = finalNewline >= 0 ? combined.slice(0, finalNewline + 1) : "";
-    const tail = finalNewline >= 0 ? combined.slice(finalNewline + 1) : combined;
+    const tail = await readTranscriptTail(this.io, transcript, previous);
+    if (!tail) return previous?.title ?? null;
+    if (!tail.changed) return previous!.title;
     const parsed = session.titleSource === "claude-transcript"
-      ? parseClaudeTitle(complete)
-      : parseCodexTitle(complete);
-    const title = parsed ?? (appendOnly ? previous.title : null);
+      ? parseClaudeTitle(tail.complete)
+      : parseCodexTitle(tail.complete);
+    const title = parsed ?? (tail.appendOnly && previous ? previous.title : null);
     this.reads.set(transcript, {
-      offset: stat.size,
-      mtimeMs: stat.mtimeMs,
-      tail,
+      ...tail.state,
       title,
       resolved: session.titleSource === "codex-transcript" && title !== null,
     });

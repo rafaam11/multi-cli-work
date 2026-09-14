@@ -18,6 +18,7 @@ export interface RightSidebarProps {
   selectedRelativePath: string | null;
   vscodeAvailable: boolean;
   onOpenFile(entry: FileTreeEntry): void;
+  onOpenFileExternal(entry: FileTreeEntry): void;
   onEntryDeleted(relativePath: string, kind: FileTreeEntry["kind"]): void;
   onEntryRenamed(relativePath: string, nextRelativePath: string, kind: FileTreeEntry["kind"]): void;
   worktreeOptions: GitWorktreeOption[];
@@ -41,6 +42,7 @@ export function RightSidebar({
   selectedRelativePath,
   vscodeAvailable,
   onOpenFile,
+  onOpenFileExternal,
   onEntryDeleted,
   onEntryRenamed,
   worktreeOptions,
@@ -116,6 +118,7 @@ export function RightSidebar({
           selectedRelativePath={selectedRelativePath}
           vscodeAvailable={vscodeAvailable}
           onOpenFile={onOpenFile}
+          onOpenFileExternal={onOpenFileExternal}
           onEntryDeleted={onEntryDeleted}
           onEntryRenamed={onEntryRenamed}
         />

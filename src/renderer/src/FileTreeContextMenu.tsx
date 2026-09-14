@@ -5,6 +5,7 @@ import {
   ClipboardCopy,
   Code2,
   Copy,
+  ExternalLink,
   FilePlus,
   FileText,
   Files,
@@ -27,6 +28,8 @@ export interface FileTreeContextMenuProps {
   y: number;
   vscodeAvailable: boolean;
   onOpen(): void;
+  /** Opens the file with its OS-associated program, same as a double-click in the file explorer. */
+  onOpenExternal(): void;
   onToggle(): void;
   onCreate(kind: "file" | "directory"): void;
   onCopy(kind: FileTreeCopyKind): void;
@@ -45,6 +48,7 @@ export function FileTreeContextMenu({
   y,
   vscodeAvailable,
   onOpen,
+  onOpenExternal,
   onToggle,
   onCreate,
   onCopy,
@@ -90,10 +94,16 @@ export function FileTreeContextMenu({
       style={{ "--context-menu-x": `${x}px`, "--context-menu-y": `${y}px` } as CSSProperties}
     >
       {entry && entry.kind === "file" ? (
-        <button type="button" role="menuitem" onClick={run(onOpen)}>
-          <FileText size={15} />
-          <span>열기</span>
-        </button>
+        <>
+          <button type="button" role="menuitem" onClick={run(onOpen)}>
+            <FileText size={15} />
+            <span>열기</span>
+          </button>
+          <button type="button" role="menuitem" onClick={run(onOpenExternal)}>
+            <ExternalLink size={15} />
+            <span>연결 프로그램으로 열기</span>
+          </button>
+        </>
       ) : null}
       {entry && entry.kind === "directory" ? (
         <button type="button" role="menuitem" onClick={run(onToggle)}>

@@ -46,6 +46,16 @@ export interface ProjectSettings {
   defaultCategory: string;
 }
 
+/** 확장자별 기본 열기 대상. */
+export type FileOpenTarget = "in-app" | "os" | "vscode";
+
+export interface FileSettings {
+  /** 확장자(소문자, 점 없음) → 기본 열기 대상. 없으면 인앱 판정을 따른다. */
+  openWith: Record<string, FileOpenTarget>;
+  /** 인앱 미리보기가 불가능한 파일을 OS 연결 프로그램으로 넘긴다. */
+  unsupportedOpensWithOs: boolean;
+}
+
 export interface AppSettings {
   /** 지금은 선택 저장만 한다 — i18n 도입은 별도 작업. */
   language: "ko" | "en";
@@ -56,6 +66,7 @@ export interface AppSettings {
   keybindings: Record<string, string | null>;
   /** 업무 프로젝트 구분(카테고리) 목록과 기본 구분. */
   projects: ProjectSettings;
+  files: FileSettings;
 }
 
 export interface AppSettingsPatch {
@@ -67,6 +78,8 @@ export interface AppSettingsPatch {
   keybindings?: Record<string, string | null>;
   /** categories는 통째 교체 — 삭제·순서 변경은 부분 병합으로 표현할 수 없다. */
   projects?: { categories?: ProjectCategorySetting[]; defaultCategory?: string };
+  /** `openWith`은 전체 교체 — keybindings와 같은 이유로, 부분 병합이면 항목 삭제가 불가능하다. */
+  files?: { openWith?: Record<string, FileOpenTarget>; unsupportedOpensWithOs?: boolean };
 }
 
 export const TERMINAL_FONT_SIZE_RANGE = { min: 8, max: 32 } as const;
@@ -83,6 +96,8 @@ export const DEFAULT_PROJECT_CATEGORIES: readonly ProjectCategorySetting[] = [
 ];
 
 const MAX_ACCELERATOR_LENGTH = 64;
+const FILE_OPEN_WITH_EXTENSION_PATTERN = /^[a-z0-9]{1,16}$/;
+const MAX_FILE_OPEN_WITH_ENTRIES = 200;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "ko",
@@ -101,6 +116,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   keybindings: {},
   projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타" },
+  files: { openWith: {}, unsupportedOpensWithOs: true },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -178,6 +194,17 @@ export function parseSettings(value: unknown): AppSettings {
     }
   }
 
+  const files = isRecord(raw.files) ? raw.files : {};
+  const openWith: Record<string, FileOpenTarget> = {};
+  if (isRecord(files.openWith)) {
+    for (const [extension, target] of Object.entries(files.openWith)) {
+      if (Object.keys(openWith).length >= MAX_FILE_OPEN_WITH_ENTRIES) break;
+      const validKey = FILE_OPEN_WITH_EXTENSION_PATTERN.test(extension);
+      const validTarget = target === "in-app" || target === "os" || target === "vscode";
+      if (validKey && validTarget) openWith[extension] = target;
+    }
+  }
+
   const defaults = DEFAULT_SETTINGS;
   return {
     language: raw.language === "en" ? "en" : "ko",
@@ -228,6 +255,10 @@ export function parseSettings(value: unknown): AppSettings {
     },
     keybindings,
     projects: readProjectSettings(raw.projects, defaults.projects),
+    files: {
+      openWith,
+      unsupportedOpensWithOs: readBoolean(files.unsupportedOpensWithOs, defaults.files.unsupportedOpensWithOs),
+    },
   };
 }
 
@@ -249,5 +280,9 @@ export function mergeSettingsPatch(current: AppSettings, patch: AppSettingsPatch
     },
     keybindings: patch.keybindings ?? current.keybindings,
     projects: { ...current.projects, ...patch.projects },
+    files: {
+      openWith: patch.files?.openWith ?? current.files.openWith,
+      unsupportedOpensWithOs: patch.files?.unsupportedOpensWithOs ?? current.files.unsupportedOpensWithOs,
+    },
   };
 }

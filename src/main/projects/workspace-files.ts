@@ -1,6 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { IMAGE_EXTENSIONS, type FileTreeEntry, type WorkspaceFileContent } from "../../shared/file-explorer-types";
+import {
+  IMAGE_EXTENSIONS,
+  needsRunConfirmation,
+  type FileTreeEntry,
+  type WorkspaceChangedPath,
+  type WorkspaceChangedPaths,
+  type WorkspaceFileContent,
+} from "../../shared/file-explorer-types";
+import type { AgentEditEntry } from "../providers/agent-edits";
 
 /** More than this is unreadable in a text pane anyway; the reader says it was cut. */
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
@@ -14,7 +22,7 @@ function isUtf8Text(buffer: Buffer): boolean {
   return Buffer.from(buffer.toString("utf8"), "utf8").equals(buffer);
 }
 
-function normalizeForCompare(value: string, platform: NodeJS.Platform): string {
+export function normalizeForCompare(value: string, platform: NodeJS.Platform): string {
   if (platform === "win32") return path.win32.normalize(value).replaceAll("/", "\\").toLocaleLowerCase("en-US");
   return path.posix.normalize(value.replaceAll("\\", "/"));
 }
@@ -29,9 +37,36 @@ export function isWorkspaceExecutable(
   return platform === "win32" ? extensionOf(fileName) === "exe" : (mode & 0o111) !== 0;
 }
 
-function withinRoot(normalizedRoot: string, normalizedCandidate: string, platform: NodeJS.Platform): boolean {
+export function withinRoot(normalizedRoot: string, normalizedCandidate: string, platform: NodeJS.Platform): boolean {
   const separator = platform === "win32" ? "\\" : "/";
   return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${separator}`);
+}
+
+/**
+ * Filters the in-memory agent-edit index down to one project/worktree root and converts its
+ * absolute paths to root-relative, forward-slashed paths. Unlike `resolveWithinRoot`, this never
+ * touches the filesystem (no symlink realpath check): the index only ever holds paths an agent
+ * itself wrote to via its own tool calls, so plain prefix matching on the normalized strings is
+ * enough — there is no untrusted input here to defend against.
+ */
+export function changedPathsForRoot(
+  rootPath: string,
+  agentEdits: ReadonlyMap<string, AgentEditEntry>,
+  baselineMs: number,
+  platform: NodeJS.Platform = process.platform,
+): WorkspaceChangedPaths {
+  const resolvedRoot = path.resolve(rootPath);
+  const normalizedRoot = normalizeForCompare(resolvedRoot, platform);
+  const agentPaths: WorkspaceChangedPath[] = [];
+  for (const [absolutePath, entry] of agentEdits) {
+    if (!withinRoot(normalizedRoot, normalizeForCompare(absolutePath, platform), platform)) continue;
+    agentPaths.push({
+      relativePath: path.relative(resolvedRoot, absolutePath).split(path.sep).join("/"),
+      kind: entry.kind,
+      at: entry.at,
+    });
+  }
+  return { agentPaths, baselineMs };
 }
 
 /**
@@ -120,14 +155,15 @@ export async function listWorkspaceDirectory(
   const result = await Promise.all(
     entries.filter((entry) => entry.name !== ".git").map(async (entry): Promise<FileTreeEntry> => {
       const extension = entry.isDirectory() ? null : extensionOf(entry.name);
-      const mode = entry.isFile() ? (await fs.stat(path.join(target, entry.name))).mode : 0;
-      const executable = isWorkspaceExecutable(entry.name, mode, entry.isFile(), platform);
+      const stat = entry.isFile() ? await fs.stat(path.join(target, entry.name)) : null;
+      const executable = isWorkspaceExecutable(entry.name, stat?.mode ?? 0, entry.isFile(), platform);
       return {
         name: entry.name,
         relativePath: relativeChildPath(relativePath, entry.name),
         kind: entry.isDirectory() ? "directory" : "file",
         extension,
         executable,
+        mtimeMs: stat?.mtimeMs ?? 0,
       };
     }),
   );
@@ -174,18 +210,33 @@ export async function readWorkspaceFile(rootPath: string, relativePath: string):
   };
 }
 
-/** Runs only a real .exe inside the selected project/worktree root. */
-export async function runWorkspaceExecutable(
+export interface OpenWorkspaceEntryOptions {
+  /** True once the renderer has shown the run-confirmation modal and the user accepted it. */
+  confirmedRun: boolean;
+}
+
+/**
+ * Opens a file with its OS-associated program — the same result as double-clicking it in the
+ * platform's file explorer. A fixed set of extensions the OS would *run* rather than merely display
+ * (see `needsRunConfirmation`) requires `options.confirmedRun`; the policy decision stays here so the
+ * renderer can only ever raise the confirmation modal, never bypass it. Generalizes the former
+ * exe-only `runWorkspaceExecutable`, which the single-click "실행" flow now goes through as well.
+ */
+export async function openWorkspaceEntry(
   rootPath: string,
   relativePath: string,
+  options: OpenWorkspaceEntryOptions,
   openPath: (target: string) => Promise<string | void>,
   platform: NodeJS.Platform = process.platform,
 ): Promise<void> {
   const target = await resolveWithinRoot(rootPath, relativePath, platform);
   const stat = await fs.stat(target);
   if (!stat.isFile()) throw new Error("Not a file");
-  if (platform === "win32" && extensionOf(path.basename(target)) !== "exe") throw new Error("Only .exe files can be run");
-  if (platform !== "win32" && (stat.mode & 0o111) === 0) throw new Error("File has no executable permission bit");
+  const name = path.basename(target);
+  const executable = isWorkspaceExecutable(name, stat.mode, true, platform);
+  if (needsRunConfirmation(name, platform, executable) && !options.confirmedRun) {
+    throw new Error("Running this file requires confirmation");
+  }
   const result = await openPath(target);
   if (result) throw new Error(result);
 }
@@ -265,8 +316,8 @@ export async function duplicateWorkspaceEntry(rootPath: string, relativePath: st
 }
 
 /**
- * Moves an entry to the OS recycle bin. `trashItem` is injected the way runWorkspaceExecutable
- * takes `openPath`: the guard belongs here, the electron shell call does not.
+ * Moves an entry to the OS recycle bin. `trashItem` is injected the way openWorkspaceEntry takes
+ * `openPath`: the guard belongs here, the electron shell call does not.
  */
 export async function trashWorkspaceEntry(
   rootPath: string,

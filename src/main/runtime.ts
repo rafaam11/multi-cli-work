@@ -74,15 +74,18 @@ import {
   removeWorkspaceRoot,
 } from "./projects/workspace-registry";
 import {
+  changedPathsForRoot,
   createWorkspaceEntry,
   duplicateWorkspaceEntry,
   listWorkspaceDirectory,
+  normalizeForCompare,
+  openWorkspaceEntry,
   readWorkspaceFile,
   renameWorkspaceEntry,
   resolveWorkspaceEntryPath,
   resolveWorkspaceFilePath,
-  runWorkspaceExecutable,
   trashWorkspaceEntry,
+  withinRoot,
   writeWorkspaceFile,
 } from "./projects/workspace-files";
 import { WorktreeService } from "./projects/worktree-service";
@@ -91,6 +94,7 @@ import { ensureCodexIntegration } from "./providers/codex-integration";
 import { detectProviderExecutables, type ProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { SessionTitleReader } from "./providers/session-title";
+import { AgentEditReader } from "./providers/agent-edits";
 import type { AttentionSnapshot } from "./attention-policy";
 import { createSessionAttentionController } from "./session-attention-controller";
 import { checkForUpdates, openReleasesPage, openRepositoryPage, updaterStatus } from "./updater";
@@ -154,6 +158,13 @@ export async function createDesktopRuntime(
   const claudeIntegration = await ensureClaudeIntegration(userData, process.platform);
   const codexIntegration = await ensureCodexIntegration({ userData });
   const titleReader = new SessionTitleReader();
+  const agentEditReader = new AgentEditReader();
+  // "그 외 변경" (non-agent) highlighting compares a file's mtime against this. Defaults to app start
+  // and is reset per-root to Date.now() by "변경 표시 지우기" (workspaceFiles.clearChanges below).
+  const appStartMs = Date.now();
+  const changeBaselines = new Map<string, number>();
+  const changeBaselineFor = (rootPath: string): number =>
+    changeBaselines.get(normalizeForCompare(path.resolve(rootPath), process.platform)) ?? appStartMs;
   // jk-coding-cli: the client lands in userData/bin (joined to every session's PATH below), the
   // token rotates per app run, and the pipe name can be overridden so a dev build next to an
   // installed one gets its own pipe instead of silently losing the CLI.
@@ -311,6 +322,19 @@ export async function createDesktopRuntime(
     codexProfileName: codexIntegration.profileName,
     readTitle: (session, agent, transcriptPath) =>
       titleReader.read(
+        {
+          titleSource: agent.titleSource,
+          cwd: session.cwd,
+          providerConversationId: session.providerConversationId,
+          ...(transcriptPath ? { transcriptPath } : {}),
+        },
+        {
+          ...(claudeProjectsDirectory ? { claudeProjectsDirectory } : {}),
+          ...(codexSessionsDirectory ? { codexSessionsDirectory } : {}),
+        },
+      ),
+    readAgentEdits: (session, agent, transcriptPath) =>
+      agentEditReader.refresh(
         {
           titleSource: agent.titleSource,
           cwd: session.cwd,
@@ -514,8 +538,8 @@ export async function createDesktopRuntime(
       listDirectory: listWorkspaceDirectory,
       readFile: readWorkspaceFile,
       writeFile: writeWorkspaceFile,
-      runExecutable: (rootPath, relativePath) =>
-        runWorkspaceExecutable(rootPath, relativePath, async (target) => {
+      openEntry: (rootPath, relativePath, options) =>
+        openWorkspaceEntry(rootPath, relativePath, options, async (target) => {
           if (process.platform === "win32") return shell.openPath(target);
           await new Promise<void>((resolve, reject) => {
             const child = spawn(target, [], {
@@ -543,6 +567,15 @@ export async function createDesktopRuntime(
       duplicate: duplicateWorkspaceEntry,
       trash: (rootPath, relativePath) =>
         trashWorkspaceEntry(rootPath, relativePath, (target) => shell.trashItem(target)),
+      changedPaths: async (rootPath) =>
+        changedPathsForRoot(rootPath, agentEditReader.entries(), changeBaselineFor(rootPath)),
+      clearChanges: async (rootPath) => {
+        const normalizedRoot = normalizeForCompare(path.resolve(rootPath), process.platform);
+        agentEditReader.clear((absolutePath) =>
+          withinRoot(normalizedRoot, normalizeForCompare(absolutePath, process.platform), process.platform),
+        );
+        changeBaselines.set(normalizedRoot, Date.now());
+      },
     },
     git: {
       panelData: readGitPanelData,

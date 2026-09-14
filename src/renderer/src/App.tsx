@@ -9,7 +9,7 @@ import type {
   SessionAttention,
   TerminalSessionView,
 } from "@shared/api-types";
-import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
+import { needsRunConfirmation, type FileExplorerTarget, type FileTreeEntry } from "@shared/file-explorer-types";
 import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
@@ -326,7 +326,9 @@ export function App() {
   const fileWriteQueuesRef = useRef<Map<string, Promise<boolean>>>(new Map());
   const pendingFileWriteCountsRef = useRef<Map<string, number>>(new Map());
   const [pendingFileAnchor, setPendingFileAnchor] = useState<{ tabId: string; anchor: string } | null>(null);
-  const [executableRequest, setExecutableRequest] = useState<{ target: FileExplorerTarget; entry: FileTreeEntry; error: string | null; running: boolean } | null>(null);
+  // Shared by the exe row-click ("run") and the "연결 프로그램으로 열기" menu item ("open") — both end up
+  // calling the same confirmed openEntry, just with different modal wording for what is about to happen.
+  const [runConfirmRequest, setRunConfirmRequest] = useState<{ target: FileExplorerTarget; entry: FileTreeEntry; mode: "run" | "open"; error: string | null; running: boolean } | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
@@ -1011,6 +1013,13 @@ export function App() {
         // jk-coding-cli spawn — still has to appear in the list.
         if (event.type === "created") {
           setSessions((current) => replaceSession(current, event.session));
+          return;
+        }
+        if (event.type === "agent-edits") {
+          // No path is in the event (renderer never sees absolute paths) and no session field
+          // changes — just tell FileExplorer to re-pull changedPaths for whatever target is open,
+          // same as GitPanel's mcw:git-refresh.
+          window.dispatchEvent(new Event("mcw:agent-edits"));
           return;
         }
         if (event.type === "status") {
@@ -1878,7 +1887,19 @@ export function App() {
 
   const openFile = (target: FileExplorerTarget, targetLabel: string, entry: FileTreeEntry): string => {
     if (entry.executable) {
-      setExecutableRequest({ target, entry, error: null, running: false });
+      setRunConfirmRequest({ target, entry, mode: "run", error: null, running: false });
+      return fileTabId(target, entry.relativePath);
+    }
+    // 확장자별 기본 열기 대상이 지정돼 있으면 인앱 탭 대신 그리로 보낸다. "in-app"/미지정은 아래로 통과.
+    const openWith = appSettings.files.openWith[entry.extension ?? ""];
+    if (openWith === "os") {
+      openWithOs(target, entry);
+      return fileTabId(target, entry.relativePath);
+    }
+    if (openWith === "vscode") {
+      void window.multiCliWork.workspaceFiles
+        .openInEditor(target, entry.relativePath)
+        .catch((error) => setActionError(errorMessage(error)));
       return fileTabId(target, entry.relativePath);
     }
     const id = fileTabId(target, entry.relativePath);
@@ -1888,6 +1909,10 @@ export function App() {
       return id;
     }
     const category = categorizeFile(entry.name, entry.extension);
+    if (category === "unsupported" && appSettings.files.unsupportedOpensWithOs) {
+      openWithOs(target, entry);
+      return id;
+    }
     const tab: OpenFileTab = {
       id,
       target,
@@ -1937,6 +1962,17 @@ export function App() {
     return id;
   };
 
+  /** Opens `entry` with its OS-associated program — same result as a double-click in the file explorer. */
+  const openWithOs = (target: FileExplorerTarget, entry: FileTreeEntry) => {
+    if (needsRunConfirmation(entry.name, window.multiCliWork.platform, entry.executable)) {
+      setRunConfirmRequest({ target, entry, mode: "open", error: null, running: false });
+      return;
+    }
+    void window.multiCliWork.workspaceFiles
+      .openEntry(target, entry.relativePath, { confirmedRun: false })
+      .catch((error) => setActionError(errorMessage(error)));
+  };
+
   const openRelativeFile = (sourceTab: OpenFileTab, relativePath: string, anchor: string | null) => {
     const name = relativePath.split("/").at(-1) ?? relativePath;
     const extension = fileExtensionOf(name);
@@ -1947,6 +1983,8 @@ export function App() {
       extension,
       // A Markdown link may open a file, but it can never execute one.
       executable: false,
+      // Not read from a directory listing, so no real mtime is known here.
+      mtimeMs: 0,
     });
     if (anchor) setPendingFileAnchor({ tabId, anchor });
   };
@@ -3324,6 +3362,7 @@ export function App() {
         }
         vscodeAvailable={availability.vscode}
         onOpenFile={(entry) => fileExplorerTarget && openFile(fileExplorerTarget, fileExplorerTargetLabel ?? "", entry)}
+        onOpenFileExternal={(entry) => fileExplorerTarget && openWithOs(fileExplorerTarget, entry)}
         onEntryDeleted={(relativePath, kind) =>
           fileExplorerTarget && closeFileTabsUnder(fileExplorerTarget, relativePath, kind)
         }
@@ -3566,27 +3605,31 @@ export function App() {
         </div>
       ) : null}
 
-      {executableRequest ? (
+      {runConfirmRequest ? (
         <div className="modal-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="EXE 실행 확인">
-            <h2>이 프로그램을 실행할까요?</h2>
-            <p>{executableRequest.entry.relativePath}</p>
-            {executableRequest.error ? <p className="file-viewer-error" role="alert">{executableRequest.error}</p> : null}
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="실행 확인">
+            <h2>
+              {runConfirmRequest.mode === "run"
+                ? "이 프로그램을 실행할까요?"
+                : "이 파일은 열면 바로 실행됩니다"}
+            </h2>
+            <p>{runConfirmRequest.entry.relativePath}</p>
+            {runConfirmRequest.error ? <p className="file-viewer-error" role="alert">{runConfirmRequest.error}</p> : null}
             <footer className="confirm-dialog-actions">
-              <button type="button" disabled={executableRequest.running} onClick={() => setExecutableRequest(null)}>취소</button>
+              <button type="button" disabled={runConfirmRequest.running} onClick={() => setRunConfirmRequest(null)}>취소</button>
               <button
                 type="button"
                 className="danger-button"
-                disabled={executableRequest.running}
+                disabled={runConfirmRequest.running}
                 onClick={() => {
-                  const request = executableRequest;
-                  setExecutableRequest({ ...request, running: true, error: null });
-                  void window.multiCliWork.workspaceFiles.runExecutable(request.target, request.entry.relativePath)
-                    .then(() => setExecutableRequest(null))
-                    .catch((error) => setExecutableRequest((current) => current ? { ...current, running: false, error: errorMessage(error) } : null));
+                  const request = runConfirmRequest;
+                  setRunConfirmRequest({ ...request, running: true, error: null });
+                  void window.multiCliWork.workspaceFiles.openEntry(request.target, request.entry.relativePath, { confirmedRun: true })
+                    .then(() => setRunConfirmRequest(null))
+                    .catch((error) => setRunConfirmRequest((current) => current ? { ...current, running: false, error: errorMessage(error) } : null));
                 }}
               >
-                {executableRequest.running ? "실행 중" : "실행"}
+                {runConfirmRequest.running ? (runConfirmRequest.mode === "run" ? "실행 중" : "여는 중") : (runConfirmRequest.mode === "run" ? "실행" : "실행하고 열기")}
               </button>
             </footer>
           </div>

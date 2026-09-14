@@ -423,7 +423,7 @@ function createApi(options?: {
       listDirectory: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue({ relativePath: "", encoding: "utf8", content: "", truncated: false, sizeBytes: 0 }),
       writeFile: vi.fn().mockResolvedValue(undefined),
-      runExecutable: vi.fn().mockResolvedValue(undefined),
+      openEntry: vi.fn().mockResolvedValue(undefined),
       absolutePath: vi.fn().mockResolvedValue(""),
       reveal: vi.fn().mockResolvedValue(undefined),
       openInEditor: vi.fn().mockResolvedValue(undefined),
@@ -431,6 +431,8 @@ function createApi(options?: {
       rename: vi.fn().mockResolvedValue(""),
       duplicate: vi.fn().mockResolvedValue(""),
       trash: vi.fn().mockResolvedValue(undefined),
+      changedPaths: vi.fn().mockResolvedValue({ agentPaths: [], baselineMs: 0 }),
+      clearChanges: vi.fn().mockResolvedValue(undefined),
     },
     git: {
       panelData: vi.fn().mockResolvedValue({
@@ -2216,6 +2218,7 @@ describe("file viewer", () => {
     kind: "file",
     extension: "md",
     executable: false,
+    mtimeMs: 0,
   };
 
   it("serializes rapid Markdown task saves and keeps a failed optimistic change retryable", async () => {
@@ -2424,6 +2427,7 @@ describe("file viewer", () => {
       kind: "file",
       extension: "txt",
       executable: false,
+      mtimeMs: 0,
     };
     vi.mocked(harness.api.workspaceFiles.listDirectory).mockResolvedValue([notes]);
     vi.mocked(harness.api.workspaceFiles.readFile).mockResolvedValue({
@@ -3363,6 +3367,7 @@ describe("sidebar panes", () => {
       kind: "file",
       extension: "md",
       executable: false,
+      mtimeMs: 0,
     };
     const harness = createApi({
       sessions: [powershellSession, claudeSession],
