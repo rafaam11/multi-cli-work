@@ -464,6 +464,9 @@ export class TerminalCoordinator {
     this.removedSessionIds.add(sessionId);
     this.pendingProviderStarts.delete(sessionId);
     this.dropPendingLog(sessionId);
+    // Drain lifecycle writes that began before removal claimed the session. Events from stop() and
+    // later are rejected by removedSessionIds, so durable deletion remains the final state write.
+    await this.eventChain;
     if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
     await this.logWrites.get(sessionId)?.catch(() => undefined);
     await deleteSessionLog(this.options.logDir, sessionId);
@@ -886,6 +889,7 @@ export class TerminalCoordinator {
   private async persistView(view: TerminalSessionView, transform: (state: AppStateV1) => AppStateV1 = (state) => state) {
     await updateAppState(
       (state) => {
+        if (this.removedSessionIds.has(view.id) || this.views.get(view.id) !== view) return state;
         const next = transform(state);
         return { ...next, sessions: { ...next.sessions, [view.id]: persistedSession(view) } };
       },
@@ -894,6 +898,7 @@ export class TerminalCoordinator {
   }
 
   private async handleWorkerEvent(event: TerminalWorkerEvent): Promise<void> {
+    if (this.removedSessionIds.has(event.sessionId)) return;
     const view = this.views.get(event.sessionId);
     if (!view && event.type !== "data") {
       if (this.launchingSessionIds.has(event.sessionId)) {
@@ -919,7 +924,9 @@ export class TerminalCoordinator {
 
   private async handleWorkerExit(_code: number): Promise<void> {
     const active = this.list().filter(
-      (view) => view.pid !== null && view.status !== "exited" && view.status !== "error",
+      (view) =>
+        !this.removedSessionIds.has(view.id) &&
+        view.pid !== null && view.status !== "exited" && view.status !== "error",
     );
     for (const view of active) {
       view.status = "error";

@@ -1204,20 +1204,42 @@ describe("TerminalCoordinator", () => {
   it("keeps a failed artifact cleanup discoverable across restart and retry", async () => {
     const root = await tempRoot();
     const statusDir = await tempRoot();
-    const { instance } = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
+    const { instance, worker } = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
     await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
     const blockingDirectory = path.join(statusDir, "session-1.json");
     await fs.mkdir(blockingDirectory);
 
     await expect(instance.remove("session-1")).rejects.toThrow();
     expect(instance.list().map((session) => session.id)).toContain("session-1");
-    expect((await readAppState({ statePath: path.join(root, "state.json") })).state.sessions["session-1"]).toBeDefined();
+    const beforeLateExit = (await readAppState({ statePath: path.join(root, "state.json") })).state.sessions["session-1"];
+    expect(beforeLateExit).toBeDefined();
+
+    // Non-worker producers (rename/title polling) do not share eventChain. Their stale view must
+    // still be refused at the durable transaction boundary once removal owns the session.
+    await instance.rename("session-1", "stale rename");
+    expect((await readAppState({ statePath: path.join(root, "state.json") })).state.sessions["session-1"])
+      .toEqual(beforeLateExit);
+    const beforeLateExitView = { ...instance.list()[0] };
+    const listener = vi.fn();
+    instance.onEvent(listener);
+
+    // A real PTY commonly reports exit after stop() returns. Removal intent already owns this
+    // session, so that late lifecycle event must not rewrite durable state during a cleanup retry.
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 23 });
+    await instance.flush();
+    expect(instance.list()[0]).toEqual(beforeLateExitView);
+    expect(listener).not.toHaveBeenCalledWith(expect.objectContaining({ type: "exit", sessionId: "session-1" }));
+    expect((await readAppState({ statePath: path.join(root, "state.json") })).state.sessions["session-1"])
+      .toEqual(beforeLateExit);
 
     const restarted = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
     expect(restarted.instance.list().map((session) => session.id)).toContain("session-1");
     await fs.rmdir(blockingDirectory);
     await expect(restarted.instance.remove("session-1")).resolves.toBeUndefined();
     expect(restarted.instance.list().map((session) => session.id)).not.toContain("session-1");
+
+    const afterRemoval = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
+    expect(afterRemoval.instance.list().map((session) => session.id)).not.toContain("session-1");
   });
 
   it("sweeps orphaned provider status files at startup but keeps restored sessions", async () => {
