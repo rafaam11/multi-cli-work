@@ -250,6 +250,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   });
 
   test.afterAll(async () => {
+    // A failed assertion can leave a fixture PTY running. Teardown must not wait on a native dialog.
+    await app?.evaluate(({ dialog }) => {
+      dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
+    }).catch(() => undefined);
     await app?.close().catch(() => undefined);
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
@@ -841,10 +845,20 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // A discovered worktree shows up on the folder's 워크트리 card, which is the path driven here.
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: "폴더 상세" }).click();
-    const row = page
+    const originalRow = page
       .getByRole("region", { name: "워크트리" })
       .getByRole("button", { name: "feature/external 워크트리 열기" });
+    await expect(originalRow).toBeVisible();
+    await execFileAsync("git", ["-C", externalPath, "checkout", "-b", "feature/외부-변경"]);
+    await page.getByRole("button", { name: "목록 새로고침", exact: true }).click();
+    await expect(page.getByRole("button", { name: "feature/외부-변경 worktree 선택", exact: true })).toBeVisible();
+    // Refresh restores the folder's session view, so reopen its detail card before checking it.
+    await page.getByRole("button", { name: "폴더 상세" }).click();
+    const row = page
+      .getByRole("region", { name: "워크트리" })
+      .getByRole("button", { name: "feature/외부-변경 워크트리 열기" });
     await expect(row).toBeVisible();
+    await expect(originalRow).toBeHidden();
     await row.click();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
@@ -861,11 +875,15 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: "폴더 상세" }).click();
     await row.click({ button: "right" });
-    await page.getByRole("menu", { name: "feature/external worktree 작업" }).getByRole("menuitem", { name: "Worktree 제거" }).click();
+    await page.getByRole("menu", { name: "feature/외부-변경 worktree 작업" }).getByRole("menuitem", { name: "Worktree 제거" }).click();
     await page.getByRole("dialog", { name: "Worktree 제거" }).getByRole("button", { name: "제거" }).click();
     await page.getByRole("dialog", { name: "Worktree 강제 제거" }).getByRole("button", { name: "변경을 버리고 강제 제거" }).click();
     await expect(row).toBeHidden();
     await expect.poll(() => fs.stat(externalPath).then(() => true, () => false)).toBe(false);
+    await expect.poll(() => page.evaluate(async () => {
+      const { state } = await window.multiCliWork.terminals.state();
+      return Object.values(state.sessions).filter(session => session.worktreeId !== undefined).length;
+    })).toBe(0);
   });
 
   test("@smoke hides to the tray and restores saved tabs after a relaunch", async () => {
@@ -1096,6 +1114,14 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // and waiting for it would hide the regression this test exists for.
     expect(await markerColumn()).toBe(89);
 
+    // A second detach/attach must preserve the same scrollback and terminal dimensions too.
+    await page.getByRole("button", { name: "홈 대시보드 열기" }).click();
+    await expect(terminal).toBeHidden();
+    await page.getByRole("button", { name: `${SHELL_LABEL} 2 세션으로 이동` }).click();
+    await expect(terminal).toBeVisible();
+    await expect(page.locator(".xterm-rows").first()).toContainText("MCWCOL");
+    expect(await markerColumn()).toBe(89);
+
     // Leave no live PTY behind: app.close() follows the before-quit path, where the product's
     // native destructive-quit confirmation would block the afterAll hook.
     await terminal.click();
@@ -1156,6 +1182,86 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       await page.keyboard.press("Escape");
       await expect(page.getByRole("dialog", { name: "설정" })).toBeHidden();
     }
+  });
+
+  test("keeps two HTML previews independent when reloading, resizing, and closing a pane", async () => {
+    const projectRoot = path.join(tempRoot, "sample-project");
+    for (const [name, color] of [["preview-a", "#e6f4ea"], ["preview-b", "#e8eefc"]]) {
+      await fs.writeFile(path.join(projectRoot, `${name}.html`),
+        `<!doctype html><html><body style="background:${color};font:24px sans-serif"><h1>${name}</h1><p>Independent preview</p></body></html>`, "utf8");
+    }
+    await openFolder();
+    await page.locator(".layout-bar").getByRole("radio", { name: "2열", exact: true }).click();
+    const occupied = page.locator(".grid-pane");
+    while (await occupied.count()) {
+      await occupied.first().getByRole("button", { name: "슬롯 비우기", exact: true }).click();
+    }
+    const explorer = page.locator(".file-explorer");
+    await explorer.getByRole("tab", { name: "파일", exact: true }).click();
+    await explorer.getByRole("button", { name: "파일 목록 새로고침" }).click();
+    for (const name of ["preview-a", "preview-b"]) {
+      await explorer.getByRole("button", { name: `${name}.html`, exact: true }).click();
+      await expect(page.getByRole("region", { name: `${name}.html html 미리보기` })).toBeVisible();
+    }
+    const previews = () => app.evaluate(({ BrowserWindow, WebContentsView }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children
+        .filter((view): view is Electron.WebContentsView => view instanceof WebContentsView)
+        .filter(view => view.getVisible() && /preview-[ab]\.html/.test(view.webContents.getURL()))
+        .map(view => ({ url: view.webContents.getURL(), bounds: view.getBounds() })));
+    await expect.poll(async () => (await previews()).length).toBe(2);
+    const first = page.getByRole("region", { name: "preview-a.html html 미리보기" });
+    const second = page.getByRole("region", { name: "preview-b.html html 미리보기" });
+    const readPreview = (name: string) => app.evaluate(async ({ webContents }, filename) => {
+      const contents = webContents.getAllWebContents().find(item => item.getURL().endsWith(filename));
+      return contents?.executeJavaScript("document.body.textContent");
+    }, `${name}.html`);
+    await fs.writeFile(path.join(projectRoot, "preview-a.html"), "<h1>preview-a refreshed</h1>", "utf8");
+    await first.getByRole("button", { name: "새로 고침", exact: true }).click();
+    await expect.poll(() => readPreview("preview-a")).toContain("preview-a refreshed");
+    await expect.poll(() => readPreview("preview-b")).toContain("preview-b");
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect.poll(async () => {
+      const native = await previews();
+      const holes = await page.locator(".html-preview-hole").evaluateAll(elements => elements.map(element => {
+        const rect = element.getBoundingClientRect();
+        return {
+          file: element.closest(".html-view")?.getAttribute("aria-label")?.split(" ")[0],
+          bounds: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        };
+      }));
+      return native.length === 2 && native.every(view => holes.some(hole =>
+        hole.file && view.url.endsWith(hole.file) && JSON.stringify(hole.bounds) === JSON.stringify(view.bounds)));
+    }).toBe(true);
+    const image = await app.evaluate(async ({ BrowserWindow, desktopCapturer }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (process.platform === "win32") {
+        // capturePage omits sibling WebContentsViews; capture the composed native window on Windows.
+        const sources = await desktopCapturer.getSources({ types: ["window"], thumbnailSize: window.getBounds() });
+        const source = sources.find(item => item.id === window.getMediaSourceId());
+        if (source && !source.thumbnail.isEmpty()) return source.thumbnail.toDataURL();
+      }
+      return (await window.capturePage()).toDataURL();
+    });
+    const screenshotPath = test.info().outputPath("independent-html-previews.png");
+    await fs.writeFile(screenshotPath, Buffer.from(image.split(",")[1], "base64"));
+    await test.info().attach("independent-html-previews", { path: screenshotPath, contentType: "image/png" });
+    // Keep direct native page captures too, including on systems without a window capture service.
+    const nativeImages = await app.evaluate(async ({ webContents }) => Promise.all(webContents.getAllWebContents()
+      .filter(contents => /preview-[ab]\.html/.test(contents.getURL()))
+      .map(async contents => ({ file: contents.getURL().split("/").pop()!, data: (await contents.capturePage()).toDataURL() }))));
+    for (const capture of nativeImages) {
+      const nativePath = test.info().outputPath(`${capture.file}.png`);
+      await fs.writeFile(nativePath, Buffer.from(capture.data.split(",")[1], "base64"));
+      await test.info().attach(capture.file, { path: nativePath, contentType: "image/png" });
+    }
+    await first.getByRole("button", { name: "파일 닫기" }).click();
+    await expect.poll(async () => (await previews()).map(view => path.basename(view.url))).toEqual(["preview-b.html"]);
+    await expect(second).toBeVisible();
+    await second.getByRole("button", { name: "파일 닫기" }).click();
+    await expect.poll(async () => (await previews()).length).toBe(0);
+    await expect.poll(() => app.evaluate(({ webContents }) => webContents.getAllWebContents()
+      .filter(contents => /preview-[ab]\.html/.test(contents.getURL())).length)).toBe(0);
+    await restoreDefaultWindowSize();
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
