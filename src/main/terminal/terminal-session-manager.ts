@@ -55,6 +55,8 @@ export class OutputRingBuffer {
 }
 
 interface SessionRecord {
+  generation?: string;
+  subscriptions: Array<{ dispose(): void }>;
   session: TerminalSession;
   statusAdapter: StatusAdapter;
   pty: ManagedPty;
@@ -74,7 +76,7 @@ export class TerminalSessionManager {
 
   create(spec: TerminalLaunchSpec): TerminalSession {
     const existing = this.sessions.get(spec.sessionId);
-    if (existing?.session.status === "exited") this.sessions.delete(spec.sessionId);
+    if (existing?.session.status === "exited") this.release(spec.sessionId, existing.generation);
     else if (existing) throw new Error(`Terminal session already exists: ${spec.sessionId}`);
     const pty = this.factory.spawn(spec.executable, spec.args, {
       cwd: spec.cwd,
@@ -96,6 +98,8 @@ export class TerminalSessionManager {
       exitCode: null,
     };
     const record: SessionRecord = {
+      generation: spec.generation,
+      subscriptions: [],
       session,
       statusAdapter: spec.statusAdapter,
       pty,
@@ -105,21 +109,23 @@ export class TerminalSessionManager {
     };
     if (spec.initialReplay) record.output.append(spec.initialReplay);
     this.sessions.set(session.id, record);
-    pty.onData((data) => {
+    record.subscriptions.push(pty.onData((data) => {
+      if (this.sessions.get(session.id) !== record) return;
       record.outputSequence += 1;
       record.output.append(data);
       record.session.updatedAt = new Date().toISOString();
-      this.publish({ type: "data", sessionId: session.id, data, sequence: record.outputSequence });
+      this.publishEvent(record, { type: "data", sessionId: session.id, data, sequence: record.outputSequence });
       if (record.session.status === "starting") this.setStatus(record, "idle");
       if (record.statusAdapter === "osc9") this.applyOsc9Notifications(record, data);
-    });
-    pty.onExit(({ exitCode, signal }) => {
+    }));
+    record.subscriptions.push(pty.onExit(({ exitCode, signal }) => {
+      if (this.sessions.get(session.id) !== record) return;
       record.session.exitCode = exitCode;
       record.session.updatedAt = new Date().toISOString();
       this.setStatus(record, "exited");
-      this.publish({ type: "exit", sessionId: session.id, exitCode, signal });
-    });
-    this.publish({ type: "status", sessionId: session.id, status: "starting" });
+      this.publishEvent(record, { type: "exit", sessionId: session.id, exitCode, signal });
+    }));
+    this.publishEvent(record, { type: "status", sessionId: session.id, status: "starting" });
     return { ...session };
   }
 
@@ -149,6 +155,20 @@ export class TerminalSessionManager {
     if (record.session.status !== "exited") record.pty.kill();
   }
 
+  release(sessionId: string, generation?: string, force = false): void {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.generation !== generation) return;
+    if (!force && record.session.status !== "exited") return;
+    if (record.session.status !== "exited") record.pty.kill();
+    this.sessions.delete(sessionId);
+    for (const subscription of record.subscriptions) subscription.dispose();
+    record.subscriptions.length = 0;
+  }
+
+  private publishEvent(record: SessionRecord, event: TerminalWorkerEvent): void {
+    this.publish(record.generation ? { ...event, generation: record.generation } : event);
+  }
+
   private requireSession(sessionId: string): SessionRecord {
     const record = this.sessions.get(sessionId);
     if (!record) throw new Error(`Unknown terminal session: ${sessionId}`);
@@ -159,7 +179,7 @@ export class TerminalSessionManager {
     if (record.session.status === status) return;
     record.session.status = status;
     record.session.updatedAt = new Date().toISOString();
-    this.publish({ type: "status", sessionId: record.session.id, status });
+    this.publishEvent(record, { type: "status", sessionId: record.session.id, status });
   }
 
   /**

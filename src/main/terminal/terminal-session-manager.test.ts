@@ -19,12 +19,12 @@ class FakePty implements ManagedPty {
 
   onData(listener: (data: string) => void): { dispose(): void } {
     this.dataListener = listener;
-    return { dispose: () => undefined };
+    return { dispose: () => { this.dataListener = () => undefined; } };
   }
 
   onExit(listener: (event: { exitCode: number; signal?: number }) => void): { dispose(): void } {
     this.exitListener = listener;
-    return { dispose: () => undefined };
+    return { dispose: () => { this.exitListener = () => undefined; } };
   }
 
   emitData(data: string): void {
@@ -54,6 +54,47 @@ function launchSpec(): TerminalLaunchSpec {
 }
 
 describe("TerminalSessionManager", () => {
+  it("releases repeated exited sessions, replay buffers and PTY subscriptions", () => {
+    const events = vi.fn();
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, events);
+    for (let index = 0; index < 4; index++) {
+      const sessionId = `released-${index}`;
+      manager.create({ ...launchSpec(), sessionId });
+      pty.emitData("x".repeat(5 * 1024 * 1024));
+      pty.emitExit(0);
+      manager.release(sessionId);
+      expect(() => manager.attach(sessionId)).toThrow(/Unknown terminal/);
+      events.mockClear();
+      pty.emitData("late");
+      pty.emitExit(1);
+      expect(events).not.toHaveBeenCalled();
+    }
+    expect((manager as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0);
+  });
+
+  it("disposes replaced listeners and ignores release for an old generation", () => {
+    const first = new FakePty();
+    const second = new FakePty();
+    const factory = { spawn: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second) };
+    const events = vi.fn();
+    const manager = new TerminalSessionManager(factory, events);
+    manager.create({ ...launchSpec(), generation: "old" });
+    first.emitExit(0);
+    manager.create({ ...launchSpec(), generation: "new" });
+    manager.release("session-1", "old", true);
+    events.mockClear();
+    first.emitExit(2);
+    first.emitData("stale");
+    expect(events).not.toHaveBeenCalled();
+    expect(manager.attach("session-1").replay).toBe("");
+    expect(second.kill).not.toHaveBeenCalled();
+    manager.release("session-1", "new");
+    expect(manager.attach("session-1").session.status).toBe("starting");
+    manager.release("session-1", "new", true);
+    expect(second.kill).toHaveBeenCalledOnce();
+    expect(() => manager.attach("session-1")).toThrow(/Unknown terminal/);
+  });
   it("seeds restored output into the bounded replay buffer", () => {
     const manager = new TerminalSessionManager({ spawn: () => new FakePty() }, () => undefined, 12);
     manager.create({ ...launchSpec(), initialReplay: "old history\n" });

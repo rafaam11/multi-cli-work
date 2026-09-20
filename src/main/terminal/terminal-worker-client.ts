@@ -77,6 +77,10 @@ export class TerminalWorkerClient {
     return this.call((requestId) => ({ requestId, type: "stop", sessionId }));
   }
 
+  release(sessionId: string, generation?: string, force = false): Promise<void> {
+    return this.call((requestId) => ({ requestId, type: "release", sessionId, generation, force }));
+  }
+
   onEvent(listener: (event: TerminalWorkerEvent) => void): () => void {
     this.subscribers.add(listener);
     return () => this.subscribers.delete(listener);

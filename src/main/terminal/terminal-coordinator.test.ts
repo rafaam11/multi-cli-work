@@ -11,7 +11,7 @@ import type {
   TerminalSession,
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
-import { readAppState, readSessionLog } from "../state/app-state";
+import { appendSessionLog, readAppState, readSessionLog } from "../state/app-state";
 import type { BuiltinAgentId } from "../../shared/agent-types";
 import { BUILTIN_AGENTS } from "../agents/builtin-agents";
 import { TerminalCoordinator, type TerminalWorkerGateway } from "./terminal-coordinator";
@@ -64,6 +64,7 @@ class FakeWorker implements TerminalWorkerGateway {
   readonly write = vi.fn(async () => undefined);
   readonly resize = vi.fn(async () => undefined);
   readonly stop = vi.fn(async () => undefined);
+  readonly release = vi.fn(async (_id: string, _generation?: string, _force?: boolean) => undefined);
   private listener: (event: TerminalWorkerEvent) => void = () => undefined;
   private exitListener: (code: number) => void = () => undefined;
 
@@ -135,6 +136,124 @@ async function coordinator(
 }
 
 describe("TerminalCoordinator", () => {
+  it("retains failed exit logs and releases only after a durable retry", async () => {
+    const root = await tempRoot();
+    let fail = true;
+    const append = vi.fn(async (...args: Parameters<typeof appendSessionLog>) => {
+      if (fail) throw new Error("disk full");
+      await appendSessionLog(...args);
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { instance, worker } = await coordinator(root, new FakeWorker(), undefined, append);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    worker.emit({ type: "data", sessionId: "session-1", data: "preserve me", sequence: 1 });
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await expect(instance.flush()).rejects.toThrow("disk full");
+    expect(worker.release).not.toHaveBeenCalled();
+    fail = false;
+    await instance.flush();
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe("preserve me");
+    expect(worker.release).toHaveBeenCalledWith("session-1", expect.any(String), false);
+    error.mockRestore();
+  });
+
+  it("releases explicit removals and rejects old-generation exit events after resume", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    const generation = worker.create.mock.calls[0][0].generation;
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0, generation });
+    await instance.flush();
+    await instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 99, generation });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("starting");
+    await instance.remove("session-1");
+    expect(worker.release).toHaveBeenLastCalledWith("session-1", worker.create.mock.calls[1][0].generation, true);
+  });
+
+  it("keeps failed in-flight chunks ahead of newly received output without timer retry loops", async () => {
+    const root = await tempRoot();
+    const gate = deferred<void>();
+    let fail = true;
+    const append = vi.fn(async (...args: Parameters<typeof appendSessionLog>) => {
+      if (fail) { await gate.promise; throw new Error("disk unavailable"); }
+      await appendSessionLog(...args);
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { instance, worker } = await coordinator(root, new FakeWorker(), undefined, append);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    vi.useFakeTimers();
+    try {
+      worker.emit({ type: "data", sessionId: "session-1", data: "first", sequence: 1 });
+      await vi.advanceTimersByTimeAsync(60_000);
+      worker.emit({ type: "data", sessionId: "session-1", data: "second", sequence: 2 });
+      await vi.advanceTimersByTimeAsync(60_000);
+      gate.resolve();
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(append).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); error.mockRestore(); }
+    fail = false;
+    await instance.flush();
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe("firstsecond");
+  });
+
+  it("does not allow resume to replace an exited replay while persistence is failing", async () => {
+    const root = await tempRoot();
+    let fail = true;
+    const append = vi.fn(async (...args: Parameters<typeof appendSessionLog>) => {
+      if (fail) throw new Error("disk full");
+      await appendSessionLog(...args);
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { instance, worker } = await coordinator(root, new FakeWorker(), undefined, append);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    worker.emit({ type: "data", sessionId: "session-1", data: "old output", sequence: 1 });
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await expect(instance.flush()).rejects.toThrow("disk full");
+    await expect(instance.resume({ sessionId: "session-1", cols: 80, rows: 24 })).rejects.toThrow("disk full");
+    expect(worker.create).toHaveBeenCalledTimes(1);
+    fail = false;
+    await instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe("old output");
+    error.mockRestore();
+  });
+
+  it("drains the tail and releases naturally when both output timers fired during a slow append", async () => {
+    const root = await tempRoot();
+    const gate = deferred<void>();
+    const append = vi.fn(async (...args: Parameters<typeof appendSessionLog>) => {
+      await gate.promise;
+      await appendSessionLog(...args);
+    });
+    const { instance, worker } = await coordinator(root, new FakeWorker(), undefined, append);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    vi.useFakeTimers();
+    try {
+      worker.emit({ type: "data", sessionId: "session-1", data: "first", sequence: 1 });
+      await vi.advanceTimersByTimeAsync(60_000);
+      worker.emit({ type: "data", sessionId: "session-1", data: "tail", sequence: 2 });
+      await vi.advanceTimersByTimeAsync(60_000);
+    } finally { vi.useRealTimers(); }
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await until(() => instance.list()[0].status === "exited", "exit event");
+    gate.resolve();
+    await until(() => worker.release.mock.calls.length > 0, "natural release after final log append");
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe("firsttail");
+  });
+
+  it("keeps explicit removal retryable when releasing a live worker fails", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    worker.release.mockRejectedValueOnce(new Error("worker busy"));
+    await expect(instance.remove("session-1")).rejects.toThrow("worker busy");
+    expect(instance.list()).toHaveLength(1);
+    expect((await instance.state()).state.sessions["session-1"]).toBeDefined();
+    await instance.remove("session-1");
+    expect(instance.list()).toHaveLength(0);
+    expect((await instance.state()).state.sessions["session-1"]).toBeUndefined();
+  });
   it("resolves project and provider data in main before creating a worker session", async () => {
     const root = await tempRoot();
     const { instance, worker } = await coordinator(root);

@@ -61,6 +61,10 @@ async function handleRequest(request: TerminalWorkerRequest): Promise<void> {
         manager.stop(request.sessionId);
         success(request.requestId);
         break;
+      case "release":
+        manager.release(request.sessionId, request.generation, request.force);
+        success(request.requestId);
+        break;
     }
   } catch (error) {
     failure(request.requestId, error);

@@ -36,6 +36,17 @@ function spawnQueue(transports: FakeTransport[]) {
 }
 
 describe("RestartingTerminalWorker", () => {
+  it("releases through a live worker and treats an absent crashed worker as already released", async () => {
+    const transport = new FakeTransport();
+    const worker = new RestartingTerminalWorker(() => transport);
+    const pending = worker.release("session-1", "generation-1", true);
+    expect(transport.sent[0]).toMatchObject({ type: "release", sessionId: "session-1", generation: "generation-1", force: true });
+    transport.emitMessage({ requestId: transport.sent[0].requestId, ok: true });
+    await pending;
+    transport.emitExit(1);
+    await expect(worker.release("saved-session", undefined, true)).resolves.toBeUndefined();
+    worker.dispose();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
   });

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { countChangedFiles } from "./git-status";
+import { runReadOnlyGit } from "./read-only-git";
 
 const execFileAsync = promisify(execFile);
 
@@ -100,7 +101,7 @@ export function defaultWorktreePath(projectRootPath: string, branch: string): st
 
 export async function listGitWorktrees(repoRootPath: string): Promise<ParsedGitWorktree[]> {
   try {
-    const result = await execFileAsync("git", ["-C", repoRootPath, "worktree", "list", "--porcelain", "-z"], {
+    const result = await runReadOnlyGit(["-C", repoRootPath, "worktree", "list", "--porcelain", "-z"], {
       windowsHide: true,
       timeout: STATUS_TIMEOUT_MS,
       maxBuffer: 16 * 1024 * 1024,
@@ -113,7 +114,7 @@ export async function listGitWorktrees(repoRootPath: string): Promise<ParsedGitW
 
 export async function gitCommonDir(rootPath: string): Promise<string> {
   try {
-    const result = await execFileAsync("git", ["-C", rootPath, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    const result = await runReadOnlyGit(["-C", rootPath, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
       windowsHide: true,
       timeout: STATUS_TIMEOUT_MS,
     });
@@ -206,7 +207,7 @@ export async function removeGitWorktree(repoRootPath: string, worktreePath: stri
  *  touching anything. An unreadable status is not evidence that the worktree is clean. */
 export async function worktreeChangedFileCount(worktreePath: string): Promise<number> {
   try {
-    const result = await execFileAsync("git", ["-C", worktreePath, "status", "--porcelain"], {
+    const result = await runReadOnlyGit(["-C", worktreePath, "status", "--porcelain"], {
       windowsHide: true,
       timeout: STATUS_TIMEOUT_MS,
     });

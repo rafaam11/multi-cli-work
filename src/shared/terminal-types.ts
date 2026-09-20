@@ -34,6 +34,8 @@ export interface TerminalSession {
 
 export interface TerminalLaunchSpec {
   sessionId: string;
+  /** Ephemeral launch identity; never persisted to the app-state schema. */
+  generation?: string;
   projectId: string | null;
   tool: ToolCommand | null;
   kind: TerminalKind;
@@ -57,10 +59,11 @@ export interface TerminalAttachment {
   sequence: number;
 }
 
-export type TerminalWorkerEvent =
+export type TerminalWorkerEvent = (
   | { type: "data"; sessionId: string; data: string; sequence: number }
   | { type: "status"; sessionId: string; status: TerminalStatus }
-  | { type: "exit"; sessionId: string; exitCode: number; signal?: number };
+  | { type: "exit"; sessionId: string; exitCode: number; signal?: number }
+) & { generation?: string };
 
 /**
  * What the renderer subscribes to. The PTY worker only knows about the events above; the title is
@@ -79,7 +82,8 @@ export type TerminalWorkerRequest =
   | { requestId: string; type: "attach"; sessionId: string }
   | { requestId: string; type: "write"; sessionId: string; data: string }
   | { requestId: string; type: "resize"; sessionId: string; cols: number; rows: number }
-  | { requestId: string; type: "stop"; sessionId: string };
+  | { requestId: string; type: "stop"; sessionId: string }
+  | { requestId: string; type: "release"; sessionId: string; generation?: string; force: boolean };
 
 export type TerminalWorkerResponse =
   | { requestId: string; ok: true; result?: TerminalSession | TerminalAttachment }

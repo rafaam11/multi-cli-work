@@ -44,6 +44,14 @@ const spec: TerminalLaunchSpec = {
 };
 
 describe("TerminalWorkerClient", () => {
+  it("roundtrips a generation-scoped release request", async () => {
+    const worker = new FakeWorker();
+    const client = new TerminalWorkerClient(worker, { idFactory: () => "release-1" });
+    const pending = client.release("session-1", "generation-1", true);
+    expect(worker.sent).toEqual([{ requestId: "release-1", type: "release", sessionId: "session-1", generation: "generation-1", force: true }]);
+    worker.emitMessage({ requestId: "release-1", ok: true });
+    await expect(pending).resolves.toBeUndefined();
+  });
   it("correlates requests with worker responses", async () => {
     const worker = new FakeWorker();
     const client = new TerminalWorkerClient(worker, { idFactory: () => "request-1" });

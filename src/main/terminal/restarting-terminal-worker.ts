@@ -52,6 +52,12 @@ export class RestartingTerminalWorker {
     return this.requireClient().stop(sessionId);
   }
 
+  release(sessionId: string, generation?: string, force = false): Promise<void> {
+    // A crashed worker already relinquished all its PTYs and buffers.
+    if (!this.client) return Promise.resolve();
+    return this.client.release(sessionId, generation, force);
+  }
+
   onEvent(listener: (event: TerminalWorkerEvent) => void): () => void {
     this.eventSubscribers.add(listener);
     return () => this.eventSubscribers.delete(listener);

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AgentDefinition, AgentId } from "../../shared/agent-types";
 import {
   MAX_VISIBLE_SESSIONS,
@@ -87,6 +88,7 @@ export interface TerminalWorkerGateway {
   write(sessionId: string, data: string): Promise<void>;
   resize(sessionId: string, cols: number, rows: number): Promise<void>;
   stop(sessionId: string): Promise<void>;
+  release(sessionId: string, generation?: string, force?: boolean): Promise<void>;
   onEvent(listener: (event: TerminalWorkerEvent) => void): () => void;
   onExit(listener: (code: number) => void): () => void;
 }
@@ -186,6 +188,8 @@ export class TerminalCoordinator {
   private readonly pendingLogChunks = new Map<string, string[]>();
   private readonly logFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly logWrites = new Map<string, Promise<void>>();
+  private readonly generations = new Map<string, string>();
+  private readonly pendingReleases = new Map<string, string>();
   private readonly removedSessionIds = new Set<string>();
   private readonly pendingResumes = new Map<string, Promise<string | null>>();
   /** Auto-resumes running right now, and the attaches waiting for one of those slots to free up. */
@@ -473,6 +477,7 @@ export class TerminalCoordinator {
     if (this.options.statusDir) {
       await deleteProviderStatusFile(this.options.statusDir, sessionId);
     }
+    await this.options.worker.release(sessionId, this.generations.get(sessionId), true);
     await updateAppState(
       (state) => {
         const sessions = { ...state.sessions };
@@ -492,6 +497,8 @@ export class TerminalCoordinator {
     this.views.delete(sessionId);
     this.transcriptPaths.delete(sessionId);
     this.pendingWorkerEvents.delete(sessionId);
+    this.generations.delete(sessionId);
+    this.pendingReleases.delete(sessionId);
   }
 
   /**
@@ -703,11 +710,19 @@ export class TerminalCoordinator {
       input.projectId !== null && this.options.getWorkProjectBrief
         ? await this.options.getWorkProjectBrief(input.projectId).catch(() => null)
         : null;
+    // Replacing an exited record discards its replay: first make its pending output durable.
+    while (this.pendingLogChunks.has(input.sessionId) || this.logWrites.has(input.sessionId)) {
+      await this.flushSessionLog(input.sessionId);
+    }
+    const generation = randomUUID();
+    const previousGeneration = this.generations.get(input.sessionId);
+    this.generations.set(input.sessionId, generation);
     this.launchingSessionIds.add(input.sessionId);
     let session: TerminalSession;
     try {
       session = await this.options.worker.create({
         sessionId: input.sessionId,
+        generation,
         projectId: input.projectId,
         tool: input.tool,
         kind: input.kind,
@@ -727,6 +742,8 @@ export class TerminalCoordinator {
         initialReplay: input.initialReplay,
       });
     } catch (error) {
+      if (previousGeneration) this.generations.set(input.sessionId, previousGeneration);
+      else this.generations.delete(input.sessionId);
       this.launchingSessionIds.delete(input.sessionId);
       this.pendingWorkerEvents.delete(input.sessionId);
       throw error;
@@ -740,6 +757,7 @@ export class TerminalCoordinator {
       ...(input.worktreeId !== undefined ? { worktreeId: input.worktreeId } : {}),
     };
     this.views.set(view.id, view);
+    this.pendingReleases.delete(view.id);
     this.launchingSessionIds.delete(view.id);
     const pendingWorkerEvent = this.pendingWorkerEvents.get(view.id);
     if (pendingWorkerEvent) {
@@ -899,8 +917,9 @@ export class TerminalCoordinator {
 
   private async handleWorkerEvent(event: TerminalWorkerEvent): Promise<void> {
     if (this.removedSessionIds.has(event.sessionId)) return;
+    if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
     const view = this.views.get(event.sessionId);
-    if (!view && event.type !== "data") {
+    if ((!view || this.launchingSessionIds.has(event.sessionId)) && event.type !== "data") {
       if (this.launchingSessionIds.has(event.sessionId)) {
         const pending = this.pendingWorkerEvents.get(event.sessionId);
         if (event.type === "exit" || pending?.type !== "exit") this.pendingWorkerEvents.set(event.sessionId, event);
@@ -913,11 +932,19 @@ export class TerminalCoordinator {
       view.updatedAt = this.options.now();
       await this.persistView(view);
     } else if (view && event.type === "exit") {
+      const generation = this.generations.get(event.sessionId);
       view.status = "exited";
       view.exitCode = event.exitCode;
       view.pid = null;
       view.updatedAt = this.options.now();
       await this.persistView(view);
+      if (generation && this.generations.get(event.sessionId) === generation) {
+        this.pendingReleases.set(event.sessionId, generation);
+      }
+      this.publish(event);
+      await this.flushSessionLog(event.sessionId);
+      await this.releasePersistedSession(event.sessionId);
+      return;
     }
     this.publish(event);
   }
@@ -941,6 +968,7 @@ export class TerminalCoordinator {
 
   private handleDataEvent(event: Extract<TerminalWorkerEvent, { type: "data" }>): void {
     if (this.removedSessionIds.has(event.sessionId)) return;
+    if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
     this.publish(event);
     const chunks = this.pendingLogChunks.get(event.sessionId) ?? [];
     chunks.push(event.data);
@@ -948,7 +976,9 @@ export class TerminalCoordinator {
     if (this.logFlushTimers.has(event.sessionId)) return;
     const timer = setTimeout(() => {
       this.logFlushTimers.delete(event.sessionId);
-      void this.flushSessionLog(event.sessionId);
+      void this.flushSessionLog(event.sessionId)
+        .then(() => this.releasePersistedSession(event.sessionId))
+        .catch((error) => this.reportAsyncError("Terminal log write failed", error));
     }, this.options.logFlushMs ?? DEFAULT_LOG_FLUSH_MS);
     timer.unref?.();
     this.logFlushTimers.set(event.sessionId, timer);
@@ -961,29 +991,44 @@ export class TerminalCoordinator {
       await Promise.all([...this.pendingLogChunks.keys()].map((sessionId) => this.flushSessionLog(sessionId)));
     }
     await Promise.all([...this.logWrites.values()]);
+    await Promise.all([...this.pendingReleases.keys()].map((sessionId) => this.releasePersistedSession(sessionId)));
   }
 
   private async flushSessionLog(sessionId: string): Promise<void> {
-    const chunks = this.pendingLogChunks.get(sessionId);
-    if (!chunks || chunks.length === 0) return;
-    this.pendingLogChunks.delete(sessionId);
-    const previous = this.logWrites.get(sessionId) ?? Promise.resolve();
+    const inFlight = this.logWrites.get(sessionId);
+    if (inFlight) return inFlight;
+    if (!this.pendingLogChunks.has(sessionId)) return;
     const appendLog = this.options.appendLog ?? appendSessionLog;
-    const write = previous
-      .catch((error) => this.reportAsyncError("Previous terminal log write failed", error))
-      .then(() =>
-        appendLog(
-          this.options.logDir,
-          sessionId,
-          chunks.join(""),
-          MAX_LOG_BYTES,
-          LOG_TRIM_SLACK_BYTES,
-        ),
-      )
-      .catch((error) => this.reportAsyncError("Terminal log write failed", error));
+    const write = Promise.resolve().then(async () => {
+      // A timer or exit joining an in-flight write must also drain output received during it.
+      // Stop on the first failure; retain the failed prefix without scheduling an endless retry.
+      while (this.pendingLogChunks.has(sessionId)) {
+        const chunks = this.pendingLogChunks.get(sessionId)!;
+        this.pendingLogChunks.delete(sessionId);
+        try {
+          await appendLog(this.options.logDir, sessionId, chunks.join(""), MAX_LOG_BYTES, LOG_TRIM_SLACK_BYTES);
+        } catch (error) {
+          if (!this.removedSessionIds.has(sessionId)) {
+            this.pendingLogChunks.set(sessionId, [...chunks, ...(this.pendingLogChunks.get(sessionId) ?? [])]);
+          }
+          throw error;
+        }
+      }
+    });
     this.logWrites.set(sessionId, write);
-    await write;
-    if (this.logWrites.get(sessionId) === write) this.logWrites.delete(sessionId);
+    try {
+      await write;
+    } finally {
+      if (this.logWrites.get(sessionId) === write) this.logWrites.delete(sessionId);
+    }
+  }
+
+  private async releasePersistedSession(sessionId: string): Promise<void> {
+    const generation = this.pendingReleases.get(sessionId);
+    if (!generation || this.pendingLogChunks.has(sessionId) || this.logWrites.has(sessionId)) return;
+    if (this.generations.get(sessionId) !== generation || this.removedSessionIds.has(sessionId)) return;
+    await this.options.worker.release(sessionId, generation, false);
+    if (this.pendingReleases.get(sessionId) === generation) this.pendingReleases.delete(sessionId);
   }
 
   private dropPendingLog(sessionId: string): void {

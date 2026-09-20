@@ -1,4 +1,5 @@
 import type { SharedProject } from "../../shared/project-types";
+import { runReadOnlyGit } from "./read-only-git";
 import { isWorkingBranch } from "../../shared/working-branches";
 import type {
   GitWorkspaceView,
@@ -92,16 +93,29 @@ export class WorktreeService {
 
     const owners = new Map<string, SharedProject>();
     const commonDirs = new Map<string, string>();
-    for (const project of [...projects].sort((left, right) => left.createdAt.localeCompare(right.createdAt))) {
-      try {
-        const common = normalizeWorkspacePath(await gitCommonDir(project.rootPath));
+    const byAge = [...projects].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    const queriedCommonDirs = await Promise.allSettled(byAge.map((project) => gitCommonDir(project.rootPath)));
+    for (const [index, project] of byAge.entries()) {
+      const result = queriedCommonDirs[index];
+      if (result.status === "fulfilled") {
+        const common = normalizeWorkspacePath(result.value);
         commonDirs.set(project.id, common);
         if (!owners.has(common)) owners.set(common, project);
-      } catch {
-        // The project-level list below produces the user-facing warning.
       }
     }
-    for (const project of projects) {
+    // Complete I/O concurrently, then apply results in input order: completion order must not
+    // change generated worktree IDs, warning ownership, or the registry deltas.
+    const queriedWorkspaces = await Promise.allSettled(projects.map(async (project) => {
+      const common = commonDirs.get(project.id);
+      const owner = common ? owners.get(common) : undefined;
+      if (owner && owner.id !== project.id) return null;
+      const listed = await listGitWorktrees(project.rootPath);
+      const counts = await Promise.allSettled(listed.map((item) =>
+        item.prunableReason ? Promise.resolve(0) : worktreeChangedFileCount(item.path),
+      ));
+      return { listed, counts };
+    }));
+    for (const [projectIndex, project] of projects.entries()) {
       try {
         const common = commonDirs.get(project.id);
         const owner = common ? owners.get(common) : undefined;
@@ -109,10 +123,13 @@ export class WorktreeService {
           warnings[project.id] = `같은 Git 저장소는 ${owner.displayName ?? owner.rootPath} 프로젝트가 관리합니다.`;
           continue;
         }
-        const listed = await listGitWorktrees(project.rootPath);
+        const query = queriedWorkspaces[projectIndex];
+        if (query.status === "rejected") throw query.reason;
+        if (!query.value) continue;
+        const { listed, counts } = query.value;
         const mainKey = normalizeWorkspacePath(project.rootPath);
         const seen = new Set<string>();
-        for (const item of listed) {
+        for (const [itemIndex, item] of listed.entries()) {
           const normalized = normalizeWorkspacePath(item.path);
           seen.add(normalized);
           const isMain = normalized === mainKey;
@@ -145,6 +162,8 @@ export class WorktreeService {
               added.push(entry);
             }
           }
+          const count = counts[itemIndex];
+          if (count.status === "rejected") throw count.reason;
           workspaces.push({
             workspaceKey: isMain ? `project:${project.id}:main` : `worktree:${worktreeId}`,
             kind: isMain ? "main" : "worktree",
@@ -153,7 +172,7 @@ export class WorktreeService {
             path: item.path,
             branch: item.branch,
             head: item.head,
-            changedFileCount: item.prunableReason ? 0 : await worktreeChangedFileCount(item.path),
+            changedFileCount: count.value,
             availability: "available",
             lockedReason: item.lockedReason,
             prunableReason: item.prunableReason,
@@ -195,12 +214,11 @@ export class WorktreeService {
   async ownerForPath(rootPath: string, projects: SharedProject[]): Promise<{ projectId: string; worktreeId: string | null } | null> {
     let candidateCommon: string;
     try { candidateCommon = normalizeWorkspacePath(await gitCommonDir(rootPath)); } catch { return null; }
-    const matches: SharedProject[] = [];
-    for (const project of projects) {
-      try {
-        if (normalizeWorkspacePath(await gitCommonDir(project.rootPath)) === candidateCommon) matches.push(project);
-      } catch { /* not a repository */ }
-    }
+    const commonDirs = await Promise.allSettled(projects.map((project) => gitCommonDir(project.rootPath)));
+    const matches = projects.filter((_project, index) => {
+      const result = commonDirs[index];
+      return result.status === "fulfilled" && normalizeWorkspacePath(result.value) === candidateCommon;
+    });
     const owner = matches.sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
     if (!owner) return null;
     const snapshot = await this.sync(projects);
@@ -219,11 +237,7 @@ export class WorktreeService {
   async creationOptions(projectId: string): Promise<WorktreeCreateOptions> {
     const project = await this.options.getProject(projectId);
     if (!project) throw new Error(`Unknown project: ${projectId}`);
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const run = promisify(execFile);
-    const result = await run(
-      "git",
+    const result = await runReadOnlyGit(
       ["-C", project.rootPath, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
       { windowsHide: true, timeout: 5_000 },
     );
