@@ -203,7 +203,7 @@ export async function removeGitWorktree(repoRootPath: string, worktreePath: stri
 }
 
 /** How many files stand uncommitted in the worktree — the gate the remove flow checks before
- *  touching anything. A worktree that no longer answers git counts as clean; removal will say why. */
+ *  touching anything. An unreadable status is not evidence that the worktree is clean. */
 export async function worktreeChangedFileCount(worktreePath: string): Promise<number> {
   try {
     const result = await execFileAsync("git", ["-C", worktreePath, "status", "--porcelain"], {
@@ -211,7 +211,7 @@ export async function worktreeChangedFileCount(worktreePath: string): Promise<nu
       timeout: STATUS_TIMEOUT_MS,
     });
     return countChangedFiles(result.stdout);
-  } catch {
-    return 0;
+  } catch (error) {
+    throw gitFailure("git status", error);
   }
 }

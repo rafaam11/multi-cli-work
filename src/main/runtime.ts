@@ -246,6 +246,7 @@ export async function createDesktopRuntime(
   const worktrees: WorktreeService = new WorktreeService({
     ...(worktreeRegistryPath ? { registryPath: worktreeRegistryPath } : {}),
     getProject,
+    stopWorktreeSessions: (worktreeId) => coordinator.stopWorktreeSessions(worktreeId),
     removeWorktreeSessions: (worktreeId) => coordinator.removeWorktreeSessions(worktreeId),
     hasWorktreeSessions: (worktreeId) => coordinator.list().some((session) => session.worktreeId === worktreeId),
     idFactory: () => crypto.randomUUID(),

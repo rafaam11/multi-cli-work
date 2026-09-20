@@ -1,5 +1,5 @@
 import type { FileTreeEntry } from "@shared/file-explorer-types";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileExplorer } from "./FileExplorer";
 
@@ -27,11 +27,11 @@ const onOpenFileExternal = vi.fn();
 const onEntryDeleted = vi.fn();
 const onEntryRenamed = vi.fn();
 
-function renderExplorer() {
+function renderExplorer(activeTarget = target) {
   return render(
     <FileExplorer
       hidden={false}
-      target={target}
+      target={activeTarget}
       targetLabel="Repo"
       selectedRelativePath={null}
       vscodeAvailable
@@ -41,6 +41,16 @@ function renderExplorer() {
       onEntryRenamed={onEntryRenamed}
     />,
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 const row = (name: string) => screen.findByRole("button", { name: new RegExp(name) });
@@ -283,5 +293,70 @@ describe("FileExplorer change highlighting", () => {
 
     await waitFor(() => expect(changedPaths).toHaveBeenCalledWith(target));
     expect(listDirectory).not.toHaveBeenCalled();
+  });
+});
+
+describe("FileExplorer directory request ownership", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listDirectory.mockReset();
+    panelData.mockResolvedValue({ isRepo: true, currentBranch: "main", upstream: null, ahead: null, behind: null, branches: ["main"], changes: [], ignored: [] });
+    changedPaths.mockResolvedValue({ agentPaths: [], baselineMs: 0 });
+    Object.assign(window, {
+      multiCliWork: {
+        workspaceFiles: { listDirectory, absolutePath, reveal, openInEditor, create, rename, duplicate, trash, changedPaths, clearChanges },
+        git: { panelData }, clipboard: { writeText },
+      },
+    });
+  });
+
+  it("ignores a directory success from the previously selected target", async () => {
+    const oldRead = deferred<FileTreeEntry[]>();
+    const nextTarget = { kind: "project", id: "p2" } as const;
+    listDirectory.mockImplementation((readTarget) => readTarget.id === target.id ? oldRead.promise : Promise.resolve([{ ...file, name: "new.md", relativePath: "new.md" }]));
+    const view = renderExplorer();
+
+    view.rerender(<FileExplorer hidden={false} target={nextTarget} targetLabel="Next" selectedRelativePath={null} vscodeAvailable onOpenFile={onOpenFile} onOpenFileExternal={onOpenFileExternal} onEntryDeleted={onEntryDeleted} onEntryRenamed={onEntryRenamed} />);
+    await screen.findByText("new.md");
+    await act(async () => oldRead.resolve([file]));
+
+    expect(screen.queryByText("readme.md")).not.toBeInTheDocument();
+  });
+
+  it("does not revive an old target request after switching A to B and back to A", async () => {
+    const oldA = deferred<FileTreeEntry[]>();
+    const newA = deferred<FileTreeEntry[]>();
+    const targetB = { kind: "project", id: "p2" } as const;
+    let aReads = 0;
+    listDirectory.mockImplementation((readTarget) => {
+      if (readTarget.id === targetB.id) return Promise.resolve([{ ...file, name: "b.md", relativePath: "b.md" }]);
+      aReads += 1;
+      return aReads === 1 ? oldA.promise : newA.promise;
+    });
+    const props = { hidden: false, targetLabel: "Repo", selectedRelativePath: null, vscodeAvailable: true, onOpenFile, onOpenFileExternal, onEntryDeleted, onEntryRenamed };
+    const view = render(<FileExplorer {...props} target={target} />);
+    view.rerender(<FileExplorer {...props} target={targetB} />);
+    await screen.findByText("b.md");
+    view.rerender(<FileExplorer {...props} target={target} />);
+    await act(async () => newA.resolve([{ ...file, name: "current.md", relativePath: "current.md" }]));
+    await screen.findByText("current.md");
+
+    await act(async () => oldA.resolve([file]));
+
+    expect(screen.getByText("current.md")).toBeInTheDocument();
+    expect(screen.queryByText("readme.md")).not.toBeInTheDocument();
+  });
+
+  it("ignores an older failure after a newer refresh succeeds for the same directory", async () => {
+    const oldRead = deferred<FileTreeEntry[]>();
+    listDirectory.mockReturnValueOnce(oldRead.promise).mockResolvedValue([file]);
+    renderExplorer();
+    fireEvent.click(screen.getByRole("button", { name: "파일 목록 새로고침" }));
+    await screen.findByText("readme.md");
+
+    await act(async () => oldRead.reject(new Error("stale failure")));
+
+    expect(screen.getByText("readme.md")).toBeInTheDocument();
+    expect(screen.queryByText("불러오지 못했습니다")).not.toBeInTheDocument();
   });
 });

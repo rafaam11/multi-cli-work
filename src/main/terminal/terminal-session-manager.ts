@@ -103,6 +103,7 @@ export class TerminalSessionManager {
       controlBuffer: "",
       outputSequence: 0,
     };
+    if (spec.initialReplay) record.output.append(spec.initialReplay);
     this.sessions.set(session.id, record);
     pty.onData((data) => {
       record.outputSequence += 1;

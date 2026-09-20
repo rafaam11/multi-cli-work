@@ -54,6 +54,12 @@ function launchSpec(): TerminalLaunchSpec {
 }
 
 describe("TerminalSessionManager", () => {
+  it("seeds restored output into the bounded replay buffer", () => {
+    const manager = new TerminalSessionManager({ spawn: () => new FakePty() }, () => undefined, 12);
+    manager.create({ ...launchSpec(), initialReplay: "old history\n" });
+
+    expect(manager.attach("session-1").replay).toBe("old history\n");
+  });
   it("creates a session and publishes output and lifecycle events", () => {
     const pty = new FakePty();
     const factory: ManagedPtyFactory = { spawn: vi.fn(() => pty) };

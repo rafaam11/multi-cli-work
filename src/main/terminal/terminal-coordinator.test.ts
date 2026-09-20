@@ -37,6 +37,12 @@ async function until(predicate: () => boolean, label: string): Promise<void> {
   throw new Error(`Timed out waiting for ${label}`);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
+
 class FakeWorker implements TerminalWorkerGateway {
   readonly create = vi.fn(async (spec: TerminalLaunchSpec): Promise<TerminalSession> => ({
     id: spec.sessionId,
@@ -475,6 +481,64 @@ describe("TerminalCoordinator", () => {
     expect(stored.state.sessions["session-1"].providerConversationId).toBe("codex-created");
   });
 
+  it("keeps main-owned Codex metadata when a worker attachment is stale", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const { instance } = await coordinator(root, worker);
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    instance.applyProviderStatus({ sessionId: "session-1", status: "working", event: "SessionStart", at: "2026-07-11T01:00:00.000Z", providerConversationId: "codex-fresh" });
+    await instance.flush();
+    worker.attach.mockResolvedValue({
+      session: { id: "session-1", projectId: "project-1", tool: null, kind: "codex", cwd: "C:\\Work", providerConversationId: null, status: "starting", pid: 123, createdAt: "2026-07-11T01:00:00.000Z", updatedAt: "2026-07-11T00:59:00.000Z", exitCode: null },
+      replay: "", sequence: 0,
+    });
+
+    await expect(instance.attach("session-1")).resolves.toMatchObject({
+      session: { providerConversationId: "codex-fresh", status: "working", updatedAt: "2026-07-11T01:00:00.000Z" },
+    });
+  });
+
+  it("does not let a stale live attachment resurrect a session that exited while attach waited", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const attachment = deferred<TerminalAttachment>();
+    worker.attach.mockReturnValue(attachment.promise);
+    const { instance } = await coordinator(root, worker);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    const attaching = instance.attach("session-1");
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 9 });
+    await instance.flush();
+    attachment.resolve({
+      session: { id: "session-1", projectId: "project-1", tool: null, kind: "powershell", cwd: "C:\\Work", providerConversationId: null, status: "working", pid: 321, createdAt: "2026-07-11T01:00:00.000Z", updatedAt: "2026-07-11T00:59:00.000Z", exitCode: null },
+      replay: "stale", sequence: 3,
+    });
+
+    await expect(attaching).resolves.toMatchObject({ session: { status: "exited", pid: null, exitCode: 9 } });
+  });
+
+  it("applies an exit that races worker creation before main registers the fresh session", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    let finishCreate!: () => void;
+    const createGate = new Promise<void>((resolve) => { finishCreate = resolve; });
+    worker.create.mockImplementation(async (spec) => {
+      await createGate;
+      return { id: spec.sessionId, projectId: spec.projectId, tool: spec.tool, kind: spec.kind, cwd: spec.cwd, providerConversationId: null, status: "starting", pid: 123, createdAt: spec.createdAt, updatedAt: spec.createdAt, exitCode: null };
+    });
+    const { instance } = await coordinator(root, worker);
+
+    const creating = instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    await until(() => worker.create.mock.calls.length === 1, "worker creation to begin");
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 17 });
+    worker.emit({ type: "status", sessionId: "session-1", status: "idle" });
+    await instance.flush();
+    finishCreate();
+    await creating;
+
+    expect(instance.list()[0]).toMatchObject({ status: "exited", pid: null, exitCode: 17 });
+  });
+
   it("restores saved tabs as exited and resumes the provider conversation explicitly", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
@@ -775,6 +839,11 @@ describe("TerminalCoordinator", () => {
     await first.instance.shutdown();
 
     const secondWorker = new FakeWorker();
+    let restoredReplay = "";
+    secondWorker.create.mockImplementation(async (spec) => {
+      restoredReplay = spec.initialReplay ?? "";
+      return { id: spec.sessionId, projectId: spec.projectId, tool: spec.tool, kind: spec.kind, cwd: spec.cwd, providerConversationId: spec.providerConversationId ?? null, status: "starting", pid: 321, createdAt: spec.createdAt, updatedAt: spec.createdAt, exitCode: null };
+    });
     secondWorker.attach.mockImplementation(async (sessionId: string) => ({
       session: {
         id: sessionId,
@@ -789,7 +858,7 @@ describe("TerminalCoordinator", () => {
         updatedAt: "2026-07-19T01:00:00.000Z",
         exitCode: null,
       } satisfies TerminalSession,
-      replay: "fresh cli\r\n",
+      replay: restoredReplay + "fresh cli\r\n",
       sequence: 7,
     }));
     const second = await coordinator(root, secondWorker);
@@ -812,6 +881,35 @@ describe("TerminalCoordinator", () => {
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions["session-1"].interruptedByShutdown).toBe(false);
     expect(stored.state).toMatchObject({ selectedProjectId: null, selectedSessionId: null });
+  });
+
+  it("seeds restored scrollback into the worker so later attaches retain history", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    first.worker.emit({ type: "data", sessionId: "session-1", data: "durable history\r\n", sequence: 1 });
+    await first.instance.flush();
+    await first.instance.shutdown();
+
+    const worker = new FakeWorker();
+    let workerReplay = "";
+    let workerSession: TerminalSession | null = null;
+    worker.create.mockImplementation(async (spec) => {
+      workerReplay = spec.initialReplay ?? "";
+      workerSession = { id: spec.sessionId, projectId: spec.projectId, tool: spec.tool, kind: spec.kind, cwd: spec.cwd, providerConversationId: spec.providerConversationId ?? null, status: "starting", pid: 123, createdAt: spec.createdAt, updatedAt: spec.createdAt, exitCode: null };
+      return workerSession;
+    });
+    worker.attach.mockImplementation(async () => {
+      if (!workerSession) throw new Error("not created");
+      return { session: workerSession, replay: workerReplay, sequence: 0 };
+    });
+    const { instance } = await coordinator(root, worker);
+
+    await instance.attachForRenderer("session-1");
+    const secondAttach = await instance.attach("session-1");
+
+    expect(secondAttach.replay).toContain("durable history");
+    expect(secondAttach.replay).toContain("세션 재개됨");
   });
 
   /**
@@ -1101,6 +1199,25 @@ describe("TerminalCoordinator", () => {
     await instance.remove("session-1");
 
     await expect(fs.stat(statusFile)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps a failed artifact cleanup discoverable across restart and retry", async () => {
+    const root = await tempRoot();
+    const statusDir = await tempRoot();
+    const { instance } = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
+    await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    const blockingDirectory = path.join(statusDir, "session-1.json");
+    await fs.mkdir(blockingDirectory);
+
+    await expect(instance.remove("session-1")).rejects.toThrow();
+    expect(instance.list().map((session) => session.id)).toContain("session-1");
+    expect((await readAppState({ statePath: path.join(root, "state.json") })).state.sessions["session-1"]).toBeDefined();
+
+    const restarted = await coordinator(root, new FakeWorker(), undefined, undefined, statusDir);
+    expect(restarted.instance.list().map((session) => session.id)).toContain("session-1");
+    await fs.rmdir(blockingDirectory);
+    await expect(restarted.instance.remove("session-1")).resolves.toBeUndefined();
+    expect(restarted.instance.list().map((session) => session.id)).not.toContain("session-1");
   });
 
   it("sweeps orphaned provider status files at startup but keeps restored sessions", async () => {

@@ -47,6 +47,8 @@ export interface TerminalLaunchSpec {
   rows: number;
   createdAt: string;
   providerConversationId?: string | null;
+  /** Historical scrollback restored by main when replacing an interrupted PTY. */
+  initialReplay?: string;
 }
 
 export interface TerminalAttachment {

@@ -31,7 +31,9 @@ import {
 export interface WorktreeServiceOptions {
   registryPath?: string;
   getProject(projectId: string): Promise<SharedProject | null>;
-  /** Stops and removes every session running inside the worktree. */
+  /** Stops processes whose cwd would prevent Git from deleting the worktree. */
+  stopWorktreeSessions(worktreeId: string): Promise<void>;
+  /** Removes stopped session records and logs after Git has deleted the worktree. */
   removeWorktreeSessions(worktreeId: string): Promise<void>;
   hasWorktreeSessions?(worktreeId: string): boolean | Promise<boolean>;
   idFactory(): string;
@@ -306,21 +308,24 @@ export class WorktreeService {
     const state = listed.find(
       (item) => normalizeWorkspacePath(item.path) === normalizeWorkspacePath(worktree.path),
     );
-    if (state?.lockedReason) throw new Error("Locked worktree must be unlocked before removal");
-    if (!force) {
+    if (state) {
+      if (state.lockedReason) throw new Error("Locked worktree must be unlocked before removal");
       const changedFileCount = await worktreeChangedFileCount(worktree.path);
-      if (changedFileCount > 0) {
+      if (!force && changedFileCount > 0) {
         return {
           removed: false,
           reason: "dirty",
           message: `${worktree.branch}에 커밋되지 않은 변경 ${changedFileCount}개가 있습니다.`,
         };
       }
+      // Sessions must stop before git tries to delete the directory: on Windows a live process
+      // whose cwd is inside the worktree keeps the directory undeletable.
+      await this.options.stopWorktreeSessions(worktreeId);
+      await removeGitWorktree(project.rootPath, worktree.path, force);
     }
-    // Sessions must stop before git tries to delete the directory: on Windows a live process
-    // whose cwd is inside the worktree keeps the directory undeletable.
+    // If Git no longer lists the path, a prior attempt already crossed the irreversible boundary
+    // (or the worktree disappeared externally). Finish the retryable records/log cleanup directly.
     await this.options.removeWorktreeSessions(worktreeId);
-    await removeGitWorktree(project.rootPath, worktree.path, force);
     await removeWorktreeEntry(worktreeId, this.options.now(), this.registryOptions);
     if (this.lastProjects.length > 0) await this.sync(this.lastProjects);
     return { removed: true };

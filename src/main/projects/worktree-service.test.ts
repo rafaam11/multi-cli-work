@@ -47,14 +47,17 @@ function project(): SharedProject {
 function service(
   removeWorktreeSessions = vi.fn(async () => undefined),
   hasWorktreeSessions?: (id: string) => boolean | Promise<boolean>,
+  stopWorktreeSessions = vi.fn(async () => undefined),
 ) {
   let nextId = 0;
   return {
     removeWorktreeSessions,
+    stopWorktreeSessions,
     service: new WorktreeService({
       registryPath,
       getProject: async (projectId) => (projectId === "project-1" ? project() : null),
       removeWorktreeSessions,
+      stopWorktreeSessions,
       ...(hasWorktreeSessions ? { hasWorktreeSessions } : {}),
       idFactory: () => `worktree-${++nextId}`,
       now: () => "2026-07-13T01:00:00.000Z",
@@ -172,16 +175,74 @@ describe("worktree service against a real repo", () => {
   });
 
   it("removes a clean worktree after stopping its sessions", async () => {
-    const removeWorktreeSessions = vi.fn(async () => undefined);
-    const { service: worktrees } = service(removeWorktreeSessions);
+    const stopWorktreeSessions = vi.fn(async () => undefined);
+    let createdPath = "";
+    const removeWorktreeSessions = vi.fn(async () => {
+      await expect(fs.stat(createdPath)).rejects.toThrow();
+      expect(stopWorktreeSessions).toHaveBeenCalled();
+    });
+    const { service: worktrees } = service(removeWorktreeSessions, undefined, stopWorktreeSessions);
     const created = await worktrees.create("project-1", "feature-clean");
+    createdPath = created.path;
 
     const result = await worktrees.remove(created.id, false);
 
     expect(result).toEqual({ removed: true });
+    expect(stopWorktreeSessions).toHaveBeenCalledWith(created.id);
     expect(removeWorktreeSessions).toHaveBeenCalledWith(created.id);
     await expect(fs.stat(created.path)).rejects.toThrow();
     expect((await readWorktreeRegistry({ registryPath })).worktrees).toEqual({});
+  });
+
+  it("keeps sessions and the registry when git removal fails after processes stop", async () => {
+    const removeWorktreeSessions = vi.fn(async () => undefined);
+    let createdPath = "";
+    const stopWorktreeSessions = vi.fn(async (_id: string) => {
+      await fs.writeFile(path.join(createdPath, "readme.md"), "changed after status\n", "utf8");
+    });
+    const { service: worktrees } = service(removeWorktreeSessions, undefined, stopWorktreeSessions);
+    const created = await worktrees.create("project-1", "feature-remove-fails");
+    createdPath = created.path;
+
+    await expect(worktrees.remove(created.id, false)).rejects.toThrow();
+
+    expect(stopWorktreeSessions).toHaveBeenCalledWith(created.id);
+    expect(removeWorktreeSessions).not.toHaveBeenCalled();
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeDefined();
+  });
+
+  it("retries session cleanup after Git already removed the worktree", async () => {
+    const removeWorktreeSessions = vi.fn()
+      .mockRejectedValueOnce(new Error("log cleanup failed"))
+      .mockResolvedValueOnce(undefined);
+    const { service: worktrees } = service(removeWorktreeSessions);
+    const created = await worktrees.create("project-1", "feature-cleanup-retry");
+
+    await expect(worktrees.remove(created.id, false)).rejects.toThrow("log cleanup failed");
+    await expect(fs.stat(created.path)).rejects.toThrow();
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeDefined();
+
+    await expect(worktrees.remove(created.id, false)).resolves.toEqual({ removed: true });
+    expect(removeWorktreeSessions).toHaveBeenCalledTimes(2);
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeUndefined();
+  });
+
+  it("aborts before stopping sessions when git status cannot be read", async () => {
+    const removeWorktreeSessions = vi.fn(async () => undefined);
+    const stopWorktreeSessions = vi.fn(async () => undefined);
+    const { service: worktrees } = service(removeWorktreeSessions, undefined, stopWorktreeSessions);
+    const created = await worktrees.create("project-1", "feature-status-fails");
+    await fs.rename(path.join(created.path, ".git"), path.join(created.path, ".git-missing"));
+
+    await expect(worktrees.remove(created.id, false)).rejects.toThrow();
+
+    expect(stopWorktreeSessions).not.toHaveBeenCalled();
+    expect(removeWorktreeSessions).not.toHaveBeenCalled();
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeDefined();
+
+    await expect(worktrees.remove(created.id, true)).rejects.toThrow();
+    expect(stopWorktreeSessions).not.toHaveBeenCalled();
+    expect(removeWorktreeSessions).not.toHaveBeenCalled();
   });
 
   it("refuses to remove a dirty worktree without touching its sessions, until forced", async () => {

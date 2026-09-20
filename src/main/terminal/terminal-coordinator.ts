@@ -134,6 +134,8 @@ const DEFAULT_TITLE_POLL_MS = 2_000;
 export interface LaunchOptions {
   /** False for background launches that must not steal the user's current selection. Default true. */
   updateSelection?: boolean;
+  /** Main-owned history to seed into a replacement worker's bounded replay buffer. */
+  initialReplay?: string;
 }
 
 function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
@@ -158,6 +160,25 @@ function exitedView(session: PersistedTerminalSession): TerminalSessionView {
   return { ...session, status: "exited", pid: null, exitCode: null };
 }
 
+/** Main owns session metadata and provider status; the worker only wins when it proves the PTY exited. */
+function mergeWorkerAttachment(view: TerminalSessionView, worker: TerminalSession): TerminalSessionView {
+  if (view.status === "exited" || view.status === "error") return { ...view };
+  if (worker.status !== "exited") {
+    return {
+      ...view,
+      status: view.status === "starting" ? worker.status : view.status,
+      pid: worker.pid,
+    };
+  }
+  return {
+    ...view,
+    status: "exited",
+    pid: null,
+    updatedAt: worker.updatedAt,
+    exitCode: worker.exitCode,
+  };
+}
+
 export class TerminalCoordinator {
   private readonly views = new Map<string, TerminalSessionView>();
   private readonly subscribers = new Set<(event: TerminalEvent) => void>();
@@ -172,6 +193,8 @@ export class TerminalCoordinator {
   private readonly autoResumeQueue: Array<() => void> = [];
   private readonly transcriptPaths = new Map<string, string>();
   private readonly pendingProviderStarts = new Map<string, ProviderStatusEvent>();
+  private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" }>>();
+  private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -281,6 +304,7 @@ export class TerminalCoordinator {
       createdAt: saved.createdAt,
       resumeConversationId: saved.providerConversationId,
       updateSelection: options.updateSelection,
+      initialReplay: options.initialReplay,
     });
   }
 
@@ -303,13 +327,13 @@ export class TerminalCoordinator {
       const live = await this.options.worker.attach(sessionId);
       return {
         session: {
-          ...live.session,
+          ...mergeWorkerAttachment(view, live.session),
           title: view.title,
           name: view.name,
           interruptedByShutdown: view.interruptedByShutdown,
           ...(view.worktreeId !== undefined ? { worktreeId: view.worktreeId } : {}),
         },
-        replay: restoredReplay + live.replay,
+        replay: live.replay,
         sequence: live.sequence,
       };
     } catch {
@@ -337,16 +361,17 @@ export class TerminalCoordinator {
         // Snapshot the old scrollback before the replacement PTY can emit output. The separator is
         // committed only after create() succeeds, so failed retries leave the durable log intact.
         const replay = await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES);
+        const separator = resumeSeparatorText(this.options.now());
+        const restored = replay + separator;
         await this.resume(
           {
             sessionId,
             cols: size?.cols ?? AUTO_RESUME_COLS,
             rows: size?.rows ?? AUTO_RESUME_ROWS,
           },
-          { updateSelection: false },
+          { updateSelection: false, initialReplay: restored },
         );
         const appendLog = this.options.appendLog ?? appendSessionLog;
-        const separator = resumeSeparatorText(this.options.now());
         await appendLog(
           this.options.logDir,
           sessionId,
@@ -354,7 +379,7 @@ export class TerminalCoordinator {
           MAX_LOG_BYTES,
           LOG_TRIM_SLACK_BYTES,
         );
-        return replay + separator;
+        return restored;
       } catch (error) {
         // The marking stays, so the next attach — or the manual resume button — can retry.
         this.reportAsyncError("Lazy auto-resume failed", error);
@@ -396,7 +421,7 @@ export class TerminalCoordinator {
         // The worker knows nothing about titles or worktrees, so keep what main is tracking.
         return {
           session: {
-            ...attachment.session,
+            ...mergeWorkerAttachment(view, attachment.session),
             title: view.title,
             name: view.name,
             interruptedByShutdown: view.interruptedByShutdown,
@@ -437,11 +462,14 @@ export class TerminalCoordinator {
     const view = this.views.get(sessionId);
     if (!view) return;
     this.removedSessionIds.add(sessionId);
-    this.views.delete(sessionId);
     this.pendingProviderStarts.delete(sessionId);
     this.dropPendingLog(sessionId);
     if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
     await this.logWrites.get(sessionId)?.catch(() => undefined);
+    await deleteSessionLog(this.options.logDir, sessionId);
+    if (this.options.statusDir) {
+      await deleteProviderStatusFile(this.options.statusDir, sessionId);
+    }
     await updateAppState(
       (state) => {
         const sessions = { ...state.sessions };
@@ -458,10 +486,9 @@ export class TerminalCoordinator {
       },
       { statePath: this.options.statePath },
     );
-    await deleteSessionLog(this.options.logDir, sessionId);
-    if (this.options.statusDir) {
-      await deleteProviderStatusFile(this.options.statusDir, sessionId);
-    }
+    this.views.delete(sessionId);
+    this.transcriptPaths.delete(sessionId);
+    this.pendingWorkerEvents.delete(sessionId);
   }
 
   /**
@@ -477,6 +504,22 @@ export class TerminalCoordinator {
    *  process whose cwd is inside it keeps the directory undeletable on Windows. */
   async removeWorktreeSessions(worktreeId: string): Promise<void> {
     await this.removeSessions(this.list().filter((session) => session.worktreeId === worktreeId));
+  }
+
+  async stopWorktreeSessions(worktreeId: string): Promise<void> {
+    const sessions = this.list().filter((session) => session.worktreeId === worktreeId);
+    const failures: unknown[] = [];
+    for (const session of sessions) {
+      if (session.pid === null || session.status === "exited" || session.status === "error") continue;
+      try {
+        await this.options.worker.stop(session.id);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Failed to stop ${failures.length} of ${sessions.length} sessions`, { cause: failures[0] });
+    }
   }
 
   private async removeSessions(sessions: TerminalSessionView[]): Promise<void> {
@@ -556,6 +599,7 @@ export class TerminalCoordinator {
     const event: ProviderStatusEvent = typeof eventOrSessionId === "string"
       ? { sessionId: eventOrSessionId, status: legacyStatus!, event: "legacy", at: this.options.now() }
       : eventOrSessionId;
+    if (this.removedSessionIds.has(event.sessionId)) return;
     const view = this.views.get(event.sessionId);
     if (!view && typeof eventOrSessionId !== "string" && event.event === "SessionStart" && event.providerConversationId) {
       this.pendingProviderStarts.set(event.sessionId, event);
@@ -638,6 +682,7 @@ export class TerminalCoordinator {
     title?: string | null;
     name?: string | null;
     updateSelection?: boolean;
+    initialReplay?: string;
   }): Promise<TerminalSessionView> {
     const agent = this.requireAgent(input.kind);
     const executables = await this.options.getExecutables();
@@ -655,25 +700,34 @@ export class TerminalCoordinator {
       input.projectId !== null && this.options.getWorkProjectBrief
         ? await this.options.getWorkProjectBrief(input.projectId).catch(() => null)
         : null;
-    const session = await this.options.worker.create({
-      sessionId: input.sessionId,
-      projectId: input.projectId,
-      tool: input.tool,
-      kind: input.kind,
-      statusAdapter: agent.statusAdapter,
-      cwd: input.cwd,
-      executable: command.executable,
-      args: command.args,
-      env: {
-        ...this.options.env,
-        MULTI_CLI_WORK_SESSION_ID: input.sessionId,
-        ...(briefPath ? { MULTI_CLI_WORK_PROJECT_BRIEF: briefPath } : {}),
-      },
-      cols: input.cols,
-      rows: input.rows,
-      createdAt: input.createdAt,
-      providerConversationId: command.providerConversationId,
-    });
+    this.launchingSessionIds.add(input.sessionId);
+    let session: TerminalSession;
+    try {
+      session = await this.options.worker.create({
+        sessionId: input.sessionId,
+        projectId: input.projectId,
+        tool: input.tool,
+        kind: input.kind,
+        statusAdapter: agent.statusAdapter,
+        cwd: input.cwd,
+        executable: command.executable,
+        args: command.args,
+        env: {
+          ...this.options.env,
+          MULTI_CLI_WORK_SESSION_ID: input.sessionId,
+          ...(briefPath ? { MULTI_CLI_WORK_PROJECT_BRIEF: briefPath } : {}),
+        },
+        cols: input.cols,
+        rows: input.rows,
+        createdAt: input.createdAt,
+        providerConversationId: command.providerConversationId,
+        initialReplay: input.initialReplay,
+      });
+    } catch (error) {
+      this.launchingSessionIds.delete(input.sessionId);
+      this.pendingWorkerEvents.delete(input.sessionId);
+      throw error;
+    }
     const view: TerminalSessionView = {
       ...session,
       title: input.title ?? null,
@@ -683,6 +737,12 @@ export class TerminalCoordinator {
       ...(input.worktreeId !== undefined ? { worktreeId: input.worktreeId } : {}),
     };
     this.views.set(view.id, view);
+    this.launchingSessionIds.delete(view.id);
+    const pendingWorkerEvent = this.pendingWorkerEvents.get(view.id);
+    if (pendingWorkerEvent) {
+      this.pendingWorkerEvents.delete(view.id);
+      await this.handleWorkerEvent(pendingWorkerEvent);
+    }
     // Launching selects the session — unless the launch is a background one (lazy auto-resume, a
     // control-CLI spawn) that must not steal what the user is looking at.
     await this.persistView(view, (state) =>
@@ -835,6 +895,13 @@ export class TerminalCoordinator {
 
   private async handleWorkerEvent(event: TerminalWorkerEvent): Promise<void> {
     const view = this.views.get(event.sessionId);
+    if (!view && event.type !== "data") {
+      if (this.launchingSessionIds.has(event.sessionId)) {
+        const pending = this.pendingWorkerEvents.get(event.sessionId);
+        if (event.type === "exit" || pending?.type !== "exit") this.pendingWorkerEvents.set(event.sessionId, event);
+      }
+      return;
+    }
     if (view && event.type === "status") {
       if (view.status === event.status) return;
       view.status = event.status;

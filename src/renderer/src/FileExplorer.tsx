@@ -1,7 +1,7 @@
 import type { GitPanelData } from "@shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceChangedPaths } from "@shared/file-explorer-types";
 import { ChevronDown, ChevronRight, Eraser, RefreshCw, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { FileIcon, FolderIcon } from "./file-icons";
 import { fileExtensionOf } from "./file-tabs";
 import { buildChangeOverlay, changeOriginLabel, changeRowClass, type FileTreeChangeOverlay } from "./file-tree-changes";
@@ -302,17 +302,37 @@ export function FileExplorer({
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const directoryRequestGenerations = useRef(new Map<string, number>());
+  const activeTargetKey = useRef(targetKey(target));
+  const targetGeneration = useRef(0);
+  const renderedTargetKey = targetKey(target);
+  if (activeTargetKey.current !== renderedTargetKey) {
+    activeTargetKey.current = renderedTargetKey;
+    targetGeneration.current += 1;
+    directoryRequestGenerations.current.clear();
+  }
   const git = useMemo(() => buildGitOverlay(gitData), [gitData]);
   // `local` status is read straight off `childrenByDir`'s own mtimeMs, so it recomputes for free
   // whenever a directory listing reloads — only `changedPaths` (agentPaths/baselineMs) needs its own fetch.
   const changes = useMemo(() => buildChangeOverlay(changedPaths, childrenByDir), [changedPaths, childrenByDir]);
 
   const loadDirectory = (loadTarget: FileExplorerTarget, relativePath: string) => {
+    const loadTargetKey = targetKey(loadTarget);
+    const loadTargetGeneration = targetGeneration.current;
+    const requestKey = relativePath;
+    const generation = (directoryRequestGenerations.current.get(requestKey) ?? 0) + 1;
+    directoryRequestGenerations.current.set(requestKey, generation);
     setChildrenByDir((current) => ({ ...current, [relativePath]: "loading" }));
     window.multiCliWork.workspaceFiles
       .listDirectory(loadTarget, relativePath)
-      .then((entries) => setChildrenByDir((current) => ({ ...current, [relativePath]: entries })))
-      .catch(() => setChildrenByDir((current) => ({ ...current, [relativePath]: "error" })));
+      .then((entries) => {
+        if (activeTargetKey.current !== loadTargetKey || targetGeneration.current !== loadTargetGeneration || directoryRequestGenerations.current.get(requestKey) !== generation) return;
+        setChildrenByDir((current) => ({ ...current, [relativePath]: entries }));
+      })
+      .catch(() => {
+        if (activeTargetKey.current !== loadTargetKey || targetGeneration.current !== loadTargetGeneration || directoryRequestGenerations.current.get(requestKey) !== generation) return;
+        setChildrenByDir((current) => ({ ...current, [relativePath]: "error" }));
+      });
   };
 
   /**
@@ -354,6 +374,11 @@ export function FileExplorer({
     if (target && !hidden) loadTree(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetKey(target)]);
+
+  useEffect(() => () => {
+    targetGeneration.current += 1;
+    directoryRequestGenerations.current.clear();
+  }, []);
 
   useEffect(() => {
     if (target && !hidden && !childrenByDir[""]) loadTree(target);
