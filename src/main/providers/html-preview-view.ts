@@ -8,20 +8,20 @@ export interface HtmlPreviewBounds {
 }
 
 /**
- * A single sandboxed WebContentsView that renders a workspace html file as a real browser page —
+ * Sandboxed WebContentsViews that render workspace html files as real browser pages —
  * relative CSS/JS/images resolve against the file's own folder, exactly as opening it in a browser
  * would. It is a sibling of the renderer's WebContents (never inheriting its preload or origin), and
- * a separate instance from the Git Graph view so the two never fight over one surface. Kept attached
- * across hide/show; only its visibility and loaded url change.
+ * separate instances from the Git Graph view so the surfaces never fight. Each panel owns one view,
+ * and closing a panel detaches and destroys that view.
  */
 export class HtmlPreviewView {
-  private view: WebContentsView | null = null;
-  private hostWindow: BrowserWindow | null = null;
+  private readonly views = new Map<string, { view: WebContentsView; hostWindow: BrowserWindow }>();
 
   /** Attaches (once), loads `url` fresh, and makes the view visible at `bounds`. */
-  show(window: BrowserWindow, url: string, bounds: HtmlPreviewBounds | null): void {
-    if (!this.view || this.hostWindow !== window) {
-      this.detach();
+  show(viewId: string, window: BrowserWindow, url: string, bounds: HtmlPreviewBounds | null): void {
+    let entry = this.views.get(viewId);
+    if (!entry || entry.hostWindow !== window) {
+      this.close(viewId);
       const view = new WebContentsView({
         webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
       });
@@ -42,21 +42,21 @@ export class HtmlPreviewView {
         }
       });
       window.contentView.addChildView(view);
-      this.view = view;
-      this.hostWindow = window;
+      entry = { view, hostWindow: window };
+      this.views.set(viewId, entry);
     }
     // Always reload: re-entering the preview after editing the source must show the saved file.
-    void this.view.webContents.loadURL(url);
-    this.view.setVisible(true);
-    if (bounds) this.setBounds(bounds);
+    void entry.view.webContents.loadURL(url);
+    entry.view.setVisible(true);
+    if (bounds) this.setBounds(viewId, bounds);
   }
 
-  reload(): void {
-    this.view?.webContents.reload();
+  reload(viewId: string): void {
+    this.views.get(viewId)?.view.webContents.reload();
   }
 
-  setBounds(bounds: HtmlPreviewBounds): void {
-    this.view?.setBounds({
+  setBounds(viewId: string, bounds: HtmlPreviewBounds): void {
+    this.views.get(viewId)?.view.setBounds({
       x: Math.round(bounds.x),
       y: Math.round(bounds.y),
       width: Math.max(0, Math.round(bounds.width)),
@@ -64,22 +64,17 @@ export class HtmlPreviewView {
     });
   }
 
-  /** Leaves the view attached but off screen (e.g. when the user toggles to the source view). */
-  hide(): void {
-    this.view?.setVisible(false);
-  }
-
-  private detach(): void {
-    if (!this.view) return;
-    if (this.hostWindow && !this.hostWindow.isDestroyed()) {
-      this.hostWindow.contentView.removeChildView(this.view);
+  close(viewId: string): void {
+    const entry = this.views.get(viewId);
+    if (!entry) return;
+    if (!entry.hostWindow.isDestroyed()) {
+      entry.hostWindow.contentView.removeChildView(entry.view);
     }
-    this.view.webContents.close();
-    this.view = null;
-    this.hostWindow = null;
+    entry.view.webContents.close();
+    this.views.delete(viewId);
   }
 
   dispose(): void {
-    this.detach();
+    for (const viewId of [...this.views.keys()]) this.close(viewId);
   }
 }

@@ -136,6 +136,17 @@ describe("worktree service against a real repo", () => {
     expect((await git(remote.path, "rev-parse", "--abbrev-ref", "@{upstream}")).trim()).toBe("origin/main");
   });
 
+  it("refreshes an existing registry entry after an external branch checkout", async () => {
+    const { service: worktrees } = service();
+    const created = await worktrees.create("project-1", "before");
+    await git(repoRoot, "branch", "after");
+    await git(created.path, "checkout", "after");
+
+    await expect(worktrees.create("project-1", { kind: "local", branch: "before" })).resolves.toMatchObject({ branch: "before" });
+    const refreshed = await worktrees.get(created.id);
+    expect(refreshed).toMatchObject({ id: created.id, path: created.path, branch: "after" });
+  });
+
   it("excludes automation refs from creation choices without deleting Git refs", async () => {
     const { service: worktrees } = service();
     for (const branch of ["dependabot/npm/pkg", "renovate/pkg", "feature/real", "release/next"]) {

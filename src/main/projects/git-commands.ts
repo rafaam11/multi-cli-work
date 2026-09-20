@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { GitChangeEntry, GitCommitRequest, GitFileOriginal, GitPanelData } from "../../shared/api-types";
-import { WORKTREE_BRANCH_PATTERN } from "./git-worktree";
 
 const execFileAsync = promisify(execFile);
 
@@ -25,9 +24,14 @@ function gitFailure(action: string, error: unknown): GitCommandError {
   return new GitCommandError(stderr ? `${action}: ${stderr}` : `${action} failed`, { cause: error });
 }
 
-function assertBranchName(branch: string): void {
-  if (!WORKTREE_BRANCH_PATTERN.test(branch) || branch.includes("..")) {
+async function assertBranchName(rootPath: string, branch: string): Promise<void> {
+  if (branch.startsWith("-") || branch.startsWith("@{") || branch === "@") {
     throw new GitCommandError(`Branch name is invalid: ${branch}`);
+  }
+  try {
+    await git(rootPath, ["check-ref-format", "--branch", branch], QUERY_TIMEOUT_MS);
+  } catch (error) {
+    throw new GitCommandError(`Branch name is invalid: ${branch}`, { cause: error });
   }
 }
 
@@ -158,7 +162,7 @@ export async function readGitPanelData(rootPath: string): Promise<GitPanelData> 
 }
 
 export async function checkoutGitBranch(rootPath: string, branch: string): Promise<void> {
-  assertBranchName(branch);
+  await assertBranchName(rootPath, branch);
   try {
     await git(rootPath, ["checkout", branch], MUTATE_TIMEOUT_MS);
   } catch (error) {
@@ -167,7 +171,7 @@ export async function checkoutGitBranch(rootPath: string, branch: string): Promi
 }
 
 export async function createGitBranch(rootPath: string, branch: string): Promise<void> {
-  assertBranchName(branch);
+  await assertBranchName(rootPath, branch);
   try {
     await git(rootPath, ["checkout", "-b", branch], MUTATE_TIMEOUT_MS);
   } catch (error) {

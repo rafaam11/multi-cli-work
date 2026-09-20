@@ -36,4 +36,21 @@ describe("QuitCoordinator", () => {
     expect(dispose).toHaveBeenCalledOnce();
     expect(exit).toHaveBeenCalledOnce();
   });
+
+  it.each(["rejects", "throws"])("allows retry after disposal %s", async (failure) => {
+    const dispose = vi.fn()
+      .mockImplementationOnce(() => {
+        if (failure === "throws") throw new Error("dispose failed");
+        return Promise.reject(new Error("dispose failed"));
+      })
+      .mockResolvedValueOnce(undefined);
+    const coordinator = new QuitCoordinator(dispose);
+    const exit = vi.fn();
+
+    await expect(coordinator.request({ confirm: async () => true, exit })).rejects.toThrow("dispose failed");
+    await expect(coordinator.request({ confirm: async () => true, exit })).resolves.toBeUndefined();
+
+    expect(dispose).toHaveBeenCalledTimes(2);
+    expect(exit).toHaveBeenCalledOnce();
+  });
 });

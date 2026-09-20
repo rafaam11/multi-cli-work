@@ -155,6 +155,21 @@ describe("branch operations", () => {
   it("rejects branch names git would parse as options", async () => {
     await expect(createGitBranch(repoRoot, "-oops")).rejects.toThrow("Branch name is invalid");
   });
+
+  it("creates and checks out a Korean branch accepted by Git", async () => {
+    await createGitBranch(repoRoot, "기능/한글-브랜치");
+    expect((await readGitPanelData(repoRoot)).currentBranch).toBe("기능/한글-브랜치");
+    await checkoutGitBranch(repoRoot, "main");
+    await checkoutGitBranch(repoRoot, "기능/한글-브랜치");
+    expect((await readGitPanelData(repoRoot)).currentBranch).toBe("기능/한글-브랜치");
+  });
+
+  it.each(["--detach", "@{-1}", "HEAD~1", "bad..name", "bad name", "bad:name"])(
+    "rejects dangerous checkout syntax %s",
+    async (branch) => {
+      await expect(checkoutGitBranch(repoRoot, branch)).rejects.toThrow("Branch name is invalid");
+    },
+  );
 });
 
 describe("commitGitFiles", () => {

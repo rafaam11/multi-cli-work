@@ -16,28 +16,54 @@ export interface HtmlPreviewControllerOptions {
  * surfaces, because the source toggle is always there as the plain-text alternative.
  */
 export class HtmlPreviewController {
+  private readonly requests = new Map<string, object>();
+  private readonly bounds = new Map<string, HtmlPreviewBounds>();
+
   constructor(private readonly options: HtmlPreviewControllerOptions) {}
 
-  async open(rootPath: string, relativePath: string, bounds: HtmlPreviewBounds): Promise<void> {
+  async open(viewId: string, rootPath: string, relativePath: string, bounds: HtmlPreviewBounds): Promise<void> {
+    const request = {};
+    this.requests.set(viewId, request);
+    this.bounds.set(viewId, bounds);
+    this.options.view.close(viewId);
     const window = this.options.getWindow();
-    if (!window) throw new Error("메인 창을 찾을 수 없습니다");
-    const absolutePath = await this.options.resolvePath(rootPath, relativePath);
-    this.options.view.show(window, pathToFileURL(absolutePath).href, bounds);
+    if (!window) {
+      this.requests.delete(viewId);
+      this.bounds.delete(viewId);
+      throw new Error("메인 창을 찾을 수 없습니다");
+    }
+    let absolutePath: string;
+    try {
+      absolutePath = await this.options.resolvePath(rootPath, relativePath);
+    } catch (error) {
+      if (this.requests.get(viewId) !== request) return;
+      this.requests.delete(viewId);
+      this.bounds.delete(viewId);
+      throw error;
+    }
+    if (this.requests.get(viewId) !== request) return;
+    this.options.view.show(viewId, window, pathToFileURL(absolutePath).href, this.bounds.get(viewId) ?? bounds);
   }
 
-  setBounds(bounds: HtmlPreviewBounds): void {
-    this.options.view.setBounds(bounds);
+  setBounds(viewId: string, bounds: HtmlPreviewBounds): void {
+    if (!this.requests.has(viewId)) return;
+    this.bounds.set(viewId, bounds);
+    this.options.view.setBounds(viewId, bounds);
   }
 
-  reload(): void {
-    this.options.view.reload();
+  reload(viewId: string): void {
+    this.options.view.reload(viewId);
   }
 
-  close(): void {
-    this.options.view.hide();
+  close(viewId: string): void {
+    this.requests.delete(viewId);
+    this.bounds.delete(viewId);
+    this.options.view.close(viewId);
   }
 
   dispose(): void {
+    this.requests.clear();
+    this.bounds.clear();
     this.options.view.dispose();
   }
 }

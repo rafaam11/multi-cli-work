@@ -133,10 +133,10 @@ const api: MultiCliWorkApi = {
     revert: (target, hash) => ipcRenderer.invoke("git-graph:revert", target, hash),
   },
   htmlPreview: {
-    open: (target, relativePath, bounds) => ipcRenderer.invoke("html-preview:open", target, relativePath, bounds),
-    setBounds: (bounds) => ipcRenderer.invoke("html-preview:set-bounds", bounds),
-    reload: () => ipcRenderer.invoke("html-preview:reload"),
-    close: () => ipcRenderer.invoke("html-preview:close"),
+    open: (viewId, target, relativePath, bounds) => ipcRenderer.invoke("html-preview:open", viewId, target, relativePath, bounds),
+    setBounds: (viewId, bounds) => ipcRenderer.invoke("html-preview:set-bounds", viewId, bounds),
+    reload: (viewId) => ipcRenderer.invoke("html-preview:reload", viewId),
+    close: (viewId) => ipcRenderer.invoke("html-preview:close", viewId),
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),

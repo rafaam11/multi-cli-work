@@ -18,6 +18,7 @@ import type { TerminalEvent } from "../shared/terminal-types";
 import type { NotifiableStatus } from "../shared/settings-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
+import { createRetryableDisposer } from "./runtime-disposal";
 import { createSettingsService, type SettingsService } from "./settings/settings-store";
 import { createNotionService } from "./notion/notion-service";
 import { createNotionTokenStore } from "./notion/notion-token-store";
@@ -599,10 +600,10 @@ export async function createDesktopRuntime(
       revert: revertGitCommit,
     },
     htmlPreview: {
-      open: (rootPath, relativePath, bounds) => htmlPreviewController.open(rootPath, relativePath, bounds),
-      setBounds: (bounds) => htmlPreviewController.setBounds(bounds),
-      reload: () => htmlPreviewController.reload(),
-      close: () => htmlPreviewController.close(),
+      open: (viewId, rootPath, relativePath, bounds) => htmlPreviewController.open(viewId, rootPath, relativePath, bounds),
+      setBounds: (viewId, bounds) => htmlPreviewController.setBounds(viewId, bounds),
+      reload: (viewId) => htmlPreviewController.reload(viewId),
+      close: (viewId) => htmlPreviewController.close(viewId),
     },
     shell: {
       openExternal: (url) => shell.openExternal(url),
@@ -683,6 +684,14 @@ export async function createDesktopRuntime(
     );
   });
 
+  const dispose = createRetryableDisposer([
+    () => htmlPreviewController.dispose(),
+    () => controlServer?.close(),
+    () => statusWatcher.close(),
+    () => coordinator.shutdown(),
+    () => worker.dispose(),
+  ]);
+
   return {
     coordinator,
     settings: settingsService,
@@ -693,12 +702,6 @@ export async function createDesktopRuntime(
         .map((session) => session.id);
       writeRecoveryMarkerSync(recoveryMarkerPath, activeIds);
     },
-    async dispose() {
-      htmlPreviewController.dispose();
-      controlServer?.close();
-      statusWatcher.close();
-      await coordinator.shutdown();
-      worker.dispose();
-    },
+    dispose,
   };
 }

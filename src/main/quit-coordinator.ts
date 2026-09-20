@@ -19,8 +19,20 @@ export class QuitCoordinator {
     if (this.requestPromise) return this.requestPromise;
     const pending = (async () => {
       if (!(await request.confirm())) return;
-      this.disposePromise ??= this.disposeRuntime();
-      await this.disposePromise;
+      if (!this.disposePromise) {
+        try {
+          this.disposePromise = Promise.resolve(this.disposeRuntime());
+        } catch (error) {
+          this.disposePromise = Promise.reject(error);
+        }
+      }
+      const disposing = this.disposePromise;
+      try {
+        await disposing;
+      } catch (error) {
+        if (this.disposePromise === disposing) this.disposePromise = null;
+        throw error;
+      }
       this.committed = true;
       request.exit();
     })();

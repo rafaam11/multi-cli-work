@@ -87,6 +87,7 @@ export class WorktreeService {
     const workspaces: GitWorkspaceView[] = [];
     const warnings: Record<string, string> = {};
     const added: SharedWorktree[] = [];
+    const updated: SharedWorktree[] = [];
     const removedIds: string[] = [];
 
     const owners = new Map<string, SharedProject>();
@@ -120,7 +121,15 @@ export class WorktreeService {
             const existing = Object.values(entries).find(
               (entry) => entry.projectId === project.id && normalizeWorkspacePath(entry.path) === normalized,
             );
-            if (existing) worktreeId = existing.id;
+            if (existing) {
+              worktreeId = existing.id;
+              const branch = item.branch ?? "detached";
+              if (existing.branch !== branch) {
+                const refreshed = { ...existing, branch, updatedAt: this.options.now() };
+                entries[existing.id] = refreshed;
+                updated.push(refreshed);
+              }
+            }
             else {
               const now = this.options.now();
               const entry: SharedWorktree = {
@@ -177,8 +186,8 @@ export class WorktreeService {
     }
     // Deltas instead of a full replace: the registry may have gained entries since it was read
     // at the top of this sync, and those must survive the write.
-    if (added.length > 0 || removedIds.length > 0) {
-      await applyWorktreeEntryChanges({ added, removedIds }, this.options.now(), this.registryOptions);
+    if (added.length > 0 || updated.length > 0 || removedIds.length > 0) {
+      await applyWorktreeEntryChanges({ added, updated, removedIds }, this.options.now(), this.registryOptions);
     }
     return { workspaces, warnings };
   }
@@ -239,10 +248,24 @@ export class WorktreeService {
   async create(projectId: string, request: string | WorktreeCreateRequest): Promise<SharedWorktree> {
     const project = await this.options.getProject(projectId);
     if (!project) throw new Error(`Unknown project: ${projectId}`);
+    const listed = await listGitWorktrees(project.rootPath);
+    const actualBranches = new Map(
+      listed.map((item) => [normalizeWorkspacePath(item.path), item.branch ?? "detached"]),
+    );
+    const registryEntries = await this.list();
+    const refreshed = registryEntries.flatMap((entry) => {
+      if (entry.projectId !== projectId) return [];
+      const branch = actualBranches.get(normalizeWorkspacePath(entry.path));
+      if (!branch || branch === entry.branch) return [];
+      return [{ ...entry, branch, updatedAt: this.options.now() }];
+    });
+    if (refreshed.length > 0) {
+      await applyWorktreeEntryChanges({ added: [], updated: refreshed, removedIds: [] }, this.options.now(), this.registryOptions);
+    }
     const normalizedRequest: WorktreeCreateRequest =
       typeof request === "string" ? { kind: "new", branch: request, startPoint: "HEAD" } : request;
     const branch = normalizedRequest.kind === "remote" ? normalizedRequest.localBranch : normalizedRequest.branch;
-    const existing = await this.list();
+    const existing = refreshed.length > 0 ? await this.list() : registryEntries;
     if (existing.some((worktree) => worktree.projectId === projectId && worktree.branch === branch)) {
       throw new Error(`A worktree already uses branch ${branch}`);
     }

@@ -450,13 +450,13 @@ export interface MultiCliWorkApi {
   };
   htmlPreview: {
     /** Renders the file as a browser page over the main area, resolving relative resources. */
-    open(target: FileExplorerTarget, relativePath: string, bounds: HtmlPreviewBounds): Promise<void>;
+    open(viewId: string, target: FileExplorerTarget, relativePath: string, bounds: HtmlPreviewBounds): Promise<void>;
     /** Keeps the embedded view aligned with the renderer's placeholder rect. */
-    setBounds(bounds: HtmlPreviewBounds): Promise<void>;
+    setBounds(viewId: string, bounds: HtmlPreviewBounds): Promise<void>;
     /** Re-loads the page from disk (after the source was edited and saved, or a manual refresh). */
-    reload(): Promise<void>;
-    /** Hides the embedded view when the user toggles to source or leaves the file. */
-    close(): Promise<void>;
+    reload(viewId: string): Promise<void>;
+    /** Disposes the embedded view when the user toggles to source or leaves the file. */
+    close(viewId: string): Promise<void>;
   };
   shell: {
     /** http(s) only — the main process rejects any other scheme. */

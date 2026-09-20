@@ -11,6 +11,7 @@ interface HtmlViewProps {
 
 type HtmlViewMode = "preview" | "source";
 type PreviewStatus = "loading" | "ready" | "error";
+let nextHtmlPreviewViewId = 0;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -28,6 +29,9 @@ export function HtmlView({ tab, onChangeContent, onSave, onClose }: HtmlViewProp
   const [status, setStatus] = useState<PreviewStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const holeRef = useRef<HTMLDivElement | null>(null);
+  const viewIdRef = useRef<string>();
+  viewIdRef.current ??= `html-preview-${++nextHtmlPreviewViewId}`;
+  const viewId = viewIdRef.current;
   const editable = tab.encoding === "utf8" && !tab.truncated;
 
   useEffect(() => {
@@ -40,7 +44,7 @@ export function HtmlView({ tab, onChangeContent, onSave, onClose }: HtmlViewProp
 
     const sendBounds = () => {
       const rect = hole.getBoundingClientRect();
-      void window.multiCliWork.htmlPreview.setBounds({
+      void window.multiCliWork.htmlPreview.setBounds(viewId, {
         x: rect.x,
         y: rect.y,
         width: rect.width,
@@ -50,7 +54,7 @@ export function HtmlView({ tab, onChangeContent, onSave, onClose }: HtmlViewProp
 
     const rect = hole.getBoundingClientRect();
     window.multiCliWork.htmlPreview
-      .open(tab.target, tab.relativePath, { x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+      .open(viewId, tab.target, tab.relativePath, { x: rect.x, y: rect.y, width: rect.width, height: rect.height })
       .then(() => {
         if (!disposed) setStatus("ready");
       })
@@ -68,10 +72,10 @@ export function HtmlView({ tab, onChangeContent, onSave, onClose }: HtmlViewProp
       disposed = true;
       observer.disconnect();
       window.removeEventListener("resize", sendBounds);
-      void window.multiCliWork.htmlPreview.close();
+      void window.multiCliWork.htmlPreview.close(viewId);
     };
     // tab.target is a stable object per tab; key on its identity fields plus the path.
-  }, [mode, tab.target.kind, tab.target.id, tab.relativePath]);
+  }, [mode, tab.target.kind, tab.target.id, tab.relativePath, viewId]);
 
   return (
     <section className="html-view" aria-label={`${tab.name} html 미리보기`}>
@@ -107,7 +111,7 @@ export function HtmlView({ tab, onChangeContent, onSave, onClose }: HtmlViewProp
             <button
               type="button"
               className="icon-button"
-              onClick={() => void window.multiCliWork.htmlPreview.reload()}
+              onClick={() => void window.multiCliWork.htmlPreview.reload(viewId)}
               disabled={status !== "ready"}
               aria-label="새로 고침"
               title="새로 고침"

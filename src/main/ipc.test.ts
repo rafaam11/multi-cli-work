@@ -237,6 +237,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     clearToken: vi.fn(async () => ({ configured: false, encryptionAvailable: true })),
     inspectLink: vi.fn(async (_url: string) => notionLinkCheck("ok", "삼성서울병원 채널")),
   };
+  const readRegistry = vi.fn(async () => ({ registry, source: "primary" as const, writable: true }));
   registerMainIpc(ipc, {
     projectService,
     workProjectService,
@@ -256,7 +257,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     clipboard,
     windowControls,
     appVersion: vi.fn(() => "1.0.0"),
-    readRegistry: vi.fn(async () => ({ registry, source: "primary" as const, writable: true })),
+    readRegistry,
     restoreRegistryBackup,
     chooseDirectory,
     getAvailability: vi.fn(async () => ({ vscode: true })),
@@ -290,6 +291,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     gitGraphGateway,
     githubGateway,
     htmlPreviewGateway,
+    readRegistry,
     shellGateway,
     clipboard,
     windowControls,
@@ -906,15 +908,15 @@ describe("main IPC boundary", () => {
     const { handlers, htmlPreviewGateway, project } = setup();
     const bounds = { x: 1, y: 2, width: 300, height: 400 };
 
-    await handlers.get("html-preview:open")!({}, { kind: "project", id: project.id }, "site/index.html", bounds);
-    await handlers.get("html-preview:set-bounds")!({}, bounds);
-    await handlers.get("html-preview:reload")!({});
-    await handlers.get("html-preview:close")!({});
+    await handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "site/index.html", bounds);
+    await handlers.get("html-preview:set-bounds")!({}, "panel-1", bounds);
+    await handlers.get("html-preview:reload")!({}, "panel-1");
+    await handlers.get("html-preview:close")!({}, "panel-1");
 
-    expect(htmlPreviewGateway.open).toHaveBeenCalledWith(project.rootPath, "site/index.html", bounds);
-    expect(htmlPreviewGateway.setBounds).toHaveBeenCalledWith(bounds);
-    expect(htmlPreviewGateway.reload).toHaveBeenCalledOnce();
-    expect(htmlPreviewGateway.close).toHaveBeenCalledOnce();
+    expect(htmlPreviewGateway.open).toHaveBeenCalledWith("panel-1", project.rootPath, "site/index.html", bounds);
+    expect(htmlPreviewGateway.setBounds).toHaveBeenCalledWith("panel-1", bounds);
+    expect(htmlPreviewGateway.reload).toHaveBeenCalledWith("panel-1");
+    expect(htmlPreviewGateway.close).toHaveBeenCalledWith("panel-1");
   });
 
   it("rejects html preview bounds that are not finite numbers", async () => {
@@ -923,12 +925,110 @@ describe("main IPC boundary", () => {
     await expect(
       handlers.get("html-preview:open")!(
         {},
+        "panel-1",
         { kind: "project", id: project.id },
         "index.html",
         { x: 0, y: 0, width: Number.NaN, height: 10 },
       ),
     ).rejects.toThrow(/finite number/);
     expect(htmlPreviewGateway.open).not.toHaveBeenCalled();
+  });
+
+  it("invalidates an open closed while target resolution is pending", async () => {
+    const { handlers, htmlPreviewGateway, readRegistry, project } = setup();
+    let release!: () => void;
+    readRegistry.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve({ registry: { schemaVersion: 1, updatedAt: project.updatedAt, projects: { [project.id]: project } }, source: "primary", writable: true });
+    }));
+    const bounds = { x: 1, y: 2, width: 300, height: 400 };
+
+    const opening = handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "index.html", bounds);
+    await handlers.get("html-preview:close")!({}, "panel-1");
+    release();
+    await opening;
+
+    expect(htmlPreviewGateway.open).not.toHaveBeenCalled();
+    expect(htmlPreviewGateway.close).toHaveBeenCalledWith("panel-1");
+  });
+
+  it("uses the latest bounds when target resolution finishes", async () => {
+    const { handlers, htmlPreviewGateway, readRegistry, project } = setup();
+    let release!: () => void;
+    readRegistry.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve({ registry: { schemaVersion: 1, updatedAt: project.updatedAt, projects: { [project.id]: project } }, source: "primary", writable: true });
+    }));
+    const first = { x: 1, y: 2, width: 300, height: 400 };
+    const latest = { x: 5, y: 6, width: 700, height: 800 };
+
+    const opening = handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "index.html", first);
+    await handlers.get("html-preview:set-bounds")!({}, "panel-1", latest);
+    release();
+    await opening;
+
+    expect(htmlPreviewGateway.open).toHaveBeenCalledWith("panel-1", project.rootPath, "index.html", latest);
+  });
+
+  it("invalidates the controller open before a superseding target finishes resolving", async () => {
+    const { handlers, htmlPreviewGateway, readRegistry, project } = setup();
+    const bounds = { x: 1, y: 2, width: 300, height: 400 };
+    await handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "old.html", bounds);
+    let release!: () => void;
+    readRegistry.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve({ registry: { schemaVersion: 1, updatedAt: project.updatedAt, projects: { [project.id]: project } }, source: "primary", writable: true });
+    }));
+
+    const superseding = handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "new.html", bounds);
+
+    expect(htmlPreviewGateway.close).toHaveBeenCalledTimes(2);
+    expect(htmlPreviewGateway.open).toHaveBeenCalledTimes(1);
+    release();
+    await superseding;
+    expect(htmlPreviewGateway.open).toHaveBeenLastCalledWith("panel-1", project.rootPath, "new.html", bounds);
+  });
+
+  it("ignores bounds sent after a view id is closed", async () => {
+    const { handlers, htmlPreviewGateway, project } = setup();
+    const bounds = { x: 1, y: 2, width: 300, height: 400 };
+    await handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "index.html", bounds);
+    await handlers.get("html-preview:close")!({}, "panel-1");
+    htmlPreviewGateway.setBounds.mockClear();
+
+    await handlers.get("html-preview:set-bounds")!({}, "panel-1", { ...bounds, x: 99 });
+
+    expect(htmlPreviewGateway.setBounds).not.toHaveBeenCalled();
+  });
+
+  it("cleans request state when the controller open rejects", async () => {
+    const { handlers, htmlPreviewGateway, project } = setup();
+    const bounds = { x: 1, y: 2, width: 300, height: 400 };
+    htmlPreviewGateway.open.mockRejectedValueOnce(new Error("path failed"));
+
+    await expect(
+      handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "index.html", bounds),
+    ).rejects.toThrow("path failed");
+    htmlPreviewGateway.setBounds.mockClear();
+    await handlers.get("html-preview:set-bounds")!({}, "panel-1", { ...bounds, x: 99 });
+
+    expect(htmlPreviewGateway.setBounds).not.toHaveBeenCalled();
+  });
+
+  it("does not let a stale controller rejection clear a newer open", async () => {
+    const { handlers, htmlPreviewGateway, project } = setup();
+    const bounds = { x: 1, y: 2, width: 300, height: 400 };
+    let rejectOld!: (error: Error) => void;
+    htmlPreviewGateway.open
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
+      .mockResolvedValueOnce(undefined);
+    const oldOpen = handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "old.html", bounds);
+    await vi.waitFor(() => expect(htmlPreviewGateway.open).toHaveBeenCalledTimes(1));
+    await handlers.get("html-preview:open")!({}, "panel-1", { kind: "project", id: project.id }, "new.html", bounds);
+
+    rejectOld(new Error("old failed"));
+    await expect(oldOpen).rejects.toThrow("old failed");
+    htmlPreviewGateway.setBounds.mockClear();
+    await handlers.get("html-preview:set-bounds")!({}, "panel-1", { ...bounds, x: 99 });
+
+    expect(htmlPreviewGateway.setBounds).toHaveBeenCalledWith("panel-1", { ...bounds, x: 99 });
   });
 
   it("opens only http(s) URLs externally, rejecting other schemes", async () => {

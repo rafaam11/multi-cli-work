@@ -118,6 +118,7 @@ export async function removeWorktreeEntry(
 
 export interface WorktreeEntryChanges {
   added: SharedWorktree[];
+  updated?: SharedWorktree[];
   removedIds: string[];
 }
 
@@ -134,6 +135,12 @@ export async function applyWorktreeEntryChanges(
   return updateJsonStore(STORE, registryPathOf(options), (registry) => {
     const worktrees = { ...registry.worktrees };
     for (const worktreeId of changes.removedIds) delete worktrees[worktreeId];
+    for (const entry of changes.updated ?? []) {
+      const current = worktrees[entry.id];
+      if (current && normalizeWorkspacePath(current.path) === normalizeWorkspacePath(entry.path)) {
+        worktrees[entry.id] = entry;
+      }
+    }
     for (const entry of changes.added) {
       const taken = Object.values(worktrees).some(
         (existing) =>

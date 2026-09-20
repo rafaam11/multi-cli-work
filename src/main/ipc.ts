@@ -210,10 +210,10 @@ interface GitGraphGateway {
 }
 
 interface HtmlPreviewGateway {
-  open(rootPath: string, relativePath: string, bounds: HtmlPreviewBounds): Promise<void>;
-  setBounds(bounds: HtmlPreviewBounds): void;
-  reload(): void;
-  close(): void;
+  open(viewId: string, rootPath: string, relativePath: string, bounds: HtmlPreviewBounds): Promise<void>;
+  setBounds(viewId: string, bounds: HtmlPreviewBounds): void;
+  reload(viewId: string): void;
+  close(viewId: string): void;
 }
 
 interface ShellGateway {
@@ -1085,18 +1085,56 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
     dependencies.gitGraph.revert(await targetRoot(target), nonEmptyString(hash, "Commit hash")),
   );
 
-  ipc.handle("html-preview:open", async (_event, target: unknown, relativePath: unknown, bounds: unknown) =>
-    dependencies.htmlPreview.open(
-      await targetRoot(target),
-      nonEmptyString(relativePath, "Relative path"),
-      validateViewBounds(bounds),
-    ),
-  );
-  ipc.handle("html-preview:set-bounds", (_event, bounds: unknown) =>
-    dependencies.htmlPreview.setBounds(validateViewBounds(bounds)),
-  );
-  ipc.handle("html-preview:reload", () => dependencies.htmlPreview.reload());
-  ipc.handle("html-preview:close", () => dependencies.htmlPreview.close());
+  const htmlPreviewRequests = new Map<string, object>();
+  const htmlPreviewBounds = new Map<string, HtmlPreviewBounds>();
+  ipc.handle("html-preview:open", async (_event, rawViewId: unknown, target: unknown, relativePath: unknown, bounds: unknown) => {
+    const viewId = nonEmptyString(rawViewId, "HTML preview view id");
+    const validatedPath = nonEmptyString(relativePath, "Relative path");
+    const initialBounds = validateViewBounds(bounds);
+    const request = {};
+    htmlPreviewRequests.set(viewId, request);
+    htmlPreviewBounds.set(viewId, initialBounds);
+    dependencies.htmlPreview.close(viewId);
+    let rootPath: string;
+    try {
+      rootPath = await targetRoot(target);
+    } catch (error) {
+      if (htmlPreviewRequests.get(viewId) !== request) return;
+      htmlPreviewRequests.delete(viewId);
+      htmlPreviewBounds.delete(viewId);
+      throw error;
+    }
+    if (htmlPreviewRequests.get(viewId) !== request) return;
+    try {
+      await dependencies.htmlPreview.open(
+        viewId,
+        rootPath,
+        validatedPath,
+        htmlPreviewBounds.get(viewId)!,
+      );
+    } catch (error) {
+      if (htmlPreviewRequests.get(viewId) === request) {
+        htmlPreviewRequests.delete(viewId);
+        htmlPreviewBounds.delete(viewId);
+      }
+      throw error;
+    }
+  });
+  ipc.handle("html-preview:set-bounds", (_event, rawViewId: unknown, bounds: unknown) => {
+    const viewId = nonEmptyString(rawViewId, "HTML preview view id");
+    if (!htmlPreviewRequests.has(viewId)) return;
+    const validated = validateViewBounds(bounds);
+    htmlPreviewBounds.set(viewId, validated);
+    dependencies.htmlPreview.setBounds(viewId, validated);
+  });
+  ipc.handle("html-preview:reload", (_event, rawViewId: unknown) =>
+    dependencies.htmlPreview.reload(nonEmptyString(rawViewId, "HTML preview view id")));
+  ipc.handle("html-preview:close", (_event, rawViewId: unknown) => {
+    const viewId = nonEmptyString(rawViewId, "HTML preview view id");
+    htmlPreviewRequests.delete(viewId);
+    htmlPreviewBounds.delete(viewId);
+    dependencies.htmlPreview.close(viewId);
+  });
 
   ipc.handle("shell:open-external", async (_event, url: unknown) => dependencies.shell.openExternal(externalUrl(url)));
   // async so a bad-input throw reaches the renderer as a rejected invoke, matching every other handler.
