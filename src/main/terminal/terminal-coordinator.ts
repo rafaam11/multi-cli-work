@@ -341,8 +341,10 @@ export class TerminalCoordinator {
         sequence: live.sequence,
       };
     } catch {
-      // The resumed PTY died between resume and attach; the log alone still restores the scrollback.
-      return { session: { ...view }, replay: restoredReplay, sequence: 0 };
+      // Release follows durable output, so a PTY that exited before attach may have added a final
+      // burst beyond the pre-resume snapshot. Read that latest log instead of losing the burst.
+      const replay = await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES);
+      return { session: { ...view }, replay: replay || restoredReplay, sequence: 0 };
     }
   }
 

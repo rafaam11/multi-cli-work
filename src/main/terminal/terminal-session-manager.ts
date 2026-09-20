@@ -57,6 +57,7 @@ export class OutputRingBuffer {
 interface SessionRecord {
   generation?: string;
   subscriptions: Array<{ dispose(): void }>;
+  stopRequested: boolean;
   session: TerminalSession;
   statusAdapter: StatusAdapter;
   pty: ManagedPty;
@@ -100,6 +101,7 @@ export class TerminalSessionManager {
     const record: SessionRecord = {
       generation: spec.generation,
       subscriptions: [],
+      stopRequested: false,
       session,
       statusAdapter: spec.statusAdapter,
       pty,
@@ -152,14 +154,18 @@ export class TerminalSessionManager {
 
   stop(sessionId: string): void {
     const record = this.requireSession(sessionId);
-    if (record.session.status !== "exited") record.pty.kill();
+    if (record.session.status === "exited" || record.stopRequested) return;
+    // ConPTY closes native handles before onExit is delivered. Repeating kill in that gap can
+    // corrupt the worker heap, so stop + explicit release share a single successful kill.
+    record.pty.kill();
+    record.stopRequested = true;
   }
 
   release(sessionId: string, generation?: string, force = false): void {
     const record = this.sessions.get(sessionId);
     if (!record || record.generation !== generation) return;
     if (!force && record.session.status !== "exited") return;
-    if (record.session.status !== "exited") record.pty.kill();
+    this.stop(sessionId);
     this.sessions.delete(sessionId);
     for (const subscription of record.subscriptions) subscription.dispose();
     record.subscriptions.length = 0;

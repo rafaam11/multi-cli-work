@@ -1002,6 +1002,33 @@ describe("TerminalCoordinator", () => {
     expect(stored.state).toMatchObject({ selectedProjectId: null, selectedSessionId: null });
   });
 
+  it("restores newly durable output when a lazy-resumed PTY exits and releases before the first attach", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    first.worker.emit({ type: "data", sessionId: "session-1", data: "old history\r\n", sequence: 1 });
+    await first.instance.shutdown();
+    const worker = new FakeWorker();
+    const create = worker.create.getMockImplementation()!;
+    worker.create.mockImplementation(async (spec) => {
+      const session = await create(spec);
+      worker.emit({ type: "data", sessionId: spec.sessionId, generation: spec.generation, data: "instant final output\r\n", sequence: 1 });
+      worker.emit({ type: "exit", sessionId: spec.sessionId, generation: spec.generation, exitCode: 0 });
+      return session;
+    });
+    worker.attach.mockImplementation(async () => {
+      await until(() => worker.release.mock.calls.length > 0, "resumed PTY release before attach reply");
+      throw new Error("Unknown terminal session: session-1");
+    });
+    const second = await coordinator(root, worker);
+    const attachment = await second.instance.attachForRenderer("session-1");
+    expect(worker.release).toHaveBeenCalled();
+    expect(attachment.session.status).toBe("exited");
+    expect(attachment.replay).toContain("old history");
+    expect(attachment.replay).toContain("instant final output");
+    expect(attachment.replay).toBe(await readSessionLog(path.join(root, "logs"), "session-1", 5 * 1024 * 1024));
+  });
+
   it("seeds restored scrollback into the worker so later attaches retain history", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);

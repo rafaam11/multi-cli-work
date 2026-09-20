@@ -54,6 +54,26 @@ function launchSpec(): TerminalLaunchSpec {
 }
 
 describe("TerminalSessionManager", () => {
+  it("does not kill a PTY again when force release follows stop before its exit event", () => {
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    manager.create(launchSpec());
+    manager.stop("session-1");
+    manager.release("session-1", undefined, true);
+    expect(pty.kill).toHaveBeenCalledTimes(1);
+    expect(() => manager.attach("session-1")).toThrow(/Unknown terminal/);
+  });
+
+  it("retries a failed stop when an explicit release still needs to kill the PTY", () => {
+    const pty = new FakePty();
+    pty.kill.mockImplementationOnce(() => { throw new Error("kill failed"); });
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    manager.create(launchSpec());
+    expect(() => manager.stop("session-1")).toThrow("kill failed");
+    manager.release("session-1", undefined, true);
+    expect(pty.kill).toHaveBeenCalledTimes(2);
+    expect(() => manager.attach("session-1")).toThrow(/Unknown terminal/);
+  });
   it("releases repeated exited sessions, replay buffers and PTY subscriptions", () => {
     const events = vi.fn();
     const pty = new FakePty();
