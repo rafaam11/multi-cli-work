@@ -318,6 +318,9 @@ export function FileExplorer({
 
   const loadDirectory = (loadTarget: FileExplorerTarget, relativePath: string) => {
     const loadTargetKey = targetKey(loadTarget);
+    // A mutation may finish after its project/worktree is no longer selected. Reject it before it
+    // can mark the current tree loading or advance the current target's directory generation.
+    if (activeTargetKey.current !== loadTargetKey) return;
     const loadTargetGeneration = targetGeneration.current;
     const requestKey = relativePath;
     const generation = (directoryRequestGenerations.current.get(requestKey) ?? 0) + 1;

@@ -359,4 +359,31 @@ describe("FileExplorer directory request ownership", () => {
     expect(screen.getByText("readme.md")).toBeInTheDocument();
     expect(screen.queryByText("불러오지 못했습니다")).not.toBeInTheDocument();
   });
+
+  it("does not let a completed mutation from the previous target invalidate the current root read", async () => {
+    const created = deferred<string>();
+    const targetBRead = deferred<FileTreeEntry[]>();
+    const targetB = { kind: "project", id: "p2" } as const;
+    listDirectory.mockImplementation((readTarget) =>
+      readTarget.id === targetB.id ? targetBRead.promise : Promise.resolve([file]),
+    );
+    create.mockReturnValue(created.promise);
+    const props = { hidden: false, targetLabel: "Repo", selectedRelativePath: null, vscodeAvailable: true, onOpenFile, onOpenFileExternal, onEntryDeleted, onEntryRenamed };
+    const view = render(<FileExplorer {...props} target={target} />);
+    await screen.findByText("readme.md");
+    fireEvent.contextMenu(screen.getByRole("tree"), { clientX: 5, clientY: 5 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "새 파일" }));
+    const field = await screen.findByLabelText("파일 이름");
+    fireEvent.change(field, { target: { value: "late.md" } });
+    fireEvent.submit(field);
+    await waitFor(() => expect(create).toHaveBeenCalledWith(target, "", "late.md", "file"));
+
+    view.rerender(<FileExplorer {...props} target={targetB} />);
+    await waitFor(() => expect(listDirectory).toHaveBeenCalledWith(targetB, ""));
+    await act(async () => created.resolve("late.md"));
+    await act(async () => targetBRead.resolve([{ ...file, name: "b.md", relativePath: "b.md" }]));
+
+    expect(await screen.findByText("b.md")).toBeInTheDocument();
+    expect(screen.queryByText("불러오는 중")).not.toBeInTheDocument();
+  });
 });
