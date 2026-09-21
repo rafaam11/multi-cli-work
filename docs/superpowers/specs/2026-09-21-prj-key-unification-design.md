@@ -81,6 +81,8 @@ v2 폴더 배치를 읽는 것은 이미 v1 채널·셸 규약을 읽던 일과 
 | D12 | `classifyWorkspacePath`의 kind 어휘를 `ws-path.vectors.json`(교차 저장소 **정본**)에 맞춘다: `channel`→`legacy-channel`, `shell`→`legacy-shell`, `shell-sub`→`legacy-shell-sub`, 그리고 v2 kind 5개 추가 | 정본 파일이 이미 `legacy-*`로 개칭했고 앱만 뒤처져 있다. 생산 코드에는 `classifyWorkspacePath`·`deriveWorkspaceLocation`·`WorkspaceLocationKind`의 **외부 소비자가 하나도 없다**(`resolveShellRefForPath` 내부 호출과 테스트뿐) → 개칭 비용이 테스트 파일 하나다 |
 | D13 | UI의 "채널·셸" 문구를 v2 어휘로 **교체**한다. v1 문구를 병기하지 않는다 | `~/.multi-cli-work/workspace.json`이 **존재하지 않는다** — 이 사용자는 워크스페이스 루트를 한 번도 등록한 적이 없고, 따라서 v1 어휘를 보고 있는 사용자가 0명이다. 대상은 `SettingsDialog.tsx:238-239`(안내문)·`255`("셸 N개")·`290`("셸을 다시 읽었습니다") |
 | D14 | 브리프의 맺음 문장을 **실린 절에서** 조립한다. `## 팀즈 문서 폴더`는 `## 문서 폴더`로 바꾼다 | v2에서 `docs` 멤버는 팀즈 폴더가 아니라 `C:\work\projects\PRJ-…` 프로젝트 폴더다. 브랜드 낱말을 제목에서 떼고, "팀즈"는 `teamsSyncRoot`가 설정됐을 때만 문장에 넣는다 |
+| D15 | v2 `externalPaths`는 **논리 경로**다 — `wikiSource`와 같은 `resolveLogicalPath`로 풀어 절대경로로 싣는다. 못 푸는 값은 **조용히 뺀다** | work 쪽 `_scripts/lib/project-manifest.mjs:32` `ABS_OR_ESCAPE_RE = /^[A-Za-z]:\|^[\\/]\|^~\|^\.\.[\\/]/`가 `validateManifest:317`에서 `externalPaths`·`repos`·`data`·`related`의 절대경로·탈출 경로를 위반으로 보고한다. `C:\work\CLAUDE.md` 56·86·131행도 명시한다: "`externalPaths[]` = 논리 경로 접두", "제자리 + `externalPaths: [onedrive/<상대경로>]`", "루트 밖 레포는 논리 경로 접두로 등록(**절대경로 금지**)". v1의 `external_paths`(절대경로 + `cleanWorkspacePath`)와 **의미가 다르다** — 그대로 절대경로로 읽으면 `onedrive/…` 값이 역인덱스에서 아무 폴더와도 맞지 않는다. 못 푸는 값을 조용히 빼는 것은 `roots.drive` 없음과 같은 선이다 |
+| D16 | 한 경로를 여러 Project가 등록하면 **마지막에 쓴 것이 이긴다**(v1부터의 규칙 유지). 다만 그 사실을 경고 한 줄로 드러낸다 | `workspace-index.ts:279-292`의 역인덱스는 평범한 대입(`repoOwners[key] = shell.ref`)이라 나중 항목이 앞의 것을 덮는다. `WorkProject.members`가 "한 폴더는 한 업무 프로젝트에만 속한다"를 SSOT로 두므로 **누군가는 이겨야 한다**. 순서는 프로젝트 폴더 이름 정렬이라 실행마다 같다(`PRJ-0006` < `PRJ-0010` < `PRJ-0011` → 마지막이 이긴다). 규칙을 바꾸지 않는 이유는 v1 동작을 건드리지 않기 위해서고, 경고를 더하는 이유는 사이드바에서 줄이 옮겨 간 까닭이 지금은 아무 데도 안 나오기 때문이다 — 실제로 `onedrive/수행프로젝트(기술연구소) - 문서/O_삼성서울병원` 한 폴더가 PRJ-0006·0010·0011 셋의 `externalPaths`에 동시에 들어간다 |
 
 ## 컴포넌트별 설계
 
@@ -106,7 +108,12 @@ export interface WorkspaceShellInfo {
   /** v2: `projects/_archive` 하위인가 · v1: 항상 false. 업무 프로젝트 생성 제외 판정(D9). */
   archived: boolean;
   path: string;
+  /** 레포 **이름** 배열. 경로는 등록된 dev 루트에서 만든다. */
   repos: string[];
+  /**
+   * 루트 밖 경로의 **절대경로**. v2의 `PROJECT.yaml`은 이 값을 논리 경로(`onedrive/…`·`dev/…`)로
+   * 들고 있으므로 어댑터가 `resolveLogicalPath`로 풀어 넣는다(D15). 못 푼 값은 여기 없다.
+   */
   externalPaths: string[];
   data: string[];
   /** `<roots.drive>\projects\<key>` — 그 폴더가 실재할 때만. 그 밖엔 null(D3). */
@@ -218,7 +225,7 @@ v1의 두 경고(`[shell-name]`·`[shell-claude]`)와 대칭이고, 설정 화�
 | `archived` | `_archive` 하위 | `false` |
 | `path` | `<work>\projects[\_archive]\<key>` | `<work>\<채널>\<셸>` |
 | `repos` | `repos` | `repos` |
-| `externalPaths` | `externalPaths`, 각 값 `cleanWorkspacePath` | `external_paths`, 같음 |
+| `externalPaths` | `externalPaths`, 각 값을 **`resolveLogicalPath`로 푼 절대경로**. 못 푸는 값은 조용히 뺀다(D15) | `external_paths`, 각 값 `cleanWorkspacePath` (절대경로) |
 | `data` | `data` | `data` |
 | `drivePath` | `<drive>\projects\<key>`가 실재하면 그 값, 아니면 `null` | `null` |
 | `wikiPath` | `wikiSource`를 논리 경로로 해석, 못 풀면 `null` | `null` |
@@ -229,7 +236,7 @@ v1의 두 경고(`[shell-name]`·`[shell-claude]`)와 대칭이고, 설정 화�
 `<dev>\<name>`과 `<dev>\_archive\<name>` **두 키를** 등록한다(`workspace-index.ts:284-287`) —
 `repos{}.archive`를 볼 필요가 없다.
 
-#### 논리 경로 해석 (`wikiSource`)
+#### 논리 경로 해석 (`wikiSource`와 `externalPaths`)
 
 ```ts
 /** `dev/…`·`data/…`·`drive/…`·`onedrive/…` 접두를 등록된 루트로 푼다. 못 풀면 null. */
@@ -241,8 +248,49 @@ function resolveLogicalPath(
 ```
 
 `ws-path.mjs:81-95` `resolveLogical`의 축약본이다. 원본은 미설정 루트에 대해 **던지지만**,
-여기서는 `null`을 준다 — 브리프 한 줄이 빠지는 것이 세션 시작이 깨지는 것보다 낫고, 이 스펙의
-"`roots.drive`가 없으면 조용히 생략" 규칙과 같은 문장이다. 접두가 없으면 work 기준으로 푼다.
+여기서는 `null`을 준다 — 브리프 한 줄이나 역인덱스 한 칸이 빠지는 것이 세션 시작이 깨지는 것보다
+낫고, 이 스펙의 "`roots.drive`가 없으면 조용히 생략" 규칙과 같은 문장이다. 접두가 없으면 work
+기준으로 푼다. 단 `drive/`·`onedrive/` 접두를 **미설정이라고 work 기준으로 떨어뜨리지는 않는다** —
+`C:\work\onedrive\…` 같은 유령 경로가 되고, 원본이 던지는 이유도 그것이다.
+
+이 해석기가 두 곳에 쓰인다.
+
+| 쓰는 곳 | 값 | 못 풀 때 |
+|---|---|---|
+| `wikiPath` | `wikiSource`(스칼라 하나) | `null` |
+| `externalPaths` | `externalPaths`(배열, 각 값) | 그 항목을 **배열에서 뺀다** |
+
+`externalPaths`가 논리 경로라는 것이 v1과의 **의미 차이**다(D15). work 쪽
+`project-manifest.mjs:32`의 `ABS_OR_ESCAPE_RE`가 절대경로를 거부하므로 v2에는 절대경로가 올 수
+없다. 실제 값의 모양은 이렇다(한글·공백·괄호가 그대로 들어간다).
+
+```
+onedrive/수행프로젝트(기술연구소) - 문서/O_삼성서울병원
+  → C:\Users\uiop3\OneDrive - 노바테크\수행프로젝트(기술연구소) - 문서\O_삼성서울병원
+```
+
+v1 경로(`scanShells`/`shellsFromWsIndex`)는 `external_paths`를 **절대경로**로 계속 읽고
+`cleanWorkspacePath`로 겹백슬래시만 접는다 — 한 줄도 바뀌지 않는다.
+
+#### 한 경로를 여러 Project가 등록할 때 (D16)
+
+`snapshot()`의 역인덱스는 평범한 대입이라 **마지막에 쓴 것이 이긴다**
+(`workspace-index.ts:279-292`). `WorkProject.members`가 "한 폴더는 한 업무 프로젝트에만 속한다"를
+SSOT로 못박고 있어 누군가는 이겨야 하고, 순서는 프로젝트 폴더 이름 정렬이므로 실행마다 같다.
+
+이 규칙은 **바꾸지 않는다**(v1 동작 유지). 대신 `snapshot()`이 중복 등록을 모아 경고를 남긴다 —
+사이드바에서 폴더 줄이 어느 프로젝트 아래에 선 까닭이 지금은 아무 데도 나오지 않기 때문이다.
+
+```
+[path-owner] C:\Users\uiop3\OneDrive - 노바테크\수행프로젝트(기술연구소) - 문서\O_삼성서울병원:
+  3개 프로젝트가 같은 경로를 등록했다(projects/PRJ-0006-vsp · projects/PRJ-0010-foaa ·
+  projects/PRJ-0011-navi) — projects/PRJ-0011-navi가 이긴다
+[repo-owner] shared-lib: 2개 프로젝트가 같은 레포를 등록했다(… ) — …가 이긴다
+```
+
+레포는 **이름 단위로** 한 번만 경고한다 — 역인덱스가 이름 하나로 `<dev>\<name>`과
+`<dev>\_archive\<name>` 두 키를 등록하므로, 경로 단위로 세면 같은 충돌이 두 줄로 나온다.
+경고에 적는 경로는 정규화 키(win32에서 소문자)가 아니라 **원본 표기**다.
 
 #### `drive`·`onedrive` 루트 얻기
 
@@ -444,18 +492,36 @@ const orderedLabels = useMemo(() => orderWorkspaceLabels(Object.values(workspace
 |---|---|
 | `C:\Users\uiop3` | 세 루트 어디에도 없다 |
 | `G:\내 드라이브\S_결혼식\결혼식준비` | drive는 MCW의 루트가 아니다(§10 보류) |
-| `C:\NeuroPilot\neuropilot_develop` | PRJ-0005의 `externalPaths`가 `[]`다. v1에서는 셸 `external_paths`가 이 폴더를 들고 있었다 |
+| `C:\NeuroPilot\neuropilot_develop` | **어느 논리 루트에도 속하지 않는다.** v1에서는 셸 `external_paths`가 절대경로로 들고 있었지만, v2의 `externalPaths`는 논리 경로만 받는다(D15) — `C:\NeuroPilot`은 work·dev·data·drive·onedrive 어느 것의 하위도 아니어서 적을 수 있는 논리 경로가 없다 |
 
 잃는 것은 4건의 이름·구분·상태뿐이다(네 건 모두 `memo`·`notionLinks`·`localFolders`가 비어 있다).
 새로 생긴 업무 프로젝트의 구분은 설정의 기본 구분이므로, 원하는 구분은 상세 페이지에서 다시 고른다.
+
+### 곧 들어올 `externalPaths`가 무엇을 바꾸는가
+
+work 쪽이 2026-09-21에 조직 OneDrive 폴더를 `externalPaths`로 등록했다(폴더를 옮기지 않고 제자리 참조).
+
+| Project | `externalPaths` |
+|---|---|
+| PRJ-0005-neuropilot | `onedrive/수행프로젝트(기술연구소) - 문서/G_보건의료과제`, `onedrive/수행프로젝트(기술연구소) - 문서/O_에이티앤씨` |
+| PRJ-0006-vsp · PRJ-0010-foaa · PRJ-0011-navi | 셋 다 `onedrive/수행프로젝트(기술연구소) - 문서/O_삼성서울병원` |
+
+이 PC의 `roots.onedrive`는 `C:\Users\uiop3\OneDrive - 노바테크`이므로 다섯 값 모두 풀린다. 결과:
+
+- 그 폴더들은 **아직 `projects.json`에 없다**(열어 둔 폴더 11개에 없다) → 당장 멤버가 생기지 않는다.
+- 사용자가 그중 하나를 열면 역인덱스가 소속을 답한다. `O_삼성서울병원`은 셋이 등록했으므로 **마지막인
+  PRJ-0011-navi가 이기고**(D16) 설정 화면에 `[path-owner]` 경고 한 줄이 선다.
+- 브리프의 "이 프로젝트의 레포" 절에 그 절대경로가 실린다.
 
 ### 경계: 링크된 업무 프로젝트의 수동 멤버는 오래 살지 않는다
 
 `work-project-service.ts:414`가 링크된 업무 프로젝트의 `members`를 **매 동기화마다 스냅샷에서
 다시 계산한다.** 사이드바 드래그로 넣은 폴더가 `repos`/`externalPaths`에서 유도되지 않으면 다음
 동기화에 빠진다. 이것은 v1부터의 동작이고 바꾸지 않는다 — 소속의 SSOT는 PROJECT.yaml이다.
-`C:\NeuroPilot\neuropilot_develop`을 PRJ-0005 아래에 **오래 두려면** work 쪽에서
-`PROJECT.yaml`의 `externalPaths`에 적어야 한다(§10).
+
+그래서 어떤 폴더를 PRJ 아래에 **오래 두려면** work 쪽 `PROJECT.yaml`이 그 폴더를 가리킬 수 있어야
+한다. 논리 경로로 적을 수 없는 폴더(`C:\NeuroPilot\neuropilot_develop`·`C:\Users\uiop3`)는 방법이
+없다 — 그 폴더를 `C:\dev` 아래로 옮기거나, 수제 업무 프로젝트에 두는 것 둘뿐이다.
 
 ## 오류와 경계
 
@@ -465,6 +531,9 @@ const orderedLabels = useMemo(() => orderWorkspaceLabels(Object.values(workspace
 | `.ws-index.json`이 v1(`shells[]`, `projects[]` 없음) | `<root>/projects`도 없을 것이므로 레이아웃 판정이 v1로 떨어지고 기존 경로를 그대로 탄다. 지름길·재스캔·캐시 판정 전부 현행 유지 |
 | `roots.drive` 없음 (지금 이 PC) | `drivePath = null`, 브리프에 drive 줄이 없다. 경고·오류 없음 |
 | `roots.drive`는 있지만 `<drive>\projects\<key>` 폴더가 없음 | `drivePath = null`. 인덱스의 `project.drive` 불리언을 믿지 않고 직접 stat한다 |
+| `externalPaths`에 `onedrive/…`가 있는데 `roots.onedrive`가 없음 | 그 항목만 배열에서 빠진다. **경고 없음**(D15) — `roots.drive` 없음과 같은 선이다 |
+| `externalPaths`에 절대경로가 들어 있음(손편집한 파일) | `resolveLogicalPath`가 `C:\…`를 접두 없는 상대 경로로 보고 work 기준으로 이어 붙여 `C:\work\C:\…` 같은 값을 만든다. work 쪽 `validateManifest`가 그 파일을 이미 위반으로 보고하므로 MCW는 **따로 검사하지 않는다** — 루트 등록이 폴더를 검증하지 않는 것과 같은 선이고, 잘못된 키는 아무 폴더와도 맞지 않아 조용히 무해하다 |
+| 한 경로·레포를 여러 Project가 등록 | **마지막에 쓴 것이 이긴다**(D16, v1 규칙 유지). `[path-owner]`/`[repo-owner]` 경고 한 줄 |
 | `PROJECT.yaml`의 레포 이름이 `<dev>`에도 `<dev>\_archive`에도 없음 | 역인덱스에 두 키가 그냥 등록되고 아무 폴더도 맞지 않는다. 브리프는 유도한 경로를 적는다. **존재 검사를 하지 않는다** — 루트 등록이 폴더를 검증하지 않는 것과 같은 선이고, v1도 같았다 |
 | `projects/`에 키 규약을 어긴 폴더 | 경고 한 줄, 건너뜀 |
 | `projects/<key>/PROJECT.yaml` 없음 | 경고 한 줄, 건너뜀 |
@@ -527,8 +596,14 @@ v1.31.0이 만든 상태를 v1.30.1이 읽어도 아무것도 잃지 않는다.
 
 - `PROJECT.yaml`에서 title·status·mode·primaryContext·topics·repos·externalPaths·data를 읽고
   `ref`가 `projects/<key>`다.
-- 역인덱스가 `<dev>\<name>`과 `<dev>\_archive\<name>` 두 키를 모두 준다. 겹백슬래시가 든
-  `externalPaths`도 접힌 키로 들어간다.
+- 역인덱스가 `<dev>\<name>`과 `<dev>\_archive\<name>` 두 키를 모두 준다.
+- `externalPaths`(논리 경로, D15): `onedrive/수행프로젝트(기술연구소) - 문서/O_삼성서울병원` →
+  `<onedrive>\수행프로젝트(기술연구소) - 문서\O_삼성서울병원`(한글·공백·괄호 그대로); `dev/x` →
+  `<dev>\x`; `roots.onedrive`가 없으면 그 항목이 배열에서 **빠지고 경고는 없다**; 여러 값이 섞여
+  있으면 풀리는 것만 남는다.
+- 1:N 소유권(D16): 세 Project가 같은 `onedrive/…`를 등록하면 `repoOwners`가 **마지막 ref**를
+  가리키고 `[path-owner]` 경고 한 줄이 선다. 두 Project가 같은 레포 이름을 등록하면 `[repo-owner]`
+  경고가 **한 줄만**(경로 두 키에 대해 두 줄이 아니다) 선다.
 - `_archive` 하위 Project는 `archived: true`, `channel: "projects/_archive"`,
   `ref: "projects/_archive/<key>"`.
 - `title` 없음 → PRJ-key로 떨어진다. `primaryContext` 없음 → `groupLabel: ""`.
@@ -643,8 +718,10 @@ v1.31.0이 만든 상태를 v1.30.1이 읽어도 아무것도 잃지 않는다.
 - **`ws-index.mjs`가 `projects[]`에 `externalPaths`를 싣는 일.** MCW는 `PROJECT.yaml`을 직접
   읽으므로 지금 당장 필요하지 않다. 다만 `.ws-index.json`을 소비하는 다른 도구에는 구멍이다 —
   work 쪽 과제로 남긴다.
-- **PRJ-0005의 `externalPaths`에 `C:\NeuroPilot\neuropilot_develop`을 적는 일.** work 쪽 편집이다
-  (MCW는 `C:\work`에 쓰지 않는다). 적히는 순간 그 폴더가 PRJ-0005 아래로 붙는다.
+- **`C:\NeuroPilot\neuropilot_develop`의 소속.** `externalPaths`에 적을 수 없다 — work 쪽
+  `validateManifest`가 절대경로를 거부하고(D15), 이 폴더는 어느 논리 루트의 하위도 아니다. 길은 둘뿐이고
+  둘 다 MCW 밖의 결정이다: 그 폴더를 `C:\dev` 아래로 옮겨 `repos`에 이름으로 적기, 또는 수제 업무
+  프로젝트에 두기. `C:\Users\uiop3`도 같은 처지다.
 - **drive 루트 등록.** `DRIVE_ROOT`가 설정되고 `<drive>\projects\<key>` 폴더가 실재하는 PC에서는
   브리프에 drive 줄이 나온다. 그 폴더를 MCW의 **네 번째 루트**로 등록해 세션을 열 수 있게 하는 것은
   별개 설계다(`WorkspaceRoot`가 exact-keys라 `workspace.json` 스키마 진화가 필요하다 — 계약 §8의
@@ -661,3 +738,8 @@ v1.31.0이 만든 상태를 v1.30.1이 읽어도 아무것도 잃지 않는다.
 | Q1. 수제 4건을 어떻게 정리할까 | **삭제 후 재동기화**(「첫 동기화 시나리오」의 수동 4단계). 연결 액션은 만들지 않는다(D10) | 프로그램 계획 S4: "수제 업무 프로젝트 4건은 UI에서 수동 병합(4건뿐이라 마이그레이션 스크립트는 YAGNI)" |
 | Q2. `C:\Users\uiop3`와 `G:\내 드라이브\S_결혼식\결혼식준비`를 어디에 둘까 | 코드 없음. 사용자가 UI에서 수제 업무 프로젝트 1건에 모으거나 미분류로 둔다. 후자 폴더는 G: 컷오버 뒤 `G:\내 드라이브\projects\PRJ-0018-wedding\결혼식준비`로 경로가 바뀐다 — work 쪽 `ws-migrate.mjs --registries`가 `projects.json`의 경로를 치환한다 | drive 루트 등록은 「보류」 |
 | Q3. 이 PC에 `DRIVE_ROOT`를 설정할까 | **설정한다** — 다만 MCW의 일이 아니라 G: 컷오버의 GATE-g0에서 한다. v1.31.0은 `roots.drive`가 없는 상태로 나가도 된다 | 프로그램 계획 결정 11 · 컷오버 런북 §2 |
+
+Q2에 **`C:\NeuroPilot\neuropilot_develop`이 셋째로 들어간다**(2026-09-21 추가). 초안은 이 폴더를
+PRJ-0005의 `externalPaths`에 적으면 붙는다고 봤지만, work 쪽이 절대경로를 거부하므로(D15) 적을 수
+없다. 같은 결정이 적용된다: 코드 없음, 사용자가 UI에서 수제 업무 프로젝트에 두거나 그 폴더를
+`C:\dev` 아래로 옮긴다.
