@@ -82,6 +82,22 @@ afterEach(async () => {
 });
 
 describe("worktree service against a real repo", () => {
+  it("resolves session cwd inside a newly created worktree and rejects unrelated repositories", async () => {
+    const { service: worktrees } = service();
+    const externalPath = path.join(tempRoot, "external");
+    await git(repoRoot, "worktree", "add", "-b", "external", externalPath);
+    const nested = path.join(externalPath, "src");
+    await fs.mkdir(nested);
+    const location = await worktrees.resolveSessionWorkspace(project().id, nested, [project()]);
+    expect(location?.worktreeId).toBeTruthy();
+    expect(location?.cwd).toBe(nested);
+    expect((await worktrees.get(location!.worktreeId!))?.path.replaceAll("\\", "/")).toBe(externalPath.replaceAll("\\", "/"));
+    expect(await worktrees.resolveSessionWorkspace(project().id, repoRoot, [project()])).toEqual({ cwd: repoRoot });
+    const unrelated = path.join(tempRoot, "unrelated");
+    await fs.mkdir(unrelated);
+    await git(unrelated, "init");
+    expect(await worktrees.resolveSessionWorkspace(project().id, unrelated, [project()])).toBeNull();
+  });
   it("discovers external worktrees and reuses their registry id", async () => {
     const { service: worktrees } = service();
     const externalPath = path.join(tempRoot, "외부 worktree");

@@ -20,6 +20,9 @@ export interface ProviderStatusEvent {
   at: string;
   providerConversationId?: string;
   transcriptPath?: string;
+  provider?: "codex" | "claude" | "shell";
+  generation?: string;
+  cwd?: string;
 }
 
 export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
@@ -41,6 +44,12 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
   if (record.transcriptPath !== undefined && (typeof record.transcriptPath !== "string" || record.transcriptPath.length === 0)) {
     throw new Error("Provider status transcript path is invalid");
   }
+  if (record.provider !== undefined && !["codex", "claude", "shell"].includes(record.provider as string)) throw new Error("Provider is invalid");
+  for (const key of ["generation", "cwd"] as const) {
+    if (record[key] !== undefined && (typeof record[key] !== "string" || !record[key] || (record[key] as string).includes("\0"))) {
+      throw new Error(`Provider ${key} is invalid`);
+    }
+  }
   return {
     sessionId: record.sessionId,
     status: record.status as TerminalStatus,
@@ -48,6 +57,9 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
     at: record.at,
     ...(typeof record.providerConversationId === "string" ? { providerConversationId: record.providerConversationId } : {}),
     ...(typeof record.transcriptPath === "string" ? { transcriptPath: record.transcriptPath } : {}),
+    ...(record.provider ? { provider: record.provider as ProviderStatusEvent["provider"] } : {}),
+    ...(typeof record.generation === "string" ? { generation: record.generation } : {}),
+    ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
   };
 }
 

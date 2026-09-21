@@ -74,6 +74,7 @@ export type TerminalEvent =
   | TerminalWorkerEvent
   | { type: "title"; sessionId: string; title: string }
   | { type: "created"; sessionId: string; session: TerminalSessionView }
+  | { type: "workspace"; sessionId: string; session: TerminalSessionView }
   // No paths on this one — the renderer never handles absolute paths; it re-fetches the changed set.
   | { type: "agent-edits"; sessionId: string };
 

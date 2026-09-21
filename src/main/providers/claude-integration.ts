@@ -51,6 +51,7 @@ if ([string]::IsNullOrWhiteSpace($sessionId) -or $sessionId -notmatch '^[a-zA-Z0
 if ([string]::IsNullOrWhiteSpace($statusDir)) { exit 0 }
 
 try { $inputValue = [Console]::In.ReadToEnd() | ConvertFrom-Json } catch { exit 0 }
+if ($inputValue.agent_id) { exit 0 }
 $eventName = [string]$inputValue.hook_event_name
 $status = switch ($eventName) {
   "SessionStart" { "idle"; break }
@@ -73,6 +74,11 @@ try {
   $target = Join-Path $statusDir ($sessionId + ".json")
   $temp = $target + "." + $PID + ".tmp"
   $payload = [ordered]@{ sessionId = $sessionId; status = $status; event = $eventName; at = [DateTime]::UtcNow.ToString("o") }
+  $payload.provider = "claude"
+  if ($env:MULTI_CLI_WORK_GENERATION) { $payload.generation = $env:MULTI_CLI_WORK_GENERATION }
+  if ($inputValue.cwd) { $payload.cwd = [string]$inputValue.cwd }
+  if ($inputValue.session_id) { $payload.providerConversationId = [string]$inputValue.session_id }
+  if ($inputValue.transcript_path) { $payload.transcriptPath = [string]$inputValue.transcript_path }
   [IO.File]::WriteAllText($temp, ($payload | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
   Move-Item -LiteralPath $temp -Destination $target -Force
 } catch { }
@@ -102,6 +108,7 @@ status_dir = os.environ.get("MULTI_CLI_WORK_STATUS_DIR", "")
 if not re.fullmatch(r"[a-zA-Z0-9-]+", session_id) or not status_dir: raise SystemExit(0)
 try: value = json.load(sys.stdin)
 except Exception: raise SystemExit(0)
+if value.get("agent_id"): raise SystemExit(0)
 event = str(value.get("hook_event_name", ""))
 if event == "SessionStart": status = "idle"
 elif event == "SessionEnd": status = "exited"
@@ -117,6 +124,10 @@ try:
     os.makedirs(status_dir, exist_ok=True)
     target = os.path.join(status_dir, session_id + ".json")
     payload = dict(sessionId=session_id, status=status, event=event, at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+    payload["provider"] = "claude"
+    if os.environ.get("MULTI_CLI_WORK_GENERATION"): payload["generation"] = os.environ["MULTI_CLI_WORK_GENERATION"]
+    for source, target_key in (("cwd", "cwd"), ("session_id", "providerConversationId"), ("transcript_path", "transcriptPath")):
+        if isinstance(value.get(source), str) and value[source]: payload[target_key] = value[source]
     fd, temporary = tempfile.mkstemp(prefix=session_id + ".", suffix=".tmp", dir=status_dir)
     with os.fdopen(fd, "w", encoding="utf-8") as output: json.dump(payload, output, separators=(",", ":"))
     os.replace(temporary, target)

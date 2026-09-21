@@ -228,6 +228,19 @@ export class WorktreeService {
     return { projectId: owner.id, worktreeId: workspace?.worktreeId ?? null };
   }
 
+  async resolveSessionWorkspace(projectId: string, cwd: string, projects: SharedProject[]): Promise<{ cwd: string; worktreeId?: string } | null> {
+    try {
+      const { stdout } = await runReadOnlyGit(["-C", cwd, "rev-parse", "--show-toplevel"], { windowsHide: true, timeout: 5_000 });
+      const root = stdout.trim();
+      const project = projects.find((entry) => entry.id === projectId);
+      if (!project || !root) return null;
+      if (normalizeWorkspacePath(root) === normalizeWorkspacePath(project.rootPath)) return { cwd };
+      const owner = await this.ownerForPath(root, projects);
+      if (owner?.projectId !== projectId || !owner.worktreeId) return null;
+      return { cwd, worktreeId: owner.worktreeId };
+    } catch { return null; }
+  }
+
   async previewPath(projectId: string, branch: string): Promise<string> {
     const project = await this.options.getProject(projectId);
     if (!project) throw new Error(`Unknown project: ${projectId}`);

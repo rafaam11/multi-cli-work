@@ -111,9 +111,10 @@ describe("Claude app-owned integration", () => {
         MULTI_CLI_WORK_SESSION_ID: "session-brief-test",
         MULTI_CLI_WORK_STATUS_DIR: statusDir,
         MULTI_CLI_WORK_PROJECT_BRIEF: briefPath,
+        MULTI_CLI_WORK_GENERATION: "generation-1",
       },
     });
-    child.child.stdin?.end(JSON.stringify({ hook_event_name: "SessionStart" }));
+    child.child.stdin?.end(JSON.stringify({ hook_event_name: "SessionStart", session_id: "claude-1", cwd: root, transcript_path: path.join(root, "claude.jsonl") }));
     const { stdout } = await child;
 
     const output = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
@@ -122,6 +123,7 @@ describe("Claude app-owned integration", () => {
     // The status file write must keep working alongside the context output.
     const status = JSON.parse(await fs.readFile(path.join(statusDir, "session-brief-test.json"), "utf8"));
     expect(status).toMatchObject({ sessionId: "session-brief-test", status: "idle", event: "SessionStart" });
+    expect(status).toMatchObject({ provider: "claude", generation: "generation-1", cwd: root, providerConversationId: "claude-1", transcriptPath: path.join(root, "claude.jsonl") });
   }, 20_000);
 
   it("writes an executable Python hook on Linux", async () => {

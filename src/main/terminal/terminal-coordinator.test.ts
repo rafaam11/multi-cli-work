@@ -1468,6 +1468,9 @@ describe("worktree sessions", () => {
       claudeSettingsPath: path.join(root, "claude-settings.json"),
       getProject: async (id) => (id === project.id ? project : null),
       getWorktree: async (id) => (!options.worktreeGone && id === worktree.id ? worktree : null),
+      resolveWorkspace: async (_projectId, cwd) => cwd.startsWith(worktree.path)
+        ? { cwd, worktreeId: worktree.id }
+        : cwd === project.rootPath ? { cwd } : null,
       getExecutables: async () => ({
         agents: { powershell: "powershell.exe", claude: "claude.exe", codex: "codex.cmd" },
         vscode: null,
@@ -1498,6 +1501,35 @@ describe("worktree sessions", () => {
     expect(session.worktreeId).toBe(worktree.id);
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions[session.id].worktreeId).toBe(worktree.id);
+  });
+
+  it("moves a PowerShell session with its owned CLI and persists the workspace without replacing the terminal", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = worktreeCoordinator(root);
+    await instance.initialize();
+    const session = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+    const generation = worker.create.mock.calls[0][0].generation!;
+    const events: TerminalEvent[] = [];
+    instance.onEvent((event) => events.push(event));
+    const report = (cwd: string, conversation = "claude-root", token = generation) => instance.applyProviderStatus({
+      sessionId: session.id, status: "working", event: "PostToolUse", at: new Date().toISOString(),
+      provider: "claude", providerConversationId: conversation, generation: token, cwd,
+    });
+    report(worktree.path);
+    await instance.flush();
+    expect(instance.list()[0]).toMatchObject({ id: session.id, kind: "powershell", worktreeId: worktree.id, cwd: worktree.path, pid: 123, providerConversationId: null });
+    expect((await instance.state()).state.sessions[session.id].worktreeId).toBe(worktree.id);
+    expect(events.some((event) => event.type === "workspace")).toBe(true);
+    report(project.rootPath, "subagent");
+    report(project.rootPath, "claude-root", "old-generation");
+    report("C:\\OtherRepo");
+    await instance.flush();
+    expect(instance.list()[0].worktreeId).toBe(worktree.id);
+    report(project.rootPath);
+    await instance.flush();
+    expect(instance.list()[0].worktreeId).toBeUndefined();
+    expect((await instance.state()).state.sessions[session.id]).not.toHaveProperty("worktreeId");
+    expect(worker.create).toHaveBeenCalledTimes(1);
   });
 
   it("keeps root sessions' persisted shape unchanged — no worktreeId key at all", async () => {

@@ -1015,6 +1015,17 @@ export function App() {
           setSessions((current) => replaceSession(current, event.session));
           return;
         }
+        if (event.type === "workspace") {
+          setSessions((current) => replaceSession(current, event.session));
+          // Keep the live pane in place. Its sidebar row and next folder selection use the new
+          // binding; moving/unmounting the active grid would interrupt an in-progress interaction.
+          void window.multiCliWork.worktrees.sync().then((next) => {
+            setWorkspaceViews(next.workspaces);
+            setWorktreeWarnings(next.warnings);
+            return window.multiCliWork.worktrees.list();
+          }).then(setWorktrees).catch(() => undefined);
+          return;
+        }
         if (event.type === "agent-edits") {
           // No path is in the event (renderer never sees absolute paths) and no session field
           // changes — just tell FileExplorer to re-pull changedPaths for whatever target is open,

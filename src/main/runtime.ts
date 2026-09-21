@@ -92,6 +92,8 @@ import {
 import { WorktreeService } from "./projects/worktree-service";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { ensureCodexIntegration } from "./providers/codex-integration";
+import { ensurePowerShellIntegration } from "./providers/powershell-integration";
+import { SessionWorkspaceReader } from "./providers/session-workspace";
 import { detectProviderExecutables, type ProviderExecutables } from "./providers/provider-launch";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { SessionTitleReader } from "./providers/session-title";
@@ -158,6 +160,8 @@ export async function createDesktopRuntime(
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData, process.platform);
   const codexIntegration = await ensureCodexIntegration({ userData });
+  const shellIntegrationPath = process.platform === "win32" ? await ensurePowerShellIntegration(userData) : undefined;
+  const sessionWorkspaceReader = new SessionWorkspaceReader();
   const titleReader = new SessionTitleReader();
   const agentEditReader = new AgentEditReader();
   // "그 외 변경" (non-agent) highlighting compares a file's mtime against this. Defaults to app start
@@ -277,6 +281,11 @@ export async function createDesktopRuntime(
     claudeSettingsPath: claudeIntegration.settingsPath,
     getProject,
     getWorktree: (worktreeId) => worktrees.get(worktreeId),
+    shellIntegrationPath,
+    readWorkspace: (transcriptPath, since) => sessionWorkspaceReader.read(transcriptPath, since),
+    resolveWorkspace: async (projectId, cwd) => worktrees.resolveSessionWorkspace(
+      projectId, cwd, Object.values((await readProjectRegistry({ registryPath })).registry.projects),
+    ),
     getExecutables,
     /**
      * 세션의 폴더가 무엇에 속하는지 두 갈래로 답하고 한 파일로 합친다: 업무 프로젝트(팀즈·노션·

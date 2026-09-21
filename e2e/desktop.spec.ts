@@ -466,6 +466,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       ),
     );
     await page.keyboard.press("Control+v");
+    // Clipboard IPC is asynchronous. Wait for the pasted command before submitting it; otherwise
+    // Enter can reach the PTY first and leave the command unexecuted on the next prompt.
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_V_");
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_V_1");
     await expect(page.locator(".xterm-rows")).not.toContainText("MCW_CTRL_V_2");
@@ -478,6 +481,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       ),
     );
     await page.keyboard.press("Control+Shift+v");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_SHIFT_V_");
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_CTRL_SHIFT_V_2");
     await expect(page.locator(".xterm-rows")).not.toContainText("MCW_CTRL_SHIFT_V_3");

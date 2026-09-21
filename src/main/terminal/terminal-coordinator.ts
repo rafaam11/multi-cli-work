@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { AgentDefinition, AgentId } from "../../shared/agent-types";
 import {
   MAX_VISIBLE_SESSIONS,
@@ -103,6 +104,9 @@ interface TerminalCoordinatorOptions {
   getProject(projectId: string): Promise<SharedProject | null>;
   /** Null when the worktree was removed (from the app or by hand). Absent in tests without worktrees. */
   getWorktree?(worktreeId: string): Promise<SharedWorktree | null>;
+  resolveWorkspace?(projectId: string, cwd: string): Promise<{ cwd: string; worktreeId?: string } | null>;
+  readWorkspace?(transcriptPath: string, since?: string): Promise<string | null>;
+  shellIntegrationPath?: string;
   getExecutables(): Promise<ProviderExecutables>;
   /**
    * Path of the work-project brief for a folder's owning 업무 프로젝트, or null when the folder is
@@ -196,6 +200,10 @@ export class TerminalCoordinator {
   private activeAutoResumes = 0;
   private readonly autoResumeQueue: Array<() => void> = [];
   private readonly transcriptPaths = new Map<string, string>();
+  private readonly shellProviders = new Map<string, { provider: "codex" | "claude"; conversationId: string; transcriptPath?: string; startedAt: string }>();
+  private readonly transcriptStartedAt = new Map<string, string>();
+  private readonly workspaceEventTimes = new Map<string, number>();
+  private workspacePoll: Promise<void> | null = null;
   private readonly pendingProviderStarts = new Map<string, ProviderStatusEvent>();
   private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" }>>();
   private readonly launchingSessionIds = new Set<string>();
@@ -612,12 +620,16 @@ export class TerminalCoordinator {
       ? { sessionId: eventOrSessionId, status: legacyStatus!, event: "legacy", at: this.options.now() }
       : eventOrSessionId;
     if (this.removedSessionIds.has(event.sessionId)) return;
+    if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
     const view = this.views.get(event.sessionId);
     if (!view && typeof eventOrSessionId !== "string" && event.event === "SessionStart" && event.providerConversationId) {
       this.pendingProviderStarts.set(event.sessionId, event);
       return;
     }
     const agent = view ? this.options.getAgent(view.kind) : null;
+    if (view && agent && event.generation) {
+      this.enqueueEvent(() => this.applyWorkspaceStatus(event));
+    }
     const ownsCodexSession = agent?.conversationId === "provider-assigned" && event.event === "SessionStart";
     if (
       !view || !agent || (!ownsCodexSession && agent.statusAdapter !== "claude-hook") || view.pid === null ||
@@ -626,6 +638,7 @@ export class TerminalCoordinator {
     this.enqueueEvent(async () => {
       const current = this.views.get(event.sessionId);
       if (!current || current.pid === null || current.status === "exited" || current.status === "error") return;
+      if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
       let metadataChanged = false;
       if (ownsCodexSession && event.providerConversationId) {
         if (current.providerConversationId && current.providerConversationId !== event.providerConversationId) {
@@ -638,6 +651,7 @@ export class TerminalCoordinator {
         }
         if (event.transcriptPath && this.transcriptPaths.get(current.id) !== event.transcriptPath) {
           this.transcriptPaths.set(current.id, event.transcriptPath);
+          this.transcriptStartedAt.set(current.id, event.at);
           metadataChanged = true;
         }
       }
@@ -717,6 +731,10 @@ export class TerminalCoordinator {
       await this.flushSessionLog(input.sessionId);
     }
     const generation = randomUUID();
+    this.shellProviders.delete(input.sessionId);
+    this.workspaceEventTimes.delete(input.sessionId);
+    this.transcriptPaths.delete(input.sessionId);
+    this.transcriptStartedAt.delete(input.sessionId);
     const previousGeneration = this.generations.get(input.sessionId);
     this.generations.set(input.sessionId, generation);
     this.launchingSessionIds.add(input.sessionId);
@@ -731,10 +749,16 @@ export class TerminalCoordinator {
         statusAdapter: agent.statusAdapter,
         cwd: input.cwd,
         executable: command.executable,
-        args: command.args,
+        args: input.kind === "powershell" && !input.tool && this.options.shellIntegrationPath &&
+          !command.args.some((arg) => /^-(?:command|c|file|f|encodedcommand|enc)$/i.test(arg))
+          ? [...command.args, "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", `. '${this.options.shellIntegrationPath.replaceAll("'", "''")}'`]
+          : command.args,
         env: {
           ...this.options.env,
           MULTI_CLI_WORK_SESSION_ID: input.sessionId,
+          MULTI_CLI_WORK_GENERATION: generation,
+          MULTI_CLI_WORK_CLAUDE_SETTINGS: this.options.claudeSettingsPath,
+          MULTI_CLI_WORK_CODEX_PROFILE: this.options.codexProfileName ?? "multi-cli-work",
           ...(briefPath ? { MULTI_CLI_WORK_PROJECT_BRIEF: briefPath } : {}),
         },
         cols: input.cols,
@@ -809,10 +833,11 @@ export class TerminalCoordinator {
    */
   /** Drives both title and agent-edit polling — one timer for both, per the plan's "같은 타이머로 구동". */
   private startTitlePolling(): void {
-    if (this.titleTimer || (!this.options.readTitle && !this.options.readAgentEdits)) return;
+    if (this.titleTimer || (!this.options.readTitle && !this.options.readAgentEdits && !this.options.readWorkspace)) return;
     const timer = setInterval(() => {
       void this.refreshTitles();
       void this.refreshAgentEdits();
+      void this.refreshWorkspaces();
     }, this.options.titlePollMs ?? DEFAULT_TITLE_POLL_MS);
     timer.unref?.();
     this.titleTimer = timer;
@@ -826,7 +851,77 @@ export class TerminalCoordinator {
 
   /** Stops the shared timer only once neither poll has anything left to do. */
   private stopPollingIfIdle(): void {
-    if (this.titleCandidates().length === 0 && this.editCandidates().length === 0) this.stopTitlePolling();
+    if (!this.hasActiveSessions()) this.stopTitlePolling();
+  }
+
+  private async applyWorkspaceStatus(event: ProviderStatusEvent): Promise<void> {
+    const view = this.views.get(event.sessionId);
+    if (!view || view.pid === null || view.status === "exited" || view.status === "error" ||
+      !event.generation || event.generation !== this.generations.get(view.id)) return;
+    const at = Date.parse(event.at);
+    if (!Number.isFinite(at) || at < (this.workspaceEventTimes.get(view.id) ?? 0)) return;
+    if (view.kind === "powershell" || view.kind === "bash") {
+      if (event.provider === "shell" && event.event === "ShellReady") {
+        this.shellProviders.delete(view.id);
+      } else {
+        if ((event.provider !== "codex" && event.provider !== "claude") || !event.providerConversationId) return;
+        const owner = this.shellProviders.get(view.id);
+        if (owner && (owner.provider !== event.provider || owner.conversationId !== event.providerConversationId)) return;
+        this.shellProviders.set(view.id, {
+          provider: event.provider, conversationId: event.providerConversationId,
+          transcriptPath: event.transcriptPath ?? owner?.transcriptPath,
+          startedAt: owner?.startedAt ?? event.at,
+        });
+      }
+    } else if (event.providerConversationId && view.providerConversationId && event.providerConversationId !== view.providerConversationId) {
+      return;
+    }
+    this.workspaceEventTimes.set(view.id, at);
+    if (event.transcriptPath && event.providerConversationId === view.providerConversationId) {
+      this.transcriptPaths.set(view.id, event.transcriptPath);
+      if (!this.transcriptStartedAt.has(view.id)) this.transcriptStartedAt.set(view.id, event.at);
+    }
+    if (event.cwd) await this.updateWorkspace(view.id, event.cwd, event.generation);
+  }
+
+  private async updateWorkspace(sessionId: string, cwd: string, generation: string): Promise<void> {
+    const view = this.views.get(sessionId);
+    if (!view?.projectId || !this.options.resolveWorkspace || (!path.isAbsolute(cwd) && !path.win32.isAbsolute(cwd)) || cwd === view.cwd) return;
+    const resolved = await this.options.resolveWorkspace(view.projectId, cwd);
+    if (!resolved || this.views.get(sessionId) !== view || this.generations.get(sessionId) !== generation ||
+      this.removedSessionIds.has(sessionId) || view.pid === null || view.status === "exited" || view.status === "error") return;
+    view.cwd = resolved.cwd;
+    if (resolved.worktreeId) view.worktreeId = resolved.worktreeId;
+    else delete view.worktreeId;
+    view.updatedAt = this.options.now();
+    await this.persistView(view);
+    this.publish({ type: "workspace", sessionId, session: { ...view } });
+  }
+
+  async refreshWorkspaces(): Promise<void> {
+    if (this.workspacePoll) return this.workspacePoll;
+    const read = this.options.readWorkspace;
+    if (!read) return;
+    this.workspacePoll = (async () => {
+      for (const session of this.list()) {
+        if (session.pid === null || session.status === "exited" || session.status === "error") continue;
+        const owner = this.shellProviders.get(session.id);
+        const transcript = owner?.provider === "codex" ? owner.transcriptPath
+          : this.options.getAgent(session.kind)?.titleSource === "codex-transcript" ? this.transcriptPaths.get(session.id) : undefined;
+        const generation = this.generations.get(session.id);
+        if (!transcript || !generation) continue;
+        try {
+          const cwd = await read(transcript, owner?.startedAt ?? this.transcriptStartedAt.get(session.id));
+          if (cwd) {
+            this.enqueueEvent(async () => {
+              if (owner && this.shellProviders.get(session.id) !== owner) return;
+              await this.updateWorkspace(session.id, cwd, generation);
+            });
+          }
+        } catch (error) { this.reportAsyncError("Session workspace read failed", error); }
+      }
+    })().finally(() => { this.workspacePoll = null; });
+    return this.workspacePoll;
   }
 
   /** Only an agent that writes a transcript we can parse has a title to poll for. */

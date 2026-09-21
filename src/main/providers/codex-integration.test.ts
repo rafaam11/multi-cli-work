@@ -2,6 +2,8 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { CODEX_APP_PROFILE, ensureCodexIntegration } from "./codex-integration";
 
@@ -9,6 +11,20 @@ const roots: string[] = [];
 
 describe("ensureCodexIntegration", () => {
   afterEach(async () => Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))));
+
+  it("reports the owning terminal generation and Codex working directory from a real hook invocation", async () => {
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-codex-hook-"));
+    roots.push(root);
+    const result = await ensureCodexIntegration({ userData: root, codexHome: path.join(root, "codex") });
+    const child = promisify(execFile)(process.execPath, [result.hookScriptPath], { env: {
+      ...process.env, MULTI_CLI_WORK_SESSION_ID: "shell-1", MULTI_CLI_WORK_STATUS_DIR: root, MULTI_CLI_WORK_GENERATION: "generation-1",
+    } });
+    child.child.stdin?.end(JSON.stringify({ hook_event_name: "SessionStart", session_id: "codex-1", cwd: root, transcript_path: path.join(root, "rollout.jsonl") }));
+    await child;
+    expect(JSON.parse(await fs.readFile(path.join(root, "shell-1.json"), "utf8"))).toMatchObject({
+      provider: "codex", generation: "generation-1", cwd: root, providerConversationId: "codex-1",
+    });
+  });
 
   it("writes an app-owned SessionStart profile without bypassing hook trust", async () => {
     const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-codex-hook-"));

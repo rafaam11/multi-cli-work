@@ -26,6 +26,9 @@ process.stdin.on("end", () => {
       event: "SessionStart",
       at: new Date().toISOString(),
       providerConversationId: event.session_id,
+      provider: "codex",
+      ...(process.env.MULTI_CLI_WORK_GENERATION ? { generation: process.env.MULTI_CLI_WORK_GENERATION } : {}),
+      ...(typeof event.cwd === "string" && event.cwd ? { cwd: event.cwd } : {}),
       ...(typeof event.transcript_path === "string" ? { transcriptPath: event.transcript_path } : {}),
     }) + "\\n", "utf8");
     fs.rmSync(target, { force: true });
