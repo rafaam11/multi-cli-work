@@ -173,9 +173,12 @@ function shellInfoFrom(
     root: root.work,
     ref: shellRef(channel, shell),
     channel,
-    channelLetter: letter,
-    channelLabel: CHANNEL_LETTER_LABEL[letter],
     shell,
+    groupLabel: CHANNEL_LETTER_LABEL[letter],
+    // v1 셸에는 topic·mode·휴면 축·drive 짝 폴더·지식 정본이라는 개념이 없다. v2 스캔만 채운다.
+    topics: [],
+    mode: null,
+    archived: false,
     // 한글 표시명은 폴더가 아니라 프론트매터에 있다(루트 §2). 없으면 폴더명으로 떨어진다.
     title: fields.title && fields.title.length > 0 ? fields.title : shell,
     status: fields.status ?? null,
@@ -185,6 +188,8 @@ function shellInfoFrom(
     // 따옴표만 벗기므로 백슬래시가 둘로 남는다. 여기서 접어 두면 역인덱스도 브리프도 실경로를 본다.
     externalPaths: (fields.externalPaths ?? []).map((external) => cleanWorkspacePath(external)),
     data: fields.data ?? [],
+    drivePath: null,
+    wikiPath: null,
   };
 }
 

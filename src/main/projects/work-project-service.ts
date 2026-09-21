@@ -409,7 +409,7 @@ export class WorkProjectService {
         // 전부 지우면 빈 행이 남고, 그때부터 여기는 손대지 않는다. 구분(category)이 만들 때 한 번만
         // 정해지는 것(위 L26-27)과 같은 약속이다.
         if (!Object.prototype.hasOwnProperty.call(tagRegistry.tags, target.id)) {
-          tagSeeds.set(target.id, normalizeTags([shell.channelLabel]));
+          tagSeeds.set(target.id, normalizeTags([shell.groupLabel]));
         }
         const members = (membersByRef.get(shell.ref) ?? []).filter(
           (member) => !manualOwned.has(member.projectId),

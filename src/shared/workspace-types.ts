@@ -48,25 +48,52 @@ export interface WorkspaceRegistryV1 {
   shellLinks: WorkspaceShellLink[];
 }
 
-/** 루트를 훑어 만든 셸 한 칸. 파일이 아니라 스캔 결과라 저장하지 않는다. */
+/** 루트를 훑어 만든 프로젝트(v1 어휘로는 셸) 한 칸. 파일이 아니라 스캔 결과라 저장하지 않는다. */
 export interface WorkspaceShellInfo {
-  /** 이 셸이 속한 루트(등록된 원형). */
+  /** 이 항목이 속한 루트(등록된 원형). */
   root: string;
-  /** `<채널>/<셸>` — `.ws-index.json`의 `ref`와 같은 표기. */
+  /**
+   * 전역 키. **반드시 `${channel}/${shell}`이어야 한다** — `syncFromWorkspace`가 `shellLinks`를
+   * 그 조합으로 키잉하고 이 값으로 조회하므로, 어긋나면 동기화마다 항목이 중복 생성된다.
+   * v2: `projects/PRJ-0017-secondbrain` · v1: `O_SMCH/24_SMCH_VSP-1`
+   */
   ref: string;
+  /** v2: `"projects"` 또는 `"projects/_archive"` · v1: 채널 폴더명. `shellLink.channel`로 저장된다. */
   channel: string;
-  channelLetter: string;
-  channelLabel: string;
+  /** v2: PRJ-key · v1: 셸 폴더명. `shellLink.shell`로 저장된다. */
   shell: string;
-  /** 셸 CLAUDE.md의 `title:`(한글). 없으면 폴더명. */
+  /**
+   * 태그 시드와 기본 묶기가 쓰는 묶음 라벨. v2는 `PROJECT.yaml`의 `primaryContext`,
+   * v1은 채널 라벨(과제·용역·연구·기타·개인)이다. 없으면 빈 문자열이고 그때는 묶지 않는다.
+   */
+  groupLabel: string;
+  /** v2: `PROJECT.yaml`의 `topics` · v1: 항상 []. `groupLabel`과 함께 태그로 심긴다. */
+  topics: string[];
+  /** v2: `PROJECT.yaml`의 `title` · v1: 셸 CLAUDE.md의 `title:`. 없으면 폴더명. */
   title: string;
   status: string | null;
-  /** 셸 폴더의 절대경로. */
+  /**
+   * v2: `PROJECT.yaml`의 `mode`(continuous/finite) · v1: null.
+   * **브리프 한 줄로만 흘러가는 문자열이다 — 어떤 코드도 이 값으로 분기하지 않는다.**
+   * (2026-09-03 태그 스펙의 "워크스페이스 도메인 개념을 앱에 넣지 않는다"와 공존하는 선)
+   */
+  mode: string | null;
+  /** v2: `projects/_archive` 하위인가 · v1: 항상 false. 업무 프로젝트 생성 제외 판정에 쓴다. */
+  archived: boolean;
+  /** 프로젝트(셸) 폴더의 절대경로. */
   path: string;
   repos: string[];
+  /** 프론트매터의 `externalPaths`/`external_paths` — 루트 밖 레포의 절대경로. */
   externalPaths: string[];
-  /** 셸 프론트매터의 `data:` — DS-#### id 목록. */
+  /** 프론트매터의 `data:` — DS-#### id 목록. */
   data: string[];
+  /**
+   * `<roots.drive>\projects\<key>` — 그 폴더가 **실재할 때만** 값이 있다. `DRIVE_ROOT`가 설정되지
+   * 않은 PC에서는 항상 null이고, 그것은 경고할 일이 아니라 정상 상태다.
+   */
+  drivePath: string | null;
+  /** `PROJECT.yaml`의 `wikiSource` 논리 경로를 등록된 루트로 푼 절대경로. 못 풀면 null. */
+  wikiPath: string | null;
 }
 
 /** 루트 목록 + 역인덱스. 렌더러는 이것만으로 트리를 그린다. */

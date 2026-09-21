@@ -100,12 +100,19 @@ describe("WorkspaceIndex", () => {
     expect(vsp).toMatchObject({
       title: "가상수술계획",
       status: "active",
-      channelLetter: "O",
-      channelLabel: "용역",
+      groupLabel: "용역",
       shell: "24_SMCH_VSP-1",
       repos: ["VSP_FastAPI", "VSP_MQ_v2"],
       data: ["DS-0001"],
       path: path.join(root, "O_SMCH", "24_SMCH_VSP-1"),
+    });
+    // v1 스캔은 v2 전용 필드를 고정값으로 채운다 — 동작이 v1.30과 같다는 뜻이다.
+    expect(vsp).toMatchObject({
+      topics: [],
+      mode: null,
+      archived: false,
+      drivePath: null,
+      wikiPath: null,
     });
 
     expect(snapshot.repoOwners[workspacePathKey(path.join(root, "dev", "VSP_FastAPI"))]).toBe(

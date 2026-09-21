@@ -56,14 +56,18 @@ function shell(overrides: Partial<WorkspaceShellInfo> & Pick<WorkspaceShellInfo,
   return {
     root: WORK_ROOT,
     ref,
-    channelLetter: overrides.channel.charAt(0),
-    channelLabel: "용역",
+    groupLabel: "용역",
+    topics: [],
     title: overrides.shell,
     status: "active",
+    mode: null,
+    archived: false,
     path: path.win32.join(WORK_ROOT, overrides.channel, overrides.shell),
     repos: [],
     externalPaths: [],
     data: [],
+    drivePath: null,
+    wikiPath: null,
     ...overrides,
   };
 }
@@ -112,7 +116,7 @@ const VSP = shell({ channel: "O_SMCH", shell: "24_SMCH_VSP-1", title: "가상수
 const CAREER = shell({
   channel: "P_Personal",
   shell: "26_Personal_Career-1",
-  channelLabel: "개인",
+  groupLabel: "개인",
   title: "진로",
   repos: [],
 });

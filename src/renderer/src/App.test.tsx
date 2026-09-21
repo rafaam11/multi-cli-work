@@ -190,15 +190,19 @@ const shellInfo = (channel: string, name: string, title: string, repos: string[]
   root: WS_ROOT,
   ref: channel + "/" + name,
   channel,
-  channelLetter: channel.charAt(0),
-  channelLabel: channel.startsWith("O") ? "용역" : "개인",
+  groupLabel: channel.startsWith("O") ? "용역" : "개인",
+  topics: [],
   shell: name,
   title,
   status: "active",
+  mode: null,
+  archived: false,
   path: join(WS_ROOT, channel, name),
   repos,
   externalPaths: [],
   data: [],
+  drivePath: null,
+  wikiPath: null,
 });
 const VSP = shellInfo("O_SMCH", "24_SMCH_VSP-1", "가상수술계획", ["VSP_FastAPI"]);
 const CAREER = shellInfo("P_Personal", "26_Personal_Career-1", "진로");

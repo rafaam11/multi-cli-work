@@ -50,7 +50,7 @@ export function renderWorkspaceBrief(input: WorkspaceBriefInput): string {
     "",
     `- 표시명: ${shell.title}`,
     ...(shell.status ? [`- 상태: ${shell.status}`] : []),
-    `- 채널: ${shell.channel} (${shell.channelLabel})`,
+    `- 채널: ${shell.channel} (${shell.groupLabel})`,
     `- 셸 문서: ${path.join(shell.path, "CLAUDE.md")}`,
     `- 루트 원칙: ${input.rootPrinciplesPath}`,
   ];
