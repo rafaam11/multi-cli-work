@@ -205,9 +205,20 @@ describe("classifyWorkspacePath — v2 PRJ 평면 구조", () => {
   });
 
   it("점·밑줄로 시작하는 폴더는 경고 없이 other다", () => {
-    expect(classify("projects\\.git")).toMatchObject({ kind: "other", warning: undefined });
-    expect(classify("projects\\_local")).toMatchObject({ kind: "other", warning: undefined });
-    expect(classify("projects\\_archive\\.obsidian")).toMatchObject({ kind: "other", warning: undefined });
+    const dotGit = classify("projects\\.git");
+    expect(dotGit.kind).toBe("other");
+    expect(dotGit.warning).toBeUndefined();
+    expect("warning" in dotGit).toBe(false);
+
+    const underscoreLocal = classify("projects\\_local");
+    expect(underscoreLocal.kind).toBe("other");
+    expect(underscoreLocal.warning).toBeUndefined();
+    expect("warning" in underscoreLocal).toBe(false);
+
+    const archivedDotfile = classify("projects\\_archive\\.obsidian");
+    expect(archivedDotfile.kind).toBe("other");
+    expect(archivedDotfile.warning).toBeUndefined();
+    expect("warning" in archivedDotfile).toBe(false);
   });
 
   it("legacy 채널·셸은 같은 루트에서 계속 분류된다", () => {

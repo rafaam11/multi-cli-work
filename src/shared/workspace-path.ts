@@ -226,7 +226,7 @@ function classifyProjectsPath(segments: readonly string[], rel: string): Workspa
   if (second === ARCHIVE_DIR) {
     const key = segments[2];
     if (!key) return { kind: "projects-root", rel, archived: true };
-    if (key.startsWith(".") || key.startsWith("_")) return { kind: "other", rel, warning: undefined };
+    if (key.startsWith(".") || key.startsWith("_")) return { kind: "other", rel };
     const parsed = parseProjectKey(key);
     if (!parsed) return { kind: "other", rel, warning: `프로젝트 키 규약 위반: ${key}` };
     return {
@@ -239,7 +239,7 @@ function classifyProjectsPath(segments: readonly string[], rel: string): Workspa
       rel,
     };
   }
-  if (second.startsWith(".") || second.startsWith("_")) return { kind: "other", rel, warning: undefined };
+  if (second.startsWith(".") || second.startsWith("_")) return { kind: "other", rel };
   const parsed = parseProjectKey(second);
   if (!parsed) return { kind: "other", rel, warning: `프로젝트 키 규약 위반: ${second}` };
   return {
