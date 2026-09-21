@@ -18,6 +18,10 @@ export const SHELL_RE = /^(\d{2})_([A-Za-z][A-Za-z0-9]*)(?:_([A-Za-z0-9]+))?(?:-
 export const DATASET_RE = /^(\d{2})_([A-Za-z][A-Za-z0-9]*)_([A-Za-z0-9]+)(?:-(\d+))?$/;
 export const DS_ID_RE = /^DS-\d{4}$/;
 export const RESERVED_ROOT = new Set(["wiki", "_templates", "_scripts", "_local"]);
+/** ws-path.mjs `PROJECT_KEY_RE`의 미러 — 정본 벡터는 `_scripts/lib/ws-path.vectors.json`이다. */
+export const PROJECT_KEY_RE = /^PRJ-(\d{4})-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+export const PROJECTS_DIR = "projects";
+export const ARCHIVE_DIR = "_archive";
 
 export type ChannelLetter = "G" | "O" | "R" | "Z" | "P";
 
@@ -51,6 +55,12 @@ export interface ParsedDataset {
   name: string;
 }
 
+export interface ParsedProjectKey {
+  seq: number;
+  slug: string;
+  key: string;
+}
+
 export function parseChannel(name: string): ParsedChannel | null {
   const match = CHANNEL_RE.exec(name);
   return match ? { letter: match[1] as ChannelLetter, slug: match[2], name } : null;
@@ -75,6 +85,11 @@ export function parseDataset(name: string): ParsedDataset | null {
   return match
     ? { yy: match[1], source: match[2], dataset: match[3], n: match[4] ? Number(match[4]) : null, name }
     : null;
+}
+
+export function parseProjectKey(key: string): ParsedProjectKey | null {
+  const match = PROJECT_KEY_RE.exec(key);
+  return match ? { seq: Number(match[1]), slug: match[2], key } : null;
 }
 
 // ---------- 경로 정규화 (레지스트리 계약 §7) ----------
@@ -158,9 +173,14 @@ export function joinWorkspacePath(
 /** ws-path.mjs `classify`의 kind 어휘. 그쪽 테스트 벡터가 이 값들을 그대로 검사한다. */
 export type WorkspacePathKind =
   | "root"
-  | "channel"
-  | "shell"
-  | "shell-sub"
+  | "projects-root"
+  | "project"
+  | "project-sub"
+  | "project-archive"
+  | "project-archive-sub"
+  | "legacy-channel"
+  | "legacy-shell"
+  | "legacy-shell-sub"
   | "dev-dir"
   | "repo"
   | "repo-archive"
@@ -179,6 +199,11 @@ export interface WorkspacePathClassification {
   channel?: string;
   shell?: string;
   repo?: string;
+  /** v2 Project의 PRJ-key. `ws-path.mjs`와 같은 필드명이다. */
+  project?: string;
+  parsedProject?: ParsedProjectKey;
+  /** v2 Project가 `projects/_archive` 아래인가. 레포의 `archive`와 다른 축이다. */
+  archived?: boolean;
   archive?: boolean;
   purpose?: string;
   dataset?: string;
@@ -186,6 +211,46 @@ export interface WorkspacePathClassification {
   parsedShell?: ParsedShell;
   parsedDataset?: ParsedDataset | null;
   warning?: string;
+}
+
+/**
+ * `projects/…` 아래를 분류한다 — ws-path.mjs `classify`의 projects 절과 같은 판정·같은 순서.
+ *
+ * `channel`·`shell`을 함께 채우는 이유는 `resolveShellRefForPath`가 그 둘로 ref를 조립하기
+ * 때문이다. 그래서 Project 하위 폴더도 `projects/<key>`라는 같은 전역 키를 받는다.
+ */
+function classifyProjectsPath(segments: readonly string[], rel: string): WorkspacePathClassification {
+  const archiveChannel = `${PROJECTS_DIR}/${ARCHIVE_DIR}`;
+  const [, second] = segments;
+  if (!second) return { kind: "projects-root", rel, archived: false };
+  if (second === ARCHIVE_DIR) {
+    const key = segments[2];
+    if (!key) return { kind: "projects-root", rel, archived: true };
+    if (key.startsWith(".") || key.startsWith("_")) return { kind: "other", rel, warning: undefined };
+    const parsed = parseProjectKey(key);
+    if (!parsed) return { kind: "other", rel, warning: `프로젝트 키 규약 위반: ${key}` };
+    return {
+      kind: segments.length === 3 ? "project-archive" : "project-archive-sub",
+      channel: archiveChannel,
+      shell: key,
+      project: key,
+      parsedProject: parsed,
+      archived: true,
+      rel,
+    };
+  }
+  if (second.startsWith(".") || second.startsWith("_")) return { kind: "other", rel, warning: undefined };
+  const parsed = parseProjectKey(second);
+  if (!parsed) return { kind: "other", rel, warning: `프로젝트 키 규약 위반: ${second}` };
+  return {
+    kind: segments.length === 2 ? "project" : "project-sub",
+    channel: PROJECTS_DIR,
+    shell: second,
+    project: second,
+    parsedProject: parsed,
+    archived: false,
+    rel,
+  };
 }
 
 /** 절대경로를 세 루트 기준으로 분류한다 — ws-path.mjs `classify`와 같은 판정·같은 kind·같은 순서. */
@@ -228,13 +293,16 @@ export function classifyWorkspacePath(
   const [a, b] = segments;
   if (a === "wiki") return { kind: "wiki", rel };
   if (RESERVED_ROOT.has(a) || a.startsWith("_") || a.startsWith(".")) return { kind: "other", rel };
+  // v2 평면 구조가 채널보다 먼저다 — `projects`는 채널 규약에 맞지 않아 아래로 내려가면 other가 된다.
+  if (a === PROJECTS_DIR) return classifyProjectsPath(segments, rel);
   const channel = parseChannel(a);
   if (!channel) return { kind: "other", rel };
-  if (!b) return { kind: "channel", channel: a, parsedChannel: channel, rel };
-  const shell = parseShell(b, channel.slug);
+  if (!b) return { kind: "legacy-channel", channel: a, parsedChannel: channel, rel };
+  // Z_Archive는 슬러그 검증을 면제한다(ws-path.mjs 판단 A) — 이관 전 원래 채널 슬러그를 그대로 남긴 휴면 셸이 많다.
+  const shell = parseShell(b, channel.slug === "Archive" ? undefined : channel.slug);
   if (!shell) return { kind: "other", channel: a, rel, warning: `셸 이름 규약 위반: ${b}` };
   return {
-    kind: segments.length === 2 ? "shell" : "shell-sub",
+    kind: segments.length === 2 ? "legacy-shell" : "legacy-shell-sub",
     channel: a,
     shell: b,
     parsedChannel: channel,
@@ -273,9 +341,15 @@ export interface WorkspaceLocation {
 
 const KIND_MAP: Record<WorkspacePathKind, WorkspaceLocationKind | null> = {
   root: "other",
-  channel: "channel",
-  shell: "shell",
-  "shell-sub": "shell-sub",
+  "projects-root": "other",
+  // v2 Project는 앱 어휘에서 셸의 자리를 그대로 물려받는다 — 위 코드는 kind로 분기하지 않는다.
+  project: "shell",
+  "project-sub": "shell-sub",
+  "project-archive": "shell",
+  "project-archive-sub": "shell-sub",
+  "legacy-channel": "channel",
+  "legacy-shell": "shell",
+  "legacy-shell-sub": "shell-sub",
   "dev-dir": "other",
   repo: "repo",
   "repo-archive": "repo-archive",

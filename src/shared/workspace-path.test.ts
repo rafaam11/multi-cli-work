@@ -8,6 +8,7 @@ import {
   frontmatterStrings,
   parseChannel,
   parseDataset,
+  parseProjectKey,
   parseShell,
   relativeSegments,
   resolveShellRefForPath,
@@ -77,12 +78,33 @@ describe("데이터셋 이름", () => {
   });
 });
 
+describe("PRJ 프로젝트 키", () => {
+  it("일련번호와 슬러그로 쪼갠다", () => {
+    expect(parseProjectKey("PRJ-0017-secondbrain")).toEqual({
+      seq: 17,
+      slug: "secondbrain",
+      key: "PRJ-0017-secondbrain",
+    });
+    expect(parseProjectKey("PRJ-0014-coursework-selfstudy")?.slug).toBe("coursework-selfstudy");
+    expect(parseProjectKey("PRJ-0001-a")?.seq).toBe(1);
+  });
+
+  it("규약 밖 이름은 거부한다", () => {
+    expect(parseProjectKey("PRJ-17-x")).toBeNull();        // 4자리가 아니다
+    expect(parseProjectKey("PRJ-0017-Second")).toBeNull(); // 슬러그는 소문자·숫자·하이픈만
+    expect(parseProjectKey("PRJ-0017-")).toBeNull();
+    expect(parseProjectKey("PRJ-0017")).toBeNull();
+    expect(parseProjectKey("prj-0017-x")).toBeNull();
+    expect(parseProjectKey("PRJ-0017--x")).toBeNull();     // 하이픈 연속 금지
+  });
+});
+
 describe("classifyWorkspacePath — 3루트 분류", () => {
   it("work 루트: 채널·셸·wiki·어휘 폴더", () => {
     expect(classifyWorkspacePath(ROOT, ROOTS, win).kind).toBe("root");
-    expect(classify("O_SMCH").kind).toBe("channel");
-    expect(classify("O_SMCH\\24_SMCH_VSP-1").kind).toBe("shell");
-    expect(classify("O_SMCH\\24_SMCH_VSP-1\\wiki\\permanent").kind).toBe("shell-sub");
+    expect(classify("O_SMCH").kind).toBe("legacy-channel");
+    expect(classify("O_SMCH\\24_SMCH_VSP-1").kind).toBe("legacy-shell");
+    expect(classify("O_SMCH\\24_SMCH_VSP-1\\wiki\\permanent").kind).toBe("legacy-shell-sub");
     expect(classify("wiki\\entities").kind).toBe("wiki");
     expect(classify("_templates\\shell").kind).toBe("other");
   });
@@ -111,7 +133,7 @@ describe("classifyWorkspacePath — 3루트 분류", () => {
     const nested = { work: ROOT, dev: `${ROOT}\\dev`, data: `${ROOT}\\data` };
     expect(classifyWorkspacePath(`${ROOT}\\dev\\VSP_FastAPI`, nested, win).kind).toBe("repo");
     expect(classifyWorkspacePath(`${ROOT}\\data\\patient`, nested, win).kind).toBe("data-purpose");
-    expect(classifyWorkspacePath(`${ROOT}\\O_SMCH\\24_SMCH_VSP-1`, nested, win).kind).toBe("shell");
+    expect(classifyWorkspacePath(`${ROOT}\\O_SMCH\\24_SMCH_VSP-1`, nested, win).kind).toBe("legacy-shell");
   });
 
   it("채널 슬러그가 어긋난 셸은 other + 경고다", () => {
@@ -120,14 +142,113 @@ describe("classifyWorkspacePath — 3루트 분류", () => {
     expect(mismatched.warning).toContain("셸 이름 규약 위반");
   });
 
-  it("Z_Archive 안 원래 슬러그도 classify에서는 other다", () => {
-    // ws-index가 channel_origin으로 따로 처리하는 영역 — 분류기는 규칙을 느슨하게 하지 않는다.
-    expect(classify("Z_Archive\\23_SMCH_DtNavi").kind).toBe("other");
+  it("Z_Archive 안 원래 슬러그는 슬러그 검증을 면제한다", () => {
+    // ws-path.mjs 판단 A: Z_Archive는 이관 전 원래 채널 슬러그를 그대로 남긴 휴면 셸이 많아 검증을 면제한다.
+    expect(classify("Z_Archive\\23_SMCH_DtNavi").kind).toBe("legacy-shell");
   });
 
   it("세 루트 어디에도 없으면 outside다", () => {
     expect(classifyWorkspacePath("C:\\Users\\uiop3\\Desktop", ROOTS, win).kind).toBe("outside");
     expect(classifyWorkspacePath("C:\\", ROOTS, win).kind).toBe("outside");
+  });
+});
+
+/**
+ * 벡터 정본은 `<ROOT>/_scripts/lib/ws-path.vectors.json`이다(읽기 전용 · 교차 저장소 계약).
+ * 아래 케이스는 그 파일의 `cases` 배열을 그대로 옮긴 것이다 — 기대값을 손대지 말고 구현을 고친다.
+ */
+describe("classifyWorkspacePath — v2 PRJ 평면 구조", () => {
+  it("projects 루트와 Project 폴더·하위를 쪼갠다", () => {
+    expect(classify("projects")).toMatchObject({ kind: "projects-root", archived: false });
+    expect(classify("projects\\PRJ-0005-neuropilot")).toMatchObject({
+      kind: "project",
+      project: "PRJ-0005-neuropilot",
+      channel: "projects",
+      shell: "PRJ-0005-neuropilot",
+      archived: false,
+    });
+    expect(classify("projects\\PRJ-0005-neuropilot\\wiki\\permanent")).toMatchObject({
+      kind: "project-sub",
+      project: "PRJ-0005-neuropilot",
+      channel: "projects",
+      shell: "PRJ-0005-neuropilot",
+    });
+    expect(classify("projects\\PRJ-0005-neuropilot").parsedProject).toEqual({
+      seq: 5,
+      slug: "neuropilot",
+      key: "PRJ-0005-neuropilot",
+    });
+  });
+
+  it("휴면 Project는 projects/_archive 아래다", () => {
+    expect(classify("projects\\_archive")).toMatchObject({ kind: "projects-root", archived: true });
+    expect(classify("projects\\_archive\\PRJ-0001-kitu-undergraduate")).toMatchObject({
+      kind: "project-archive",
+      project: "PRJ-0001-kitu-undergraduate",
+      channel: "projects/_archive",
+      shell: "PRJ-0001-kitu-undergraduate",
+      archived: true,
+    });
+    expect(classify("projects\\_archive\\PRJ-0001-kitu-undergraduate\\wiki")).toMatchObject({
+      kind: "project-archive-sub",
+      archived: true,
+    });
+  });
+
+  it("키 규약을 어긴 폴더는 other + 경고다", () => {
+    const bad = classify("projects\\not-a-key");
+    expect(bad.kind).toBe("other");
+    expect(bad.warning).toContain("프로젝트 키 규약 위반");
+    const badArchived = classify("projects\\_archive\\nope");
+    expect(badArchived.kind).toBe("other");
+    expect(badArchived.warning).toContain("프로젝트 키 규약 위반");
+  });
+
+  it("점·밑줄로 시작하는 폴더는 경고 없이 other다", () => {
+    expect(classify("projects\\.git")).toMatchObject({ kind: "other", warning: undefined });
+    expect(classify("projects\\_local")).toMatchObject({ kind: "other", warning: undefined });
+    expect(classify("projects\\_archive\\.obsidian")).toMatchObject({ kind: "other", warning: undefined });
+  });
+
+  it("legacy 채널·셸은 같은 루트에서 계속 분류된다", () => {
+    expect(classify("O_SMCH").kind).toBe("legacy-channel");
+    expect(classify("O_SMCH\\24_SMCH_VSP-1").kind).toBe("legacy-shell");
+    expect(classify("O_SMCH\\24_SMCH_VSP-1\\wiki").kind).toBe("legacy-shell-sub");
+    expect(classify("Z_Archive\\15_KITU_Undergraduate-1").kind).toBe("legacy-shell");
+    expect(classify("wiki").kind).toBe("wiki");
+    expect(classify("_templates").kind).toBe("other");
+  });
+});
+
+describe("resolveShellRefForPath — v2 PRJ", () => {
+  const lookup = {
+    roots: [{ work: ROOT, dev: DEV, data: DATA }],
+    repoOwners: {
+      [workspacePathKey(`${DEV}\\multi-cli-work`, win)]: "projects/PRJ-0017-secondbrain",
+    },
+  };
+
+  it("Project 폴더·그 하위·등록된 레포·레포 하위가 모두 같은 ref를 답한다", () => {
+    expect(resolveShellRefForPath(`${ROOT}\\projects\\PRJ-0017-secondbrain`, lookup, win)).toBe(
+      "projects/PRJ-0017-secondbrain",
+    );
+    expect(resolveShellRefForPath(`${ROOT}\\projects\\PRJ-0017-secondbrain\\wiki`, lookup, win)).toBe(
+      "projects/PRJ-0017-secondbrain",
+    );
+    expect(resolveShellRefForPath(`${DEV}\\multi-cli-work`, lookup, win)).toBe("projects/PRJ-0017-secondbrain");
+    expect(resolveShellRefForPath(`${DEV}\\multi-cli-work\\src\\main`, lookup, win)).toBe(
+      "projects/PRJ-0017-secondbrain",
+    );
+  });
+
+  it("휴면 Project의 ref는 _archive를 담는다", () => {
+    expect(resolveShellRefForPath(`${ROOT}\\projects\\_archive\\PRJ-0001-kitu-undergraduate`, lookup, win)).toBe(
+      "projects/_archive/PRJ-0001-kitu-undergraduate",
+    );
+  });
+
+  it("projects 루트 자체는 어느 Project의 것도 아니다", () => {
+    expect(resolveShellRefForPath(`${ROOT}\\projects`, lookup, win)).toBeNull();
   });
 });
 
