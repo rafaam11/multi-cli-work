@@ -23,7 +23,9 @@ it.skipIf(process.platform !== "win32")("links nested CLIs while preserving argu
     expect(output[0]).toEqual({ argv: ["--settings", "C:\\App Data\\settings.json", "hello world", "--resume", "abc"], session: "shell-1" });
     expect(output[1].argv).toEqual(["--profile", "multi-cli-work", "resume", "xyz"]);
     expect(output[2].argv).toEqual(["--profile", "custom", "hello world"]);
-    expect(JSON.parse(await fs.readFile(path.join(root, "shell-1.json"), "utf8"))).toMatchObject({ provider: "shell", event: "ShellReady", cwd: root, generation: "gen-1" });
+    const status = JSON.parse(await fs.readFile(path.join(root, "shell-1.json"), "utf8"));
+    expect(status).toMatchObject({ provider: "shell", event: "ShellReady", generation: "gen-1" });
+    expect(await fs.realpath(status.cwd)).toBe(await fs.realpath(root));
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 }, 20_000);
 

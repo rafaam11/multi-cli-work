@@ -91,7 +91,7 @@ describe("worktree service against a real repo", () => {
     const location = await worktrees.resolveSessionWorkspace(project().id, nested, [project()]);
     expect(location?.worktreeId).toBeTruthy();
     expect(location?.cwd).toBe(nested);
-    expect((await worktrees.get(location!.worktreeId!))?.path.replaceAll("\\", "/")).toBe(externalPath.replaceAll("\\", "/"));
+    expect(await fs.realpath((await worktrees.get(location!.worktreeId!))!.path)).toBe(await fs.realpath(externalPath));
     expect(await worktrees.resolveSessionWorkspace(project().id, repoRoot, [project()])).toEqual({ cwd: repoRoot });
     const unrelated = path.join(tempRoot, "unrelated");
     await fs.mkdir(unrelated);

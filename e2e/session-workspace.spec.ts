@@ -10,7 +10,7 @@ test.skip(process.platform !== "win32", "PowerShell integration");
 
 for (const provider of ["claude", "codex"] as const) {
   test(`${provider} inside PowerShell moves the same sidebar session with its worktree`, async ({}, testInfo) => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mcw-workspace-e2e-"));
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mcw-workspace-e2e-")));
     const repo = path.join(root, "repo");
     const tree = path.join(root, "feature");
     const userData = path.join(root, "user-data");
@@ -66,12 +66,19 @@ process.stdin.on('data', () => process.exit(0));
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Workspace Test 폴더 선택" }).click();
       const session = await page.evaluate(async (projectId) => window.multiCliWork.terminals.create({ projectId, kind: "powershell", cols: 100, rows: 30 }), projectId);
+      await expect.poll(async () => page.evaluate(async (id) => (await window.multiCliWork.terminals.attach(id)).replay, session.id)).toContain("> ");
       await page.evaluate(({ id, provider }) => window.multiCliWork.terminals.write(id, `${provider}\r`), { id: session.id, provider });
-      await expect.poll(async () => page.evaluate(async (id) => (await window.multiCliWork.terminals.list()).find((entry) => entry.id === id)?.worktreeId, session.id)).toBeTruthy();
+      try {
+        await expect.poll(async () => page.evaluate(async (id) => (await window.multiCliWork.terminals.list()).find((entry) => entry.id === id)?.worktreeId, session.id)).toBeTruthy();
+      } catch (error) {
+        console.error("Workspace fixture terminal:", await page.evaluate(async (id) => (await window.multiCliWork.terminals.attach(id)).replay, session.id));
+        console.error("Workspace fixture transcript:", await fs.readFile(path.join(root, "transcript.jsonl"), "utf8").catch(() => "missing"));
+        throw error;
+      }
       const changed = await page.evaluate(async (id) => (await window.multiCliWork.terminals.list()).find((entry) => entry.id === id)!, session.id);
       expect(changed.pid).toBe(session.pid);
       expect(changed.kind).toBe("powershell");
-      expect(changed.cwd.replaceAll("\\", "/")).toBe(tree.replaceAll("\\", "/"));
+      expect(await fs.realpath(changed.cwd)).toBe(await fs.realpath(tree));
       const treeNode = page.locator(".worktree-node").filter({ has: page.getByRole("button", { name: /feature.*선택/ }) });
       // Expand/select the worktree so its session row is visible.
       await page.getByRole("button", { name: /feature.*선택/ }).click();
