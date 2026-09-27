@@ -15,7 +15,7 @@ import type { SharedProject } from "@shared/project-types";
 import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
 import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
-import { pathStyleFor, resolveShellRefForPath } from "@shared/workspace-path";
+import { pathStyleFor, resolveShellRefForPath, shellLinkKey } from "@shared/workspace-path";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
@@ -406,15 +406,19 @@ export function App() {
   const tagSuggestions = useMemo(() => knownTags(tagsByWorkProjectId), [tagsByWorkProjectId]);
 
   /**
-   * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 사이드바가 셸의 한글 이름을 쓰고
-   * 기본 묶기를 켜는 근거이며, 대응하는 업무 프로젝트가 사라진 연결은 그냥 빠진다.
+   * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 사이드바가 기본 묶기를 켜는
+   * 근거이며, 대응하는 업무 프로젝트가 사라진 연결은 그냥 빠진다. 링크와 셸은 동기화와 같은
+   * 키로 맞춘다 — `_archive`로 옮겨진 v2 Project도 저장된 링크 그대로 제 셸을 찾는다.
    */
   const workspaceShells = useMemo(() => {
     const map: Record<string, WorkspaceShellInfo> = {};
     if (!workspace) return map;
-    const shellByRef = new Map(workspace.shells.map((shell) => [shell.ref, shell]));
+    const style = pathStyleFor(window.multiCliWork.platform);
+    const shellByKey = new Map(
+      workspace.shells.map((shell) => [shellLinkKey(shell.root, shell.channel, shell.shell, style), shell]),
+    );
     for (const link of workspace.registry.shellLinks) {
-      const shell = shellByRef.get(`${link.channel}/${link.shell}`);
+      const shell = shellByKey.get(shellLinkKey(link.root, link.channel, link.shell, style));
       if (shell) map[link.workProjectId] = shell;
     }
     return map;
@@ -438,7 +442,7 @@ export function App() {
     const style = pathStyleFor(window.multiCliWork.platform);
     const lookup = { roots: workspace.registry.roots, repoOwners: workspace.repoOwners };
     const workProjectByRef = new Map(
-      workspace.registry.shellLinks.map((link) => [`${link.channel}/${link.shell}`, link.workProjectId]),
+      Object.entries(workspaceShells).map(([workProjectId, shell]) => [shell.ref, workProjectId]),
     );
     for (const project of projects) {
       if (map[project.id]) continue;
@@ -449,7 +453,7 @@ export function App() {
       }
     }
     return map;
-  }, [workProjects, projects, workspace]);
+  }, [workProjects, projects, workspace, workspaceShells]);
 
   const expandedWorkProjects = useMemo(
     () => new Set(workProjects.filter((workProject) => !collapsedWorkProjectIds.has(workProject.id)).map((workProject) => workProject.id)),
@@ -2388,7 +2392,7 @@ export function App() {
       (workProject): QuickOpenItem => ({
         key: `work-project:${workProject.id}`,
         kind: "workProject",
-        label: workspaceShells[workProject.id]?.title ?? workProject.name,
+        label: workProject.name,
         detail: (tagsByWorkProjectId[workProject.id] ?? []).map((tag) => `#${tag}`).join(" ") || null,
       }),
     );
@@ -2417,7 +2421,6 @@ export function App() {
     projects,
     workspaceViews,
     workProjects,
-    workspaceShells,
     tagsByWorkProjectId,
     agents,
     selectedProject,
@@ -2650,7 +2653,7 @@ export function App() {
         ? {
             kind: "folders",
             projectIds: selectedWorkProjectMembers.map(({ project }) => project.id),
-            label: workspaceShells[selectedWorkProject.id]?.title ?? selectedWorkProject.name,
+            label: selectedWorkProject.name,
           }
         : { kind: "none" };
     }
@@ -2666,7 +2669,6 @@ export function App() {
     selectedProject,
     selectedWorkProject,
     selectedWorkProjectMembers,
-    workspaceShells,
   ]);
 
   /** 세션 패널이 그리는 줄. shelfPaneRows와 같은 이유로 여기서 만든다. */

@@ -404,6 +404,21 @@ export function shellRef(channel: string, shell: string): string {
   return `${channel}/${shell}`;
 }
 
+/**
+ * 셸 링크와 스냅샷 셸을 맞추는 키. 같은 루트에서 ref가 같으면 같은 셸이고, v2 Project는
+ * `projects/<key>` ↔ `projects/_archive/<key>`로 옮겨져도 PRJ-key가 같으면 같은 Project다 —
+ * 저장된 링크의 channel을 고쳐 쓰지 않고도 보관된 뒤에 동기화가 이어진다(스펙 D9).
+ */
+export function shellLinkKey(
+  root: string,
+  channel: string,
+  shell: string,
+  style: WorkspacePathStyle = detectPathStyle(root),
+): string {
+  const canonical = channel === `${PROJECTS_DIR}/${ARCHIVE_DIR}` ? PROJECTS_DIR : channel;
+  return `${workspacePathKey(root, style)}|${shellRef(canonical, shell)}`;
+}
+
 /** 자기 자신부터 위로 올라가며 조상 경로를 준다. 파일시스템 루트에서 멈춘다. */
 export function ancestorPaths(target: string, style: WorkspacePathStyle = detectPathStyle(target)): string[] {
   const sep = separator(style);

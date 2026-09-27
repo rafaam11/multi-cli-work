@@ -12,6 +12,7 @@ import {
   parseShell,
   relativeSegments,
   resolveShellRefForPath,
+  shellLinkKey,
   splitFrontmatter,
   workspacePathKey,
 } from "./workspace-path";
@@ -260,6 +261,27 @@ describe("resolveShellRefForPath — v2 PRJ", () => {
 
   it("projects 루트 자체는 어느 Project의 것도 아니다", () => {
     expect(resolveShellRefForPath(`${ROOT}\\projects`, lookup, win)).toBeNull();
+  });
+});
+
+describe("shellLinkKey — 링크와 셸 맞추기", () => {
+  it("같은 루트·같은 ref면 같은 키다 (루트는 대소문자·끝 구분자 무시)", () => {
+    expect(shellLinkKey("C:\work", "O_SMCH", "24_SMCH_VSP-1", win)).toBe(
+      shellLinkKey("c:\WORK\\", "O_SMCH", "24_SMCH_VSP-1", win),
+    );
+  });
+
+  it("v2 Project는 projects ↔ projects/_archive를 오가도 PRJ-key가 같으면 같은 키다", () => {
+    expect(shellLinkKey(ROOT, "projects", "PRJ-0017-secondbrain", win)).toBe(
+      shellLinkKey(ROOT, "projects/_archive", "PRJ-0017-secondbrain", win),
+    );
+  });
+
+  it("키·루트·채널이 다르면 다른 키다", () => {
+    const base = shellLinkKey(ROOT, "projects", "PRJ-0017-secondbrain", win);
+    expect(shellLinkKey(ROOT, "projects/_archive", "PRJ-0016-finance", win)).not.toBe(base);
+    expect(shellLinkKey("D:\work", "projects", "PRJ-0017-secondbrain", win)).not.toBe(base);
+    expect(shellLinkKey(ROOT, "O_SMCH", "PRJ-0017-secondbrain", win)).not.toBe(base);
   });
 });
 

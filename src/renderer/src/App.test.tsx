@@ -1710,10 +1710,10 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", {
+          workProject("wp-vsp", "가상수술계획", "개인", {
             members: [{ projectId: atlas.id, role: "repo" }],
           }),
-          workProject("wp-career", "P_Personal/26_Personal_Career-1", "기타", { order: 1 }),
+          workProject("wp-career", "진로", "기타", { order: 1 }),
         ],
         // ws-root 동기화가 채널 라벨을 태그로 심어 둔 상태 — 기본 묶기가 그 라벨들로 돈다.
         projectTags: { "wp-vsp": ["용역"], "wp-career": ["개인"] },
@@ -1729,7 +1729,7 @@ describe("work project categories", () => {
       render(<App />);
 
       const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      // 셸 폴더명이 아니라 프론트매터의 한글 title:로 불린다.
+      // 업무 프로젝트는 만들 때 받은 셸 title(가상수술계획)을 이름으로 쓴다(스펙 D11).
       const group = (await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).closest(
         ".work-project-node",
       )!;
@@ -1748,7 +1748,7 @@ describe("work project categories", () => {
       const harness = createApi({
         projects: [atlas],
         sessions: [],
-        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인")],
+        workProjects: [workProject("wp-vsp", "가상수술계획", "개인")],
         projectTags: { "wp-vsp": ["용역"] },
         workspace: workspaceSnapshot([VSP], [
           { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
@@ -1773,7 +1773,7 @@ describe("work project categories", () => {
         sessions: [],
         workProjects: [
           workProject("wp-manual", "손으로 만든 묶음", "업무"),
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", { order: 1 }),
+          workProject("wp-vsp", "가상수술계획", "개인", { order: 1 }),
         ],
         // 셸은 있지만 태그가 하나도 없다 — 기본 묶기가 빌 것이 없어 트리는 평면이다.
         workspace: workspaceSnapshot([VSP], [
@@ -1798,7 +1798,7 @@ describe("work project categories", () => {
         sessions: [],
         workProjects: [
           workProject("wp-manual", "손으로 만든 묶음", "업무"),
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", { order: 1 }),
+          workProject("wp-vsp", "가상수술계획", "개인", { order: 1 }),
         ],
         projectTags: { "wp-vsp": ["용역"] },
         workspace: workspaceSnapshot([VSP], [
@@ -1829,7 +1829,7 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-etc", "O_SMCH/24_SMCH_VSP-1", "개인"),
+          workProject("wp-etc", "가상수술계획", "개인"),
           workProject("wp-none", "손으로 만든 묶음", "업무", { order: 1 }),
         ],
         projectTags: { "wp-etc": ["기타"] },
@@ -1925,8 +1925,8 @@ describe("work project categories", () => {
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인"),
-          workProject("wp-career", "P_Personal/26_Personal_Career-1", "기타", { order: 1 }),
+          workProject("wp-vsp", "가상수술계획", "개인"),
+          workProject("wp-career", "진로", "기타", { order: 1 }),
         ],
         projectTags: { "wp-vsp": ["용역"], "wp-career": ["개인"] },
         workspace: workspaceSnapshot(
@@ -1972,7 +1972,7 @@ describe("work project categories", () => {
         projects: [repo],
         sessions: [],
         // 이 폴더는 어느 업무 프로젝트의 members에도 없다 — 방금 연 레포와 같은 상황.
-        workProjects: [workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인")],
+        workProjects: [workProject("wp-vsp", "가상수술계획", "개인")],
         workspace: workspaceSnapshot([VSP], [
           { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
         ]),
@@ -1987,12 +1987,13 @@ describe("work project categories", () => {
       expect(within(group as HTMLElement).getByRole("button", { name: "VSP_FastAPI 폴더 선택" })).toBeInTheDocument();
     });
 
-    it("셸 연결 업무 프로젝트를 열면 세션 패널의 '여기'도 셸 title로 범위를 댄다", async () => {
+    it("셸 연결 업무 프로젝트도 사용자가 고친 이름으로 불린다 — 사이드바·빠른 열기·세션 범위", async () => {
       const harness = createApi({
         projects: [atlas],
         sessions: [],
         workProjects: [
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", "개인", {
+          // 만들 때 title을 받았다가 사용자가 고친 이름 — 셸 title(가상수술계획)과 다르다.
+          workProject("wp-vsp", "VSP 수술계획 고도화", "개인", {
             members: [{ projectId: atlas.id, role: "repo" }],
           }),
         ],
@@ -2004,13 +2005,53 @@ describe("work project categories", () => {
       render(<App />);
 
       const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      fireEvent.click(await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" }));
+      const open = await within(nav).findByRole("button", { name: "VSP 수술계획 고도화 프로젝트 열기" });
+      expect(within(nav).queryByRole("button", { name: "가상수술계획 프로젝트 열기" })).not.toBeInTheDocument();
 
+      fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+      const dialog = await screen.findByRole("dialog", { name: "빠른 열기" });
+      fireEvent.change(within(dialog).getByRole("textbox", { name: "빠른 열기 검색" }), {
+        target: { value: "고도화" },
+      });
+      expect(await within(dialog).findByText("VSP 수술계획 고도화")).toBeInTheDocument();
+      fireEvent.keyDown(within(dialog).getByRole("textbox", { name: "빠른 열기 검색" }), { key: "Escape" });
+
+      fireEvent.click(open);
       const region = await screen.findByRole("region", { name: "세션 패널" });
-      // 폴더명(O_SMCH/24_SMCH_VSP-1)이 아니라 사이드바와 같은 셸 title로 범위를 댄다.
       await waitFor(() =>
-        expect(within(region).getByRole("button", { name: "여기" })).toHaveAttribute("title", "가상수술계획"),
+        expect(within(region).getByRole("button", { name: "여기" })).toHaveAttribute("title", "VSP 수술계획 고도화"),
       );
+    });
+
+    it("_archive로 옮겨진 v2 Project도 저장된 링크(channel projects)로 제 셸을 찾는다", async () => {
+      const bolt: SharedProject = { ...atlas, id: "project-bolt", rootPath: join(DEV_ROOT, "bolt"), displayName: "bolt" };
+      // 만들 때는 projects/<key>였다 — 링크는 그대로 두고 셸만 _archive 아래로 옮겨졌다.
+      const archived = {
+        ...shellInfo("projects/_archive", "PRJ-0017-secondbrain", "세컨드브레인", ["bolt"]),
+        groupLabel: "개인",
+        status: "archived",
+        archived: true,
+      };
+      const harness = createApi({
+        projects: [bolt],
+        sessions: [],
+        // bolt는 어느 members에도 없다 — 역인덱스만이 제자리를 찾아 줄 수 있다.
+        workProjects: [workProject("wp-sb", "세컨드브레인", "개인")],
+        projectTags: { "wp-sb": ["개인"] },
+        workspace: workspaceSnapshot([archived], [
+          { workProjectId: "wp-sb", channel: "projects", shell: "PRJ-0017-secondbrain" },
+        ]),
+      });
+      window.multiCliWork = harness.api;
+      render(<App />);
+
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      const group = (await within(nav).findByRole("button", { name: "세컨드브레인 프로젝트 열기" })).closest(
+        ".work-project-node",
+      )!;
+      // 셸 라벨로 기본 묶기가 돈다 — 링크가 셸을 찾았다는 뜻이다.
+      expect(within(nav).getByRole("button", { name: "묶기 설정" })).toHaveTextContent("묶기: 개인 (자동)");
+      expect(within(group as HTMLElement).getByRole("button", { name: "bolt 폴더 선택" })).toBeInTheDocument();
     });
   });
 
@@ -4125,8 +4166,8 @@ describe("folder colour", () => {
       // Only Atlas has an agent running, so only its group — and the tag group above it — stays open.
       sessions: [working],
       workProjects: [
-        workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", atlas.id, 0),
-        workProject("wp-career", "P_Personal/26_Personal_Career-1", archive.id, 1),
+        workProject("wp-vsp", "가상수술계획", atlas.id, 0),
+        workProject("wp-career", "진로", archive.id, 1),
       ],
       projectTags: { "wp-vsp": ["용역"], "wp-career": ["개인"] },
       workspace: workspaceSnapshot([VSP, CAREER], [
@@ -4159,7 +4200,7 @@ describe("folder colour", () => {
         sessions: [],
         workProjects: [
           workProject("wp-manual", "손으로 만든 묶음", dashboard.id, 0),
-          workProject("wp-vsp", "O_SMCH/24_SMCH_VSP-1", atlas.id, 1),
+          workProject("wp-vsp", "가상수술계획", atlas.id, 1),
         ],
         projectTags: { "wp-vsp": ["용역"] },
         workspace: workspaceSnapshot([VSP], [

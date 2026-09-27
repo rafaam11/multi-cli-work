@@ -451,24 +451,33 @@ describe("syncFromWorkspace — v2 PRJ", () => {
     expect(workspace.shellLinks.map((link) => link.shell)).toEqual(["PRJ-0017-secondbrain"]);
   });
 
-  it("휴면으로 바뀐 링크된 Project는 그대로 남고 멤버도 계속 갱신된다", async () => {
+  it("_archive로 옮겨진 링크된 Project는 같은 업무 프로젝트로 남고 멤버도 계속 갱신된다", async () => {
     const paths = await tempPaths("prj-became-dormant");
+    // 활성일 때 만들어졌다 — 링크는 channel "projects"로 적힌다.
     await service(paths).syncFromWorkspace(snapshot([SECONDBRAIN]), []);
     const links = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+    expect(links.map((link) => link.channel)).toEqual(["projects"]);
 
-    // 같은 ref가 휴면으로 바뀌었다(work 쪽에서 _archive로 옮기면 ref도 바뀌지만, 여기서는 상태만
-    // 바뀐 중간 상태를 본다 — 링크가 살아 있는 한 지우지 않는다는 것이 요점이다).
-    const dormantSame = { ...SECONDBRAIN, status: "archived", archived: true };
-    const second = await service(paths, [IDS[1]]).syncFromWorkspace(
-      snapshot([dormantSame], links),
-      [REPO_PROJECT],
-    );
+    // work 쪽에서 _archive로 옮겼다 — 같은 PRJ-key가 이제 projects/_archive/<key>에 있다.
+    const archived = prj("PRJ-0017-secondbrain", {
+      title: "세컨드브레인(LLMwiki·atlas·bolt)",
+      status: "archived",
+      repos: ["VSP_FastAPI"],
+      archived: true,
+    });
+    expect(archived.ref).toBe("projects/_archive/PRJ-0017-secondbrain");
+    const second = await service(paths, [IDS[1]]).syncFromWorkspace(snapshot([archived], links), [REPO_PROJECT]);
 
     expect(second.created).toBe(0);
+    expect(second.skipped).toEqual([]);
+    expect(Object.keys(second.workProjects.workProjects)).toEqual([IDS[0]]);
     expect(second.workProjects.workProjects[IDS[0]]).toMatchObject({
       name: "세컨드브레인(LLMwiki·atlas·bolt)",
       members: [{ projectId: REPO_PROJECT.id, role: "repo" }],
     });
+    // 저장된 링크는 고쳐 쓰지 않는다.
+    const after = await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath });
+    expect(after.shellLinks).toEqual(links);
   });
 
   it("title이 바뀌어도 이름을 덮어쓰지 않는다 — 이름은 만들 때 한 번이다", async () => {

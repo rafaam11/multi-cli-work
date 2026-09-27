@@ -73,8 +73,9 @@ interface ProjectSidebarProps {
   /** Work projects in display order; folders whose id is absent from every membership are 미분류. */
   workProjects: WorkProject[];
   /**
-   * ws-root 워크스페이스의 프로젝트에서 만들어진 업무 프로젝트만, id → 그 프로젝트. 여기 있는
-   * 항목은 워크스페이스의 한글 `title`로 불린다. 하나라도 있으면 저장된 묶기 선호가 없을 때 그
+   * ws-root 워크스페이스의 프로젝트에서 만들어진 업무 프로젝트만, id → 그 프로젝트. 이름은
+   * 업무 프로젝트의 `name`이다 — 만들 때 한 번 `title`을 받고 그 뒤로는 사용자의 것이다(스펙 D11).
+   * 하나라도 있으면 저장된 묶기 선호가 없을 때 그
    * 묶음 라벨이 기본 묶기로 돌고, 비어 있으면(루트 미등록) 트리는 이 기능이 없던 때와 똑같이
    * 평면으로 그려진다.
    */
@@ -700,12 +701,6 @@ export function ProjectSidebar({
     );
   };
 
-  /**
-   * 워크스페이스에서 온 업무 프로젝트는 셸의 한글 `title:`로 부른다 — 폴더명(`24_SMCH_VSP-1`)은
-   * 규약을 위한 이름이지 사람이 읽을 이름이 아니다(루트 CLAUDE.md §2).
-   */
-  const workProjectLabel = (workProject: WorkProject) =>
-    workspaceShells[workProject.id]?.title ?? workProject.name;
 
   /**
    * 태그 묶음 줄. 업무 프로젝트 줄과 달리 열 화면이 없으므로 접고 펴는 것이 전부다 — 묶음은
@@ -792,8 +787,8 @@ export function ProjectSidebar({
               className="tree-toggle"
               type="button"
               onClick={() => onToggleWorkProject(workProject.id)}
-              aria-label={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
-              title={`${workProjectLabel(workProject)} ${sectionExpanded ? "접기" : "펼치기"}`}
+              aria-label={`${workProject.name} ${sectionExpanded ? "접기" : "펼치기"}`}
+              title={`${workProject.name} ${sectionExpanded ? "접기" : "펼치기"}`}
             >
               {sectionExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
@@ -805,14 +800,14 @@ export function ProjectSidebar({
                 ? onToggleWorkProject(workProject.id)
                 : onSelectWorkProject(workProject.id)
               }
-              aria-label={`${workProjectLabel(workProject)} 프로젝트 열기`}
+              aria-label={`${workProject.name} 프로젝트 열기`}
             >
               <Briefcase size={15} />
               {/* Name only — the 구분 reads from the icon and rail colour, and the folder
                   count is one expand away. The chip and counts moved out for quiet. */}
               <span className="project-copy">
                 <span className="project-name" title={workProject.name}>
-                  {workProjectLabel(workProject)}
+                  {workProject.name}
                 </span>
                 <TagChips tags={tagsByWorkProject[workProject.id] ?? []} />
               </span>
@@ -839,11 +834,11 @@ export function ProjectSidebar({
         ) : null}
         {sectionExpanded ? (
           section.projects.length === 0 && workProject ? (
-            <ul className="project-group" role="group" aria-label={workProjectLabel(workProject)}>
+            <ul className="project-group" role="group" aria-label={workProject.name}>
               <li className="work-project-empty">폴더 없음 — 상세 페이지에서 추가</li>
             </ul>
           ) : (
-            <ul className="project-group" role="group" aria-label={workProject ? workProjectLabel(workProject) : "미분류"}>
+            <ul className="project-group" role="group" aria-label={workProject ? workProject.name : "미분류"}>
               {section.projects.map((project) => {
                 const name = projectName(project);
                 const expanded = expandedProjects.has(project.id);

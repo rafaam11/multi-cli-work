@@ -16,7 +16,7 @@ import {
   pathStyleFor,
   relativeSegments,
   resolveShellRefForPath,
-  workspacePathKey,
+  shellLinkKey,
 } from "../../shared/workspace-path";
 import { readProjectTags, updateProjectTags, type ProjectTagsOptions } from "./project-tags-registry";
 import { updateWorkProjectRegistry } from "./work-project-registry";
@@ -349,9 +349,8 @@ export class WorkProjectService {
       membersByRef.set(ref, [...(membersByRef.get(ref) ?? []), { projectId: project.id, role }]);
     }
 
-    const linkKey = (root: string, ref: string) => `${workspacePathKey(root, style)}|${ref}`;
     const linksByKey = new Map(
-      snapshot.registry.shellLinks.map((link) => [linkKey(link.root, `${link.channel}/${link.shell}`), link]),
+      snapshot.registry.shellLinks.map((link) => [shellLinkKey(link.root, link.channel, link.shell, style), link]),
     );
     let created = 0;
     const skipped: string[] = [];
@@ -378,7 +377,7 @@ export class WorkProjectService {
       for (const shell of snapshot.shells) {
         // 이름은 워크스페이스의 표시명이다 — v2는 PROJECT.yaml의 title, v1은 셸 프론트매터의 title.
         const name = shell.title;
-        const link = linksByKey.get(linkKey(shell.root, shell.ref));
+        const link = linksByKey.get(shellLinkKey(shell.root, shell.channel, shell.shell, style));
         let target = link ? next[link.workProjectId] : undefined;
         // 휴면 Project는 새로 만들지 않는다 — 사이드바에 멤버 0인 줄이 서지 않게. 스냅샷에는
         // 남아 있으므로 `_archive` 레포의 역인덱스와 브리프는 계속 답한다. 이미 링크된 항목은
