@@ -643,6 +643,43 @@ describe("WorkspaceIndex — v2 PRJ 평면 구조", () => {
     expect(await titleOf()).toBe("새 이름");
   });
 
+  it("유효한 Project를 건드리지 않아도 새 경고는 다음 스냅샷에 선다 — 캐시가 가리지 않는다", async () => {
+    const root = await tempWorkspace("v2-cache-warn");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    await touch(path.join(root, "projects", "PRJ-0017-secondbrain", "PROJECT.yaml"), 1_000);
+    const index = new WorkspaceIndex();
+    expect((await index.snapshot(registryFor(root))).warnings).toEqual([]);
+
+    await fs.mkdir(path.join(root, "projects", "not-a-key"), { recursive: true });
+    await fs.mkdir(path.join(root, "O_SMCH"), { recursive: true });
+    const second = await index.snapshot(registryFor(root));
+    expect(second.warnings).toEqual([
+      "[project-key] projects/not-a-key: 프로젝트 키 규약 위반(PRJ-####-slug)",
+      "[legacy-layout] O_SMCH: projects/ 평면 구조로 옮긴 뒤 남은 폴더",
+    ]);
+    // 경고가 사라지면 그것도 바로 반영된다.
+    await fs.rm(path.join(root, "projects", "not-a-key"), { recursive: true });
+    await fs.rm(path.join(root, "O_SMCH"), { recursive: true });
+    expect((await index.snapshot(registryFor(root))).warnings).toEqual([]);
+  });
+
+  it("drive 짝 폴더가 새로 생기면 캐시에 가리지 않고 drive 경로가 선다", async () => {
+    const root = await tempWorkspace("v2-cache-drive");
+    const drive = await tempWorkspace("v2-cache-drive-root");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    await writeFile(
+      path.join(root, ".ws-index.json"),
+      JSON.stringify({ schemaVersion: 2, roots: { work: root, dev: path.join(root, "dev"), data: path.join(root, "data"), drive } }),
+    );
+    const index = new WorkspaceIndex();
+    expect((await index.snapshot(registryFor(root))).shells[0].drivePath).toBeNull();
+
+    await fs.mkdir(path.join(drive, "projects", "PRJ-0017-secondbrain"), { recursive: true });
+    expect((await index.snapshot(registryFor(root))).shells[0].drivePath).toBe(
+      path.join(drive, "projects", "PRJ-0017-secondbrain"),
+    );
+  });
+
   it("drive 루트가 선언되고 그 폴더가 실재할 때만 drive 경로를 준다", async () => {
     const root = await tempWorkspace("v2-drive");
     const drive = await tempWorkspace("v2-drive-root");

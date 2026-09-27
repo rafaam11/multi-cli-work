@@ -56,6 +56,8 @@ interface RootScan {
   fingerprint: string;
   shells: WorkspaceShellInfo[];
   warnings: string[];
+  /** v2만: 이 스캔이 읽은 `.ws-index.json`의 mtime과 거기서 뽑은 추가 루트 — 지문 계산에 재사용한다. */
+  declared?: { wsIndexMtime: number | null; extra: ExtraRoots };
 }
 
 interface ProjectStat {
@@ -141,6 +143,12 @@ async function readWsIndexRoots(rootPath: string): Promise<Record<string, string
   } catch {
     return null;
   }
+}
+
+/** `.ws-index.json`이 선언한 drive·onedrive 루트. 선언이 없으면 null이다. */
+async function readExtraRoots(rootPath: string): Promise<ExtraRoots> {
+  const declared = await readWsIndexRoots(rootPath);
+  return { drive: declared?.drive ?? null, onedrive: declared?.onedrive ?? null };
 }
 
 /**
@@ -481,19 +489,31 @@ export class WorkspaceIndex {
     const wsIndexMtime = await mtimeOf(wsIndexPath);
     if ((await detectLayout(rootPath)) === "v2") {
       const { projects: stats, warnings } = await statProjects(rootPath);
+      const cached = this.cache.get(key);
+      // 추가 루트는 `.ws-index.json`이 바뀔 때만 다시 읽는다. drive 짝 폴더의 유무와 경고는
+      // PROJECT.yaml mtime과 무관하게 바뀌므로 지문에 함께 넣는다 — 캐시가 그것을 가리지 않게.
+      const extra =
+        cached?.declared && cached.declared.wsIndexMtime === wsIndexMtime
+          ? cached.declared.extra
+          : await readExtraRoots(rootPath);
+      const driveFolders = await Promise.all(
+        stats.map((stat) =>
+          extra.drive === null ? false : isDirectory(path.join(extra.drive, PROJECTS_DIR, stat.key)),
+        ),
+      );
       const fingerprint = JSON.stringify([
         "v2",
         wsIndexMtime,
-        stats.map((stat) => [stat.key, stat.archived, stat.mtimeMs]),
+        stats.map((stat, index) => [stat.key, stat.archived, stat.mtimeMs, driveFolders[index]]),
+        warnings,
       ]);
-      const cached = this.cache.get(key);
       if (cached && cached.fingerprint === fingerprint) return cached;
-      const declared = await readWsIndexRoots(rootPath);
-      const extra: ExtraRoots = {
-        drive: declared?.drive ?? null,
-        onedrive: declared?.onedrive ?? null,
+      const scan: RootScan = {
+        fingerprint,
+        shells: await scanProjects(root, stats, extra),
+        warnings,
+        declared: { wsIndexMtime, extra },
       };
-      const scan: RootScan = { fingerprint, shells: await scanProjects(root, stats, extra), warnings };
       this.cache.set(key, scan);
       return scan;
     }
