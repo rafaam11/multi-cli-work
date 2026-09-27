@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WorkspaceRegistryV1 } from "../../shared/workspace-types";
 import { workspacePathKey } from "../../shared/workspace-path";
-import { WorkspaceIndex, readDatasetPaths, resolveWorkspaceRoots } from "./workspace-index";
+import { WorkspaceIndex, readDatasetPaths, resolveLogicalPath, resolveWorkspaceRoots } from "./workspace-index";
 
 const tempRoots: string[] = [];
 // 루트 밖 레포(external_paths) 픽스처 — 플랫폼 네이티브 절대경로. CI(ubuntu)에서는 "C:\\…"가 절대경로가 아니다.
@@ -30,6 +30,23 @@ async function touch(file: string, seconds: number): Promise<void> {
 function shellClaude(fields: Record<string, string>): string {
   const lines = Object.entries(fields).map(([key, value]) => `${key}: ${value}`);
   return `---\n${lines.join("\n")}\n---\n# 셸\n`;
+}
+
+/** PROJECT.yaml은 `---` 울타리가 없는 순수 YAML이다 — 셸 CLAUDE.md와 모양이 다르다. */
+function projectYaml(fields: Record<string, string>): string {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n");
+}
+
+/** 액티브 Project 하나를 만든다. */
+async function writeProject(root: string, key: string, fields: Record<string, string>): Promise<void> {
+  await writeFile(path.join(root, "projects", key, "PROJECT.yaml"), projectYaml(fields));
+}
+
+/** 휴면 Project 하나를 만든다. */
+async function writeArchivedProject(root: string, key: string, fields: Record<string, string>): Promise<void> {
+  await writeFile(path.join(root, "projects", "_archive", key, "PROJECT.yaml"), projectYaml(fields));
 }
 
 async function fixture(name: string): Promise<string> {
@@ -364,5 +381,361 @@ describe("resolveWorkspaceRoots", () => {
       dev: path.join(parent, "dev"),
       data: path.join(parent, "data"),
     });
+  });
+});
+
+/**
+ * 2026-09-05에 ws-root가 옮겨 간 평면 구조. v1 describe들을 그대로 두는 것이 폴백 회귀 테스트다.
+ */
+describe("WorkspaceIndex — v2 PRJ 평면 구조", () => {
+  const SECONDBRAIN = {
+    schema: "1",
+    key: "PRJ-0017-secondbrain",
+    slug: "secondbrain",
+    title: "세컨드브레인(LLMwiki·atlas·bolt)",
+    mode: "continuous",
+    status: "active",
+    primaryContext: "개인",
+    topics: "[지식관리, 자동화]",
+    repos: "[multi-cli-work, llmwiki]",
+    externalPaths: "[]",
+    data: "[DS-0001]",
+    wikiSource: "dev/llmwiki/wiki",
+  };
+
+  it("PROJECT.yaml을 읽어 ref·채널·표시명·컨텍스트·mode를 만든다", async () => {
+    const root = await tempWorkspace("v2-scan");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+
+    expect(snapshot.shells).toHaveLength(1);
+    expect(snapshot.shells[0]).toMatchObject({
+      ref: "projects/PRJ-0017-secondbrain",
+      channel: "projects",
+      shell: "PRJ-0017-secondbrain",
+      groupLabel: "개인",
+      topics: ["지식관리", "자동화"],
+      title: "세컨드브레인(LLMwiki·atlas·bolt)",
+      status: "active",
+      mode: "continuous",
+      archived: false,
+      path: path.join(root, "projects", "PRJ-0017-secondbrain"),
+      repos: ["multi-cli-work", "llmwiki"],
+      data: ["DS-0001"],
+      drivePath: null,
+    });
+    expect(snapshot.warnings).toEqual([]);
+  });
+
+  it("레포 역인덱스에 dev 루트와 dev/_archive 두 자리를 모두 등록한다", async () => {
+    const root = await tempWorkspace("v2-repos");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+
+    expect(snapshot.repoOwners[workspacePathKey(path.join(root, "dev", "multi-cli-work"))]).toBe(
+      "projects/PRJ-0017-secondbrain",
+    );
+    expect(snapshot.repoOwners[workspacePathKey(path.join(root, "dev", "_archive", "llmwiki"))]).toBe(
+      "projects/PRJ-0017-secondbrain",
+    );
+  });
+
+  /**
+   * v2의 `externalPaths`는 **논리 경로**다 — work 쪽 `project-manifest.mjs`의 `ABS_OR_ESCAPE_RE`가
+   * 절대경로를 거부하므로 `C:\…`가 올 수 없다. v1의 `external_paths`(절대경로)와 의미가 다르다.
+   */
+  it("externalPaths의 논리 경로를 절대경로로 풀어 역인덱스에 넣는다", async () => {
+    const root = await tempWorkspace("v2-external");
+    const onedrive = await tempWorkspace("v2-external-onedrive");
+    const shared = "수행프로젝트(기술연구소) - 문서/O_삼성서울병원";
+    await writeProject(root, "PRJ-0006-vsp", {
+      key: "PRJ-0006-vsp",
+      title: "가상수술계획",
+      status: "active",
+      primaryContext: "병원 공동연구",
+      // 한글·공백·괄호가 든 상대경로가 그대로 풀려야 한다.
+      externalPaths: `[onedrive/${shared}, dev/side-repo]`,
+    });
+    await writeFile(
+      path.join(root, ".ws-index.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        roots: { work: root, dev: path.join(root, "dev"), data: path.join(root, "data"), onedrive },
+      }),
+    );
+
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    const resolved = path.join(onedrive, "수행프로젝트(기술연구소) - 문서", "O_삼성서울병원");
+    expect(snapshot.shells[0].externalPaths).toEqual([resolved, path.join(root, "dev", "side-repo")]);
+    expect(snapshot.repoOwners[workspacePathKey(resolved)]).toBe("projects/PRJ-0006-vsp");
+    expect(snapshot.warnings).toEqual([]);
+  });
+
+  it("못 푸는 논리 경로는 조용히 뺀다 — onedrive 루트가 없을 때", async () => {
+    const root = await tempWorkspace("v2-external-unresolved");
+    await writeProject(root, "PRJ-0006-vsp", {
+      key: "PRJ-0006-vsp",
+      title: "가상수술계획",
+      status: "active",
+      primaryContext: "병원 공동연구",
+      externalPaths: "[onedrive/수행프로젝트/O_삼성서울병원, dev/side-repo]",
+    });
+    // `.ws-index.json`이 없으니 onedrive 루트를 알 수 없다.
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    expect(snapshot.shells[0].externalPaths).toEqual([path.join(root, "dev", "side-repo")]);
+    // DRIVE_ROOT·ONEDRIVE_ROOT 미설정은 경고할 일이 아니다.
+    expect(snapshot.warnings).toEqual([]);
+  });
+
+  /**
+   * 한 폴더가 여러 Project의 `externalPaths`에 동시에 들어간다(실제로 `O_삼성서울병원` 하나가
+   * PRJ-0006·0010·0011 셋에 들어간다). `WorkProject.members`가 "한 폴더는 한 업무 프로젝트에만
+   * 속한다"를 SSOT로 두므로 누군가는 이겨야 하고, v1부터의 규칙은 **마지막에 쓴 것이 이긴다**다.
+   */
+  it("같은 경로를 여러 Project가 등록하면 마지막이 이기고 경고 한 줄이 선다", async () => {
+    const root = await tempWorkspace("v2-shared-path");
+    const onedrive = await tempWorkspace("v2-shared-onedrive");
+    for (const key of ["PRJ-0006-vsp", "PRJ-0010-foaa", "PRJ-0011-navi"]) {
+      await writeProject(root, key, {
+        key,
+        title: key,
+        status: "active",
+        primaryContext: "병원 공동연구",
+        externalPaths: "[onedrive/공유/O_삼성서울병원]",
+      });
+    }
+    await writeFile(
+      path.join(root, ".ws-index.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        roots: { work: root, dev: path.join(root, "dev"), data: path.join(root, "data"), onedrive },
+      }),
+    );
+
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    const shared = path.join(onedrive, "공유", "O_삼성서울병원");
+    // 폴더 이름 정렬이라 PRJ-0011-navi가 마지막이다 — 실행마다 같은 답이다.
+    expect(snapshot.repoOwners[workspacePathKey(shared)]).toBe("projects/PRJ-0011-navi");
+    expect(snapshot.warnings).toEqual([
+      `[path-owner] ${shared}: 3개 프로젝트가 같은 경로를 등록했다(projects/PRJ-0006-vsp · projects/PRJ-0010-foaa · projects/PRJ-0011-navi) — projects/PRJ-0011-navi가 이긴다`,
+    ]);
+  });
+
+  it("같은 레포 이름을 두 Project가 등록하면 경고가 한 줄만 선다", async () => {
+    const root = await tempWorkspace("v2-shared-repo");
+    await writeProject(root, "PRJ-0006-vsp", {
+      key: "PRJ-0006-vsp",
+      title: "가상수술계획",
+      status: "active",
+      primaryContext: "병원 공동연구",
+      repos: "[shared-lib]",
+    });
+    await writeProject(root, "PRJ-0011-navi", {
+      key: "PRJ-0011-navi",
+      title: "내비게이션",
+      status: "active",
+      primaryContext: "병원 공동연구",
+      repos: "[shared-lib]",
+    });
+
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    expect(snapshot.repoOwners[workspacePathKey(path.join(root, "dev", "shared-lib"))]).toBe(
+      "projects/PRJ-0011-navi",
+    );
+    // 레포 하나가 역인덱스 키 둘(`dev/x`·`dev/_archive/x`)을 만들지만 경고는 이름 단위로 한 줄이다.
+    expect(snapshot.warnings).toEqual([
+      "[repo-owner] shared-lib: 2개 프로젝트가 같은 레포를 등록했다(projects/PRJ-0006-vsp · projects/PRJ-0011-navi) — projects/PRJ-0011-navi가 이긴다",
+    ]);
+  });
+
+  it("휴면 Project는 projects/_archive를 담은 ref와 archived 표식을 받는다", async () => {
+    const root = await tempWorkspace("v2-archived");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    await writeArchivedProject(root, "PRJ-0001-kitu-undergraduate", {
+      key: "PRJ-0001-kitu-undergraduate",
+      title: "(휴면) 금오공대 학부 자료",
+      status: "archived",
+      mode: "finite",
+      primaryContext: "대학원 학사",
+    });
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+
+    const dormant = snapshot.shells.find((shell) => shell.archived)!;
+    expect(dormant).toMatchObject({
+      ref: "projects/_archive/PRJ-0001-kitu-undergraduate",
+      channel: "projects/_archive",
+      shell: "PRJ-0001-kitu-undergraduate",
+      archived: true,
+      status: "archived",
+      path: path.join(root, "projects", "_archive", "PRJ-0001-kitu-undergraduate"),
+    });
+  });
+
+  it("표시명이 없으면 PRJ-key로, 컨텍스트가 없으면 빈 라벨로 떨어진다", async () => {
+    const root = await tempWorkspace("v2-untitled");
+    await writeProject(root, "PRJ-0016-finance", { key: "PRJ-0016-finance", status: "active" });
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    expect(snapshot.shells[0]).toMatchObject({
+      title: "PRJ-0016-finance",
+      groupLabel: "",
+      topics: [],
+      mode: null,
+      wikiPath: null,
+    });
+  });
+
+  it("키 규약 위반과 PROJECT.yaml 없음을 경고로 남기고, 점·밑줄 폴더는 조용히 넘긴다", async () => {
+    const root = await tempWorkspace("v2-warn");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    await fs.mkdir(path.join(root, "projects", "not-a-key"), { recursive: true });
+    await fs.mkdir(path.join(root, "projects", "PRJ-0099-empty"), { recursive: true });
+    await fs.mkdir(path.join(root, "projects", "_local"), { recursive: true });
+    await fs.mkdir(path.join(root, "projects", ".obsidian"), { recursive: true });
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+
+    expect(snapshot.shells.map((shell) => shell.shell)).toEqual(["PRJ-0017-secondbrain"]);
+    expect(snapshot.warnings).toEqual([
+      "[project-yaml] projects/PRJ-0099-empty: PROJECT.yaml 없음",
+      "[project-key] projects/not-a-key: 프로젝트 키 규약 위반(PRJ-####-slug)",
+    ]);
+  });
+
+  it("v2 루트에 남은 legacy 채널 폴더는 무시하고 한 줄 경고한다", async () => {
+    const root = await tempWorkspace("v2-mixed");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    await writeFile(
+      path.join(root, "O_SMCH", "24_SMCH_VSP-1", "CLAUDE.md"),
+      shellClaude({ title: "가상수술계획", channel: "O_SMCH" }),
+    );
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+
+    expect(snapshot.shells.map((shell) => shell.ref)).toEqual(["projects/PRJ-0017-secondbrain"]);
+    expect(snapshot.warnings).toEqual([
+      "[legacy-layout] O_SMCH: projects/ 평면 구조로 옮긴 뒤 남은 폴더",
+    ]);
+  });
+
+  it("projects/ 가 없으면 v1 채널 스캔으로 떨어진다", async () => {
+    const root = await fixture("v2-fallback");
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    expect(snapshot.shells.map((shell) => shell.ref).sort()).toEqual([
+      "O_ATNC/24_ATNC_NeuroPilot-1",
+      "O_SMCH/24_SMCH_VSP-1",
+    ]);
+  });
+
+  it("PROJECT.yaml의 mtime으로 캐시를 판정한다", async () => {
+    const root = await tempWorkspace("v2-cache");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    const yaml = path.join(root, "projects", "PRJ-0017-secondbrain", "PROJECT.yaml");
+    const index = new WorkspaceIndex();
+    const titleOf = async () => (await index.snapshot(registryFor(root))).shells[0]?.title;
+
+    await touch(yaml, 1_000);
+    expect(await titleOf()).toBe("세컨드브레인(LLMwiki·atlas·bolt)");
+
+    // 내용만 바꾸고 mtime을 되돌리면 캐시가 유지된다 — 판정이 mtime이라는 증거.
+    await fs.writeFile(yaml, projectYaml({ ...SECONDBRAIN, title: "새 이름" }), "utf8");
+    await touch(yaml, 1_000);
+    expect(await titleOf()).toBe("세컨드브레인(LLMwiki·atlas·bolt)");
+
+    await touch(yaml, 9_000);
+    expect(await titleOf()).toBe("새 이름");
+  });
+
+  it("drive 루트가 선언되고 그 폴더가 실재할 때만 drive 경로를 준다", async () => {
+    const root = await tempWorkspace("v2-drive");
+    const drive = await tempWorkspace("v2-drive-root");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    await writeProject(root, "PRJ-0016-finance", {
+      key: "PRJ-0016-finance",
+      title: "가계부",
+      status: "active",
+      primaryContext: "개인",
+    });
+    // 짝 폴더는 PRJ-0017에만 있다.
+    await fs.mkdir(path.join(drive, "projects", "PRJ-0017-secondbrain"), { recursive: true });
+    await writeFile(
+      path.join(root, ".ws-index.json"),
+      JSON.stringify({ schemaVersion: 2, roots: { work: root, dev: path.join(root, "dev"), data: path.join(root, "data"), drive } }),
+    );
+
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    const byKey = new Map(snapshot.shells.map((shell) => [shell.shell, shell]));
+    expect(byKey.get("PRJ-0017-secondbrain")?.drivePath).toBe(path.join(drive, "projects", "PRJ-0017-secondbrain"));
+    expect(byKey.get("PRJ-0016-finance")?.drivePath).toBeNull();
+    // DRIVE_ROOT 미설정도, 짝 폴더 없음도 경고할 일이 아니다.
+    expect(snapshot.warnings).toEqual([]);
+  });
+
+  it("drive 선언이 없으면 조용히 null이다", async () => {
+    const root = await tempWorkspace("v2-no-drive");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    await writeFile(
+      path.join(root, ".ws-index.json"),
+      JSON.stringify({ schemaVersion: 2, roots: { work: root, dev: path.join(root, "dev"), data: path.join(root, "data") } }),
+    );
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    expect(snapshot.shells[0].drivePath).toBeNull();
+    expect(snapshot.warnings).toEqual([]);
+  });
+
+  it("wikiSource의 dev/ 논리 경로를 등록된 dev 루트로 푼다", async () => {
+    const root = await tempWorkspace("v2-wiki");
+    await writeProject(root, "PRJ-0017-secondbrain", SECONDBRAIN);
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    expect(snapshot.shells[0].wikiPath).toBe(path.join(root, "dev", "llmwiki", "wiki"));
+  });
+
+  it("drive/ 논리 경로는 drive 루트가 없으면 null이다 — work 기준으로 떨어지지 않는다", async () => {
+    const root = await tempWorkspace("v2-wiki-drive");
+    await writeProject(root, "PRJ-0013-readingarchive", {
+      key: "PRJ-0013-readingarchive",
+      title: "독서기록",
+      status: "active",
+      primaryContext: "개인",
+      wikiSource: "drive/reading/wiki",
+    });
+    const snapshot = await new WorkspaceIndex().snapshot(registryFor(root));
+    expect(snapshot.shells[0].wikiPath).toBeNull();
+  });
+});
+
+describe("resolveLogicalPath", () => {
+  const root = { work: "C:\\work", dev: "C:\\dev", data: "C:\\data", label: "work-root" };
+  const extra = { drive: "G:\\내 드라이브", onedrive: "C:\\OneDrive" };
+
+  it("dev·data·drive·onedrive 접두를 각 루트로 푼다", () => {
+    expect(resolveLogicalPath(root, extra, "dev/llmwiki/wiki")).toBe(path.join("C:\\dev", "llmwiki", "wiki"));
+    expect(resolveLogicalPath(root, extra, "data/patient")).toBe(path.join("C:\\data", "patient"));
+    expect(resolveLogicalPath(root, extra, "drive/reading")).toBe(path.join("G:\\내 드라이브", "reading"));
+    expect(resolveLogicalPath(root, extra, "onedrive/팀즈")).toBe(path.join("C:\\OneDrive", "팀즈"));
+  });
+
+  it("한글·공백·괄호가 든 실제 externalPaths 값을 그대로 푼다", () => {
+    // work 쪽이 2026-09-21에 등록한 값 — PRJ-0006·0010·0011이 공유하는 폴더다.
+    expect(resolveLogicalPath(root, extra, "onedrive/수행프로젝트(기술연구소) - 문서/O_삼성서울병원")).toBe(
+      path.join("C:\\OneDrive", "수행프로젝트(기술연구소) - 문서", "O_삼성서울병원"),
+    );
+    expect(resolveLogicalPath(root, extra, "onedrive/수행프로젝트(기술연구소) - 문서/G_보건의료과제")).toBe(
+      path.join("C:\\OneDrive", "수행프로젝트(기술연구소) - 문서", "G_보건의료과제"),
+    );
+  });
+
+  it("접두가 없으면 work 기준이고, 역슬래시 입력도 같은 답이다", () => {
+    expect(resolveLogicalPath(root, extra, "wiki/entities")).toBe(path.join("C:\\work", "wiki", "entities"));
+    expect(resolveLogicalPath(root, extra, "wiki\\entities")).toBe(path.join("C:\\work", "wiki", "entities"));
+  });
+
+  it("미설정 drive·onedrive는 null이다 — work 기준 유령 경로를 만들지 않는다", () => {
+    const none = { drive: null, onedrive: null };
+    expect(resolveLogicalPath(root, none, "drive/reading")).toBeNull();
+    expect(resolveLogicalPath(root, none, "onedrive/x")).toBeNull();
+    expect(resolveLogicalPath(root, none, "dev/llmwiki")).toBe(path.join("C:\\dev", "llmwiki"));
+  });
+
+  it("빈 값은 null이다", () => {
+    expect(resolveLogicalPath(root, extra, "")).toBeNull();
+    expect(resolveLogicalPath(root, extra, "   ")).toBeNull();
   });
 });
