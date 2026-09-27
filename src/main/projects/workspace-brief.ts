@@ -5,7 +5,7 @@ import { pathStyleFor, resolveShellRefForPath } from "../../shared/workspace-pat
 import { readDatasetPaths } from "./workspace-index";
 
 /**
- * 세션이 선 폴더가 ws-root 워크스페이스의 일이면, 그 셸이 무엇이고 옆에 무엇이 있는지 적어 준다.
+ * 세션이 선 폴더가 ws-root 워크스페이스의 일이면, 그 프로젝트가 무엇이고 옆에 무엇이 있는지 적어 준다.
  * 루트 CLAUDE.md §7-3이 말하는 "동적 정보(형제 레포 절대경로·데이터셋 경로·형제 셸)를 세션
  * 브리프가 얹는다"가 이 파일이다 — 정적 규칙은 `CLAUDE.md` 캐스케이드가 이미 싣는다.
  *
@@ -37,9 +37,10 @@ export interface WorkspaceBriefInput {
   /** 루트 마스터 원칙 파일(`<root>/CLAUDE.md`)의 절대경로. */
   rootPrinciplesPath: string;
   siblingRepos: WorkspaceBriefRepo[];
-  siblingShells: WorkspaceBriefSibling[];
+  /** 같은 묶음 라벨(v2 컨텍스트 · v1 채널 라벨)을 가진 다른 프로젝트. */
+  siblingProjects: WorkspaceBriefSibling[];
   datasets: WorkspaceBriefDataset[];
-  /** 셸 `wiki/data.md` 앞부분. 없으면 null. */
+  /** 프로젝트 `wiki/data.md` 앞부분. 없으면 null. */
   dataNotes: string | null;
 }
 
@@ -50,20 +51,26 @@ export function renderWorkspaceBrief(input: WorkspaceBriefInput): string {
     "",
     `- 표시명: ${shell.title}`,
     ...(shell.status ? [`- 상태: ${shell.status}`] : []),
-    `- 채널: ${shell.channel} (${shell.groupLabel})`,
-    `- 셸 문서: ${path.join(shell.path, "CLAUDE.md")}`,
+    // mode는 여기 한 줄로만 쓰인다 — 앱의 어떤 코드도 이 값으로 분기하지 않는다.
+    ...(shell.mode ? [`- 진행 방식: ${shell.mode}`] : []),
+    ...(shell.groupLabel ? [`- 컨텍스트: ${shell.groupLabel}`] : []),
+    `- 프로젝트 폴더: ${shell.path}`,
+    `- 프로젝트 문서: ${path.join(shell.path, "CLAUDE.md")}`,
+    // drive 짝 폴더는 DRIVE_ROOT가 설정되고 그 폴더가 실재할 때만 값이 있다.
+    ...(shell.drivePath ? [`- drive 폴더: ${shell.drivePath}`] : []),
+    ...(shell.wikiPath ? [`- 지식 정본: ${shell.wikiPath}`] : []),
     `- 루트 원칙: ${input.rootPrinciplesPath}`,
   ];
   if (input.siblingRepos.length > 0) {
-    lines.push("", "## 같은 셸의 레포 (로컬 절대경로)");
+    lines.push("", "## 이 프로젝트의 레포 (로컬 절대경로)");
     lines.push(...input.siblingRepos.map((repo) => `- ${repo.name}: ${repo.path}`));
   }
-  if (input.siblingShells.length > 0) {
-    lines.push("", `## 같은 채널(${input.shell.channel})의 다른 셸`);
-    lines.push(...input.siblingShells.map((sibling) => `- ${sibling.title} (${sibling.ref}): ${sibling.path}`));
+  if (input.siblingProjects.length > 0) {
+    lines.push("", `## 같은 컨텍스트(${shell.groupLabel})의 다른 프로젝트`);
+    lines.push(...input.siblingProjects.map((sibling) => `- ${sibling.title} (${sibling.ref}): ${sibling.path}`));
   }
   if (input.datasets.length > 0) {
-    lines.push("", "## 이 셸이 쓰는 데이터셋");
+    lines.push("", "## 이 프로젝트가 쓰는 데이터셋");
     lines.push(
       ...input.datasets.map((dataset) =>
         dataset.path ? `- ${dataset.id}: ${dataset.path}` : `- ${dataset.id}: (data/index.md에 없음)`,
@@ -75,8 +82,8 @@ export function renderWorkspaceBrief(input: WorkspaceBriefInput): string {
   }
   lines.push(
     "",
-    "코드는 `dev/` 레포에, 문서·지식·데이터 명세는 셸 폴더에 둔다. 다른 셸의 지식은 링크하지 말고",
-    "`/wiki-borrow`로 재검토·복제한다. 루트 원칙 파일이 이 워크스페이스의 상위 규칙이다.",
+    "코드는 `dev/` 레포에, 문서·지식·데이터 명세는 프로젝트 폴더에 둔다. 다른 프로젝트의 지식은",
+    "링크하지 말고 `/wiki-borrow`로 재검토·복제한다. 루트 원칙 파일이 이 워크스페이스의 상위 규칙이다.",
     "",
   );
   return lines.join("\n");
@@ -122,9 +129,19 @@ export async function buildWorkspaceBrief(
       ...shell.repos.map((name) => ({ name, path: path.join(owner?.dev ?? shell.root, name) })),
       ...shell.externalPaths.map((external) => ({ name: path.basename(external), path: external })),
     ],
-    siblingShells: snapshot.shells
-      .filter((candidate) => candidate.channel === shell.channel && candidate.ref !== shell.ref)
-      .map((candidate) => ({ title: candidate.title, ref: candidate.ref, path: candidate.path })),
+    // 형제는 같은 묶음 라벨 + 같은 휴면 상태다. v1의 "같은 채널"보다 약간 넓지만(같은 라벨을 쓰는
+    // 채널 둘이 한데 선다) v2에는 채널이 없고 `channel`은 모든 Project에 `"projects"`라 쓸 수 없다.
+    siblingProjects:
+      shell.groupLabel.length === 0
+        ? []
+        : snapshot.shells
+            .filter(
+              (candidate) =>
+                candidate.groupLabel === shell.groupLabel &&
+                candidate.archived === shell.archived &&
+                candidate.ref !== shell.ref,
+            )
+            .map((candidate) => ({ title: candidate.title, ref: candidate.ref, path: candidate.path })),
     datasets: shell.data.map((id) => ({ id, path: datasetPaths[id] ?? null })),
     dataNotes: await readHead(path.join(shell.path, "wiki", "data.md"), DATA_NOTE_LINES),
   });

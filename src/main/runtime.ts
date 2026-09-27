@@ -289,7 +289,7 @@ export async function createDesktopRuntime(
     getExecutables,
     /**
      * 세션의 폴더가 무엇에 속하는지 두 갈래로 답하고 한 파일로 합친다: 업무 프로젝트(팀즈·노션·
-     * 레포)와 ws-root 워크스페이스(채널·셸·형제 레포·데이터셋). 둘 중 하나만 있어도 브리프가
+     * 레포)와 ws-root 워크스페이스(프로젝트·형제 레포·데이터셋). 둘 중 하나만 있어도 브리프가
      * 나가고, 둘 다 없으면 null이라 세션은 브리프 없이 평소대로 열린다.
      *
      * 파일 이름은 업무 프로젝트가 아니라 **폴더** 기준이다 — 같은 업무 프로젝트의 두 폴더도
@@ -311,6 +311,8 @@ export async function createDesktopRuntime(
               .map((member) => ({ project: registry.projects[member.projectId] ?? null, role: member.role }))
               .filter((member): member is WorkProjectBriefMember => member.project !== null),
             tags,
+            // 팀즈 어휘를 쓸지는 이 설정 하나로 결정된다 — 없으면 브리프가 팀즈를 언급하지 않는다.
+            { teamsSyncRoot: workProjectRegistry.teamsSyncRoot },
           )
         : null;
       const project = registry.projects[projectId] ?? null;

@@ -66,49 +66,72 @@ afterEach(async () => {
 });
 
 describe("renderWorkspaceBrief", () => {
-  it("names the shell and lists siblings, datasets and the data notes", () => {
+  it("PRJ 머리 줄과 레포·형제 프로젝트·데이터셋·데이터 명세를 적는다", () => {
     const brief = renderWorkspaceBrief({
-      shell: shellInfo("C:\\ws"),
-      rootPrinciplesPath: path.join("C:\\ws", "CLAUDE.md"),
-      siblingRepos: [
-        { name: "VSP_FastAPI", path: path.join("C:\\ws", "dev", "VSP_FastAPI") },
-        { name: "VSP_MQ_v2", path: path.join("C:\\ws", "dev", "VSP_MQ_v2") },
-      ],
-      siblingShells: [
-        { title: "FOAA", ref: "O_SMCH/25_SMCH_FOAA-1", path: path.join("C:\\ws", "O_SMCH", "25_SMCH_FOAA-1") },
+      shell: shellInfo("C:\\work", {
+        ref: "projects/PRJ-0017-secondbrain",
+        channel: "projects",
+        shell: "PRJ-0017-secondbrain",
+        groupLabel: "개인",
+        title: "세컨드브레인(LLMwiki·atlas·bolt)",
+        status: "active",
+        mode: "continuous",
+        path: path.join("C:\\work", "projects", "PRJ-0017-secondbrain"),
+        drivePath: path.join("G:\\drive", "projects", "PRJ-0017-secondbrain"),
+        wikiPath: path.join("C:\\dev", "llmwiki", "wiki"),
+      }),
+      rootPrinciplesPath: path.join("C:\\work", "CLAUDE.md"),
+      siblingRepos: [{ name: "llmwiki", path: path.join("C:\\dev", "llmwiki") }],
+      siblingProjects: [
+        { title: "가계부", ref: "projects/PRJ-0016-finance", path: path.join("C:\\work", "projects", "PRJ-0016-finance") },
       ],
       datasets: [
-        { id: "DS-0001", path: path.join("C:\\ws", "data", "patient", "26_SMCH_Occlusion-1") },
+        { id: "DS-0001", path: path.join("C:\\data", "patient", "26_SMCH_Occlusion-1") },
         { id: "DS-9999", path: null },
       ],
       dataNotes: "# 데이터\n- 교합 케이스 10건",
     });
 
-    expect(brief).toContain("# 워크스페이스: O_SMCH/24_SMCH_VSP-1");
-    expect(brief).toContain("- 표시명: 가상수술계획");
+    expect(brief).toContain("# 워크스페이스: projects/PRJ-0017-secondbrain");
+    expect(brief).toContain("- 표시명: 세컨드브레인(LLMwiki·atlas·bolt)");
     expect(brief).toContain("- 상태: active");
-    expect(brief).toContain("- 채널: O_SMCH (용역)");
-    expect(brief).toContain(`- 루트 원칙: ${path.join("C:\\ws", "CLAUDE.md")}`);
-    expect(brief).toContain(`- VSP_FastAPI: ${path.join("C:\\ws", "dev", "VSP_FastAPI")}`);
-    expect(brief).toContain("- FOAA (O_SMCH/25_SMCH_FOAA-1)");
-    expect(brief).toContain(`- DS-0001: ${path.join("C:\\ws", "data", "patient", "26_SMCH_Occlusion-1")}`);
+    expect(brief).toContain("- 진행 방식: continuous");
+    expect(brief).toContain("- 컨텍스트: 개인");
+    expect(brief).toContain(`- 프로젝트 폴더: ${path.join("C:\\work", "projects", "PRJ-0017-secondbrain")}`);
+    expect(brief).toContain(
+      `- 프로젝트 문서: ${path.join("C:\\work", "projects", "PRJ-0017-secondbrain", "CLAUDE.md")}`,
+    );
+    expect(brief).toContain(`- drive 폴더: ${path.join("G:\\drive", "projects", "PRJ-0017-secondbrain")}`);
+    expect(brief).toContain(`- 지식 정본: ${path.join("C:\\dev", "llmwiki", "wiki")}`);
+    expect(brief).toContain(`- 루트 원칙: ${path.join("C:\\work", "CLAUDE.md")}`);
+    expect(brief).toContain("## 이 프로젝트의 레포 (로컬 절대경로)");
+    expect(brief).toContain(`- llmwiki: ${path.join("C:\\dev", "llmwiki")}`);
+    expect(brief).toContain("## 같은 컨텍스트(개인)의 다른 프로젝트");
+    expect(brief).toContain("- 가계부 (projects/PRJ-0016-finance)");
+    expect(brief).toContain("## 이 프로젝트가 쓰는 데이터셋");
     expect(brief).toContain("- DS-9999: (data/index.md에 없음)");
     expect(brief).toContain("- 교합 케이스 10건");
+    // 채널은 v2에 없는 개념이다.
+    expect(brief).not.toContain("- 채널:");
   });
 
-  it("omits empty sections", () => {
+  it("값이 없는 줄과 절을 생략한다", () => {
     const brief = renderWorkspaceBrief({
-      shell: shellInfo("C:\\ws", { status: null, repos: [], data: [] }),
-      rootPrinciplesPath: path.join("C:\\ws", "CLAUDE.md"),
+      shell: shellInfo("C:\\work", { status: null, mode: null, groupLabel: "", repos: [], data: [] }),
+      rootPrinciplesPath: path.join("C:\\work", "CLAUDE.md"),
       siblingRepos: [],
-      siblingShells: [],
+      siblingProjects: [],
       datasets: [],
       dataNotes: null,
     });
     expect(brief).not.toContain("- 상태:");
-    expect(brief).not.toContain("## 같은 셸의 레포");
-    expect(brief).not.toContain("## 같은 채널");
-    expect(brief).not.toContain("## 이 셸이 쓰는 데이터셋");
+    expect(brief).not.toContain("- 진행 방식:");
+    expect(brief).not.toContain("- 컨텍스트:");
+    expect(brief).not.toContain("- drive 폴더:");
+    expect(brief).not.toContain("- 지식 정본:");
+    expect(brief).not.toContain("## 이 프로젝트의 레포");
+    expect(brief).not.toContain("## 같은 컨텍스트");
+    expect(brief).not.toContain("## 이 프로젝트가 쓰는 데이터셋");
     expect(brief).not.toContain("데이터 명세 발췌");
   });
 });
@@ -154,12 +177,50 @@ describe("buildWorkspaceBrief", () => {
     expect(brief).toContain("# 워크스페이스: O_SMCH/24_SMCH_VSP-1");
     expect(brief).toContain(`- VSP_MQ_v2: ${path.join(root, "dev", "VSP_MQ_v2")}`);
     expect(brief).toContain(`- DS-0001: ${path.join(root, "data", "patient", "26_SMCH_Occlusion-1")}`);
-    // 형제 셸은 같은 채널만 — 다른 채널의 셸은 이 세션과 무관하다.
+    // 형제는 같은 묶음 라벨만 — 다른 컨텍스트의 프로젝트는 이 세션과 무관하다.
     expect(brief).toContain("- FOAA (O_SMCH/25_SMCH_FOAA-1)");
     expect(brief).not.toContain("P_Personal/26_Personal_Career-1");
     // wiki/data.md는 앞 30줄만.
     expect(brief).toContain("줄 30");
     expect(brief).not.toContain("줄 31");
+  });
+
+  it("같은 묶음 라벨의 프로젝트만 형제로 세우고, 휴면끼리만 묶는다", async () => {
+    const root = await tempWorkspace("brief-siblings");
+    const base = (key: string, groupLabel: string, archived = false) =>
+      shellInfo(root, {
+        ref: `${archived ? "projects/_archive" : "projects"}/${key}`,
+        channel: archived ? "projects/_archive" : "projects",
+        shell: key,
+        groupLabel,
+        title: key,
+        archived,
+        path: path.join(root, archived ? path.join("projects", "_archive") : "projects", key),
+        repos: key === "PRJ-0017-secondbrain" ? ["multi-cli-work"] : [],
+        data: [],
+      });
+    const snapshot = snapshotFor(root, [
+      base("PRJ-0017-secondbrain", "개인"),
+      base("PRJ-0016-finance", "개인"),
+      base("PRJ-0006-vsp", "병원 공동연구"),
+      base("PRJ-0009-old", "개인", true),
+    ]);
+
+    const brief = await buildWorkspaceBrief(path.join(root, "dev", "multi-cli-work"), snapshot);
+    expect(brief).toContain("## 같은 컨텍스트(개인)의 다른 프로젝트");
+    expect(brief).toContain("PRJ-0016-finance");
+    expect(brief).not.toContain("PRJ-0006-vsp");
+    expect(brief).not.toContain("PRJ-0009-old");
+  });
+
+  it("묶음 라벨이 비어 있으면 형제 절이 없다", async () => {
+    const root = await tempWorkspace("brief-no-label");
+    const snapshot = snapshotFor(root, [
+      shellInfo(root, { groupLabel: "", repos: ["VSP_FastAPI"], data: [] }),
+      shellInfo(root, { ref: "O_SMCH/25_SMCH_FOAA-1", shell: "25_SMCH_FOAA-1", groupLabel: "", repos: [], data: [] }),
+    ]);
+    const brief = await buildWorkspaceBrief(path.join(root, "dev", "VSP_FastAPI"), snapshot);
+    expect(brief).not.toContain("## 같은 컨텍스트");
   });
 
   it("also answers for the shell folder itself and for a folder inside a repo", async () => {

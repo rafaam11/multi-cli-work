@@ -74,7 +74,8 @@ describe("renderWorkProjectBrief", () => {
     expect(brief).toContain("- fleet-server: D:\\Project\\fleet-server");
     expect(brief).toContain("## 메모");
     // Docs section precedes repos so the official-document location leads.
-    expect(brief.indexOf("팀즈 문서 폴더")).toBeLessThan(brief.indexOf("개발 레포"));
+    expect(brief.indexOf("## 문서 폴더")).toBeGreaterThanOrEqual(0);
+    expect(brief.indexOf("## 문서 폴더")).toBeLessThan(brief.indexOf("개발 레포"));
   });
 
   it("lists reference-only local folders and marks them read-only", () => {
@@ -112,6 +113,41 @@ describe("renderWorkProjectBrief", () => {
   it("omits the tag line when there are no tags", () => {
     const brief = renderWorkProjectBrief(WORK_PROJECT, []);
     expect(brief).not.toContain("- 태그:");
+  });
+
+  it("팀즈 루트가 설정돼 있으면 제목과 맺음에 팀즈를 쓴다", () => {
+    const brief = renderWorkProjectBrief(
+      WORK_PROJECT,
+      [{ project: project("2", path.join("C:", "Teams", "스마트팩토리")), role: "docs" }],
+      [],
+      { teamsSyncRoot: path.join("C:", "Teams") },
+    );
+    expect(brief).toContain("## 팀즈 문서 폴더 (공식 문서: 계획서·보고서·발표자료)");
+    expect(brief).toContain("문서 작업은 팀즈 폴더, 진행 관리는 노션를 기준으로 한다.");
+  });
+
+  it("팀즈 루트가 없으면 어디에도 팀즈라는 말이 없다", () => {
+    const brief = renderWorkProjectBrief(
+      { ...WORK_PROJECT, notionLinks: [] },
+      [{ project: project("2", path.join("C:", "work", "projects", "PRJ-0017-secondbrain")), role: "docs" }],
+    );
+    expect(brief).not.toContain("팀즈");
+    expect(brief).toContain("## 문서 폴더 (공식 문서: 계획서·보고서·발표자료)");
+    expect(brief).toContain("문서 작업은 위 문서 폴더를 기준으로 한다.");
+  });
+
+  it("노션 링크가 없으면 맺음에 노션이 없다", () => {
+    const brief = renderWorkProjectBrief({ ...WORK_PROJECT, notionLinks: [] }, [
+      { project: project("1", path.join("C:", "dev", "bolt")), role: "repo" },
+    ]);
+    expect(brief).toContain("코드는 위 레포 경로를 기준으로 한다.");
+    expect(brief).not.toContain("노션");
+  });
+
+  it("문서·노션·레포가 모두 없으면 맺음이 첫 문장 하나다", () => {
+    const brief = renderWorkProjectBrief({ ...WORK_PROJECT, notionLinks: [] }, []);
+    expect(brief).toContain("이 세션은 위 업무 프로젝트에 소속된 작업 공간에서 실행 중이다.");
+    expect(brief).not.toContain("를 기준으로 한다");
   });
 });
 
