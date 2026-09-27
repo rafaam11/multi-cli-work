@@ -2581,10 +2581,15 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-secondary-size);
 }
 
+/* The folder yields before the name does: five sessions of one agent differ only by their name. */
 .session-row-place {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
   color: var(--quiet);
   font-size: var(--type-caption-size);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -2595,7 +2600,10 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .session-row-branch {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 30%;
+  overflow: hidden;
   align-items: center;
   gap: 2px;
   color: var(--quiet);
@@ -3441,10 +3449,15 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .terminal-workspace {
   grid-column: 3;
   display: grid;
+  /* One explicit shrinkable column: an implicit auto column grows to the header's min-content, and
+     the header's buttons then push the whole workspace wider than its track. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 54px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /* clip, not hidden: a hidden box can still be scrolled by focus, which slid the grid under the
+     sidebar when a half-covered launcher took focus. */
+  overflow: clip;
   background: var(--bg);
 }
 
@@ -3506,10 +3519,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   container-type: inline-size;
 }
 
+/* Basis 0: the title takes what the controls leave, not the other way round. With an auto basis
+   both sides shrank in proportion and the launcher row — the only flexible control — got crushed. */
 .workspace-identity {
   display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: 96px;
   align-items: center;
   gap: 9px;
   color: var(--muted);
@@ -6035,32 +6050,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
     display: none;
   }
 
-  .workspace-header .layout-bar-divider {
-    margin: 0 2px;
-  }
-}
-
-@container (max-width: 780px) {
-  .workspace-header .layout-preview {
-    width: 26px;
-    height: 18px;
-  }
-
-  .workspace-header .layout-option {
-    padding: 2px;
-  }
-}
-
-@container (max-width: 620px) {
-  .workspace-header .active-status,
-  .workspace-header .workspace-path {
-    display: none;
-  }
-
-  .workspace-header .command-button span {
-    display: none;
-  }
-
+  /* Agents are data, so the launcher row grows with agents.json. Below this width the labels go
+     first — every agent stays one click away as an icon instead of scrolling out of reach. */
   .workspace-header .launcher-button {
     width: 31px;
     padding: 0;
@@ -6069,6 +6060,41 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   }
 
   .workspace-header .launcher-button span {
+    display: none;
+  }
+
+  .workspace-header .layout-bar-divider {
+    margin: 0 2px;
+  }
+}
+
+@container (max-width: 780px) {
+  /* Seven layout tiles are the widest thing in the row; small tiles still read as their shape. */
+  .workspace-header .layout-preview {
+    width: 20px;
+    height: 16px;
+  }
+
+  .workspace-header .layout-option {
+    padding: 1px;
+  }
+}
+
+@container (max-width: 820px) {
+  /* The status dot stays; its word and the 상세 label are the cheapest pixels to give back. */
+  .workspace-header .active-status {
+    font-size: 0;
+    gap: 0;
+  }
+
+  .workspace-header .command-button span {
+    display: none;
+  }
+}
+
+@container (max-width: 620px) {
+  .workspace-header .active-status,
+  .workspace-header .workspace-path {
     display: none;
   }
 }

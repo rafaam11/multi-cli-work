@@ -2740,8 +2740,12 @@ describe("세션 패널", () => {
 
     await screen.findByRole("region", { name: "세션 패널" });
     expect(rows()).toEqual(["돌아가는 중 패인 열기", "PowerShell 패인 열기", "승인 필요 패인 열기"]);
+    // 소속은 폴더가 바뀌는 첫 행에만 적고, 이어지는 같은 폴더 행은 title로만 말한다 — 이름에 폭을 준다.
+    const first = within(panel()).getByRole("button", { name: "돌아가는 중 패인 열기" });
+    expect(within(first).getByText("Atlas")).toBeInTheDocument();
     const row = within(panel()).getByRole("button", { name: "승인 필요 패인 열기" });
-    expect(within(row).getByText("Atlas")).toBeInTheDocument();
+    expect(within(row).queryByText("Atlas")).not.toBeInTheDocument();
+    expect(row).toHaveAttribute("title", expect.stringContaining("Atlas"));
     expect(within(panel()).getByText("대기 1")).toBeInTheDocument();
     // 같은 세션이 트리에도 서지만 이름의 동사가 다르고 순서도 다르다 — 위는 "지금 화면에 모은
     // 것"을 급한 순으로, 아래는 "어느 폴더의 것"을 만든 순으로 세운다. (파일 탐색기도 tree라서

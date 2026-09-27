@@ -77,6 +77,23 @@ afterEach(() => {
 });
 
 describe("SessionPanel", () => {
+  it("같은 폴더가 이어지면 둘째 행부터 소속 칸을 비워 이름에 폭을 준다", () => {
+    const other: SessionPanelItem = { ...sessionItem("session-3", false), place: "Atlas" };
+    renderPanel({ items: [sessionItem("session-1", true), sessionItem("session-2", false), other] });
+
+    const places = (name: string) =>
+      screen.getByRole("button", { name: new RegExp(`^${name} 패인 열기`) }).querySelector(".session-row-place");
+    expect(places("세션 session-1")).toHaveTextContent("Sample Project");
+    expect(places("세션 session-2")).toBeNull();
+    // 폴더가 바뀌면 다시 적는다.
+    expect(places("세션 session-3")).toHaveTextContent("Atlas");
+    // 전체 소속은 툴팁에 남는다.
+    expect(screen.getByRole("button", { name: /^세션 session-2 패인 열기/ })).toHaveAttribute(
+      "title",
+      "Sample Project · 세션 session-2",
+    );
+  });
+
   it("대기 배지가 제목 버튼 안에 있어 배지를 눌러도 작업공간이 열린다", () => {
     const { props } = renderPanel();
     const title = screen.getByRole("button", { name: "세션 작업공간 열기 (패인 2개)" });

@@ -108,7 +108,7 @@ export function SessionPanel({
    * 한 화면에 같은 접근성 이름이 둘이면 안 된다. 소속(폴더·브랜치)은 여기서만 보인다: 이 목록은
    * 여러 폴더의 패인을 한데 모으니까.
    */
-  const renderSession = (item: Extract<SessionPanelItem, { kind: "session" }>) => (
+  const renderSession = (item: Extract<SessionPanelItem, { kind: "session" }>, previous?: SessionPanelItem) => (
     <SessionRow
       key={item.id}
       session={item.session}
@@ -121,6 +121,9 @@ export function SessionPanel({
       current={focusedPaneId === item.id}
       onScreen={onScreenPaneIds.has(item.id)}
       verb="패인 열기"
+      placeRepeated={
+        previous?.kind === "session" && previous.place === item.place && previous.branch === item.branch
+      }
       onSelect={() => onSelectPane(item.id)}
       onContextMenu={(event) => onSessionContextMenu(item.session, event)}
       renaming={renamingSessionId === item.id}
@@ -211,7 +214,9 @@ export function SessionPanel({
                 : "열린 세션이 없습니다"}
             </li>
           ) : null}
-          {visible.map((item) => (item.kind === "session" ? renderSession(item) : renderDocument(item)))}
+          {visible.map((item, index) =>
+            item.kind === "session" ? renderSession(item, visible[index - 1]) : renderDocument(item),
+          )}
         </ul>
       ) : null}
     </section>

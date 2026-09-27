@@ -45,7 +45,8 @@ interface PaneRowCommonProps {
 }
 
 /** 소속은 눈에 보이는 span과 `title`에만 넣는다 — 접근성 이름에 새면 행을 찾는 테스트가 깨진다. */
-function PlaceMarks({ place, branch }: { place?: string | null; branch?: string | null }) {
+function PlaceMarks({ place, branch, hidden }: { place?: string | null; branch?: string | null; hidden?: boolean }) {
+  if (hidden) return null;
   return (
     <>
       {place ? <span className="session-row-place">{place}</span> : null}
@@ -70,6 +71,8 @@ export interface SessionRowProps extends PaneRowCommonProps {
   attention: SessionAttention | null;
   /** 접근성 이름의 동사 — 트리는 "세션 열기", 패널은 "패인 열기"(R8). */
   verb: "세션 열기" | "패인 열기";
+  /** 바로 위 행과 소속이 같을 때 — 칸은 비우고 title에만 남긴다. 이름이 잘리지 않게 하려는 것. */
+  placeRepeated?: boolean;
   onSelect(): void;
   onContextMenu(event: ReactMouseEvent): void;
   renaming: boolean;
@@ -89,6 +92,7 @@ export function SessionRow({
   current,
   onScreen,
   verb,
+  placeRepeated,
   onSelect,
   onContextMenu,
   renaming,
@@ -126,7 +130,7 @@ export function SessionRow({
         >
           <span className={`status-dot status-${session.status}`} aria-hidden="true" />
           {tool ? <Wrench size={14} /> : <AgentIcon agent={agent} size={14} />}
-          <PlaceMarks place={place} branch={branch} />
+          <PlaceMarks place={place} branch={branch} hidden={placeRepeated} />
           <span className="session-name">{label}</span>
           {attention ? (
             <span className={`unread-dot unread-${attention}`} title="응답 대기" aria-hidden="true" />

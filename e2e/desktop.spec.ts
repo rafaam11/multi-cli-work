@@ -34,6 +34,9 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
       MULTI_CLI_WORK_WORK_PROJECTS_PATH: path.join(tempRoot, "registry", "work-projects.json"),
       MULTI_CLI_WORK_WORKTREES_PATH: path.join(tempRoot, "registry", "worktrees.json"),
       MULTI_CLI_WORK_PR_REVIEWS_PATH: path.join(tempRoot, "registry", "pr-reviews.json"),
+      // The workspace-root test registers a root: it must never reach the real ~/.multi-cli-work.
+      MULTI_CLI_WORK_WORKSPACE_PATH: path.join(tempRoot, "registry", "workspace.json"),
+      MULTI_CLI_WORK_PROJECT_TAGS_PATH: path.join(tempRoot, "registry", "project-tags.json"),
       MULTI_CLI_WORK_GH_EXECUTABLE: process.execPath,
       MULTI_CLI_WORK_GH_SCRIPT: path.join(tempRoot, "fake-bin", "gh.js"),
       [WINDOWS ? "Path" : "PATH"]: fakePath,
@@ -1268,6 +1271,34 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await restoreDefaultWindowSize();
   });
 
+  /**
+   * The header used to be wider than its column: the launcher row was crushed to one icon, and a
+   * focused, half-covered launcher scrolled the whole workspace under the sidebar. Everything in the
+   * header now fits at the default window with both sidebars open.
+   */
+  test("keeps every launcher reachable and the grid clear of the sidebar", async () => {
+    await restoreDefaultWindowSize();
+    await openFolder();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await expect(page.locator(".grid-pane").first()).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const grid = document.querySelector(".workspace-grid")!.getBoundingClientRect();
+      const sidebar = document.querySelector(".project-sidebar")!.getBoundingClientRect();
+      const workspace = document.querySelector<HTMLElement>(".terminal-workspace")!;
+      const launchers = document.querySelector<HTMLElement>(".launcher-row")!;
+      return {
+        gridLeft: grid.left,
+        sidebarRight: sidebar.right,
+        workspaceScroll: workspace.scrollLeft,
+        launcherOverflow: launchers.scrollWidth - launchers.clientWidth,
+      };
+    });
+    expect(geometry.gridLeft).toBeGreaterThanOrEqual(geometry.sidebarRight);
+    expect(geometry.workspaceScroll).toBe(0);
+    expect(geometry.launcherOverflow).toBeLessThanOrEqual(1);
+  });
+
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
     const projectRoot = path.join(tempRoot, "sample-project");
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
@@ -1286,5 +1317,34 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     const savedRegistry = JSON.parse(await fs.readFile(path.join(tempRoot, "registry", "projects.json"), "utf8"));
     expect(savedRegistry.projects).toEqual({});
+  });
+
+  /**
+   * Registering a workspace root writes work projects in main. The sidebar used to keep the lists it
+   * loaded at startup, so the new projects only appeared after a restart.
+   */
+  test("shows work projects from a newly registered workspace root without a restart", async () => {
+    const work = path.join(tempRoot, "ws", "work");
+    const folder = path.join(work, "projects", "PRJ-0001-alpha");
+    await fs.mkdir(folder, { recursive: true });
+    await fs.mkdir(path.join(tempRoot, "ws", "dev"), { recursive: true });
+    await fs.writeFile(
+      path.join(folder, "PROJECT.yaml"),
+      "schema: 1\nkey: PRJ-0001-alpha\nslug: alpha\ntitle: 알파 프로젝트\nmode: continuous\nstatus: active\nprimaryContext: 개인\ntopics: []\nrepos: []\nexternalPaths: []\nwikiSource: null\n",
+      "utf8",
+    );
+    await app.evaluate(({ dialog }, chosen) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [chosen] });
+    }, work);
+
+    await page.keyboard.press("Control+,");
+    const settings = page.getByRole("dialog", { name: "설정" });
+    await settings.locator("nav").getByText("워크스페이스", { exact: true }).click();
+    await settings.getByRole("button", { name: "루트 추가" }).click();
+    await expect(settings.getByRole("status")).toContainText("루트를 등록했습니다");
+    await page.keyboard.press("Escape");
+
+    // The tree row and the collapsed rail both name the project, so any one of them proves the point.
+    await expect(page.getByRole("button", { name: "알파 프로젝트 프로젝트 열기" }).first()).toBeVisible();
   });
 });
