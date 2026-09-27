@@ -800,6 +800,27 @@ describe("main IPC boundary", () => {
     );
   });
 
+  it("saves the 파일 tab's settings instead of rejecting them as unknown fields", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("settings:update")!({}, { files: { openWith: { pdf: "os", ts: "vscode" }, unsupportedOpensWithOs: false } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({
+      files: { openWith: { pdf: "os", ts: "vscode" }, unsupportedOpensWithOs: false },
+    });
+    expect(() => handlers.get("settings:update")!({}, { files: { openWith: { ".pdf": "os" } } })).toThrow(/openWith/);
+    expect(() => handlers.get("settings:update")!({}, { files: { openWith: { pdf: "browser" } } })).toThrow(/openWith/);
+  });
+
+  it("saves fan-out templates and rejects malformed ones", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("settings:update")!({}, { fanOut: { templates: [{ name: "테스트", text: "npm test" }] } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({ fanOut: { templates: [{ name: "테스트", text: "npm test" }] } });
+    expect(() => handlers.get("settings:update")!({}, { fanOut: { templates: [{ name: "", text: "x" }] } })).toThrow(
+      /templates\[0\]\.name/,
+    );
+  });
+
   it("rejects invalid projects patches", () => {
     const { handlers, settingsGateway } = setup();
 

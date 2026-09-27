@@ -22,11 +22,15 @@ import type {
   WindowZoomAction,
 } from "../shared/api-types";
 import {
+  MAX_FAN_OUT_TEMPLATES,
+  MAX_FAN_OUT_TEMPLATE_NAME_LENGTH,
+  MAX_FAN_OUT_TEMPLATE_TEXT_LENGTH,
   TERMINAL_FONT_SIZE_RANGE,
   TERMINAL_LINE_HEIGHT_RANGE,
   TERMINAL_SCROLLBACK_RANGE,
   type AppSettings,
   type AppSettingsPatch,
+  type FileOpenTarget,
   type NotifiableStatus,
   type ProjectCategorySetting,
 } from "../shared/settings-types";
@@ -523,7 +527,7 @@ function numberInRange(value: unknown, min: number, max: number, label: string):
 function validateSettingsPatch(value: unknown): AppSettingsPatch {
   const raw = exactObject(
     value,
-    ["language", "general", "terminal", "notifications", "keybindings", "projects"],
+    ["language", "general", "terminal", "notifications", "keybindings", "projects", "files", "fanOut"],
     "Settings patch",
   );
   const patch: AppSettingsPatch = {};
@@ -623,6 +627,45 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
         throw new Error("Settings snoozedUntil must be an ISO timestamp or null");
       }
       patch.notifications.snoozedUntil = until;
+    }
+  }
+  if (raw.files !== undefined) {
+    const files = exactObject(raw.files, ["openWith", "unsupportedOpensWithOs"], "Settings files");
+    patch.files = {};
+    if (files.openWith !== undefined) {
+      if (typeof files.openWith !== "object" || files.openWith === null || Array.isArray(files.openWith)) {
+        throw new Error("Settings files.openWith must be an object");
+      }
+      const openWith: Record<string, FileOpenTarget> = {};
+      for (const [extension, target] of Object.entries(files.openWith)) {
+        if (!/^[a-z0-9]{1,16}$/.test(extension) || (target !== "in-app" && target !== "os" && target !== "vscode")) {
+          throw new Error(`Settings files.openWith entry ${extension} is invalid`);
+        }
+        openWith[extension] = target;
+      }
+      patch.files.openWith = openWith;
+    }
+    if (files.unsupportedOpensWithOs !== undefined) {
+      patch.files.unsupportedOpensWithOs = booleanValue(files.unsupportedOpensWithOs, "Settings files.unsupportedOpensWithOs");
+    }
+  }
+  if (raw.fanOut !== undefined) {
+    const fanOut = exactObject(raw.fanOut, ["templates"], "Settings fanOut");
+    if (fanOut.templates !== undefined) {
+      if (!Array.isArray(fanOut.templates) || fanOut.templates.length > MAX_FAN_OUT_TEMPLATES) {
+        throw new Error(`Settings fanOut.templates must be an array of at most ${MAX_FAN_OUT_TEMPLATES}`);
+      }
+      patch.fanOut = {
+        templates: fanOut.templates.map((item, index) => {
+          const template = exactObject(item, ["name", "text"], `Settings fanOut.templates[${index}]`);
+          const name = nonEmptyString(template.name, `Settings fanOut.templates[${index}].name`).trim();
+          const text = nonEmptyString(template.text, `Settings fanOut.templates[${index}].text`);
+          if (name.length > MAX_FAN_OUT_TEMPLATE_NAME_LENGTH || text.length > MAX_FAN_OUT_TEMPLATE_TEXT_LENGTH) {
+            throw new Error(`Settings fanOut.templates[${index}] is too long`);
+          }
+          return { name, text };
+        }),
+      };
     }
   }
   if (raw.keybindings !== undefined) {

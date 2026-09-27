@@ -235,3 +235,27 @@ describe("방해 금지", () => {
     expect(mergeSettingsPatch(snoozed, { notifications: { snoozedUntil: null } }).notifications.snoozedUntil).toBeNull();
   });
 });
+
+describe("팬아웃 템플릿", () => {
+  it("기본값은 빈 목록이고, 이름이 비었거나 겹치거나 본문이 빈 항목은 버린다", () => {
+    expect(DEFAULT_SETTINGS.fanOut).toEqual({ templates: [] });
+    const parsed = parseSettings({
+      fanOut: {
+        templates: [
+          { name: " 테스트 ", text: "npm test를 돌리고 실패를 고쳐" },
+          { name: "테스트", text: "중복" },
+          { name: "", text: "이름 없음" },
+          { name: "빈 본문", text: "   " },
+          { name: 3, text: "숫자 이름" },
+        ],
+      },
+    });
+    expect(parsed.fanOut.templates).toEqual([{ name: "테스트", text: "npm test를 돌리고 실패를 고쳐" }]);
+  });
+
+  it("patch는 목록을 통째로 바꾼다", () => {
+    const next = mergeSettingsPatch(DEFAULT_SETTINGS, { fanOut: { templates: [{ name: "리뷰", text: "변경을 리뷰해" }] } });
+    expect(next.fanOut.templates).toEqual([{ name: "리뷰", text: "변경을 리뷰해" }]);
+    expect(mergeSettingsPatch(next, { fanOut: { templates: [] } }).fanOut.templates).toEqual([]);
+  });
+});

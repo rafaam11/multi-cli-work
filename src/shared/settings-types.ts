@@ -66,6 +66,20 @@ export interface FileSettings {
   unsupportedOpensWithOs: boolean;
 }
 
+/** 팬아웃 대화상자에서 다시 불러 쓰는 프롬프트 한 벌. */
+export interface FanOutTemplate {
+  name: string;
+  text: string;
+}
+
+export interface FanOutSettings {
+  templates: FanOutTemplate[];
+}
+
+export const MAX_FAN_OUT_TEMPLATES = 30;
+export const MAX_FAN_OUT_TEMPLATE_NAME_LENGTH = 40;
+export const MAX_FAN_OUT_TEMPLATE_TEXT_LENGTH = 8_000;
+
 export interface AppSettings {
   /** 지금은 선택 저장만 한다 — i18n 도입은 별도 작업. */
   language: "ko" | "en";
@@ -77,6 +91,7 @@ export interface AppSettings {
   /** 업무 프로젝트 구분(카테고리) 목록과 기본 구분. */
   projects: ProjectSettings;
   files: FileSettings;
+  fanOut: FanOutSettings;
 }
 
 export interface AppSettingsPatch {
@@ -95,6 +110,8 @@ export interface AppSettingsPatch {
   projects?: { categories?: ProjectCategorySetting[]; defaultCategory?: string };
   /** `openWith`은 전체 교체 — keybindings와 같은 이유로, 부분 병합이면 항목 삭제가 불가능하다. */
   files?: { openWith?: Record<string, FileOpenTarget>; unsupportedOpensWithOs?: boolean };
+  /** 템플릿 목록은 통째 교체 — 삭제·순서 변경을 부분 병합으로 표현할 수 없다. */
+  fanOut?: { templates?: FanOutTemplate[] };
 }
 
 export const TERMINAL_FONT_SIZE_RANGE = { min: 8, max: 32 } as const;
@@ -134,6 +151,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keybindings: {},
   projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타" },
   files: { openWith: {}, unsupportedOpensWithOs: true },
+  fanOut: { templates: [] },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -220,6 +238,23 @@ function readProjectSettings(raw: unknown, defaults: ProjectSettings): ProjectSe
   return { categories, defaultCategory };
 }
 
+/** 이름이 비었거나 겹치는 항목, 너무 긴 항목은 버린다 — 파일을 손으로 고쳐도 대화상자가 깨지지 않게. */
+function readFanOutTemplates(raw: unknown): FanOutTemplate[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const templates: FanOutTemplate[] = [];
+  for (const item of raw) {
+    if (templates.length >= MAX_FAN_OUT_TEMPLATES) break;
+    if (!isRecord(item) || typeof item.name !== "string" || typeof item.text !== "string") continue;
+    const name = item.name.trim();
+    if (name.length === 0 || name.length > MAX_FAN_OUT_TEMPLATE_NAME_LENGTH || seen.has(name)) continue;
+    if (item.text.trim().length === 0 || item.text.length > MAX_FAN_OUT_TEMPLATE_TEXT_LENGTH) continue;
+    seen.add(name);
+    templates.push({ name, text: item.text });
+  }
+  return templates;
+}
+
 export function parseSettings(value: unknown): AppSettings {
   const raw = isRecord(value) ? value : {};
   const general = isRecord(raw.general) ? raw.general : {};
@@ -239,6 +274,7 @@ export function parseSettings(value: unknown): AppSettings {
   }
 
   const files = isRecord(raw.files) ? raw.files : {};
+  const fanOut = isRecord(raw.fanOut) ? raw.fanOut : {};
   const openWith: Record<string, FileOpenTarget> = {};
   if (isRecord(files.openWith)) {
     for (const [extension, target] of Object.entries(files.openWith)) {
@@ -312,6 +348,7 @@ export function parseSettings(value: unknown): AppSettings {
       openWith,
       unsupportedOpensWithOs: readBoolean(files.unsupportedOpensWithOs, defaults.files.unsupportedOpensWithOs),
     },
+    fanOut: { templates: readFanOutTemplates(fanOut.templates) },
   };
 }
 
@@ -342,5 +379,6 @@ export function mergeSettingsPatch(current: AppSettings, patch: AppSettingsPatch
       openWith: patch.files?.openWith ?? current.files.openWith,
       unsupportedOpensWithOs: patch.files?.unsupportedOpensWithOs ?? current.files.unsupportedOpensWithOs,
     },
+    fanOut: { templates: patch.fanOut?.templates ?? current.fanOut.templates },
   };
 }

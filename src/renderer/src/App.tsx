@@ -3626,6 +3626,13 @@ export function App() {
               ? (worktrees.find((worktree) => worktree.id === session.worktreeId)?.branch ?? "worktree")
               : "루트",
           }))}
+          templates={appSettings.fanOut.templates}
+          onSaveTemplates={(templates) =>
+            void window.multiCliWork.settings
+              .update({ fanOut: { templates } })
+              .then(setAppSettings)
+              .catch((error) => setActionError(errorMessage(error)))
+          }
           onSend={(inputs) => void sendFanOut(inputs)}
           onClose={() => setFanOutVisible(false)}
         />

@@ -4017,6 +4017,27 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-ui-size);
 }
 
+/* Saved prompts sit above the text box: pick one, or save what is typed under a name. */
+.fan-out-templates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.fan-out-templates select,
+.fan-out-templates input {
+  min-width: 0;
+  flex: 1 1 140px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: var(--type-secondary);
+}
+
 .fan-out-dialog {
   width: min(460px, calc(100vw - 48px));
 }
