@@ -120,6 +120,7 @@ interface TerminalCoordinatorGateway {
   remove(sessionId: string): Promise<void>;
   removeProjectSessions(projectId: string): Promise<void>;
   rename(sessionId: string, name: string | null): Promise<unknown>;
+  logText(sessionId: string): Promise<string>;
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
   setVisibleSessions(sessionIds: readonly string[]): Promise<unknown>;
   setSlotViews(input: SlotViewsInput): Promise<unknown>;
@@ -276,6 +277,8 @@ interface MainIpcDependencies {
   readRegistry(): Promise<ProjectRegistrySnapshot>;
   restoreRegistryBackup(): Promise<void>;
   chooseDirectory(defaultPath?: string): Promise<string | null>;
+  /** Asks where to save and writes the text there. Null when the user cancels. */
+  saveTextFile(defaultName: string, text: string): Promise<string | null>;
   getAvailability(): Promise<ProviderAvailability>;
   listAgents(): Promise<AgentsSnapshot>;
   editAgents(): Promise<void>;
@@ -522,6 +525,17 @@ function numberInRange(value: unknown, min: number, max: number, label: string):
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${label} must be a number`);
   if (value < min || value > max) throw new Error(`${label} must be between ${min} and ${max}`);
   return value;
+}
+
+/** A session label as a file name: characters Windows forbids become "-", and it stays short. */
+export function exportFileStem(label: string): string {
+  const stem = label.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 60);
+  return stem.replace(/^[.\s-]+|[.\s-]+$/g, "") || "session";
+}
+
+function exportTimestamp(now: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 }
 
 function validateSettingsPatch(value: unknown): AppSettingsPatch {
@@ -1276,6 +1290,12 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
       throw new Error("진행 중인 PR 리뷰 세션은 '리뷰 완료' 흐름에서 정리하세요.");
     }
     return dependencies.coordinator.remove(id);
+  });
+  ipc.handle("terminals:export-log", async (_event, sessionId: unknown, fileLabel: unknown) => {
+    const id = nonEmptyString(sessionId, "Session id");
+    const label = typeof fileLabel === "string" && fileLabel.trim() ? fileLabel.trim() : id;
+    const text = await dependencies.coordinator.logText(id);
+    return dependencies.saveTextFile(`${exportFileStem(label)}-${exportTimestamp(new Date())}.txt`, text);
   });
   ipc.handle("terminals:rename", async (_event, sessionId: unknown, name: unknown) => {
     if (name !== null && typeof name !== "string") throw new Error("Session name must be a string or null");

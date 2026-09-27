@@ -56,6 +56,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
       calls.push("removeProjectSessions");
     }),
     rename: vi.fn(async (sessionId: string, name: string | null) => ({ id: sessionId, name })),
+    logText: vi.fn(async (sessionId: string) => `log of ${sessionId}`),
     select: vi.fn(),
     setVisibleSessions: vi.fn(async (sessionIds: readonly string[]) => ({ visibleSessionIds: sessionIds })),
     setSlotViews: vi.fn(async (input: SlotViewsInput) => input),
@@ -204,6 +205,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     quit: vi.fn(async () => undefined),
   };
   const chooseDirectory = vi.fn(async (_defaultPath?: string): Promise<string | null> => "C:\\Work");
+  const saveTextFile = vi.fn(async (_defaultName: string, _text: string): Promise<string | null> => "C:\\Downloads\\out.txt");
   const workspaceSnapshot = {
     registry: {
       schemaVersion: 1 as const,
@@ -260,6 +262,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     readRegistry,
     restoreRegistryBackup,
     chooseDirectory,
+    saveTextFile,
     getAvailability: vi.fn(async () => ({ vscode: true })),
     listAgents: vi.fn(async () => ({ agents: [] })),
     editAgents: vi.fn(async () => undefined),
@@ -296,6 +299,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     clipboard,
     windowControls,
     chooseDirectory,
+    saveTextFile,
     calls,
     onSessionSelected: options.onSessionSelected,
   };
@@ -798,6 +802,16 @@ describe("main IPC boundary", () => {
     expect(() => handlers.get("settings:update")!({}, { notifications: { snoozedUntil: "soon" } })).toThrow(
       /snoozedUntil/,
     );
+  });
+
+  it("exports a session's scrollback through a save dialog under a file-safe name", async () => {
+    const { handlers, coordinator, saveTextFile } = setup();
+
+    await expect(handlers.get("terminals:export-log")!({}, "session-1", "Claude: 리뷰/수정?")).resolves.toBe(
+      "C:\\Downloads\\out.txt",
+    );
+    expect(coordinator.logText).toHaveBeenCalledWith("session-1");
+    expect(saveTextFile).toHaveBeenCalledWith(expect.stringMatching(/^Claude- 리뷰-수정-\d{8}-\d{4}\.txt$/), "log of session-1");
   });
 
   it("saves the 파일 tab's settings instead of rejecting them as unknown fields", async () => {

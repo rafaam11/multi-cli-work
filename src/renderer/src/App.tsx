@@ -3542,6 +3542,12 @@ export function App() {
           onRefresh={() => void refreshSession(sessionMenu.session.id)}
           onRename={() => setRenameTarget({ sessionId: sessionMenu.session.id, surface: sessionMenu.surface })}
           onResetName={() => void renameSession(sessionMenu.session.id, null)}
+          onExportLog={() => {
+            const target = sessionMenu;
+            void window.multiCliWork.terminals
+              .exportLog(target.session.id, target.label)
+              .catch((error) => setActionError(errorMessage(error)));
+          }}
           onRemove={() => void removeSessionById(sessionMenu.session)}
           onClose={() => setSessionMenu(null)}
         />

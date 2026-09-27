@@ -10,6 +10,7 @@ import {
   utilityProcess,
 } from "electron";
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AgentDefinition } from "../shared/agent-types";
@@ -673,6 +674,17 @@ export async function createDesktopRuntime(
       };
       const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
       return result.canceled ? null : result.filePaths[0] ?? null;
+    },
+    async saveTextFile(defaultName: string, text: string) {
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const options: Electron.SaveDialogOptions = {
+        defaultPath: path.join(app.getPath("downloads"), defaultName),
+        filters: [{ name: "텍스트", extensions: ["txt"] }],
+      };
+      const result = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+      await fs.writeFile(result.filePath, text, "utf8");
+      return result.filePath;
     },
     async getAvailability() {
       return availability(await getExecutables());

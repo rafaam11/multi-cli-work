@@ -38,6 +38,7 @@ import {
   sweepStaleStateTemps,
   updateAppState,
 } from "../state/app-state";
+import { stripTerminalControls } from "../../shared/terminal-text";
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const LOG_TRIM_SLACK_BYTES = 256 * 1024;
@@ -993,6 +994,12 @@ export class TerminalCoordinator {
       }
     }
     this.stopPollingIfIdle();
+  }
+
+  /** The session's stored scrollback as plain text, for export: escapes stripped, lines kept. */
+  async logText(sessionId: string): Promise<string> {
+    if (!this.views.has(sessionId)) throw new Error(`Unknown terminal session: ${sessionId}`);
+    return stripTerminalControls(await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES));
   }
 
   async rename(sessionId: string, name: string | null): Promise<TerminalSessionView> {

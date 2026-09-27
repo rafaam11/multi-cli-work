@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Download, Eye, EyeOff, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 import { SHELF_TEXT } from "./shelves";
 
@@ -17,6 +17,8 @@ export interface SessionContextMenuProps {
   onRefresh(): void;
   onRename(): void;
   onResetName(): void;
+  /** Saves the scrollback as plain text. Optional so surfaces without it simply omit the item. */
+  onExportLog?(): void;
   onRemove(): void;
   onClose(): void;
 }
@@ -31,6 +33,7 @@ export function SessionContextMenu({
   onRefresh,
   onRename,
   onResetName,
+  onExportLog,
   onRemove,
   onClose,
 }: SessionContextMenuProps) {
@@ -76,6 +79,12 @@ export function SessionContextMenu({
         <RotateCcw size={15} />
         <span>제공자 제목 사용</span>
       </button>
+      {onExportLog ? (
+        <button type="button" role="menuitem" onClick={run(onExportLog)}>
+          <Download size={15} />
+          <span>스크롤백 저장…</span>
+        </button>
+      ) : null}
       <div className="context-menu-separator" role="separator" />
       <button
         type="button"

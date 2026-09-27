@@ -541,6 +541,7 @@ function createApi(options?: {
         return resumedSession;
       }),
       remove: vi.fn().mockResolvedValue(undefined),
+      exportLog: vi.fn().mockResolvedValue("C:/Users/me/Downloads/session.txt"),
       rename: vi.fn().mockImplementation(async (sessionId: string, name: string | null) => ({
         ...[...sessions, created, toolSession].find((session) => session.id === sessionId)!,
         name,
@@ -1243,6 +1244,18 @@ describe("folder workspace", () => {
     await waitFor(() => expect(harness.api.terminals.remove).toHaveBeenCalledWith(claudeSession.id));
     expect(harness.api.terminals.select).toHaveBeenLastCalledWith(atlas.id, null);
     expect(screen.getByText("Atlas에서 시작")).toBeInTheDocument();
+  });
+
+  it("saves a session's scrollback from its context menu", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: /^PowerShell 세션 열기/ });
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "스크롤백 저장…" }));
+
+    await waitFor(() => expect(harness.api.terminals.exportLog).toHaveBeenCalledWith(powershellSession.id, "PowerShell"));
   });
 
   it("keeps the terminal grid in a dedicated flexible workspace body", async () => {
