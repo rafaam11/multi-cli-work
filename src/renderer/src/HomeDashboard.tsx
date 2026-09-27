@@ -73,6 +73,8 @@ interface HomeDashboardProps {
    * 렌더는 그냥 칩 없는 카드를 그린다.
    */
   tagsByWorkProject?: Record<string, readonly string[]>;
+  /** 이 폴더에서 아무것도 시작할 수 없는 이유(사라진 폴더 등). 없으면 null — 빈 슬롯 메뉴와 같은 판정이다. */
+  disabledReasonFor?(projectId: string): string | null;
   onSelectSession(session: TerminalSessionView): void;
   onSelectWorkProject(workProjectId: string): void;
   onStartSession(project: SharedProject, kind: TerminalKind): void;
@@ -89,6 +91,7 @@ export function HomeDashboard({
   pendingAction,
   categories,
   tagsByWorkProject = {},
+  disabledReasonFor = () => null,
   onSelectSession,
   onSelectWorkProject,
   onStartSession,
@@ -246,8 +249,8 @@ export function HomeDashboard({
                       <button
                         key={agent.id}
                         type="button"
-                        disabled={!agent.available || pendingAction}
-                        title={newSessionLabel(agent)}
+                        disabled={!agent.available || pendingAction || disabledReasonFor(project.id) !== null}
+                        title={disabledReasonFor(project.id) ?? newSessionLabel(agent)}
                         aria-label={`${projectName(project)}에서 ${agent.label} 시작`}
                         onClick={() => onStartSession(project, agent.id)}
                       >

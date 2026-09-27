@@ -219,6 +219,23 @@ describe("HomeDashboard", () => {
     expect(onStartSession).toHaveBeenCalledWith(dashboard, "powershell");
   });
 
+  it("does not offer to start anything in a folder that is gone, and says why", () => {
+    installUpdatesApi();
+    const onStartSession = vi.fn();
+    render(
+      <HomeDashboard
+        {...baseProps()}
+        sessions={[]}
+        onStartSession={onStartSession}
+        disabledReasonFor={(projectId) => (projectId === dashboard.id ? "폴더를 찾을 수 없습니다" : null)}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Dashboard에서 PowerShell 시작" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", "폴더를 찾을 수 없습니다");
+  });
+
   it("disables CLI update buttons for a provider that is not installed", () => {
     installUpdatesApi();
     render(<HomeDashboard {...baseProps()} />);

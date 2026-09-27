@@ -3362,6 +3362,7 @@ export function App() {
               agents={agents}
               activityLog={activityLog}
               pendingAction={pendingAction}
+              disabledReasonFor={newSessionDisabledReason}
               onSelectSession={selectSession}
               onSelectWorkProject={selectWorkProject}
               onStartSession={(project, kind) => void startSession(project, kind)}
