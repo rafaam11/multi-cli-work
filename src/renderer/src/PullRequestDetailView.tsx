@@ -37,6 +37,7 @@ import {
   DIFF_SIDEBAR_STORAGE_KEY,
   labelStyle,
 } from "./pull-request-ui";
+import { useConfirmDialog } from "./confirm-dialog";
 
 type Tab = "overview" | "conversation" | "files" | "checks";
 interface Props {
@@ -248,6 +249,7 @@ export function PullRequestDetailView({
   const [posting, setPosting] = useState<Set<string>>(new Set());
   const [activeReview, setActiveReview] =
     useState<ActivePullRequestReview | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [reviewPrompt, setReviewPrompt] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<PullRequestReviewAnnotation[]>(
     [],
@@ -445,15 +447,18 @@ export function PullRequestDetailView({
         result.state === "review-unverified" ||
         result.state === "verification-unavailable"
       ) {
-        if (window.confirm(`${result.message}\n그래도 정리하시겠습니까?`))
+        if (await confirm({ title: "그래도 정리할까요?", message: result.message, confirmLabel: "정리" }))
           await finish(true, discardChanges);
         return;
       }
       if (result.state === "dirty") {
         if (
-          window.confirm(
-            `${result.message}\n변경을 버리고 강제 제거하시겠습니까?`,
-          )
+          await confirm({
+            title: "변경을 버리고 강제 제거할까요?",
+            message: result.message,
+            confirmLabel: "강제 제거",
+            danger: true,
+          })
         )
           await finish(true, true);
         return;
@@ -770,6 +775,7 @@ export function PullRequestDetailView({
   const deletions = detail.files.reduce((sum, file) => sum + file.deletions, 0);
   return (
     <section className="pr-detail" aria-label={`PR #${prNumber} 상세`}>
+      {confirmDialog}
       <header className="pr-detail-header">
         <div className="pr-heading">
           <span

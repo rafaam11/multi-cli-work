@@ -95,6 +95,7 @@ import {
 } from "./slot-view";
 import { isTypingTarget, normalizeKeyEvent, resolveKeymap } from "./keymap";
 import { errorMessage } from "./ipc-error";
+import { useConfirmDialog } from "./confirm-dialog";
 
 type ActiveView = "home" | "detail" | "work-project" | "terminal";
 
@@ -308,6 +309,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [pendingAction, setPendingAction] = useState(false);
   const [refreshRequests, setRefreshRequests] = useState<Record<string, number>>({});
   const [refreshingSessionIds, setRefreshingSessionIds] = useState<Set<string>>(new Set());
@@ -2647,11 +2649,11 @@ export function App() {
     try {
       const result = await window.multiCliWork.github.finishReview(review.id, { allowUnverifiedReview, discardChanges });
       if (result.state === "review-unverified" || result.state === "verification-unavailable") {
-        if (window.confirm(`${result.message}\n그래도 정리하시겠습니까?`)) await finishActiveReview(review, true, discardChanges);
+        if (await confirm({ title: "그래도 정리할까요?", message: result.message, confirmLabel: "정리" })) await finishActiveReview(review, true, discardChanges);
         return;
       }
       if (result.state === "dirty") {
-        if (window.confirm(`${result.message}\n변경을 버리고 강제 제거하시겠습니까?`)) await finishActiveReview(review, true, true);
+        if (await confirm({ title: "변경을 버리고 강제 제거할까요?", message: result.message, confirmLabel: "강제 제거", danger: true })) await finishActiveReview(review, true, true);
         return;
       }
       await refreshReviewWorkspace();
@@ -3291,9 +3293,15 @@ export function App() {
               onTagsChanged={setProjectTags}
               onMemberFolderAdded={handleMemberFolderAdded}
               onRemoveWorkProject={() => {
-                if (window.confirm(`"${selectedWorkProject.name}" 프로젝트를 삭제할까요? 폴더와 세션은 남습니다.`)) {
-                  void removeWorkProject(selectedWorkProject.id);
-                }
+                const target = selectedWorkProject;
+                void confirm({
+                  title: `"${target.name}" 프로젝트를 삭제할까요?`,
+                  message: "폴더와 세션은 남습니다.",
+                  confirmLabel: "삭제",
+                  danger: true,
+                }).then((confirmed) => {
+                  if (confirmed) void removeWorkProject(target.id);
+                });
               }}
               onOpenNotion={(url) => void window.multiCliWork.shell.openExternal(url).catch((error) => setActionError(errorMessage(error)))}
               onRevealProject={(projectId) => void runProjectAction(() => window.multiCliWork.projects.reveal(projectId))}
@@ -3678,6 +3686,8 @@ export function App() {
           </div>
         </div>
       ) : null}
+
+      {confirmDialog}
 
       {removal ? (
         <div className="modal-backdrop" role="presentation">

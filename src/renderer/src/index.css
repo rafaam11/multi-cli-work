@@ -4167,6 +4167,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font: var(--type-secondary);
 }
 
+/* Main's reason can span lines (a git refusal, a verification report) — keep them as written. */
+.confirm-dialog-message {
+  white-space: pre-wrap;
+}
+
 .confirm-dialog-actions {
   display: flex;
   justify-content: flex-end;
