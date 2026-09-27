@@ -583,7 +583,11 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
     if (terminal.cursorBlink !== undefined) patch.terminal.cursorBlink = booleanValue(terminal.cursorBlink, "Settings cursorBlink");
   }
   if (raw.notifications !== undefined) {
-    const notifications = exactObject(raw.notifications, ["desktop", "statuses"], "Settings notifications");
+    const notifications = exactObject(
+      raw.notifications,
+      ["desktop", "statuses", "quietHours", "snoozedUntil"],
+      "Settings notifications",
+    );
     patch.notifications = {};
     if (notifications.desktop !== undefined) {
       patch.notifications.desktop = booleanValue(notifications.desktop, "Settings notifications.desktop");
@@ -596,6 +600,29 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
           patch.notifications.statuses[status] = booleanValue(statuses[status], `Settings notifications.${status}`);
         }
       }
+    }
+    if (notifications.quietHours !== undefined) {
+      const quietHours = exactObject(notifications.quietHours, ["enabled", "start", "end"], "Settings quietHours");
+      const clock = (value: unknown, label: string) => {
+        if (typeof value !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+          throw new Error(`Settings quietHours.${label} must be HH:MM`);
+        }
+        return value;
+      };
+      patch.notifications.quietHours = {
+        ...(quietHours.enabled !== undefined
+          ? { enabled: booleanValue(quietHours.enabled, "Settings quietHours.enabled") }
+          : {}),
+        ...(quietHours.start !== undefined ? { start: clock(quietHours.start, "start") } : {}),
+        ...(quietHours.end !== undefined ? { end: clock(quietHours.end, "end") } : {}),
+      };
+    }
+    if (notifications.snoozedUntil !== undefined) {
+      const until = notifications.snoozedUntil;
+      if (until !== null && (typeof until !== "string" || !Number.isFinite(Date.parse(until)))) {
+        throw new Error("Settings snoozedUntil must be an ISO timestamp or null");
+      }
+      patch.notifications.snoozedUntil = until;
     }
   }
   if (raw.keybindings !== undefined) {

@@ -4252,6 +4252,27 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font: var(--type-panel-title);
 }
 
+/* A sub-section inside a tab (알림 › 방해 금지): a quieter step down from the tab title. */
+.settings-body h3 {
+  margin: 18px 0 4px;
+  color: var(--text);
+  font: var(--type-secondary-semibold);
+}
+
+.settings-row input[type="time"] {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--text);
+  color-scheme: dark;
+  font: var(--type-secondary);
+}
+
+.settings-row input[type="time"]:disabled {
+  opacity: 0.5;
+}
+
 .settings-hint {
   margin: 2px 0 10px;
   color: var(--muted);

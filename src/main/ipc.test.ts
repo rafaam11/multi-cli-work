@@ -782,6 +782,24 @@ describe("main IPC boundary", () => {
     expect(settingsGateway.update).not.toHaveBeenCalled();
   });
 
+  it("accepts quiet hours and a snooze, and rejects malformed ones", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("settings:update")!({}, {
+      notifications: { quietHours: { enabled: true, start: "22:30", end: "07:00" }, snoozedUntil: null },
+    });
+    expect(settingsGateway.update).toHaveBeenCalledWith({
+      notifications: { quietHours: { enabled: true, start: "22:30", end: "07:00" }, snoozedUntil: null },
+    });
+
+    expect(() =>
+      handlers.get("settings:update")!({}, { notifications: { quietHours: { start: "7:00" } } }),
+    ).toThrow(/quietHours/);
+    expect(() => handlers.get("settings:update")!({}, { notifications: { snoozedUntil: "soon" } })).toThrow(
+      /snoozedUntil/,
+    );
+  });
+
   it("rejects invalid projects patches", () => {
     const { handlers, settingsGateway } = setup();
 

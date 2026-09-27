@@ -28,10 +28,20 @@ export interface TerminalSettings {
   cursorBlink: boolean;
 }
 
+/** 매일 반복되는 방해 금지 시간대. 시각은 로컬 "HH:MM"이고, start > end면 자정을 넘는다. */
+export interface QuietHours {
+  enabled: boolean;
+  start: string;
+  end: string;
+}
+
 export interface NotificationSettings {
   /** 마스터 토글 — 꺼지면 상태별 토글과 무관하게 데스크톱 알림이 나가지 않는다. */
   desktop: boolean;
   statuses: Record<NotifiableStatus, boolean>;
+  quietHours: QuietHours;
+  /** 트레이·설정의 "1시간 끄기"가 정한 해제 시각(ISO). 지나면 저절로 풀린다. */
+  snoozedUntil: string | null;
 }
 
 export interface ProjectCategorySetting {
@@ -73,7 +83,12 @@ export interface AppSettingsPatch {
   language?: AppSettings["language"];
   general?: Partial<GeneralSettings>;
   terminal?: Partial<TerminalSettings>;
-  notifications?: { desktop?: boolean; statuses?: Partial<Record<NotifiableStatus, boolean>> };
+  notifications?: {
+    desktop?: boolean;
+    statuses?: Partial<Record<NotifiableStatus, boolean>>;
+    quietHours?: Partial<QuietHours>;
+    snoozedUntil?: string | null;
+  };
   /** 전체 교체 — 리매핑 UI는 항상 완전한 오버라이드 맵을 보낸다. 부분 병합이면 해제가 불가능하다. */
   keybindings?: Record<string, string | null>;
   /** categories는 통째 교체 — 삭제·순서 변경은 부분 병합으로 표현할 수 없다. */
@@ -113,6 +128,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifications: {
     desktop: true,
     statuses: { "awaiting-input": true, "awaiting-approval": true, exited: false, error: false },
+    quietHours: { enabled: false, start: "22:00", end: "08:00" },
+    snoozedUntil: null,
   },
   keybindings: {},
   projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타" },
@@ -129,6 +146,32 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 
 function readText(value: unknown, fallback: string): string {
   return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function readClock(value: unknown, fallback: string): string {
+  return typeof value === "string" && CLOCK_PATTERN.test(value) ? value : fallback;
+}
+
+function minutesOf(clock: string): number {
+  const [hours, minutes] = clock.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+/**
+ * 데스크톱 알림을 지금 삼킬지. 일시 중지가 남아 있거나 방해 금지 시간대 안이면 true — 배지와
+ * 트레이 표시는 이 판정과 무관하게 계속 선다. 시작과 끝이 같은 시간대는 비어 있는 것으로 본다.
+ */
+export function notificationsMuted(notifications: NotificationSettings, now: Date): boolean {
+  if (notifications.snoozedUntil !== null && Date.parse(notifications.snoozedUntil) > now.getTime()) return true;
+  const { enabled, start, end } = notifications.quietHours;
+  if (!enabled) return false;
+  const from = minutesOf(start);
+  const to = minutesOf(end);
+  if (from === to) return false;
+  const current = now.getHours() * 60 + now.getMinutes();
+  return from < to ? current >= from && current < to : current >= from || current < to;
 }
 
 function readNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -183,6 +226,7 @@ export function parseSettings(value: unknown): AppSettings {
   const terminal = isRecord(raw.terminal) ? raw.terminal : {};
   const notifications = isRecord(raw.notifications) ? raw.notifications : {};
   const statuses = isRecord(notifications.statuses) ? notifications.statuses : {};
+  const quietHours = isRecord(notifications.quietHours) ? notifications.quietHours : {};
 
   const keybindings: Record<string, string | null> = {};
   if (isRecord(raw.keybindings)) {
@@ -252,6 +296,15 @@ export function parseSettings(value: unknown): AppSettings {
         exited: readBoolean(statuses.exited, defaults.notifications.statuses.exited),
         error: readBoolean(statuses.error, defaults.notifications.statuses.error),
       },
+      quietHours: {
+        enabled: readBoolean(quietHours.enabled, defaults.notifications.quietHours.enabled),
+        start: readClock(quietHours.start, defaults.notifications.quietHours.start),
+        end: readClock(quietHours.end, defaults.notifications.quietHours.end),
+      },
+      snoozedUntil:
+        typeof notifications.snoozedUntil === "string" && Number.isFinite(Date.parse(notifications.snoozedUntil))
+          ? notifications.snoozedUntil
+          : null,
     },
     keybindings,
     projects: readProjectSettings(raw.projects, defaults.projects),
@@ -277,6 +330,11 @@ export function mergeSettingsPatch(current: AppSettings, patch: AppSettingsPatch
     notifications: {
       desktop: patch.notifications?.desktop ?? current.notifications.desktop,
       statuses: { ...current.notifications.statuses, ...patch.notifications?.statuses },
+      quietHours: { ...current.notifications.quietHours, ...patch.notifications?.quietHours },
+      snoozedUntil:
+        patch.notifications?.snoozedUntil !== undefined
+          ? patch.notifications.snoozedUntil
+          : current.notifications.snoozedUntil,
     },
     keybindings: patch.keybindings ?? current.keybindings,
     projects: { ...current.projects, ...patch.projects },

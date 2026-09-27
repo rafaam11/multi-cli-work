@@ -87,9 +87,10 @@ describe("notification settings gate", () => {
   }
 
   const allOn = {
+    ...DEFAULT_SETTINGS.notifications,
     desktop: true,
     statuses: { "awaiting-input": true, "awaiting-approval": true, exited: true, error: true },
-  } as const;
+  };
 
   it("마스터 토글이 꺼지면 알림은 없지만 배지 상태는 그대로 발행된다", async () => {
     const { controller, notify, publish } = buildController({
@@ -103,6 +104,7 @@ describe("notification settings gate", () => {
   it("상태별 토글이 꺼진 상태만 조용하다", async () => {
     const { controller, notify } = buildController({
       notificationSettings: () => ({
+        ...DEFAULT_SETTINGS.notifications,
         desktop: true,
         statuses: { "awaiting-input": false, "awaiting-approval": true, exited: false, error: false },
       }),
@@ -111,6 +113,36 @@ describe("notification settings gate", () => {
     expect(notify).not.toHaveBeenCalled();
     await controller.handleStatus("session-1", "awaiting-approval");
     expect(notify).toHaveBeenCalledWith("session-1", "awaiting-approval", expect.any(Function));
+  });
+
+  it("방해 금지 시간대와 일시 중지 동안은 알리지 않되, 배지는 그대로 세운다", async () => {
+    const quiet = buildController({
+      notificationSettings: () => ({
+        ...DEFAULT_SETTINGS.notifications,
+        quietHours: { enabled: true, start: "22:00", end: "08:00" },
+      }),
+      now: () => new Date(2026, 8, 28, 23, 0),
+    });
+    await quiet.controller.handleStatus("session-1", "awaiting-input");
+    expect(quiet.notify).not.toHaveBeenCalled();
+    expect(quiet.controller.snapshot().unread).toEqual({ "session-1": "input" });
+
+    const snoozed = buildController({
+      notificationSettings: () => ({ ...DEFAULT_SETTINGS.notifications, snoozedUntil: "2026-09-28T06:00:00.000Z" }),
+      now: () => new Date("2026-09-28T05:00:00.000Z"),
+    });
+    await snoozed.controller.handleStatus("session-1", "awaiting-approval");
+    expect(snoozed.notify).not.toHaveBeenCalled();
+
+    const daytime = buildController({
+      notificationSettings: () => ({
+        ...DEFAULT_SETTINGS.notifications,
+        quietHours: { enabled: true, start: "22:00", end: "08:00" },
+      }),
+      now: () => new Date(2026, 8, 28, 14, 0),
+    });
+    await daytime.controller.handleStatus("session-1", "awaiting-input");
+    expect(daytime.notify).toHaveBeenCalled();
   });
 
   it("exited·error는 기본값에서 알리지 않는다 — 옵션이 없어도 같다", async () => {

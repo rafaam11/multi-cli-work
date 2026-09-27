@@ -15,7 +15,7 @@ import path from "node:path";
 import type { AgentDefinition } from "../shared/agent-types";
 import type { AgentsSnapshot, ProviderAvailability } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
-import type { NotifiableStatus } from "../shared/settings-types";
+import type { AppSettings, AppSettingsPatch, NotifiableStatus } from "../shared/settings-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
 import { createRetryableDisposer } from "./runtime-disposal";
@@ -123,6 +123,8 @@ function availability(executables: ProviderExecutables): ProviderAvailability {
 export interface DesktopRuntime {
   coordinator: TerminalCoordinator;
   settings: SettingsService;
+  /** Saves a settings patch and tells every window — what the settings dialog does, for the tray. */
+  updateSettings(patch: AppSettingsPatch): Promise<AppSettings>;
   markVisibleSessionsSeen(): Promise<void>;
   writeRecoveryMarker(): void;
   dispose(): Promise<void>;
@@ -473,6 +475,12 @@ export async function createDesktopRuntime(
     notificationSettings: () => settingsService.current().notifications,
   });
 
+  const updateSettings = async (patch: AppSettingsPatch): Promise<AppSettings> => {
+    const next = await settingsService.update(patch);
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("settings:changed", next);
+    return next;
+  };
+
   // 워크스페이스 동기화는 업무 프로젝트·태그 파일을 렌더러 모르게 바꾼다 — 바꾼 뒤엔 반드시 알린다.
   const announceWorkspaceChange = () => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("workspace:changed");
@@ -527,13 +535,7 @@ export async function createDesktopRuntime(
     notion: notionService,
     settings: {
       get: () => settingsService.current(),
-      update: async (patch) => {
-        const next = await settingsService.update(patch);
-        for (const window of BrowserWindow.getAllWindows()) {
-          window.webContents.send("settings:changed", next);
-        }
-        return next;
-      },
+      update: (patch) => updateSettings(patch),
     },
     worktrees: {
       list: () => worktrees.list(),
@@ -723,6 +725,7 @@ export async function createDesktopRuntime(
   return {
     coordinator,
     settings: settingsService,
+    updateSettings,
     markVisibleSessionsSeen: () => attention.markVisibleSessionsSeen(),
     writeRecoveryMarker() {
       const activeIds = coordinator.list()

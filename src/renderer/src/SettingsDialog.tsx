@@ -718,6 +718,63 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
                   }))}
                 </div>
               ))}
+              <h3>방해 금지</h3>
+              <p className="settings-hint">이 동안에는 데스크톱 알림만 멈춥니다. 트레이의 알림 메뉴로도 끄고 켤 수 있습니다.</p>
+              {checkboxRow("방해 금지 시간", "settings-quiet-hours", settings.notifications.quietHours.enabled, (next) => ({
+                notifications: { quietHours: { enabled: next } },
+              }))}
+              <div className="settings-row">
+                <span>매일</span>
+                <span className="settings-key-controls">
+                  <input
+                    type="time"
+                    aria-label="방해 금지 시작"
+                    value={settings.notifications.quietHours.start}
+                    disabled={!settings.notifications.quietHours.enabled}
+                    onChange={(event) => {
+                      if (event.target.value) update({ notifications: { quietHours: { start: event.target.value } } });
+                    }}
+                  />
+                  <span>부터</span>
+                  <input
+                    type="time"
+                    aria-label="방해 금지 끝"
+                    value={settings.notifications.quietHours.end}
+                    disabled={!settings.notifications.quietHours.enabled}
+                    onChange={(event) => {
+                      if (event.target.value) update({ notifications: { quietHours: { end: event.target.value } } });
+                    }}
+                  />
+                  <span>까지</span>
+                </span>
+              </div>
+              {(() => {
+                const until = settings.notifications.snoozedUntil;
+                const snoozed = until !== null && Date.parse(until) > Date.now();
+                return (
+                  <div className="settings-row">
+                    <span>
+                      {snoozed
+                        ? `${new Date(until).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}까지 알림을 끕니다`
+                        : "지금 잠깐 조용히"}
+                    </span>
+                    {snoozed ? (
+                      <button type="button" onClick={() => update({ notifications: { snoozedUntil: null } })}>
+                        다시 켜기
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          update({ notifications: { snoozedUntil: new Date(Date.now() + 60 * 60_000).toISOString() } })
+                        }
+                      >
+                        1시간 끄기
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </>
           ) : null}
           {tab === "projects" ? (

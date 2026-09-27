@@ -190,6 +190,13 @@ async function installUpdateAndQuit(): Promise<void> {
   });
 }
 
+async function snoozeNotifications(durationMs: number): Promise<void> {
+  const snoozedUntil = durationMs > 0 ? new Date(Date.now() + durationMs).toISOString() : null;
+  await runtime?.updateSettings({ notifications: { snoozedUntil } }).catch((error) =>
+    console.error("Failed to change the notification snooze", error),
+  );
+}
+
 function createTray(): Tray {
   const icon = nativeImage.createFromDataURL(trayIconDataUrl(16));
   icon.addRepresentation({ scaleFactor: 2, dataURL: trayIconDataUrl(32) });
@@ -202,6 +209,10 @@ function createTray(): Tray {
     Menu.buildFromTemplate([
       { label: "멀티 터미널 작업기 표시", click: restoreMainWindow },
       { label: "업데이트 확인", click: () => void checkForUpdates() },
+      { type: "separator" },
+      // 회의 중처럼 잠깐 조용해야 할 때. 배지·트레이 표시는 그대로고 데스크톱 알림만 멈춘다.
+      { label: "알림 1시간 끄기", click: () => void snoozeNotifications(60 * 60_000) },
+      { label: "알림 다시 켜기", click: () => void snoozeNotifications(0) },
       { type: "separator" },
       { label: "종료", click: () => void requestQuit() },
     ]),

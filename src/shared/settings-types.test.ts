@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, DEFAULT_PROJECT_CATEGORIES, mergeSettingsPatch, parseSettings } from "./settings-types";
+import {
+  DEFAULT_SETTINGS,
+  DEFAULT_PROJECT_CATEGORIES,
+  mergeSettingsPatch,
+  notificationsMuted,
+  parseSettings,
+} from "./settings-types";
 
 describe("parseSettings", () => {
   it("빈 입력을 기본값으로 채운다 — settings.json 없는 기동은 오늘의 앱과 같다", () => {
@@ -27,6 +33,8 @@ describe("parseSettings", () => {
     expect(DEFAULT_SETTINGS.notifications).toEqual({
       desktop: true,
       statuses: { "awaiting-input": true, "awaiting-approval": true, exited: false, error: false },
+      quietHours: { enabled: false, start: "22:00", end: "08:00" },
+      snoozedUntil: null,
     });
     expect(DEFAULT_SETTINGS.language).toBe("ko");
     expect(DEFAULT_SETTINGS.keybindings).toEqual({});
@@ -178,5 +186,52 @@ describe("projects 구분 설정", () => {
     const longName = "a".repeat(40);
     const parsed = parseSettings({ projects: { categories: [{ name: longName, color: 1 }] } });
     expect(parsed.projects.categories[0]!.name).toBe("a".repeat(32));
+  });
+});
+
+describe("방해 금지", () => {
+  const at = (hh: number, mm = 0) => new Date(2026, 8, 28, hh, mm);
+  const withQuiet = (start: string, end: string, enabled = true) => ({
+    ...DEFAULT_SETTINGS.notifications,
+    quietHours: { enabled, start, end },
+  });
+
+  it("자정을 넘는 시간대를 한 구간으로 읽는다", () => {
+    const night = withQuiet("22:00", "08:00");
+    expect(notificationsMuted(night, at(23, 30))).toBe(true);
+    expect(notificationsMuted(night, at(7, 59))).toBe(true);
+    expect(notificationsMuted(night, at(8, 0))).toBe(false);
+    expect(notificationsMuted(night, at(21, 59))).toBe(false);
+  });
+
+  it("같은 날 안의 시간대, 꺼진 시간대, 시작과 끝이 같은 시간대", () => {
+    const meeting = withQuiet("13:00", "14:30");
+    expect(notificationsMuted(meeting, at(13, 0))).toBe(true);
+    expect(notificationsMuted(meeting, at(14, 30))).toBe(false);
+    expect(notificationsMuted(withQuiet("13:00", "14:30", false), at(13, 30))).toBe(false);
+    expect(notificationsMuted(withQuiet("09:00", "09:00"), at(9, 0))).toBe(false);
+  });
+
+  it("일시 중지는 그 시각까지만 알림을 끈다", () => {
+    const snoozed = { ...DEFAULT_SETTINGS.notifications, snoozedUntil: at(15).toISOString() };
+    expect(notificationsMuted(snoozed, at(14, 59))).toBe(true);
+    expect(notificationsMuted(snoozed, at(15, 0))).toBe(false);
+  });
+
+  it("잘못된 시각과 일시 중지 값은 기본값으로 되돌린다", () => {
+    const parsed = parseSettings({
+      notifications: { quietHours: { enabled: true, start: "25:00", end: "7:5" }, snoozedUntil: "언젠가" },
+    });
+    expect(parsed.notifications.quietHours).toEqual({ enabled: true, start: "22:00", end: "08:00" });
+    expect(parsed.notifications.snoozedUntil).toBeNull();
+  });
+
+  it("patch는 시간대를 필드 단위로 합치고, 일시 중지는 null로 풀 수 있다", () => {
+    const snoozed = mergeSettingsPatch(DEFAULT_SETTINGS, {
+      notifications: { quietHours: { enabled: true }, snoozedUntil: "2026-09-28T06:00:00.000Z" },
+    });
+    expect(snoozed.notifications.quietHours).toEqual({ enabled: true, start: "22:00", end: "08:00" });
+    expect(snoozed.notifications.snoozedUntil).toBe("2026-09-28T06:00:00.000Z");
+    expect(mergeSettingsPatch(snoozed, { notifications: { snoozedUntil: null } }).notifications.snoozedUntil).toBeNull();
   });
 });

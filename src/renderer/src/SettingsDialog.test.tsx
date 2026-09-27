@@ -34,6 +34,47 @@ describe("SettingsDialog", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith({ general: { closeToTray: false } }));
   });
 
+  it("알림 탭에서 방해 금지 시간대를 켜고 시각을 바꾼다", async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "알림" }));
+
+    expect(screen.getByLabelText("방해 금지 시작")).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("방해 금지 시간"));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ notifications: { quietHours: { enabled: true } } }));
+
+    cleanup();
+    const quiet = {
+      ...DEFAULT_SETTINGS,
+      notifications: { ...DEFAULT_SETTINGS.notifications, quietHours: { enabled: true, start: "22:00", end: "08:00" } },
+    };
+    render(<SettingsDialog settings={quiet} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "알림" }));
+    fireEvent.change(screen.getByLabelText("방해 금지 끝"), { target: { value: "07:30" } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ notifications: { quietHours: { end: "07:30" } } }));
+  });
+
+  it("알림을 1시간 끄고, 꺼져 있으면 언제까지인지 말하며 다시 켤 수 있다", async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "알림" }));
+    fireEvent.click(screen.getByRole("button", { name: "1시간 끄기" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({ notifications: { snoozedUntil: expect.any(String) } }),
+    );
+    const until = Date.parse(update.mock.calls.at(-1)![0].notifications.snoozedUntil);
+    expect(until - Date.now()).toBeGreaterThan(59 * 60_000);
+
+    cleanup();
+    const snoozed = {
+      ...DEFAULT_SETTINGS,
+      notifications: { ...DEFAULT_SETTINGS.notifications, snoozedUntil: new Date(Date.now() + 30 * 60_000).toISOString() },
+    };
+    render(<SettingsDialog settings={snoozed} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "알림" }));
+    expect(screen.getByText(/까지 알림을 끕니다/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다시 켜기" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ notifications: { snoozedUntil: null } }));
+  });
+
   it("적용되지 않는 언어 선택은 보여 주지 않는다", () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
     expect(screen.queryByLabelText("언어")).not.toBeInTheDocument();

@@ -1,6 +1,11 @@
 import type { SessionAttention } from "../shared/api-types";
 import type { TerminalStatus } from "../shared/terminal-types";
-import { DEFAULT_SETTINGS, type NotifiableStatus, type NotificationSettings } from "../shared/settings-types";
+import {
+  DEFAULT_SETTINGS,
+  notificationsMuted,
+  type NotifiableStatus,
+  type NotificationSettings,
+} from "../shared/settings-types";
 import { createTerminalAttentionTracker, type AttentionSnapshot } from "./attention-policy";
 import { createTerminalNotificationDeduper, shouldShowTerminalStatusNotification } from "./notification-policy";
 
@@ -18,6 +23,8 @@ interface SessionAttentionControllerOptions {
   logError?(message: string, error: unknown): void;
   /** 없으면 기본값 — 설정 도입 전과 동일하게 동작한다(기존 테스트·호출부 보호). */
   notificationSettings?(): NotificationSettings;
+  /** 방해 금지 판정의 기준 시각 — 테스트가 시계를 고정하려고 둔다. */
+  now?(): Date;
 }
 
 export interface SessionAttentionController {
@@ -61,7 +68,10 @@ export function createSessionAttentionController(
       const awaiting = status === "awaiting-input" || status === "awaiting-approval";
       const notifiable = awaiting || status === "exited" || status === "error";
       const wantsNotification =
-        notifiable && notifications.desktop && notifications.statuses[status as NotifiableStatus];
+        notifiable &&
+        notifications.desktop &&
+        notifications.statuses[status as NotifiableStatus] &&
+        !notificationsMuted(notifications, options.now?.() ?? new Date());
 
       if (!awaiting) {
         // 배지·트레이는 알림 설정과 무관: 대기 상태만 attention을 세우고 나머지는 오늘처럼 지운다.
