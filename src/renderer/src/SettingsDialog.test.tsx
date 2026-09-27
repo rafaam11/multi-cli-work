@@ -28,12 +28,16 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SettingsDialog", () => {
-  it("일반 탭에서 언어·트레이·자동 재개·업데이트 확인이 부분 패치로 저장된다", async () => {
+  it("일반 탭에서 트레이·자동 재개·업데이트 확인이 부분 패치로 저장된다", async () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
-    fireEvent.change(screen.getByLabelText("언어"), { target: { value: "en" } });
-    await waitFor(() => expect(update).toHaveBeenCalledWith({ language: "en" }));
     fireEvent.click(screen.getByLabelText("창을 닫으면 트레이에 남기기"));
     await waitFor(() => expect(update).toHaveBeenCalledWith({ general: { closeToTray: false } }));
+  });
+
+  it("적용되지 않는 언어 선택은 보여 주지 않는다", () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    expect(screen.queryByLabelText("언어")).not.toBeInTheDocument();
+    expect(screen.queryByText(/다음 버전에서 적용/)).not.toBeInTheDocument();
   });
 
   it("터미널 탭의 글꼴 크기 변경이 저장되고, 범위 밖 값은 보내지 않는다", async () => {

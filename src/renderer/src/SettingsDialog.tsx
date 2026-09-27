@@ -642,18 +642,8 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
           {tab === "general" ? (
             <>
               <h2>일반</h2>
-              <div className="settings-row">
-                <label htmlFor="settings-language">언어</label>
-                <select
-                  id="settings-language"
-                  value={settings.language}
-                  onChange={(event) => update({ language: event.target.value as AppSettings["language"] })}
-                >
-                  <option value="ko">한국어</option>
-                  <option value="en">English</option>
-                </select>
-              </div>
-              <p className="settings-hint">언어 선택은 다음 버전에서 적용됩니다.</p>
+              {/* 언어 선택은 i18n이 붙을 때 돌아온다. 값(`language`)은 설정 파일에 그대로 남겨 두어
+                  다운그레이드해도 잃지 않는다 — 적용되지 않는 선택지를 보여 주지 않을 뿐이다. */}
               {checkboxRow("창을 닫으면 트레이에 남기기", "settings-close-to-tray", settings.general.closeToTray, (next) => ({
                 general: { closeToTray: next },
               }))}
