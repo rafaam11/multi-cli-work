@@ -4277,6 +4277,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .settings-list-copy {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
@@ -4288,6 +4289,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .settings-list-copy strong {
   color: var(--text);
   font: var(--type-secondary-semibold);
+}
+
+/* A long path must wrap in the copy column, never squeeze the action into a one-letter-wide stack. */
+.settings-row > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .settings-row > label {
