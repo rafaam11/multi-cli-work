@@ -14,6 +14,19 @@ function memberLine(member: WorkProjectBriefMember): string {
 }
 
 /**
+ * 맺음 문장의 목적격 조사(을/를)를 마지막 앵커의 받침 유무로 고른다. 앵커 목록의 마지막 항목이
+ * 상황(팀즈 유무·레포 유무)에 따라 바뀌므로, 조사를 고정해 두면 "노션를"처럼 틀린 문장이 나온다.
+ */
+function objectParticleFor(text: string): "을" | "를" {
+  const lastChar = text.trim().slice(-1);
+  const code = lastChar.codePointAt(0) ?? 0;
+  if (code >= 0xac00 && code <= 0xd7a3) {
+    return (code - 0xac00) % 28 !== 0 ? "을" : "를";
+  }
+  return "를";
+}
+
+/**
  * The markdown handed to a CLI session as project context. Everything the agent needs to move
  * between the tools: where the documents live, which Notion page tracks the project, which repos
  * (with local paths) belong to it, and which folders on this machine it merely refers to.
@@ -69,7 +82,7 @@ export function renderWorkProjectBrief(
   lines.push(
     "",
     anchors.length > 0
-      ? `이 세션은 위 업무 프로젝트에 소속된 작업 공간에서 실행 중이다. ${anchors.join(", ")}를 기준으로 한다.`
+      ? `이 세션은 위 업무 프로젝트에 소속된 작업 공간에서 실행 중이다. ${anchors.join(", ")}${objectParticleFor(anchors[anchors.length - 1])} 기준으로 한다.`
       : "이 세션은 위 업무 프로젝트에 소속된 작업 공간에서 실행 중이다.",
     ...(workProject.localFolders.length > 0
       ? ["참고 로컬 폴더는 읽기 참조용이며 산출물을 그곳에 쓰지 않는다."]

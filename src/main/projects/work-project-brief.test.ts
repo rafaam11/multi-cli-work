@@ -123,7 +123,8 @@ describe("renderWorkProjectBrief", () => {
       { teamsSyncRoot: path.join("C:", "Teams") },
     );
     expect(brief).toContain("## 팀즈 문서 폴더 (공식 문서: 계획서·보고서·발표자료)");
-    expect(brief).toContain("문서 작업은 팀즈 폴더, 진행 관리는 노션를 기준으로 한다.");
+    // 마지막 앵커 "노션"은 받침이 있으니 "을" — 예전엔 항상 "레포 경로를"로 끝나 드러나지 않던 조사 버그.
+    expect(brief).toContain("문서 작업은 팀즈 폴더, 진행 관리는 노션을 기준으로 한다.");
   });
 
   it("팀즈 루트가 없으면 어디에도 팀즈라는 말이 없다", () => {
@@ -140,6 +141,7 @@ describe("renderWorkProjectBrief", () => {
     const brief = renderWorkProjectBrief({ ...WORK_PROJECT, notionLinks: [] }, [
       { project: project("1", path.join("C:", "dev", "bolt")), role: "repo" },
     ]);
+    // 마지막 앵커 "레포 경로"는 받침이 없으니 "를" — 위 "노션을" 케이스와 짝을 이뤄 두 조사를 모두 고정한다.
     expect(brief).toContain("코드는 위 레포 경로를 기준으로 한다.");
     expect(brief).not.toContain("노션");
   });
