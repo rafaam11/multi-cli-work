@@ -285,6 +285,7 @@ function createApi(options?: {
   const attentionListeners = new Set<(unread: Record<string, "input" | "approval">) => void>();
   const navigationListeners = new Set<(sessionId: string) => void>();
   const windowStateListeners = new Set<(state: WindowChromeState) => void>();
+  const workspaceListeners = new Set<() => void>();
   const projects = options?.projects ?? [atlas];
   const sessions = options?.sessions ?? [powershellSession, claudeSession];
   const snapshot = {
@@ -379,6 +380,10 @@ function createApi(options?: {
       add: vi.fn().mockResolvedValue(null),
       remove: vi.fn().mockResolvedValue({ workspace: workspaceSnapshot, workProjects: workProjectRegistry }),
       sync: vi.fn().mockResolvedValue({ workspace: workspaceSnapshot, workProjects: workProjectRegistry }),
+      onChange: vi.fn((listener: () => void) => {
+        workspaceListeners.add(listener);
+        return () => workspaceListeners.delete(listener);
+      }),
     },
     notion: {
       status: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true }),
@@ -588,6 +593,9 @@ function createApi(options?: {
     },
     emitSettings(settings: AppSettings) {
       for (const listener of settingsListeners) listener(settings);
+    },
+    emitWorkspaceChanged() {
+      for (const listener of workspaceListeners) listener();
     },
     requestSession(sessionId: string) {
       for (const listener of navigationListeners) listener(sessionId);
@@ -1742,6 +1750,33 @@ describe("work project categories", () => {
       )!;
       expect(personal).toHaveClass(tagAccentClass("개인"));
       expect(personal).not.toBe(service);
+    });
+
+    it("워크스페이스가 다시 동기화되면 재시작 없이 새 업무 프로젝트와 태그를 그린다", async () => {
+      const harness = createApi({ projects: [atlas], sessions: [] });
+      window.multiCliWork = harness.api;
+      render(<App />);
+      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      expect(within(nav).queryByRole("button", { name: "가상수술계획 프로젝트 열기" })).not.toBeInTheDocument();
+
+      // main이 동기화로 새 업무 프로젝트와 태그를 써 둔 뒤 변경을 알린다.
+      vi.mocked(harness.api.workProjects.list).mockResolvedValue({
+        schemaVersion: 1,
+        updatedAt: "2026-09-28T00:00:00.000Z",
+        teamsSyncRoot: null,
+        workProjects: {
+          "wp-vsp": workProject("wp-vsp", "가상수술계획", "개인", { members: [{ projectId: atlas.id, role: "repo" }] }),
+        },
+      });
+      vi.mocked(harness.api.projectTags.list).mockResolvedValue({
+        schemaVersion: 1,
+        updatedAt: "2026-09-28T00:00:00.000Z",
+        tags: { "wp-vsp": ["용역"] },
+      });
+      act(() => harness.emitWorkspaceChanged());
+
+      expect(await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).toBeInTheDocument();
+      expect(harness.api.workspace.list).toHaveBeenCalledTimes(2);
     });
 
     it("묶음을 접어 두었다가 다시 편다", async () => {

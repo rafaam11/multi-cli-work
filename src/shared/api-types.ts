@@ -347,6 +347,11 @@ export interface MultiCliWorkApi {
     remove(rootPath: string): Promise<WorkspaceMutationResult>;
     /** 셸을 다시 훑어 업무 프로젝트의 소속 폴더를 맞춘다. 수동 항목은 건드리지 않는다. */
     sync(): Promise<WorkspaceMutationResult>;
+    /**
+     * main이 워크스페이스 동기화로 업무 프로젝트·태그를 다시 썼다는 알림. 설정 창의 버튼뿐 아니라
+     * 시작 시 백그라운드 동기화도 이걸 쏘므로, 받은 쪽은 세 목록을 다시 읽으면 된다.
+     */
+    onChange(listener: () => void): () => void;
   };
   worktrees: {
     list(): Promise<SharedWorktree[]>;

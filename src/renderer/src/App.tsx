@@ -821,6 +821,33 @@ export function App() {
     };
   }, []);
 
+  // 워크스페이스 동기화(설정 창의 루트 추가·다시 읽기, 시작 시 백그라운드 동기화)는 업무 프로젝트와
+  // 태그를 main에서 다시 쓴다. 알림이 오면 세 목록을 다시 읽어야 재시작 없이 사이드바가 따라온다.
+  useEffect(() => {
+    let disposed = false;
+    const refresh = () => {
+      void Promise.all([
+        window.multiCliWork.workProjects.list(),
+        window.multiCliWork.projectTags.list(),
+        window.multiCliWork.workspace.list(),
+      ])
+        .then(([workProjectList, projectTagList, workspaceSnapshot]) => {
+          if (disposed) return;
+          setWorkProjectRegistry(workProjectList);
+          setProjectTags(projectTagList);
+          setWorkspace(workspaceSnapshot);
+        })
+        .catch((error: unknown) => {
+          if (!disposed) setActionError(errorMessage(error));
+        });
+    };
+    const unsubscribe = window.multiCliWork.workspace.onChange(refresh);
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     const handleWindowResize = () => {
       setSidebarWidth((current) => clampSidebarWidth(current));

@@ -50,6 +50,13 @@ const api: MultiCliWorkApi = {
     add: () => ipcRenderer.invoke("workspace:add"),
     remove: (rootPath) => ipcRenderer.invoke("workspace:remove", rootPath),
     sync: () => ipcRenderer.invoke("workspace:sync"),
+    onChange(listener) {
+      const handler = () => listener();
+      ipcRenderer.on("workspace:changed", handler);
+      return () => {
+        ipcRenderer.removeListener("workspace:changed", handler);
+      };
+    },
   },
   worktrees: {
     list: () => ipcRenderer.invoke("worktrees:list"),

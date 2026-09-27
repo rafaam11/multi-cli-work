@@ -472,6 +472,11 @@ export async function createDesktopRuntime(
     notificationSettings: () => settingsService.current().notifications,
   });
 
+  // 워크스페이스 동기화는 업무 프로젝트·태그 파일을 렌더러 모르게 바꾼다 — 바꾼 뒤엔 반드시 알린다.
+  const announceWorkspaceChange = () => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("workspace:changed");
+  };
+
   registerMainIpc(ipcMain, {
     projectService,
     workProjectService,
@@ -502,6 +507,7 @@ export async function createDesktopRuntime(
           platform: process.platform,
         });
         workspaceIndex.invalidate(rootPath);
+        announceWorkspaceChange();
         return workspaceIndex.snapshot(registry);
       },
       async sync() {
@@ -512,6 +518,7 @@ export async function createDesktopRuntime(
         // 등록된 루트가 없으면 아무것도 쓰지 않는다.
         if (snapshot.registry.roots.length === 0) return snapshot;
         await workProjectService.syncFromWorkspace(snapshot, Object.values(registry.projects));
+        announceWorkspaceChange();
         return workspaceIndex.snapshot(await readWorkspaceRegistry(workspaceRegistryOptions));
       },
     },
@@ -684,6 +691,8 @@ export async function createDesktopRuntime(
     const snapshot = await workspaceSnapshot();
     const { registry } = await readProjectRegistry({ registryPath });
     await workProjectService.syncFromWorkspace(snapshot, Object.values(registry.projects));
+    // 첫 화면은 동기화 전에 그려졌을 수 있다 — 끝났으면 다시 읽게 한다.
+    announceWorkspaceChange();
   })().catch((error) => console.error("Failed to sync work projects from the workspace", error));
 
   coordinator.onEvent((event: TerminalEvent) => {
