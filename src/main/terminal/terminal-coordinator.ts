@@ -35,6 +35,7 @@ import {
   deleteSessionLog,
   readAppState,
   readSessionLog,
+  sweepStaleStateTemps,
   updateAppState,
 } from "../state/app-state";
 
@@ -221,6 +222,9 @@ export class TerminalCoordinator {
   }
 
   async initialize(): Promise<void> {
+    await sweepStaleStateTemps(this.options.statePath).catch((error) =>
+      this.reportAsyncError("State temp cleanup failed", error),
+    );
     const snapshot = await readAppState({ statePath: this.options.statePath });
     for (const session of Object.values(snapshot.state.sessions)) this.views.set(session.id, exitedView(session));
     if (this.options.statusDir) {

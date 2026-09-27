@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import type { WorkProject } from "../../shared/work-project-types";
-import { renderWorkProjectBrief, writeSessionBrief } from "./work-project-brief";
+import { pruneSessionBriefs, renderWorkProjectBrief, writeSessionBrief } from "./work-project-brief";
 
 const tempRoots: string[] = [];
 
@@ -170,5 +170,17 @@ describe("writeSessionBrief", () => {
     const briefDir = path.join(await tempDir("brief-empty"), "project-briefs");
     expect(await writeSessionBrief(briefDir, "folder-1", [null, "  "])).toBeNull();
     await expect(fs.readdir(briefDir)).rejects.toThrow();
+  });
+});
+
+describe("pruneSessionBriefs", () => {
+  it("removes briefs of folders that are no longer registered", async () => {
+    const dir = await tempDir("brief-prune");
+    for (const name of ["keep.md", "gone.md", "notes.txt"]) await fs.writeFile(path.join(dir, name), "x", "utf8");
+
+    await pruneSessionBriefs(dir, new Set(["keep"]));
+
+    expect((await fs.readdir(dir)).sort()).toEqual(["keep.md", "notes.txt"]);
+    await expect(pruneSessionBriefs(path.join(dir, "missing"), new Set())).resolves.toBeUndefined();
   });
 });

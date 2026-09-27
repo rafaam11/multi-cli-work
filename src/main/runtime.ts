@@ -64,6 +64,7 @@ import { readProjectTags, setProjectTags } from "./projects/project-tags-registr
 import { tagsOf } from "../shared/project-tags-types";
 import {
   renderWorkProjectBrief,
+  pruneSessionBriefs,
   writeSessionBrief,
   type WorkProjectBriefMember,
 } from "./projects/work-project-brief";
@@ -681,6 +682,13 @@ export async function createDesktopRuntime(
       attention.markSeen(sessionId);
     },
   });
+
+  // 등록에서 빠진 폴더의 세션 브리프는 다시 쓰일 일이 없다 — 시작할 때 한 번 치운다.
+  void readProjectRegistry({ registryPath })
+    .then(({ registry }) =>
+      pruneSessionBriefs(path.join(userData, "project-briefs"), new Set(Object.keys(registry.projects))),
+    )
+    .catch((error) => console.error("Failed to prune session briefs", error));
 
   // 시작할 때 한 번 맞춰 둔다 — 사이드바가 처음 그려질 때 이미 채널·셸 묶음이 서 있도록.
   // 루트가 없으면 파일을 아예 건드리지 않으므로, 이 기능을 안 쓰는 사용자에게는 아무 일도 없다.

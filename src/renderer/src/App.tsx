@@ -91,6 +91,7 @@ import {
   setLayout,
   splitColumnAt,
   mergeColumnAt,
+  pruneFolderViews,
   viewPageSize,
 } from "./slot-view";
 import { isTypingTarget, normalizeKeyEvent, resolveKeymap } from "./keymap";
@@ -151,9 +152,14 @@ function restoreShelves(
 function restoreFolderViews(
   saved: Readonly<Record<string, SlotViewState>> | undefined,
   paneIds: readonly string[],
+  projectIds: ReadonlySet<string>,
+  worktreeIds: ReadonlySet<string>,
 ): Record<string, SlotViewState> {
   return Object.fromEntries(
-    Object.entries(saved ?? {}).map(([key, view]) => [key, normalizeSlots(view, [], { keep: paneIds })]),
+    Object.entries(pruneFolderViews(saved ?? {}, projectIds, worktreeIds, TOOLS_VIEW_KEY)).map(([key, view]) => [
+      key,
+      normalizeSlots(view, [], { keep: paneIds }),
+    ]),
   );
 }
 
@@ -721,7 +727,12 @@ export function App() {
             .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
             .map((session) => session.id);
         const restoreViews = (key: string, sessionIds: string[]) => {
-          const restored = restoreFolderViews(appState.state.folderViews, paneIds);
+          const restored = restoreFolderViews(
+            appState.state.folderViews,
+            paneIds,
+            new Set(Object.keys(registrySnapshot.registry.projects)),
+            new Set(worktreeList.map((worktree) => worktree.id)),
+          );
           restored[key] = normalizeSlots(restored[key], sessionIds, { autoAppend: true, keep: paneIds });
           setFolderViews(restored);
           setShelves(

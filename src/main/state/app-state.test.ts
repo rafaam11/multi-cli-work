@@ -10,6 +10,7 @@ import {
   readAppState,
   readSessionLog,
   updateAppState,
+  sweepStaleStateTemps,
 } from "./app-state";
 
 const roots: string[] = [];
@@ -414,5 +415,25 @@ describe("app state", () => {
     expect(Buffer.byteLength(replay)).toBeLessThanOrEqual(8);
     expect(replay).not.toContain("�");
     expect(replay).toBe("나다");
+  });
+});
+
+describe("sweepStaleStateTemps", () => {
+  it("removes temps a crashed write left behind and keeps a write in progress", async () => {
+    const root = await tempRoot();
+    const statePath = path.join(root, "state.json");
+    await fs.writeFile(statePath, "{}", "utf8");
+    const stale = path.join(root, "state.json.123.aaaa.tmp");
+    const fresh = path.join(root, "state.json.456.bbbb.tmp");
+    const unrelated = path.join(root, "settings.json.1.tmp");
+    for (const file of [stale, fresh, unrelated]) await fs.writeFile(file, "", "utf8");
+    const now = Date.now();
+    const old = new Date(now - 5 * 60_000);
+    await fs.utimes(stale, old, old);
+    await fs.utimes(unrelated, old, old);
+
+    await sweepStaleStateTemps(statePath, now);
+
+    expect((await fs.readdir(root)).sort()).toEqual(["settings.json.1.tmp", "state.json", "state.json.456.bbbb.tmp"]);
   });
 });

@@ -285,6 +285,28 @@ export async function readAppState(options: StateOptions): Promise<AppStateSnaps
   }
 }
 
+/** A state write takes milliseconds; a temp this old was left by a process that died mid-write. */
+const STALE_STATE_TEMP_MS = 60_000;
+
+/**
+ * Removes `state.json.<pid>.<uuid>.tmp` files a crashed write left next to the state file. The
+ * write path's own cleanup runs in `finally`, which a killed process never reaches.
+ */
+export async function sweepStaleStateTemps(statePath: string, now = Date.now()): Promise<void> {
+  const dir = path.dirname(statePath);
+  const prefix = `${path.basename(statePath)}.`;
+  const entries = await fs.readdir(dir).catch(() => [] as string[]);
+  await Promise.all(
+    entries
+      .filter((name) => name.startsWith(prefix) && name.endsWith(".tmp"))
+      .map(async (name) => {
+        const filePath = path.join(dir, name);
+        const stat = await fs.stat(filePath).catch(() => null);
+        if (stat && now - stat.mtimeMs > STALE_STATE_TEMP_MS) await fs.rm(filePath, { force: true }).catch(() => undefined);
+      }),
+  );
+}
+
 let writeChain: Promise<void> = Promise.resolve();
 
 export async function updateAppState(

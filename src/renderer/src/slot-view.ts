@@ -352,3 +352,23 @@ export function resolveView(view: SlotViewState, page: number): ResolvedView {
     pages,
   };
 }
+
+/**
+ * Drops the saved grids of folders and worktrees that no longer exist. Removing a folder never
+ * touched its grid, so state.json kept one entry per folder ever opened. Keys that are neither a
+ * known folder nor `@worktree:<known id>` go; the tools grid and anything unprefixed-but-known stay.
+ */
+export function pruneFolderViews(
+  views: Readonly<Record<string, SlotViewState>>,
+  projectIds: ReadonlySet<string>,
+  worktreeIds: ReadonlySet<string>,
+  toolsKey: string,
+): Record<string, SlotViewState> {
+  return Object.fromEntries(
+    Object.entries(views).filter(([key]) => {
+      if (key === toolsKey) return true;
+      if (key.startsWith("@worktree:")) return worktreeIds.has(key.slice("@worktree:".length));
+      return projectIds.has(key);
+    }),
+  );
+}

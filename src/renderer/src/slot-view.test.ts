@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAX_COLUMNS, MAX_ROWS_PER_COLUMN, buildLayout } from "./grid-layouts";
 import {
+  pruneFolderViews,
   appendSession,
   clampPage,
   clearSlot,
@@ -477,5 +478,18 @@ describe("resolveView", () => {
     expect(view.page).toBe(1);
     expect(view.pages).toBe(2);
     expect(view.slots).toEqual(["d", null, null]);
+  });
+});
+
+describe("pruneFolderViews", () => {
+  it("keeps grids of folders and worktrees that still exist, and the tools grid", () => {
+    const view = { layoutId: "auto", slots: [] };
+    const pruned = pruneFolderViews(
+      { p1: view, gone: view, "@tools": view, "@worktree:w1": view, "@worktree:w-gone": view },
+      new Set(["p1"]),
+      new Set(["w1"]),
+      "@tools",
+    );
+    expect(Object.keys(pruned).sort()).toEqual(["@tools", "@worktree:w1", "p1"]);
   });
 });

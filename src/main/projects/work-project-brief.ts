@@ -112,3 +112,17 @@ export async function writeSessionBrief(
   await fs.writeFile(briefPath, body.join("\n"), "utf8");
   return briefPath;
 }
+
+/**
+ * Deletes briefs for folders that are no longer registered. Briefs are written per folder when a
+ * session starts and nothing removed them, so every folder ever opened — and every brief keyed the
+ * old way, by work project — stayed in userData.
+ */
+export async function pruneSessionBriefs(briefDir: string, keepKeys: ReadonlySet<string>): Promise<void> {
+  const entries = await fs.readdir(briefDir).catch(() => [] as string[]);
+  await Promise.all(
+    entries
+      .filter((name) => name.endsWith(".md") && !keepKeys.has(name.slice(0, -".md".length)))
+      .map((name) => fs.rm(path.join(briefDir, name), { force: true }).catch(() => undefined)),
+  );
+}
