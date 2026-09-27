@@ -15,6 +15,8 @@ export interface RightSidebarProps {
   onSelectTab(tab: RightSidebarTab): void;
   target: FileExplorerTarget | null;
   targetLabel: string | null;
+  /** Passed to the file tree only — the git tab explains a missing folder on its own. */
+  explorerUnavailableReason?: string | null;
   selectedRelativePath: string | null;
   vscodeAvailable: boolean;
   onOpenFile(entry: FileTreeEntry): void;
@@ -39,6 +41,7 @@ export function RightSidebar({
   onSelectTab,
   target,
   targetLabel,
+  explorerUnavailableReason = null,
   selectedRelativePath,
   vscodeAvailable,
   onOpenFile,
@@ -115,6 +118,7 @@ export function RightSidebar({
           hidden={collapsed || activeTab !== "files"}
           target={target}
           targetLabel={targetLabel}
+          unavailableReason={explorerUnavailableReason}
           selectedRelativePath={selectedRelativePath}
           vscodeAvailable={vscodeAvailable}
           onOpenFile={onOpenFile}

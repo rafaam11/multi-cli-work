@@ -3390,6 +3390,11 @@ export function App() {
         onSelectTab={setRightSidebarTab}
         target={fileExplorerTarget}
         targetLabel={fileExplorerTargetLabel}
+        explorerUnavailableReason={
+          fileExplorerTarget?.kind === "project" && selectedProjectMissing
+            ? "폴더를 찾을 수 없습니다 — 다시 연결하면 파일을 볼 수 있습니다"
+            : null
+        }
         selectedRelativePath={
           selectedFileTab &&
           fileExplorerTarget &&

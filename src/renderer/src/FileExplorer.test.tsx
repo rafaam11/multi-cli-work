@@ -93,6 +93,26 @@ describe("FileExplorer context menu", () => {
     });
   });
 
+  it("does not list a folder that is gone and says why instead", async () => {
+    render(
+      <FileExplorer
+        hidden={false}
+        target={target}
+        targetLabel="Repo"
+        unavailableReason="폴더를 찾을 수 없습니다"
+        selectedRelativePath={null}
+        vscodeAvailable
+        onOpenFile={onOpenFile}
+        onOpenFileExternal={onOpenFileExternal}
+        onEntryDeleted={onEntryDeleted}
+        onEntryRenamed={onEntryRenamed}
+      />,
+    );
+
+    expect(await screen.findByText("폴더를 찾을 수 없습니다")).toBeInTheDocument();
+    expect(listDirectory).not.toHaveBeenCalled();
+  });
+
   it("copies the absolute path, the relative path and the name", async () => {
     renderExplorer();
     await openMenu("readme.md");

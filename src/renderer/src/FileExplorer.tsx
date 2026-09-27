@@ -14,6 +14,11 @@ export interface FileExplorerProps {
   hidden: boolean;
   target: FileExplorerTarget | null;
   targetLabel: string | null;
+  /**
+   * Why the target cannot be listed (its folder is gone). The tree then says so instead of asking
+   * main for a directory that is not there — which failed and logged an ENOENT stack every time.
+   */
+  unavailableReason?: string | null;
   selectedRelativePath: string | null;
   /** Greys out "VS Code로 열기" when no editor was found, exactly as the folder menu does. */
   vscodeAvailable: boolean;
@@ -282,8 +287,9 @@ function TreeNode({
 
 export function FileExplorer({
   hidden,
-  target,
+  target: requestedTarget,
   targetLabel,
+  unavailableReason = null,
   selectedRelativePath,
   vscodeAvailable,
   onOpenFile,
@@ -291,6 +297,7 @@ export function FileExplorer({
   onEntryDeleted,
   onEntryRenamed,
 }: FileExplorerProps) {
+  const target = unavailableReason ? null : requestedTarget;
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [childrenByDir, setChildrenByDir] = useState<Record<string, DirectoryState>>({});
   const [gitData, setGitData] = useState<GitPanelData | null>(null);
@@ -580,7 +587,7 @@ export function FileExplorer({
       ) : null}
       {!target ? (
         <div className="sidebar-empty">
-          <span>폴더를 선택하면 파일을 볼 수 있습니다</span>
+          <span>{unavailableReason ?? "폴더를 선택하면 파일을 볼 수 있습니다"}</span>
         </div>
       ) : (
         <div
