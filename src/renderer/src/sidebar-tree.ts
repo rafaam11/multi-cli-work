@@ -30,7 +30,7 @@ export const GROUP_KEY_PREFIX = "tag:";
 export const OTHER_GROUP_KEY = GROUP_KEY_PREFIX;
 /**
  * 미일치 묶음의 이름은 `기타`가 **아니다**: `기타`는 ws-root Z_ 채널이 심는 실제 태그이고
- * `CHANNEL_LABEL_ORDER`에도 들어 있어, 두 이름이 같으면 이름도 토글 접근성 이름도 똑같은 형제
+ * `LEGACY_LABEL_ORDER`에도 들어 있어, 두 이름이 같으면 이름도 토글 접근성 이름도 똑같은 형제
  * 줄이 나란히 선다. 태그가 아닌 자리라는 뜻만 남기고 이름은 겹치지 않게 `나머지`로 둔다.
  */
 export const OTHER_GROUP_LABEL = "나머지";
@@ -45,10 +45,11 @@ export interface TreeGrouping {
 }
 
 /**
- * ws-root 채널 라벨의 고정 순서. 기본 묶기가 이 순서로 돌기 때문에, 업그레이드 직후의 화면이
- * 채널 층이 있던 때와 같아 보인다(루트 CLAUDE.md §1의 채널 어휘 그대로다).
+ * 옛 ws-root 채널 라벨의 고정 순서. 기본 묶기가 이 라벨들을 **앞으로** 세우기 때문에, 채널 층이
+ * 있던 때의 화면 순서가 그대로 보존된다(루트 CLAUDE.md §1의 채널 어휘). v2 PRJ 구조의 컨텍스트
+ * 라벨은 사용자 데이터라 여기 적지 않는다 — 스냅샷에 나온 순서를 그대로 따른다.
  */
-export const CHANNEL_LABEL_ORDER = ["과제", "용역", "연구", "기타", "개인"] as const;
+export const LEGACY_LABEL_ORDER = ["과제", "용역", "연구", "기타", "개인"] as const;
 
 /**
  * Sidebar sections: one per work project plus a trailing 미분류 bucket. With no work projects at
@@ -136,15 +137,33 @@ export function collapsedGroupKeysForWorking(
 }
 
 /**
- * 저장된 선호가 없을 때 도는 묶기. ws-root 셸이 하나라도 있으면 동기화가 심어 둔 채널 라벨
- * 태그들을 고정 순서로 쓰고, 셸이 없으면 묶지 않는다 — 이 기능이 없던 때와 같은 평면 트리다.
- * 렌더마다 파생하는 값이라 저장하지 않으며, 사용자가 한 번 고르면 그때부터 저장된 값이 이긴다.
+ * 워크스페이스가 심어 주는 묶음 라벨을 기본 묶기 순서로 정렬한다. 옛 채널 라벨이 먼저, 나머지는
+ * 처음 나온 순서대로. 빈 라벨(컨텍스트 미기재)은 묶을 이름이 없으므로 빠진다.
+ */
+export function orderWorkspaceLabels(shells: readonly { groupLabel: string }[]): string[] {
+  const seen: string[] = [];
+  for (const shell of shells) {
+    if (shell.groupLabel.length > 0 && !seen.includes(shell.groupLabel)) seen.push(shell.groupLabel);
+  }
+  const rank = (label: string) => {
+    const index = LEGACY_LABEL_ORDER.indexOf(label as (typeof LEGACY_LABEL_ORDER)[number]);
+    return index < 0 ? LEGACY_LABEL_ORDER.length : index;
+  };
+  return seen
+    .map((label, index) => ({ label, index }))
+    .sort((left, right) => rank(left.label) - rank(right.label) || left.index - right.index)
+    .map((entry) => entry.label);
+}
+
+/**
+ * 저장된 선호가 없을 때 도는 묶기. 워크스페이스가 심어 둔 라벨 중 **실제로 붙어 있는 것만** 준
+ * 순서대로 쓰고, 라벨이 없으면 묶지 않는다 — 이 기능이 없던 때와 같은 평면 트리다. 렌더마다
+ * 파생하는 값이라 저장하지 않으며, 사용자가 한 번 고르면 그때부터 저장된 값이 이긴다.
  */
 export function defaultGroupingTags(
   tagsByWorkProject: Readonly<Record<string, readonly string[]>>,
-  hasWorkspaceShells: boolean,
+  orderedLabels: readonly string[],
 ): string[] {
-  if (!hasWorkspaceShells) return [];
   const present = new Set(Object.values(tagsByWorkProject).flatMap((tags) => [...tags]));
-  return CHANNEL_LABEL_ORDER.filter((label) => present.has(label));
+  return orderedLabels.filter((label) => present.has(label));
 }

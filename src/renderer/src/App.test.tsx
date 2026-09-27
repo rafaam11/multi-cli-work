@@ -1833,7 +1833,9 @@ describe("work project categories", () => {
           workProject("wp-none", "손으로 만든 묶음", "업무", { order: 1 }),
         ],
         projectTags: { "wp-etc": ["기타"] },
-        workspace: workspaceSnapshot([VSP], [
+        // groupLabel을 "기타"로 덮어써야 한다 — 기본 묶기는 이제 워크스페이스가 실제로 심은
+        // 라벨만 후보로 삼으므로, VSP의 원래 라벨("용역")로는 "기타" 태그가 골라지지 않는다.
+        workspace: workspaceSnapshot([{ ...VSP, groupLabel: "기타" }], [
           { workProjectId: "wp-etc", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
         ]),
       });

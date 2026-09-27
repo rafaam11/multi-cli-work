@@ -55,6 +55,7 @@ import {
   collapsedGroupKeysForWorking,
   defaultGroupingTags,
   groupKeys,
+  orderWorkspaceLabels,
   GROUP_KEY_PREFIX,
   type TagGroupNode,
   type TreeSection,
@@ -72,9 +73,10 @@ interface ProjectSidebarProps {
   /** Work projects in display order; folders whose id is absent from every membership are 미분류. */
   workProjects: WorkProject[];
   /**
-   * ws-root 워크스페이스의 셸에서 만들어진 업무 프로젝트만, id → 그 셸. 여기 있는 항목은 셸의
-   * 한글 `title:`로 불린다. 하나라도 있으면 저장된 묶기 선호가 없을 때 채널 라벨 태그가 기본
-   * 묶기로 돌고, 비어 있으면(루트 미등록) 트리는 이 기능이 없던 때와 똑같이 평면으로 그려진다.
+   * ws-root 워크스페이스의 프로젝트에서 만들어진 업무 프로젝트만, id → 그 프로젝트. 여기 있는
+   * 항목은 워크스페이스의 한글 `title`로 불린다. 하나라도 있으면 저장된 묶기 선호가 없을 때 그
+   * 묶음 라벨이 기본 묶기로 돌고, 비어 있으면(루트 미등록) 트리는 이 기능이 없던 때와 똑같이
+   * 평면으로 그려진다.
    */
   workspaceShells: Record<string, WorkspaceShellInfo>;
   /** 업무 프로젝트 id → 붙어 있는 태그. 묶기의 후보이자 어느 묶음에 설지의 근거다. */
@@ -484,13 +486,13 @@ export function ProjectSidebar({
   /** 고를 수 있는 태그. 많이 쓰인 것이 앞이라 메뉴가 예측 가능하다. */
   const availableTags = useMemo(() => knownTags(tagsByWorkProject), [tagsByWorkProject]);
   /**
-   * 저장된 선호(`groupingTags`)가 있으면 그것이 이기고, 없을 때만 파생 기본값이 돈다 — 셸이
-   * 하나라도 있으면 채널 라벨 태그로, 없으면 평면으로.
+   * 저장된 선호(`groupingTags`)가 있으면 그것이 이기고, 없을 때만 파생 기본값이 돈다 — 워크스페이스
+   * 프로젝트가 심어 둔 묶음 라벨로, 라벨이 하나도 없으면 평면으로.
    */
-  const hasWorkspaceShells = Object.keys(workspaceShells).length > 0;
+  const orderedLabels = useMemo(() => orderWorkspaceLabels(Object.values(workspaceShells)), [workspaceShells]);
   const effectiveGrouping = useMemo(
-    () => groupingTags ?? defaultGroupingTags(tagsByWorkProject, hasWorkspaceShells),
-    [groupingTags, tagsByWorkProject, hasWorkspaceShells],
+    () => groupingTags ?? defaultGroupingTags(tagsByWorkProject, orderedLabels),
+    [groupingTags, tagsByWorkProject, orderedLabels],
   );
   const treeNodes = useMemo(
     () => buildTreeNodes(treeSections, { tags: effectiveGrouping, tagsByWorkProject }),

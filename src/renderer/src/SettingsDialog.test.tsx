@@ -348,3 +348,85 @@ describe("단축키 탭", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith({ keybindings: {} }));
   });
 });
+
+/**
+ * 이 탭에는 지금까지 테스트가 없었다 — 문구가 v2 어휘로 바뀌는 지점이라 여기서 못박는다.
+ * `WorkspaceSettings`는 내부 컴포넌트이므로 대화상자를 띄워 탭을 눌러 들어간다.
+ */
+describe("워크스페이스 탭", () => {
+  const prjShell = (key: string, title: string, groupLabel: string) => ({
+    root: "C:\\work",
+    ref: `projects/${key}`,
+    channel: "projects",
+    shell: key,
+    groupLabel,
+    topics: [],
+    title,
+    status: "active",
+    mode: "continuous",
+    archived: false,
+    path: `C:\\work\\projects\\${key}`,
+    repos: [],
+    externalPaths: [],
+    data: [],
+    drivePath: null,
+    wikiPath: null,
+  });
+
+  const snapshotOf = (warnings: string[] = []) => ({
+    registry: {
+      schemaVersion: 1,
+      updatedAt: "2026-09-21T00:00:00.000Z",
+      roots: [{ work: "C:\\work", dev: "C:\\dev", data: "C:\\data", label: "work-root" }],
+      shellLinks: [],
+    },
+    shells: [
+      prjShell("PRJ-0017-secondbrain", "세컨드브레인", "개인"),
+      prjShell("PRJ-0006-vsp", "가상수술계획", "병원 공동연구"),
+    ],
+    repoOwners: {},
+    warnings,
+  });
+
+  const list = vi.fn();
+  const sync = vi.fn();
+
+  beforeEach(() => {
+    list.mockReset().mockResolvedValue(snapshotOf());
+    sync.mockReset().mockResolvedValue({ workspace: snapshotOf(), workProjects: null });
+    window.multiCliWork = {
+      ...window.multiCliWork,
+      workspace: { list, add: vi.fn(), remove: vi.fn(), sync },
+    } as unknown as MultiCliWorkApi;
+  });
+
+  const openTab = async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "워크스페이스" }));
+    await waitFor(() => expect(list).toHaveBeenCalled());
+  };
+
+  it("루트 한 줄에 dev·data와 프로젝트 수를 적는다", async () => {
+    await openTab();
+    await waitFor(() => expect(screen.getByText(/프로젝트 2개/)).toBeInTheDocument());
+    expect(screen.queryByText(/셸 2개/)).toBeNull();
+  });
+
+  it("다시 읽기 알림이 프로젝트 어휘를 쓴다", async () => {
+    await openTab();
+    fireEvent.click(screen.getByRole("button", { name: "다시 읽기" }));
+    await waitFor(() => expect(screen.getByText("프로젝트를 다시 읽었습니다")).toBeInTheDocument());
+  });
+
+  it("스캔 경고를 그대로 보여 준다", async () => {
+    list.mockResolvedValue(
+      snapshotOf(["[project-key] projects/not-a-key: 프로젝트 키 규약 위반(PRJ-####-slug)"]),
+    );
+    await openTab();
+    await waitFor(() =>
+      expect(
+        screen.getByText("[project-key] projects/not-a-key: 프로젝트 키 규약 위반(PRJ-####-slug)"),
+      ).toBeInTheDocument(),
+    );
+  });
+});

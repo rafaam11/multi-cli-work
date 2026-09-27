@@ -7,6 +7,7 @@ import {
   collapsedGroupKeysForWorking,
   defaultGroupingTags,
   groupKeys,
+  orderWorkspaceLabels,
   OTHER_GROUP_KEY,
 } from "./sidebar-tree";
 
@@ -92,7 +93,7 @@ describe("buildTreeNodes", () => {
   });
 
   /**
-   * `기타`는 ws-root Z_ 채널이 심는 진짜 태그다(CHANNEL_LABEL_ORDER에도 있다). 미일치 묶음까지
+   * `기타`는 ws-root Z_ 채널이 심는 진짜 태그다(LEGACY_LABEL_ORDER에도 있다). 미일치 묶음까지
    * 같은 이름이면 트리에 이름도 접근성 이름도 똑같은 형제 줄이 둘 서므로, 이름은 갈라져 있어야 한다.
    */
   it("태그 `기타`와 미일치 묶음은 이름이 다른 별개의 두 묶음이다", () => {
@@ -138,21 +139,61 @@ describe("groupKeys / collapsedGroupKeysForWorking", () => {
   });
 });
 
-describe("defaultGroupingTags", () => {
-  it("워크스페이스 셸이 하나도 없으면 묶지 않는다 — 이 기능이 없던 때와 같은 평면 트리다", () => {
-    expect(defaultGroupingTags({ "wp-a": ["용역", "개인"] }, false)).toEqual([]);
+describe("orderWorkspaceLabels", () => {
+  it("옛 채널 라벨을 앞으로 세운다 — 채널 층이 있던 때의 화면 순서가 그대로다", () => {
+    expect(
+      orderWorkspaceLabels([{ groupLabel: "개인" }, { groupLabel: "용역" }, { groupLabel: "과제" }]),
+    ).toEqual(["과제", "용역", "개인"]);
   });
 
-  it("셸이 있으면 실제로 붙어 있는 채널 라벨만 고정 순서로 고른다", () => {
-    expect(defaultGroupingTags({ "wp-a": ["개인"], "wp-b": ["용역"], "wp-c": ["과제"] }, true)).toEqual([
-      "과제",
-      "용역",
+  it("v2 컨텍스트는 처음 나온 순서를 그대로 따른다", () => {
+    expect(
+      orderWorkspaceLabels([
+        { groupLabel: "개인" },
+        { groupLabel: "병원 공동연구" },
+        { groupLabel: "개인" },
+        { groupLabel: "외부기관 협업" },
+      ]),
+    ).toEqual(["개인", "병원 공동연구", "외부기관 협업"]);
+  });
+
+  it("옛 라벨과 새 컨텍스트가 섞이면 옛 라벨이 먼저다", () => {
+    expect(
+      orderWorkspaceLabels([{ groupLabel: "병원 공동연구" }, { groupLabel: "개인" }, { groupLabel: "디지트랙" }]),
+    ).toEqual(["개인", "병원 공동연구", "디지트랙"]);
+  });
+
+  it("빈 라벨과 중복은 빠진다", () => {
+    expect(orderWorkspaceLabels([{ groupLabel: "" }, { groupLabel: "개인" }, { groupLabel: "개인" }])).toEqual([
       "개인",
     ]);
+    expect(orderWorkspaceLabels([])).toEqual([]);
+  });
+});
+
+describe("defaultGroupingTags", () => {
+  it("묶을 라벨이 없으면 묶지 않는다 — 이 기능이 없던 때와 같은 평면 트리다", () => {
+    expect(defaultGroupingTags({ "wp-a": ["용역", "개인"] }, [])).toEqual([]);
   });
 
-  it("채널 라벨이 아닌 태그는 기본값에 끼지 않는다", () => {
-    expect(defaultGroupingTags({ "wp-a": ["AI", "연구"] }, true)).toEqual(["연구"]);
-    expect(defaultGroupingTags({ "wp-a": ["AI"] }, true)).toEqual([]);
+  it("실제로 붙어 있는 라벨만 준 순서대로 고른다", () => {
+    expect(
+      defaultGroupingTags({ "wp-a": ["개인"], "wp-b": ["용역"], "wp-c": ["과제"] }, ["과제", "용역", "개인"]),
+    ).toEqual(["과제", "용역", "개인"]);
+  });
+
+  it("붙어 있지 않은 라벨은 기본값에 끼지 않는다", () => {
+    expect(defaultGroupingTags({ "wp-a": ["AI", "연구"] }, ["연구", "개인"])).toEqual(["연구"]);
+    expect(defaultGroupingTags({ "wp-a": ["AI"] }, ["연구", "개인"])).toEqual([]);
+  });
+
+  it("v2 컨텍스트 라벨도 똑같이 고른다", () => {
+    expect(
+      defaultGroupingTags({ "wp-a": ["개인", "지식관리"], "wp-b": ["병원 공동연구"] }, [
+        "개인",
+        "병원 공동연구",
+        "디지트랙",
+      ]),
+    ).toEqual(["개인", "병원 공동연구"]);
   });
 });

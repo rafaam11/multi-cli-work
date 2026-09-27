@@ -191,6 +191,9 @@ function NotionSettings() {
  * ws-root 워크스페이스 루트. 노션 탭과 마찬가지로 AppSettings를 쓰지 않는다 — 루트 목록은
  * `~/.multi-cli-work/workspace.json`에 따로 살고(레지스트리 계약 §8), 여기서는 그 파일을 다루는
  * IPC만 부른다. 루트를 하나도 등록하지 않으면 사이드바는 이 기능이 없던 때와 똑같이 그려진다.
+ *
+ * 2026-09-05부터 루트의 단위는 `projects/PRJ-####-slug` 평면 구조다 — 옛 `<채널>/<셸>` 배치는
+ * `workspace-index.ts`의 폴백이 계속 읽는다.
  */
 function WorkspaceSettings() {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
@@ -229,15 +232,15 @@ function WorkspaceSettings() {
   };
 
   const roots = snapshot?.registry.roots ?? [];
-  const shellsOf = (work: string) => (snapshot?.shells ?? []).filter((shell) => shell.root === work).length;
+  const projectsOf = (work: string) => (snapshot?.shells ?? []).filter((shell) => shell.root === work).length;
 
   return (
     <>
       <h2>워크스페이스 루트</h2>
       <p className="settings-hint">
-        채널·프로젝트 셸·<code>dev/</code> 레포가 사는 폴더입니다. 등록하면 사이드바가 레포를 소속
-        셸 아래로 묶고, 세션 브리프에 형제 레포·데이터셋 경로가 붙습니다. 워크스페이스의 파일은
-        읽기만 합니다.
+        Project 폴더(<code>projects/PRJ-####-slug</code>)와 <code>dev/</code> 레포가 사는 폴더입니다.
+        등록하면 사이드바가 레포를 소속 프로젝트 아래로 묶고, 세션 브리프에 형제 레포·데이터셋
+        경로가 붙습니다. 워크스페이스의 파일은 읽기만 합니다.
       </p>
       {snapshot === null ? (
         <p className="settings-hint">확인 중…</p>
@@ -252,7 +255,7 @@ function WorkspaceSettings() {
                 <span title={root.work}>{root.work}</span>
                 {/* 세 루트를 다 보여 준다 — 어디가 dev·data로 잡혔는지가 이 화면의 요점이다. */}
                 <span className="settings-hint">
-                  dev {root.dev} · data {root.data} · 셸 {shellsOf(root.work)}개
+                  dev {root.dev} · data {root.data} · 프로젝트 {projectsOf(root.work)}개
                 </span>
               </span>
               <button
@@ -287,7 +290,7 @@ function WorkspaceSettings() {
             type="button"
             disabled={busy || roots.length === 0}
             onClick={() =>
-              run(async () => (await window.multiCliWork.workspace.sync()).workspace, "셸을 다시 읽었습니다")
+              run(async () => (await window.multiCliWork.workspace.sync()).workspace, "프로젝트를 다시 읽었습니다")
             }
           >
             다시 읽기
