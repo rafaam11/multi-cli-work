@@ -308,14 +308,16 @@ export class WorkProjectService {
   }
 
   /**
-   * ws-root 워크스페이스의 셸을 업무 프로젝트로 옮겨 적는다. 루트 CLAUDE.md §3이 셸 프론트매터의
-   * `repos:`를 레포→셸 역인덱스의 SSOT로 정했으므로, 여기서는 그 사실을 앱의 어휘로 반복할 뿐이다.
+   * ws-root 워크스페이스의 Project(v1 어휘로는 셸)를 업무 프로젝트로 옮겨 적는다. 루트 CLAUDE.md가
+   * 프론트매터의 `repos:`를 레포→프로젝트 역인덱스의 SSOT로 정했으므로, 여기서는 그 사실을 앱의
+   * 어휘로 반복할 뿐이다.
    *
    * 지키는 선:
    *  - **사용자가 손으로 만든 항목은 절대 건드리지 않는다.** 이름이 같은 항목이 이미 있으면 그
-   *    셸은 건너뛴다(덮어쓰지도, 같은 이름을 하나 더 만들지도 않는다).
-   *  - 자동 생성분도 **`members`만** 갱신한다. 구분·상태·메모·노션 링크·순서는 만들 때 한 번
-   *    정해지고 그 뒤로는 사용자의 것이다.
+   *    Project는 건너뛴다(덮어쓰지도, 같은 이름을 하나 더 만들지도 않는다).
+   *  - 자동 생성분도 **`members`만** 갱신한다. 이름·구분·상태·메모·노션 링크·순서는 만들 때 한 번
+   *    정해지고 그 뒤로는 사용자의 것이다 — 워크스페이스의 `title`이 바뀌어도 덮어쓰지 않는다.
+   *  - 휴면 Project는 새로 만들지 않는다. 이미 링크된 것은 그대로 둔다.
    *  - 수동 업무 프로젝트에 이미 속한 폴더는 가져오지 않는다 — 사용자가 옮겨 둔 자리가 이긴다.
    *  - 출처 표식은 `workspace.json`의 `shellLinks`에 둔다. `work-projects.json` 스키마는
    *    그대로다(레지스트리 계약 §8).
@@ -374,9 +376,14 @@ export class WorkProjectService {
       const claimed = new Map<string, string>();
 
       for (const shell of snapshot.shells) {
-        const name = shell.ref;
+        // 이름은 워크스페이스의 표시명이다 — v2는 PROJECT.yaml의 title, v1은 셸 프론트매터의 title.
+        const name = shell.title;
         const link = linksByKey.get(linkKey(shell.root, shell.ref));
         let target = link ? next[link.workProjectId] : undefined;
+        // 휴면 Project는 새로 만들지 않는다 — 사이드바에 멤버 0인 줄이 서지 않게. 스냅샷에는
+        // 남아 있으므로 `_archive` 레포의 역인덱스와 브리프는 계속 답한다. 이미 링크된 항목은
+        // 아래로 내려가 멤버가 갱신된다: 상태가 바뀌었다고 사용자 데이터를 지우지 않는다.
+        if (!target && shell.archived) continue;
         if (!target) {
           if (Object.values(next).some((workProject) => workProject.name === name)) {
             skipped.push(shell.ref);
@@ -405,11 +412,11 @@ export class WorkProjectService {
           });
           created += 1;
         }
-        // 채널 라벨을 태그로 한 번만 심는다. 표식은 "행이 아직 없다"는 사실 하나다 — 사용자가 태그를
-        // 전부 지우면 빈 행이 남고, 그때부터 여기는 손대지 않는다. 구분(category)이 만들 때 한 번만
-        // 정해지는 것(위 L26-27)과 같은 약속이다.
+        // 묶음 라벨과 topic을 태그로 한 번만 심는다. 표식은 "행이 아직 없다"는 사실 하나다 —
+        // 사용자가 태그를 전부 지우면 빈 행이 남고, 그때부터 여기는 손대지 않는다. 구분(category)이
+        // 만들 때 한 번만 정해지는 것(위 L26-27)과 같은 약속이다.
         if (!Object.prototype.hasOwnProperty.call(tagRegistry.tags, target.id)) {
-          tagSeeds.set(target.id, normalizeTags([shell.groupLabel]));
+          tagSeeds.set(target.id, normalizeTags([shell.groupLabel, ...shell.topics]));
         }
         const members = (membersByRef.get(shell.ref) ?? []).filter(
           (member) => !manualOwned.has(member.projectId),

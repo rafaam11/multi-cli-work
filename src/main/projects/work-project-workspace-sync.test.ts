@@ -124,6 +124,47 @@ const REPO_PROJECT = project("11111111-1111-4111-8111-111111111111", "C:\\dev\\V
 const DOCS_PROJECT = project("22222222-2222-4222-8222-222222222222", "C:\\work\\O_SMCH\\24_SMCH_VSP-1");
 const OUTSIDE_PROJECT = project("33333333-3333-4333-8333-333333333333", "D:\\elsewhere\\repo");
 
+/** v2 PRJ 어댑터가 주는 모양 — channel은 "projects", ref는 `${channel}/${key}`다. */
+function prj(
+  key: string,
+  overrides: Partial<WorkspaceShellInfo> = {},
+): WorkspaceShellInfo {
+  const channel = overrides.archived ? "projects/_archive" : "projects";
+  return {
+    root: WORK_ROOT,
+    shell: key,
+    groupLabel: "개인",
+    topics: [],
+    title: key,
+    status: "active",
+    mode: "continuous",
+    archived: false,
+    path: path.win32.join(WORK_ROOT, channel, key),
+    repos: [],
+    externalPaths: [],
+    data: [],
+    drivePath: null,
+    wikiPath: null,
+    ...overrides,
+    channel,
+    ref: `${channel}/${key}`,
+  };
+}
+
+const SECONDBRAIN = prj("PRJ-0017-secondbrain", {
+  title: "세컨드브레인(LLMwiki·atlas·bolt)",
+  groupLabel: "개인",
+  topics: ["지식관리"],
+  repos: ["VSP_FastAPI"],
+});
+const DORMANT = prj("PRJ-0001-kitu-undergraduate", {
+  title: "(휴면) 금오공대 학부 자료",
+  status: "archived",
+  mode: "finite",
+  groupLabel: "대학원 학사",
+  archived: true,
+});
+
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
@@ -138,8 +179,8 @@ describe("syncFromWorkspace", () => {
     const created = Object.values(result.workProjects.workProjects);
     // 채널 글자는 구분을 정하지 않는다 — 채널 라벨은 태그로만 남고, 구분은 설정의 기본값이다.
     expect(created.map((workProject) => [workProject.name, workProject.category])).toEqual([
-      ["O_SMCH/24_SMCH_VSP-1", "기타"],
-      ["P_Personal/26_Personal_Career-1", "기타"],
+      ["가상수술계획", "기타"],
+      ["진로", "기타"],
     ]);
     // 출처는 workspace.json에만 남는다 — work-projects.json 스키마는 그대로다(계약 §8).
     const workspace = await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath });
@@ -202,7 +243,7 @@ describe("syncFromWorkspace", () => {
   it("skips a shell whose name a manual work project already uses, without overwriting it", async () => {
     const paths = await tempPaths("sync-collision");
     const manual = service(paths, [MANUAL_ID]);
-    await manual.createWorkProject({ name: "O_SMCH/24_SMCH_VSP-1", category: "상품개발" });
+    await manual.createWorkProject({ name: "가상수술계획", category: "상품개발" });
     await manual.addMember(MANUAL_ID, DOCS_PROJECT.id, "docs");
 
     const result = await service(paths).syncFromWorkspace(snapshot([VSP]), [REPO_PROJECT, DOCS_PROJECT]);
@@ -361,5 +402,97 @@ describe("syncFromWorkspace", () => {
     const tagsAfterNoop = await readProjectTags({ registryPath: paths.projectTagsPath });
     expect(tagsAfterNoop.updatedAt).toBe("2026-08-30T01:00:00.000Z");
     expect(tagsAfterNoop.tags).toEqual({ [IDS[0]]: ["용역"] });
+  });
+});
+
+describe("syncFromWorkspace — v2 PRJ", () => {
+  it("업무 프로젝트 이름은 PROJECT.yaml의 title이고, 링크는 projects/<key>로 적힌다", async () => {
+    const paths = await tempPaths("prj-create");
+    const result = await service(paths).syncFromWorkspace(snapshot([SECONDBRAIN]), [REPO_PROJECT]);
+
+    expect(result.created).toBe(1);
+    expect(result.skipped).toEqual([]);
+    expect(result.workProjects.workProjects[IDS[0]]).toMatchObject({
+      name: "세컨드브레인(LLMwiki·atlas·bolt)",
+      members: [{ projectId: REPO_PROJECT.id, role: "repo" }],
+    });
+    const workspace = await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath });
+    expect(workspace.shellLinks).toEqual([
+      { workProjectId: IDS[0], root: WORK_ROOT, channel: "projects", shell: "PRJ-0017-secondbrain" },
+    ]);
+  });
+
+  it("태그 시드는 컨텍스트와 topic을 함께 심는다", async () => {
+    const paths = await tempPaths("prj-tags");
+    await service(paths).syncFromWorkspace(snapshot([SECONDBRAIN]), []);
+    const tags = await readProjectTags({ registryPath: paths.projectTagsPath });
+    expect(tags.tags).toEqual({ [IDS[0]]: ["개인", "지식관리"] });
+  });
+
+  it("컨텍스트가 비어 있으면 아무 태그도 심지 않는다", async () => {
+    const paths = await tempPaths("prj-tags-empty");
+    await service(paths).syncFromWorkspace(
+      snapshot([prj("PRJ-0016-finance", { title: "가계부", groupLabel: "" })]),
+      [],
+    );
+    const tags = await readProjectTags({ registryPath: paths.projectTagsPath });
+    expect(tags.tags).toEqual({ [IDS[0]]: [] });
+  });
+
+  it("휴면 Project는 업무 프로젝트를 새로 만들지 않는다", async () => {
+    const paths = await tempPaths("prj-dormant");
+    const result = await service(paths).syncFromWorkspace(snapshot([SECONDBRAIN, DORMANT]), []);
+
+    expect(result.created).toBe(1);
+    expect(Object.values(result.workProjects.workProjects).map((workProject) => workProject.name)).toEqual([
+      "세컨드브레인(LLMwiki·atlas·bolt)",
+    ]);
+    const workspace = await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath });
+    expect(workspace.shellLinks.map((link) => link.shell)).toEqual(["PRJ-0017-secondbrain"]);
+  });
+
+  it("휴면으로 바뀐 링크된 Project는 그대로 남고 멤버도 계속 갱신된다", async () => {
+    const paths = await tempPaths("prj-became-dormant");
+    await service(paths).syncFromWorkspace(snapshot([SECONDBRAIN]), []);
+    const links = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+
+    // 같은 ref가 휴면으로 바뀌었다(work 쪽에서 _archive로 옮기면 ref도 바뀌지만, 여기서는 상태만
+    // 바뀐 중간 상태를 본다 — 링크가 살아 있는 한 지우지 않는다는 것이 요점이다).
+    const dormantSame = { ...SECONDBRAIN, status: "archived", archived: true };
+    const second = await service(paths, [IDS[1]]).syncFromWorkspace(
+      snapshot([dormantSame], links),
+      [REPO_PROJECT],
+    );
+
+    expect(second.created).toBe(0);
+    expect(second.workProjects.workProjects[IDS[0]]).toMatchObject({
+      name: "세컨드브레인(LLMwiki·atlas·bolt)",
+      members: [{ projectId: REPO_PROJECT.id, role: "repo" }],
+    });
+  });
+
+  it("title이 바뀌어도 이름을 덮어쓰지 않는다 — 이름은 만들 때 한 번이다", async () => {
+    const paths = await tempPaths("prj-rename");
+    await service(paths).syncFromWorkspace(snapshot([SECONDBRAIN]), []);
+    const links = (await readWorkspaceRegistry({ registryPath: paths.workspaceRegistryPath })).shellLinks;
+
+    const renamed = { ...SECONDBRAIN, title: "세컨드브레인 v2" };
+    const second = await service(paths, [IDS[1]]).syncFromWorkspace(snapshot([renamed], links), []);
+
+    expect(second.created).toBe(0);
+    expect(second.workProjects.workProjects[IDS[0]].name).toBe("세컨드브레인(LLMwiki·atlas·bolt)");
+  });
+
+  it("수제 업무 프로젝트가 같은 이름을 쓰고 있으면 건너뛴다", async () => {
+    const paths = await tempPaths("prj-collision");
+    const manual = service(paths, [MANUAL_ID]);
+    await manual.createWorkProject({ name: "세컨드브레인(LLMwiki·atlas·bolt)", category: "상품개발" });
+
+    const result = await service(paths).syncFromWorkspace(snapshot([SECONDBRAIN]), [REPO_PROJECT]);
+
+    expect(result.created).toBe(0);
+    expect(result.skipped).toEqual(["projects/PRJ-0017-secondbrain"]);
+    expect(Object.keys(result.workProjects.workProjects)).toEqual([MANUAL_ID]);
+    expect(result.workProjects.workProjects[MANUAL_ID].category).toBe("상품개발");
   });
 });
