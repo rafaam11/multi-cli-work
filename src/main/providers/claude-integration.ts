@@ -72,15 +72,25 @@ $status = switch ($eventName) {
 try {
   [IO.Directory]::CreateDirectory($statusDir) | Out-Null
   $target = Join-Path $statusDir ($sessionId + ".json")
-  $temp = $target + "." + $PID + ".tmp"
+  # A unique temp per run: parallel tool calls fire several hooks at once for the same target.
+  $temp = $target + "." + $PID + "." + [guid]::NewGuid().ToString("N") + ".tmp"
   $payload = [ordered]@{ sessionId = $sessionId; status = $status; event = $eventName; at = [DateTime]::UtcNow.ToString("o") }
   $payload.provider = "claude"
   if ($env:MULTI_CLI_WORK_GENERATION) { $payload.generation = $env:MULTI_CLI_WORK_GENERATION }
   if ($inputValue.cwd) { $payload.cwd = [string]$inputValue.cwd }
   if ($inputValue.session_id) { $payload.providerConversationId = [string]$inputValue.session_id }
   if ($inputValue.transcript_path) { $payload.transcriptPath = [string]$inputValue.transcript_path }
-  [IO.File]::WriteAllText($temp, ($payload | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
-  Move-Item -LiteralPath $temp -Destination $target -Force
+  try {
+    [IO.File]::WriteAllText($temp, ($payload | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+    # Another hook may hold the target for a moment; the rename is retried rather than given up.
+    # ErrorAction Stop matters: under SilentlyContinue a failed Move-Item would not throw at all.
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+      try { Move-Item -LiteralPath $temp -Destination $target -Force -ErrorAction Stop; break }
+      catch { Start-Sleep -Milliseconds 20 }
+    }
+  } finally {
+    if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
+  }
 } catch { }
 
 # On SessionStart, hand the work-project brief to Claude as additional context. The app sets
@@ -129,8 +139,11 @@ try:
     for source, target_key in (("cwd", "cwd"), ("session_id", "providerConversationId"), ("transcript_path", "transcriptPath")):
         if isinstance(value.get(source), str) and value[source]: payload[target_key] = value[source]
     fd, temporary = tempfile.mkstemp(prefix=session_id + ".", suffix=".tmp", dir=status_dir)
-    with os.fdopen(fd, "w", encoding="utf-8") as output: json.dump(payload, output, separators=(",", ":"))
-    os.replace(temporary, target)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output: json.dump(payload, output, separators=(",", ":"))
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary): os.remove(temporary)
 except Exception: pass
 # On SessionStart, hand the work-project brief to Claude as additional context. Failures degrade
 # to a session without context, never to a failed hook.

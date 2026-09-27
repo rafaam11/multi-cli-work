@@ -10,10 +10,17 @@ function global:Send-McwShellLocation {
     if ($mcwId -notmatch '^[a-zA-Z0-9-]+$' -or -not $env:MULTI_CLI_WORK_STATUS_DIR) { return }
     [IO.Directory]::CreateDirectory($env:MULTI_CLI_WORK_STATUS_DIR) | Out-Null
     $mcwTarget = Join-Path $env:MULTI_CLI_WORK_STATUS_DIR ($mcwId + '.json')
-    $mcwTemp = $mcwTarget + '.' + $PID + '.tmp'
+    $mcwTemp = $mcwTarget + '.' + $PID + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
     $mcwPayload = @{ sessionId = $mcwId; status = 'idle'; event = 'ShellReady'; provider = 'shell'; generation = $env:MULTI_CLI_WORK_GENERATION; cwd = $PWD.Path; at = [DateTime]::UtcNow.ToString('o') }
-    [IO.File]::WriteAllText($mcwTemp, ($mcwPayload | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
-    Move-Item -LiteralPath $mcwTemp -Destination $mcwTarget -Force
+    try {
+      [IO.File]::WriteAllText($mcwTemp, ($mcwPayload | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+      for ($mcwAttempt = 0; $mcwAttempt -lt 5; $mcwAttempt++) {
+        try { Move-Item -LiteralPath $mcwTemp -Destination $mcwTarget -Force -ErrorAction Stop; break }
+        catch { Start-Sleep -Milliseconds 20 }
+      }
+    } finally {
+      if (Test-Path -LiteralPath $mcwTemp) { Remove-Item -LiteralPath $mcwTemp -Force -ErrorAction SilentlyContinue }
+    }
   } catch { }
 }
 foreach ($mcwProvider in @('claude', 'codex')) {

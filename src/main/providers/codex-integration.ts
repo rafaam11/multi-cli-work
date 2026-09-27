@@ -18,8 +18,9 @@ process.stdin.on("end", () => {
     if (!sessionId || !/^[a-zA-Z0-9-]+$/.test(sessionId) || !statusDir) process.exit(0);
     if (event.hook_event_name !== "SessionStart" || typeof event.session_id !== "string") process.exit(0);
     const target = path.join(statusDir, sessionId + ".json");
-    const temporary = target + "." + process.pid + ".tmp";
+    const temporary = target + "." + process.pid + "." + Date.now() + ".tmp";
     fs.mkdirSync(statusDir, { recursive: true });
+    try {
     fs.writeFileSync(temporary, JSON.stringify({
       sessionId,
       status: "working",
@@ -33,6 +34,7 @@ process.stdin.on("end", () => {
     }) + "\\n", "utf8");
     fs.rmSync(target, { force: true });
     fs.renameSync(temporary, target);
+    } finally { fs.rmSync(temporary, { force: true }); }
   } catch { process.exitCode = 0; }
 });
 `;

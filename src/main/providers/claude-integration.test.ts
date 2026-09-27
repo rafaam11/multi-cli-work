@@ -126,6 +126,31 @@ describe("Claude app-owned integration", () => {
     expect(status).toMatchObject({ provider: "claude", generation: "generation-1", cwd: root, providerConversationId: "claude-1", transcriptPath: path.join(root, "claude.jsonl") });
   }, 20_000);
 
+  it("leaves no temp file behind when many hooks race for the same status file", async () => {
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-race-"));
+    roots.push(root);
+    const integration = await ensureClaudeIntegration(root, process.platform);
+    const statusDir = path.join(root, "status");
+    const command = process.platform === "win32" ? "powershell.exe" : "python3";
+    const args =
+      process.platform === "win32"
+        ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", integration.hookPath]
+        : [integration.hookPath];
+    const runHook = () => {
+      const child = execFileAsync(command, args, {
+        env: { ...process.env, MULTI_CLI_WORK_SESSION_ID: "session-race", MULTI_CLI_WORK_STATUS_DIR: statusDir },
+      });
+      child.child.stdin?.end(JSON.stringify({ hook_event_name: "PreToolUse", session_id: "claude-race", cwd: root }));
+      return child;
+    };
+    // Claude fires PreToolUse/PostToolUse for parallel tool calls at once — the same target, raced.
+    for (let round = 0; round < 3; round += 1) await Promise.all(Array.from({ length: 8 }, runHook));
+
+    const entries = await fs.readdir(statusDir);
+    expect(entries.filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    expect(entries).toContain("session-race.json");
+  }, 120_000);
+
   it("writes an executable Python hook on Linux", async () => {
     const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-linux-"));
     roots.push(root);

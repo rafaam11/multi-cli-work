@@ -72,9 +72,13 @@ export async function deleteProviderStatusFile(statusDir: string, sessionId: str
   await fs.rm(safeStatusFilePath(statusDir, sessionId), { force: true });
 }
 
+/** A hook finishes its write in milliseconds; a temp file older than this was abandoned. */
+const STALE_TEMP_MS = 60_000;
+
 export async function cleanupProviderStatusFiles(
   statusDir: string,
   keepSessionIds: ReadonlySet<string>,
+  now = Date.now(),
 ): Promise<void> {
   let entries: string[];
   try {
@@ -82,10 +86,24 @@ export async function cleanupProviderStatusFiles(
   } catch {
     return;
   }
+  const orphanStatus = entries.filter(
+    (name) => name.endsWith(".json") && !keepSessionIds.has(name.slice(0, -".json".length)),
+  );
+  // Hooks write `<id>.json.<pid>.tmp` and rename it over the target. Two hooks racing for the same
+  // target, or a hook killed mid-write, leave the temp behind — nothing else would ever remove it.
+  const staleTemps: string[] = [];
   await Promise.all(
     entries
-      .filter((name) => name.endsWith(".json") && !keepSessionIds.has(name.slice(0, -".json".length)))
-      .map((name) => fs.rm(path.join(statusDir, name), { force: true }).catch(() => undefined)),
+      .filter((name) => name.endsWith(".tmp"))
+      .map(async (name) => {
+        const stat = await fs.stat(path.join(statusDir, name)).catch(() => null);
+        if (stat && now - stat.mtimeMs > STALE_TEMP_MS) staleTemps.push(name);
+      }),
+  );
+  await Promise.all(
+    [...orphanStatus, ...staleTemps].map((name) =>
+      fs.rm(path.join(statusDir, name), { force: true }).catch(() => undefined),
+    ),
   );
 }
 

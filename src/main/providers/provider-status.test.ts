@@ -96,6 +96,21 @@ describe("cleanupProviderStatusFiles", () => {
     expect(await fs.readdir(dir)).toEqual(["keep-me.json"]);
   });
 
+  it("sweeps hook temp files a crashed or raced write left behind, but not one being written now", async () => {
+    const dir = await tempStatusDir();
+    const stale = path.join(dir, "abc.json.1234.tmp");
+    const fresh = path.join(dir, "abc.json.5678.tmp");
+    await fs.writeFile(stale, "{}");
+    await fs.writeFile(fresh, "{}");
+    const now = Date.now();
+    const old = new Date(now - 5 * 60_000);
+    await fs.utimes(stale, old, old);
+
+    await cleanupProviderStatusFiles(dir, new Set(), now);
+
+    expect(await fs.readdir(dir)).toEqual(["abc.json.5678.tmp"]);
+  });
+
   it("ignores non-json files and does nothing when the directory is missing", async () => {
     const dir = await tempStatusDir();
     await fs.writeFile(path.join(dir, "notes.txt"), "hello");
