@@ -2,9 +2,10 @@ import type { GitChangeStatus } from "@shared/api-types";
 import type { FileExplorerTarget } from "@shared/file-explorer-types";
 import { FileWarning, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { monaco } from "./monaco-setup";
+import { monaco, monacoThemeName } from "./monaco-setup";
 import { MONACO_DIFF_TYPOGRAPHY } from "./renderer-typography";
 import { errorMessage } from "./ipc-error";
+import { currentTheme, useResolvedTheme } from "./theme";
 
 export interface GitDiffFile {
   target: FileExplorerTarget;
@@ -42,6 +43,12 @@ export function GitDiffPane({ file, onClose }: GitDiffPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [contents, setContents] = useState<DiffContents | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const theme = useResolvedTheme();
+
+  // Monaco themes are global: switching one switches every open diff at once.
+  useEffect(() => {
+    monaco.editor.setTheme?.(monacoThemeName(theme));
+  }, [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +91,7 @@ export function GitDiffPane({ file, onClose }: GitDiffPaneProps) {
     const editor = monaco.editor.createDiffEditor(containerRef.current, {
       automaticLayout: true,
       readOnly: true,
-      theme: "mcw-dark",
+      theme: monacoThemeName(currentTheme()),
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       ...MONACO_DIFF_TYPOGRAPHY,

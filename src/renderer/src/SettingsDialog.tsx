@@ -667,6 +667,20 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
               <h2>일반</h2>
               {/* 언어 선택은 i18n이 붙을 때 돌아온다. 값(`language`)은 설정 파일에 그대로 남겨 두어
                   다운그레이드해도 잃지 않는다 — 적용되지 않는 선택지를 보여 주지 않을 뿐이다. */}
+              <div className="settings-row">
+                <label htmlFor="settings-theme">테마</label>
+                <select
+                  id="settings-theme"
+                  value={settings.appearance.theme}
+                  onChange={(event) =>
+                    update({ appearance: { theme: event.target.value as AppSettings["appearance"]["theme"] } })
+                  }
+                >
+                  <option value="dark">다크</option>
+                  <option value="light">라이트</option>
+                  <option value="system">시스템 설정 따르기</option>
+                </select>
+              </div>
               {checkboxRow("창을 닫으면 트레이에 남기기", "settings-close-to-tray", settings.general.closeToTray, (next) => ({
                 general: { closeToTray: next },
               }))}

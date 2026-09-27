@@ -103,6 +103,13 @@ describe("SettingsDialog", () => {
     expect(await screen.findByText(/다른 프로그램이 이미 쓰고 있어/)).toBeInTheDocument();
   });
 
+  it("일반 탭에서 테마를 고른다", async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    expect(screen.getByLabelText("테마")).toHaveValue("dark");
+    fireEvent.change(screen.getByLabelText("테마"), { target: { value: "system" } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ appearance: { theme: "system" } }));
+  });
+
   it("적용되지 않는 언어 선택은 보여 주지 않는다", () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
     expect(screen.queryByLabelText("언어")).not.toBeInTheDocument();

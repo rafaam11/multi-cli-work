@@ -541,7 +541,7 @@ function exportTimestamp(now: Date): string {
 function validateSettingsPatch(value: unknown): AppSettingsPatch {
   const raw = exactObject(
     value,
-    ["language", "general", "terminal", "notifications", "keybindings", "projects", "files", "fanOut"],
+    ["language", "general", "terminal", "notifications", "keybindings", "projects", "files", "fanOut", "appearance"],
     "Settings patch",
   );
   const patch: AppSettingsPatch = {};
@@ -673,6 +673,15 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
     }
     if (files.unsupportedOpensWithOs !== undefined) {
       patch.files.unsupportedOpensWithOs = booleanValue(files.unsupportedOpensWithOs, "Settings files.unsupportedOpensWithOs");
+    }
+  }
+  if (raw.appearance !== undefined) {
+    const appearance = exactObject(raw.appearance, ["theme"], "Settings appearance");
+    if (appearance.theme !== undefined) {
+      if (appearance.theme !== "dark" && appearance.theme !== "light" && appearance.theme !== "system") {
+        throw new Error("Settings appearance.theme must be dark, light, or system");
+      }
+      patch.appearance = { theme: appearance.theme };
     }
   }
   if (raw.fanOut !== undefined) {

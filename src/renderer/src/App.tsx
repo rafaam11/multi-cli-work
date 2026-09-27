@@ -97,6 +97,7 @@ import {
 import { isTypingTarget, normalizeKeyEvent, resolveKeymap } from "./keymap";
 import { errorMessage } from "./ipc-error";
 import { useConfirmDialog } from "./confirm-dialog";
+import { applyTheme, resolveTheme } from "./theme";
 
 type ActiveView = "home" | "detail" | "work-project" | "terminal";
 
@@ -830,6 +831,17 @@ export function App() {
       unsubscribe();
     };
   }, []);
+
+  // 테마: 설정이 "시스템"이면 OS의 밝기 설정을 따라가고, 그것이 바뀔 때도 따라간다.
+  useEffect(() => {
+    const preference = appSettings.appearance.theme;
+    const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const apply = () => applyTheme(resolveTheme(preference, media?.matches ?? true));
+    apply();
+    if (preference !== "system" || !media) return;
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [appSettings.appearance.theme]);
 
   // 워크스페이스 동기화(설정 창의 루트 추가·다시 읽기, 시작 시 백그라운드 동기화)는 업무 프로젝트와
   // 태그를 main에서 다시 쓴다. 알림이 오면 세 목록을 다시 읽어야 재시작 없이 사이드바가 따라온다.

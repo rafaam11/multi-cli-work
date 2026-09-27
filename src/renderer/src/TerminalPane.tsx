@@ -8,6 +8,8 @@ import { droppedPathsAsPromptText } from "./drop-paths";
 import { createTerminalOutputFilter } from "./terminal-output-filter";
 import { TerminalSearchBar } from "./TerminalSearchBar";
 import "@xterm/xterm/css/xterm.css";
+import { terminalTheme } from "./terminal-themes";
+import { currentTheme, useResolvedTheme } from "./theme";
 
 /**
  * What the title bar's 편집 menu can do to a live terminal. The pane owns the xterm instance, so the
@@ -82,6 +84,7 @@ export function TerminalPane({
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const [attaching, setAttaching] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const resolvedTheme = useResolvedTheme();
   const readOnly = isReadOnly(session);
 
   sessionRef.current = session;
@@ -128,29 +131,7 @@ export function TerminalPane({
         },
       },
       scrollback: settingsRef.current.scrollback,
-      theme: {
-        background: "#161918",
-        foreground: "#dfe5e1",
-        cursor: "#4fb7a4",
-        cursorAccent: "#161918",
-        selectionBackground: "#355e56",
-        black: "#202524",
-        red: "#d46a6a",
-        green: "#73b987",
-        yellow: "#d8a24a",
-        blue: "#6ea8d8",
-        magenta: "#aa8ccc",
-        cyan: "#4fb7a4",
-        white: "#dfe5e1",
-        brightBlack: "#69736e",
-        brightRed: "#e78383",
-        brightGreen: "#91cea0",
-        brightYellow: "#e8ba6d",
-        brightBlue: "#8abbe3",
-        brightMagenta: "#bea2d2",
-        brightCyan: "#78caba",
-        brightWhite: "#ffffff",
-      },
+      theme: terminalTheme(currentTheme()),
     });
     terminalInstanceRef.current = terminal;
     const fitAddon = new FitAddon();
@@ -372,6 +353,12 @@ export function TerminalPane({
   useEffect(() => {
     if (!readOnly) scheduleResizeRef.current();
   }, [readOnly]);
+
+  // 테마를 바꿔도 터미널을 다시 만들지 않는다 — 팔레트만 갈아 끼워 스크롤백을 그대로 둔다.
+  useEffect(() => {
+    const terminal = terminalInstanceRef.current;
+    if (terminal) terminal.options.theme = terminalTheme(resolvedTheme);
+  }, [resolvedTheme]);
 
   // xterm 6은 options를 런타임에 바꿀 수 있다 — 인스턴스를 살려둔 채 반영해야 스크롤백이 산다.
   useEffect(() => {

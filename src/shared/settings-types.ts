@@ -82,6 +82,13 @@ export const MAX_FAN_OUT_TEMPLATES = 30;
 export const MAX_FAN_OUT_TEMPLATE_NAME_LENGTH = 40;
 export const MAX_FAN_OUT_TEMPLATE_TEXT_LENGTH = 8_000;
 
+/** "system" follows the OS light/dark setting and changes with it. */
+export type ThemePreference = "dark" | "light" | "system";
+
+export interface AppearanceSettings {
+  theme: ThemePreference;
+}
+
 export interface AppSettings {
   /** 지금은 선택 저장만 한다 — i18n 도입은 별도 작업. */
   language: "ko" | "en";
@@ -94,6 +101,7 @@ export interface AppSettings {
   projects: ProjectSettings;
   files: FileSettings;
   fanOut: FanOutSettings;
+  appearance: AppearanceSettings;
 }
 
 export interface AppSettingsPatch {
@@ -114,6 +122,7 @@ export interface AppSettingsPatch {
   files?: { openWith?: Record<string, FileOpenTarget>; unsupportedOpensWithOs?: boolean };
   /** 템플릿 목록은 통째 교체 — 삭제·순서 변경을 부분 병합으로 표현할 수 없다. */
   fanOut?: { templates?: FanOutTemplate[] };
+  appearance?: Partial<AppearanceSettings>;
 }
 
 export const TERMINAL_FONT_SIZE_RANGE = { min: 8, max: 32 } as const;
@@ -154,6 +163,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타" },
   files: { openWith: {}, unsupportedOpensWithOs: true },
   fanOut: { templates: [] },
+  appearance: { theme: "dark" },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -277,6 +287,7 @@ export function parseSettings(value: unknown): AppSettings {
 
   const files = isRecord(raw.files) ? raw.files : {};
   const fanOut = isRecord(raw.fanOut) ? raw.fanOut : {};
+  const appearance = isRecord(raw.appearance) ? raw.appearance : {};
   const openWith: Record<string, FileOpenTarget> = {};
   if (isRecord(files.openWith)) {
     for (const [extension, target] of Object.entries(files.openWith)) {
@@ -357,6 +368,12 @@ export function parseSettings(value: unknown): AppSettings {
       unsupportedOpensWithOs: readBoolean(files.unsupportedOpensWithOs, defaults.files.unsupportedOpensWithOs),
     },
     fanOut: { templates: readFanOutTemplates(fanOut.templates) },
+    appearance: {
+      theme:
+        appearance.theme === "light" || appearance.theme === "system" || appearance.theme === "dark"
+          ? appearance.theme
+          : defaults.appearance.theme,
+    },
   };
 }
 
@@ -388,5 +405,6 @@ export function mergeSettingsPatch(current: AppSettings, patch: AppSettingsPatch
       unsupportedOpensWithOs: patch.files?.unsupportedOpensWithOs ?? current.files.unsupportedOpensWithOs,
     },
     fanOut: { templates: patch.fanOut?.templates ?? current.fanOut.templates },
+    appearance: { ...current.appearance, ...patch.appearance },
   };
 }

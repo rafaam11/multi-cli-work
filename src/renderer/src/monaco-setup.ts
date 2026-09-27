@@ -24,4 +24,24 @@ monaco.editor.defineTheme("mcw-dark", {
   },
 });
 
+/** The same diff tints on the light theme's surfaces. */
+monaco.editor.defineTheme("mcw-light", {
+  base: "vs",
+  inherit: true,
+  rules: [],
+  colors: {
+    "editor.background": "#f7f8f7",
+    "editorGutter.background": "#f7f8f7",
+    "editor.lineHighlightBackground": "#e7ecea66",
+    "diffEditor.insertedTextBackground": "#1b786733",
+    "diffEditor.removedTextBackground": "#b33a3a2e",
+    "diffEditor.insertedLineBackground": "#1b78671a",
+    "diffEditor.removedLineBackground": "#b33a3a17",
+  },
+});
+
+export function monacoThemeName(theme: "dark" | "light"): string {
+  return theme === "light" ? "mcw-light" : "mcw-dark";
+}
+
 export { monaco };

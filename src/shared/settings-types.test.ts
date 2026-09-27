@@ -260,3 +260,12 @@ describe("팬아웃 템플릿", () => {
     expect(mergeSettingsPatch(next, { fanOut: { templates: [] } }).fanOut.templates).toEqual([]);
   });
 });
+
+describe("테마", () => {
+  it("기본은 다크이고, 모르는 값은 다크로 되돌리며, patch로 바꾼다", () => {
+    expect(DEFAULT_SETTINGS.appearance).toEqual({ theme: "dark" });
+    expect(parseSettings({ appearance: { theme: "sepia" } }).appearance.theme).toBe("dark");
+    expect(parseSettings({ appearance: { theme: "system" } }).appearance.theme).toBe("system");
+    expect(mergeSettingsPatch(DEFAULT_SETTINGS, { appearance: { theme: "light" } }).appearance.theme).toBe("light");
+  });
+});

@@ -786,6 +786,13 @@ describe("main IPC boundary", () => {
     expect(settingsGateway.update).not.toHaveBeenCalled();
   });
 
+  it("accepts a theme and rejects an unknown one", async () => {
+    const { handlers, settingsGateway } = setup();
+    await handlers.get("settings:update")!({}, { appearance: { theme: "light" } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({ appearance: { theme: "light" } });
+    expect(() => handlers.get("settings:update")!({}, { appearance: { theme: "sepia" } })).toThrow(/theme/);
+  });
+
   it("accepts a summon shortcut with a modifier and rejects a bare key", async () => {
     const { handlers, settingsGateway } = setup();
 

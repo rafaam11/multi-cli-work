@@ -16,8 +16,10 @@ vi.mock("./monaco-setup", () => ({
         monacoHarness.options.push(options);
         return { setModel: vi.fn(), dispose: vi.fn() };
       }),
+      setTheme: vi.fn(),
     },
   },
+  monacoThemeName: (theme: "dark" | "light") => (theme === "light" ? "mcw-light" : "mcw-dark"),
 }));
 
 const file: GitDiffFile = {
