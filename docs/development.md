@@ -17,6 +17,10 @@ npm run dev
 `npm ci`의 `postinstall`이 `electron-builder install-app-deps`를 돌려 네이티브 모듈을 맞춘다.
 Electron 버전을 올린 뒤 PTY가 열리지 않으면 `npm run rebuild:native`로 다시 맞춘다.
 
+Windows에서 이 재빌드가 `'GetCommitHash.bat' is not recognized`로 실패하고 `npm ci`가 종료 코드 1을
+돌려줄 수 있다. `node-pty`가 싣고 오는 `prebuilds/win32-x64` 바이너리로 앱·테스트·E2E가 그대로
+돌므로 무시해도 된다 — `node_modules`는 이미 다 설치된 상태다.
+
 ## 스크립트
 
 | 스크립트 | 설명 |
