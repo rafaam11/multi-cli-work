@@ -22,8 +22,10 @@
 세션 스크롤백처럼 앱이 다시 만들 수 있거나, 앱 설치와 수명을 같이하는 것들이다.
 지우면 등록한 폴더는 남고 열려 있던 세션 배치만 초기화된다.
 
-- Windows: `%APPDATA%\Multi CLI Work\`
-- Linux: `~/.config/Multi CLI Work/`
+- Windows: `%APPDATA%\multi-cli-work\`
+- Linux: `~/.config/multi-cli-work/`
+
+폴더 이름은 표시 이름(Multi CLI Work)이 아니라 패키지 이름을 따른다.
 
 | 경로 | 내용 |
 |---|---|
