@@ -95,6 +95,7 @@ export function buildTitleBarMenus(
         item("edit.paste", "붙여넣기", { shortcut: shortcutFor("edit.paste"), disabled: !context.terminalFocused }),
         item("edit.select-all", "모두 선택", { shortcut: shortcutFor("edit.select-all"), disabled: !context.terminalFocused }),
         separator,
+        item("edit.find", "찾기", { shortcut: shortcutFor("edit.find"), disabled: !context.terminalFocused }),
         item("edit.clear", "터미널 지우기", { disabled: !context.terminalFocused }),
       ],
     },

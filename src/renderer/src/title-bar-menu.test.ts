@@ -99,7 +99,7 @@ describe("buildTitleBarMenus", () => {
   });
 
   it("disables every 편집 command unless a terminal owns the keyboard", () => {
-    for (const id of ["edit.copy", "edit.paste", "edit.select-all", "edit.clear"]) {
+    for (const id of ["edit.copy", "edit.paste", "edit.select-all", "edit.find", "edit.clear"]) {
       expect(find({ terminalFocused: false }, id).disabled).toBe(true);
       expect(find({ terminalFocused: true }, id).disabled).toBeUndefined();
     }

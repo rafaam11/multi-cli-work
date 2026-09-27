@@ -2941,6 +2941,7 @@ export function App() {
       case "edit.copy": terminal?.copySelection(); break;
       case "edit.paste": terminal?.paste(); break;
       case "edit.select-all": terminal?.selectAll(); break;
+      case "edit.find": terminal?.find(); break;
       case "edit.clear": terminal?.clear(); break;
       case "view.toggle-sidebar": setSidebarCollapsed((value) => !value); break;
       case "view.toggle-right-sidebar": setRightSidebarCollapsed((value) => !value); break;

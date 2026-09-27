@@ -4461,6 +4461,66 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   height: 100%;
 }
 
+/* Find-in-scrollback sits over the pane's top-right corner, like an editor's find widget. */
+.terminal-search {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  max-width: calc(100% - 20px);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+}
+
+.terminal-search input {
+  width: 180px;
+  min-width: 60px;
+  flex: 1 1 auto;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--bg);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: var(--type-caption-size);
+}
+
+.terminal-search button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  place-items: center;
+}
+
+.terminal-search button:hover,
+.terminal-search button.active {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.terminal-search-status {
+  padding: 0 4px;
+  color: #e78383;
+  font-size: var(--type-caption-size);
+  white-space: nowrap;
+}
+
 .terminal-progress {
   position: absolute;
   top: 10px;
@@ -6062,6 +6122,17 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
     display: none;
   }
 
+  /* Seven layout tiles are the widest thing in the row (≈380px at full size); small tiles still
+     read as their shape, and they must give way before any launcher does. */
+  .workspace-header .layout-preview {
+    width: 20px;
+    height: 16px;
+  }
+
+  .workspace-header .layout-option {
+    padding: 1px;
+  }
+
   /* Agents are data, so the launcher row grows with agents.json. Below this width the labels go
      first — every agent stays one click away as an icon instead of scrolling out of reach. */
   .workspace-header .launcher-button {
@@ -6080,17 +6151,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   }
 }
 
-@container (max-width: 780px) {
-  /* Seven layout tiles are the widest thing in the row; small tiles still read as their shape. */
-  .workspace-header .layout-preview {
-    width: 20px;
-    height: 16px;
-  }
-
-  .workspace-header .layout-option {
-    padding: 1px;
-  }
-}
 
 @container (max-width: 820px) {
   /* The status dot stays; its word and the 상세 label are the cheapest pixels to give back. */

@@ -1,10 +1,12 @@
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { TerminalSettings } from "@shared/settings-types";
 import { useEffect, useRef, useState } from "react";
 import { droppedPathsAsPromptText } from "./drop-paths";
 import { createTerminalOutputFilter } from "./terminal-output-filter";
+import { TerminalSearchBar } from "./TerminalSearchBar";
 import "@xterm/xterm/css/xterm.css";
 
 /**
@@ -17,6 +19,8 @@ export interface TerminalCommands {
   selectAll(): void;
   clear(): void;
   focus(): void;
+  /** Opens this pane's find-in-scrollback bar. */
+  find(): void;
 }
 
 interface TerminalPaneProps {
@@ -74,7 +78,10 @@ export function TerminalPane({
   const scheduleResizeRef = useRef<() => void>(() => undefined);
   const refitRef = useRef<() => void>(() => undefined);
   const terminalInstanceRef = useRef<Terminal | null>(null);
+  // Loaded the first time the bar opens, so a pane nobody searches never carries the addon.
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const [attaching, setAttaching] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
   const readOnly = isReadOnly(session);
 
   sessionRef.current = session;
@@ -182,7 +189,29 @@ export function TerminalPane({
         .catch(reportError);
     };
 
+    const openSearch = () => {
+      if (!searchAddonRef.current) {
+        const addon = new SearchAddon();
+        terminal.loadAddon(addon);
+        searchAddonRef.current = addon;
+      }
+      setSearchOpen(true);
+    };
+
     terminal.attachCustomKeyEventHandler((event) => {
+      // Ctrl+F opens the pane's find bar, as in an editor's terminal. It never reaches the PTY: a
+      // TUI that wants it (readline's forward-char) still has the arrow key.
+      if (
+        (event.code === "KeyF" || event.key === "f" || event.key === "F") &&
+        event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey
+      ) {
+        event.preventDefault();
+        if (event.type === "keydown") openSearch();
+        return false;
+      }
       // Shift+Enter reaches xterm as a plain Enter, so a CLI that wants a newline there never sees
       // one. Agents that name a substitute get it written straight to the PTY instead.
       if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -221,6 +250,7 @@ export function TerminalPane({
       selectAll: () => terminal.selectAll(),
       clear: () => terminal.clear(),
       focus: () => terminal.focus(),
+      find: openSearch,
     });
 
     const resize = () => {
@@ -332,6 +362,8 @@ export function TerminalPane({
       terminal.dispose();
       scheduleResizeRef.current = () => undefined;
       terminalInstanceRef.current = null;
+      searchAddonRef.current = null;
+      setSearchOpen(false);
       refitRef.current = () => undefined;
       finishRefresh();
     };
@@ -360,6 +392,22 @@ export function TerminalPane({
         <div className="terminal-frame" ref={frameRef} />
       </div>
       {attaching ? <span className="terminal-progress">세션 연결 중</span> : null}
+      {searchOpen ? (
+        <TerminalSearchBar
+          onSearch={(term, direction, caseSensitive) => {
+            const addon = searchAddonRef.current;
+            if (!addon) return false;
+            return direction === "next"
+              ? addon.findNext(term, { caseSensitive })
+              : addon.findPrevious(term, { caseSensitive });
+          }}
+          onClose={() => {
+            setSearchOpen(false);
+            terminalInstanceRef.current?.clearSelection?.();
+            terminalInstanceRef.current?.focus();
+          }}
+        />
+      ) : null}
     </section>
   );
 }

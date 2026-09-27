@@ -59,6 +59,7 @@ export const KEYMAP_ACTIONS: readonly KeymapAction[] = [
   action("edit.copy", "복사", "편집", "Ctrl+Shift+C", { fixed: true }),
   action("edit.paste", "붙여넣기", "편집", "Ctrl+V", { fixed: true }),
   action("edit.select-all", "모두 선택", "편집", "Ctrl+A", { fixed: true }),
+  action("edit.find", "터미널에서 찾기", "편집", "Ctrl+F", { fixed: true }),
   action("edit.clear", "터미널 지우기", "편집", null, { fixed: true }),
 ];
 

@@ -69,6 +69,8 @@ describe("키맵 카탈로그", () => {
     expect(byId.get("edit.copy")).toMatchObject({ defaultAccelerator: "Ctrl+Shift+C", fixed: true });
     expect(byId.get("edit.paste")).toMatchObject({ defaultAccelerator: "Ctrl+V", fixed: true });
     expect(byId.get("edit.select-all")).toMatchObject({ defaultAccelerator: "Ctrl+A", fixed: true });
+    // 터미널 안의 Ctrl+F는 TerminalPane이 잡는다 — 디스패처가 가로채면 반쪽 리매핑이 된다.
+    expect(byId.get("edit.find")).toMatchObject({ defaultAccelerator: "Ctrl+F", fixed: true });
   });
 });
 

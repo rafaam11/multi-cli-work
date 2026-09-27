@@ -1,6 +1,6 @@
 import type { IBufferRange, ILinkHandler } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "@shared/settings-types";
 import { TerminalPane } from "./TerminalPane";
@@ -26,6 +26,10 @@ const terminalHarness = vi.hoisted(() => ({
   resizeObservers: [] as ResizeObserverCallback[],
   fittedCols: 200,
   fittedRows: 50,
+  keyHandler: null as ((event: KeyboardEvent) => boolean) | null,
+  searches: [] as string[],
+  searchResult: true,
+  focused: 0,
 }));
 
 vi.mock("@xterm/xterm", () => ({
@@ -65,14 +69,34 @@ vi.mock("@xterm/xterm", () => ({
       addon.activate(this);
     }
     open() {}
-    focus() {}
-    attachCustomKeyEventHandler() {}
+    focus() {
+      terminalHarness.focused += 1;
+    }
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
+      terminalHarness.keyHandler = handler;
+    }
     getSelection() {
       return "";
     }
     onData() {
       return { dispose: () => undefined };
     }
+  },
+}));
+
+vi.mock("@xterm/addon-search", () => ({
+  SearchAddon: class SearchAddonMock {
+    activate() {}
+    dispose() {}
+    findNext(term: string, options?: { caseSensitive?: boolean }) {
+      terminalHarness.searches.push(`next:${term}:${options?.caseSensitive ? "case" : "any"}`);
+      return terminalHarness.searchResult;
+    }
+    findPrevious(term: string, options?: { caseSensitive?: boolean }) {
+      terminalHarness.searches.push(`prev:${term}:${options?.caseSensitive ? "case" : "any"}`);
+      return terminalHarness.searchResult;
+    }
+    clearDecorations() {}
   },
 }));
 
@@ -144,6 +168,10 @@ beforeEach(() => {
   terminalHarness.resizeObservers.length = 0;
   terminalHarness.fittedCols = 200;
   terminalHarness.fittedRows = 50;
+  terminalHarness.keyHandler = null;
+  terminalHarness.searches.length = 0;
+  terminalHarness.searchResult = true;
+  terminalHarness.focused = 0;
   vi.stubGlobal(
     "ResizeObserver",
     class ResizeObserverMock {
@@ -183,6 +211,58 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TerminalPane replay sizing", () => {
+  describe("scrollback search", () => {
+    const ctrlF = () =>
+      ({ type: "keydown", key: "f", code: "KeyF", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() }) as unknown as KeyboardEvent;
+
+    it("opens on Ctrl+F inside the terminal and keeps the key from the PTY", () => {
+      renderPane();
+      let passedThrough = true;
+      act(() => {
+        passedThrough = terminalHarness.keyHandler!(ctrlF());
+      });
+      expect(passedThrough).toBe(false);
+      expect(screen.getByRole("search", { name: "터미널에서 찾기" })).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "찾을 텍스트" })).toHaveFocus();
+    });
+
+    it("walks the matches with Enter and Shift+Enter, honouring case sensitivity", () => {
+      renderPane();
+      act(() => void terminalHarness.keyHandler!(ctrlF()));
+      const field = screen.getByRole("textbox", { name: "찾을 텍스트" });
+
+      fireEvent.change(field, { target: { value: "MCW" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      fireEvent.keyDown(field, { key: "Enter", shiftKey: true });
+      fireEvent.click(screen.getByRole("button", { name: "대소문자 구분" }));
+      fireEvent.click(screen.getByRole("button", { name: "다음 결과" }));
+
+      expect(terminalHarness.searches).toEqual(["next:MCW:any", "prev:MCW:any", "next:MCW:case"]);
+    });
+
+    it("says when nothing matches, and Escape closes it and hands the keyboard back", () => {
+      terminalHarness.searchResult = false;
+      renderPane();
+      act(() => void terminalHarness.keyHandler!(ctrlF()));
+      const field = screen.getByRole("textbox", { name: "찾을 텍스트" });
+      fireEvent.change(field, { target: { value: "nope" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(screen.getByText("결과 없음")).toBeInTheDocument();
+
+      const before = terminalHarness.focused;
+      fireEvent.keyDown(field, { key: "Escape" });
+      expect(screen.queryByRole("search")).not.toBeInTheDocument();
+      expect(terminalHarness.focused).toBeGreaterThan(before);
+    });
+
+    it("can be opened from the menu through the pane's command handles", () => {
+      let commands: { find(): void } | null = null;
+      renderPane({ onRegisterCommands: (_id, next) => (commands = next) });
+      act(() => commands!.find());
+      expect(screen.getByRole("search", { name: "터미널에서 찾기" })).toBeInTheDocument();
+    });
+  });
+
   it("uses the shared 13px content size and 1.25 terminal line height", () => {
     renderPane();
 

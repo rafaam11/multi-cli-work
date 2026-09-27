@@ -1292,11 +1292,61 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
         sidebarRight: sidebar.right,
         workspaceScroll: workspace.scrollLeft,
         launcherOverflow: launchers.scrollWidth - launchers.clientWidth,
+        // Every control in the row, in order, including each layout tile: none may draw over the next.
+        overlaps: (() => {
+          const controls = [
+            ...document.querySelectorAll<HTMLElement>(".workspace-actions .layout-option"),
+            ...[...document.querySelectorAll<HTMLElement>(".workspace-actions > *")].filter(
+              (element) => !element.classList.contains("layout-bar"),
+            ),
+          ]
+            .map((element) => ({ name: element.getAttribute("aria-label") ?? element.className, rect: element.getBoundingClientRect() }))
+            .filter(({ rect }) => rect.width > 0)
+            .sort((a, b) => a.rect.left - b.rect.left);
+          return controls
+            .slice(1)
+            .filter((control, index) => controls[index].rect.right > control.rect.left + 0.5)
+            .map((control, index) => `${controls[index].name} > ${control.name}`);
+        })(),
       };
     });
     expect(geometry.gridLeft).toBeGreaterThanOrEqual(geometry.sidebarRight);
     expect(geometry.workspaceScroll).toBe(0);
     expect(geometry.launcherOverflow).toBeLessThanOrEqual(1);
+    expect(geometry.overlaps).toEqual([]);
+  });
+
+  test("finds a line that has scrolled far out of view with Ctrl+F", async () => {
+    // Its own fresh shell: whatever earlier tests left on screen may have exited.
+    await openFolder();
+    await page.locator(".layout-bar").getByRole("radio", { name: "자동" }).click();
+    const before = await page.locator(".grid-pane").count();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
+    const terminal = page.locator(".grid-pane").last().getByRole("region", { name: `${SHELL_ID} 터미널` });
+    await terminal.click();
+    await page.keyboard.type(
+      shellCommand(
+        "Write-Output NDL_ONE; 1..200 | ForEach-Object { 'filler row ' + $_ }",
+        "echo NDL_ONE; i=1; while [ $i -le 200 ]; do echo filler row $i; i=$((i+1)); done",
+      ),
+    );
+    await page.keyboard.press("Enter");
+    await expect(terminal.locator(".xterm-rows")).toContainText("filler row 200");
+    // The command line itself echoes the needle, so count rendered rows rather than any match.
+    await expect(terminal.locator(".xterm-rows > div").filter({ hasText: /^NDL_ONE\s*$/ })).toHaveCount(0);
+
+    await page.keyboard.press("Control+f");
+    const search = page.getByRole("search", { name: "터미널에서 찾기" });
+    await expect(search).toBeVisible();
+    await search.getByRole("textbox", { name: "찾을 텍스트" }).fill("NDL_ONE");
+    await page.keyboard.press("Shift+Enter");
+    // A short token: auto layout can leave this pane narrow, and a long one would wrap over two rows.
+    await expect(terminal.locator(".xterm-rows > div").filter({ hasText: /^NDL_ONE\s*$/ })).toHaveCount(1);
+    await attachScreenshot("terminal-search");
+
+    await page.keyboard.press("Escape");
+    await expect(search).toBeHidden();
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
