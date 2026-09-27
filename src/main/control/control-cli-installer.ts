@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -8,8 +9,19 @@ import path from "node:path";
  * Claude hook overlay in `providers/claude-integration.ts`.
  */
 
-/** Fixed local pipe the control server listens on; `JK_CODING_CLI_PIPE` overrides it in dev/tests. */
+/** Prefix of the local pipe the control server listens on; `JK_CODING_CLI_PIPE` overrides it. */
 export const CONTROL_PIPE_NAME = "jk-coding-cli";
+
+/**
+ * One pipe per userData. A fixed name let only the first instance listen — a dev build or an e2e run
+ * next to the installed app got EADDRINUSE and its sessions silently lost `jk`. Sessions learn the
+ * name from their environment, so nothing outside the app needs to know it.
+ */
+export function controlPipeNameFor(userDataPath: string, platform: NodeJS.Platform = process.platform): string {
+  const resolved = path.resolve(userDataPath);
+  const key = platform === "win32" ? resolved.toLowerCase() : resolved;
+  return `${CONTROL_PIPE_NAME}-${crypto.createHash("sha1").update(key).digest("hex").slice(0, 8)}`;
+}
 export const CONTROL_PIPE_ENV = "JK_CODING_CLI_PIPE";
 /** Platform-independent pipe:// or tcp:// endpoint for clients introduced in v1.5. */
 export const CONTROL_ENDPOINT_ENV = "JK_CODING_CLI_ENDPOINT";
@@ -158,6 +170,18 @@ switch ($command) {
 exit 0
 `;
 
+/**
+ * Git Bash (and so Claude Code's Bash tool on Windows) runs neither .cmd nor .ps1 by bare name — it
+ * needs an extensionless script. It hands off to the same PowerShell client as the .cmd shim.
+ */
+const CONTROL_CLI_SH = [
+  "#!/bin/sh",
+  'dir=$(dirname "$0")',
+  'if command -v cygpath >/dev/null 2>&1; then dir=$(cygpath -w "$dir"); fi',
+  'exec powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$dir/jk-coding-cli.ps1" "$@"',
+  "",
+].join("\n");
+
 const CONTROL_CLI_CMD = [
   "@echo off",
   'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0jk-coding-cli.ps1" %*',
@@ -257,6 +281,8 @@ export async function ensureControlCli(
     await replaceFile(path.join(binDir, "jk-coding-cli.ps1"), CONTROL_CLI_SCRIPT);
     await replaceFile(path.join(binDir, "jk-coding-cli.cmd"), CONTROL_CLI_CMD);
     await replaceFile(path.join(binDir, "jk.cmd"), CONTROL_CLI_CMD);
+    await replaceFile(path.join(binDir, "jk-coding-cli"), CONTROL_CLI_SH);
+    await replaceFile(path.join(binDir, "jk"), CONTROL_CLI_SH);
   } else {
     const client = path.join(binDir, "jk-coding-cli");
     const alias = path.join(binDir, "jk");

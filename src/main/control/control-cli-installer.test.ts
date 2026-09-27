@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureControlCli } from "./control-cli-installer";
+import { controlPipeNameFor, ensureControlCli } from "./control-cli-installer";
 
 const roots: string[] = [];
 
@@ -40,6 +40,21 @@ describe("ensureControlCli", () => {
     }
   });
 
+  it("adds POSIX shims so Git Bash (Claude Code's Bash tool on Windows) finds jk too", async () => {
+    const userData = await tempRoot();
+
+    const { binDir } = await ensureControlCli(userData, "win32");
+
+    for (const name of ["jk", "jk-coding-cli"]) {
+      const shim = await fs.readFile(path.join(binDir, name), "utf8");
+      expect(shim.startsWith("#!/bin/sh\n")).toBe(true);
+      // A CR would end up inside the shebang and the path — Git Bash needs pure LF.
+      expect(shim).not.toContain("\r");
+      expect(shim).toContain("jk-coding-cli.ps1");
+      expect(shim).toContain('"$@"');
+    }
+  });
+
   it("replaces stale files on every start", async () => {
     const userData = await tempRoot();
     const binDir = path.join(userData, "bin");
@@ -61,5 +76,17 @@ describe("ensureControlCli", () => {
       expect(await fs.readFile(file, "utf8")).toContain("#!/usr/bin/env python3");
       if (process.platform !== "win32") expect((await fs.stat(file)).mode & 0o111).not.toBe(0);
     }
+  });
+});
+
+describe("controlPipeNameFor", () => {
+  it("gives each userData its own pipe so a second instance does not lose jk", () => {
+    const installed = controlPipeNameFor("C:\\Users\\me\\AppData\\Roaming\\multi-cli-work", "win32");
+    const dev = controlPipeNameFor("C:\\temp\\mcw-e2e\\user-data", "win32");
+
+    expect(installed).toMatch(/^jk-coding-cli-[0-9a-f]{8}$/);
+    expect(dev).not.toBe(installed);
+    // Windows paths compare case-insensitively, so the same folder spelled differently is one pipe.
+    expect(controlPipeNameFor("c:\\users\\me\\appdata\\roaming\\multi-cli-work", "win32")).toBe(installed);
   });
 });
