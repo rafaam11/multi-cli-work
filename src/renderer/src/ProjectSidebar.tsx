@@ -195,6 +195,7 @@ interface SidebarPrefs {
   openShelves: ShelfKind[];
   sessionPanelOpen: boolean;
   sessionScope: SessionScope;
+  sessionWaitingOnly: boolean;
   /**
    * 묶기에 쓸 태그를 고른 순서대로. `null`은 **저장된 선호 없음**이고, 그때만 파생 기본값이
    * 돈다 — 기본값 자체는 렌더마다 만들어지는 값이라 저장하지 않는다.
@@ -212,6 +213,7 @@ function readSidebarState(): SidebarPrefs {
     openShelves: [],
     sessionPanelOpen: true,
     sessionScope: "all",
+    sessionWaitingOnly: false,
     groupingTags: null,
   };
   try {
@@ -220,6 +222,7 @@ function readSidebarState(): SidebarPrefs {
       openShelves?: unknown[];
       sessionPanelOpen?: unknown;
       sessionScope?: unknown;
+      sessionWaitingOnly?: unknown;
       groupingTags?: unknown;
     };
     return {
@@ -230,6 +233,7 @@ function readSidebarState(): SidebarPrefs {
       // 세션 패널은 열려 있는 것이 기본이다 — 이 키를 모르는 파일에서도 패널이 보여야 한다.
       sessionPanelOpen: value.sessionPanelOpen !== false,
       sessionScope: value.sessionScope === "here" ? "here" : "all",
+      sessionWaitingOnly: value.sessionWaitingOnly === true,
       // 빈 배열은 "묶지 않기를 골랐다"는 뜻이라 기본값으로 되돌아가지 않는다.
       groupingTags: Array.isArray(value.groupingTags)
         ? value.groupingTags.filter((tag): tag is string => typeof tag === "string")
@@ -350,6 +354,7 @@ export function ProjectSidebar({
   const [openShelves, setOpenShelves] = useState<Set<ShelfKind>>(() => new Set(savedSidebarState.openShelves));
   const [sessionPanelOpen, setSessionPanelOpen] = useState(savedSidebarState.sessionPanelOpen);
   const [sessionScope, setSessionScope] = useState<SessionScope>(savedSidebarState.sessionScope);
+  const [sessionWaitingOnly, setSessionWaitingOnly] = useState(savedSidebarState.sessionWaitingOnly);
   const [groupingTags, setGroupingTags] = useState<string[] | null>(savedSidebarState.groupingTags);
   /**
    * 마지막으로 적어 둔 레코드. 토글은 상태 갱신 함수 안에서도 저장을 부르므로 클로저에 잡힌 값이
@@ -368,6 +373,7 @@ export function ProjectSidebar({
           openShelves: next.openShelves,
           sessionPanelOpen: next.sessionPanelOpen,
           sessionScope: next.sessionScope,
+          sessionWaitingOnly: next.sessionWaitingOnly,
           // 저장된 선호가 없으면 키 자체를 남기지 않는다 — 그 부재가 "기본값을 돌려라"는 뜻이다.
           ...(next.groupingTags === null ? {} : { groupingTags: next.groupingTags }),
         }),
@@ -1190,6 +1196,12 @@ export function ProjectSidebar({
             onChangeScope={(next) => {
               setSessionScope(next);
               persist({ sessionScope: next });
+            }}
+            waitingOnly={sessionWaitingOnly}
+            onToggleWaitingOnly={() => {
+              const next = !sessionWaitingOnly;
+              setSessionWaitingOnly(next);
+              persist({ sessionWaitingOnly: next });
             }}
             open={sessionPanelOpen}
             onToggleOpen={() => {

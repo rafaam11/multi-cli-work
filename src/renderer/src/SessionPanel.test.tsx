@@ -77,6 +77,23 @@ afterEach(() => {
 });
 
 describe("SessionPanel", () => {
+  it("대기만 켜면 입력·승인을 기다리는 세션만 남고, 없으면 그렇게 말한다", () => {
+    const onToggleWaitingOnly = vi.fn();
+    renderPanel({ waitingOnly: true, onToggleWaitingOnly });
+    const list = screen.getByRole("group", { name: "세션 목록" });
+    expect(within(list).getByRole("button", { name: /^세션 session-1 패인 열기/ })).toBeInTheDocument();
+    expect(within(list).queryByRole("button", { name: /^세션 session-2 패인 열기/ })).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole("button", { name: "대기" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(toggle);
+    expect(onToggleWaitingOnly).toHaveBeenCalled();
+
+    cleanup();
+    renderPanel({ items: [sessionItem("session-2", false)], waitingOnly: true, onToggleWaitingOnly });
+    expect(screen.getByText("기다리는 세션이 없습니다")).toBeInTheDocument();
+  });
+
   it("같은 폴더가 이어지면 둘째 행부터 소속 칸을 비워 이름에 폭을 준다", () => {
     const other: SessionPanelItem = { ...sessionItem("session-3", false), place: "Atlas" };
     renderPanel({ items: [sessionItem("session-1", true), sessionItem("session-2", false), other] });

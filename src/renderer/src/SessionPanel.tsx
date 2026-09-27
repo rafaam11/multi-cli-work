@@ -5,6 +5,7 @@ import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 
 import { DocumentRow, SessionRow } from "./PaneRows";
 import { findAgent } from "./session-labels";
 import {
+  isWaitingItem,
   matchesScope,
   sessionPanelWaitCount,
   type SessionPanelItem,
@@ -18,6 +19,9 @@ export interface SessionPanelProps {
   scopeTarget: SessionScopeTarget;
   scope: SessionScope;
   onChangeScope(scope: SessionScope): void;
+  /** Keeps only sessions asking for input or approval. Works together with the scope. */
+  waitingOnly?: boolean;
+  onToggleWaitingOnly?(): void;
   open: boolean;
   onToggleOpen(): void;
   selected: boolean;
@@ -60,6 +64,8 @@ export function SessionPanel({
   scopeTarget,
   scope,
   onChangeScope,
+  waitingOnly = false,
+  onToggleWaitingOnly,
   open,
   onToggleOpen,
   selected,
@@ -81,7 +87,8 @@ export function SessionPanel({
 }: SessionPanelProps) {
   // 범위를 걸 곳이 없으면 저장된 선호가 "여기"여도 전체를 보인다 — 홈에 다녀왔다고 토글이 리셋되면 안 된다.
   const effectiveScope: SessionScope = scopeTarget.kind === "none" ? "all" : scope;
-  const visible = effectiveScope === "all" ? items : items.filter((item) => matchesScope(item, scopeTarget));
+  const scoped = effectiveScope === "all" ? items : items.filter((item) => matchesScope(item, scopeTarget));
+  const visible = waitingOnly ? scoped.filter(isWaitingItem) : scoped;
   const waiting = sessionPanelWaitCount(items);
 
   /**
@@ -201,6 +208,16 @@ export function SessionPanel({
           >
             여기
           </button>
+          {onToggleWaitingOnly ? (
+            <button
+              type="button"
+              aria-pressed={waitingOnly}
+              title="입력·승인을 기다리는 세션만 보기"
+              onClick={onToggleWaitingOnly}
+            >
+              대기
+            </button>
+          ) : null}
         </div>
       </div>
       {open ? (
@@ -209,9 +226,11 @@ export function SessionPanel({
               대면 그 폴더만 비었다는 뜻으로 읽힌다. */}
           {visible.length === 0 ? (
             <li className="session-panel-empty">
-              {effectiveScope === "here" && scopeTarget.kind !== "none"
-                ? `${scopeTarget.label}에 열린 세션이 없습니다`
-                : "열린 세션이 없습니다"}
+              {waitingOnly
+                ? "기다리는 세션이 없습니다"
+                : effectiveScope === "here" && scopeTarget.kind !== "none"
+                  ? `${scopeTarget.label}에 열린 세션이 없습니다`
+                  : "열린 세션이 없습니다"}
             </li>
           ) : null}
           {visible.map((item, index) =>

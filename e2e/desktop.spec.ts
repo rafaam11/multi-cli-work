@@ -310,10 +310,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       };
     });
     // The title's flex-grow gives it every pixel left after the fixed-width toggle (26px) and scope
-    // buttons, so its share depends on how wide those neighbors happen to be — at the default 264px
-    // sidebar it lands at ~49%, not quite half; 0.45 still fails the old flex:0 0 auto layout (which
+    // buttons, so its share depends on how wide those neighbors happen to be — with 전체·여기·대기 at
+    // the default 264px sidebar it lands at ~33%. 0.3 still fails the old flex:0 0 auto layout (which
     // sized to the two-character "세션" label alone, well under 20%) while tolerating that split.
-    expect(sessionHeaderLayout.titleWidth).toBeGreaterThanOrEqual(sessionHeaderLayout.headingWidth * 0.45);
+    expect(sessionHeaderLayout.titleWidth).toBeGreaterThanOrEqual(sessionHeaderLayout.headingWidth * 0.3);
     expect(sessionHeaderLayout.gapToScope).toBeLessThanOrEqual(8);
     // `.session-panel-heading` carries a 1px transparent border (shared with every row's
     // selected/drop-target treatment) that eats 2px of the border-box height align-self: stretch can

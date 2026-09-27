@@ -149,6 +149,11 @@ export function matchesScope(item: SessionPanelItem, target: SessionScopeTarget)
 }
 
 /** 등급 0·1(승인·입력 대기) 세션의 수 — 패널 헤더의 `대기 N`. */
+/** A session asking for input or approval — what the 대기 badge counts and the 대기만 filter keeps. */
+export function isWaitingItem(item: SessionPanelItem): boolean {
+  return item.kind === "session" && item.rank <= WAITING_RANK_MAX;
+}
+
 export function sessionPanelWaitCount(items: readonly SessionPanelItem[]): number {
-  return items.filter((item) => item.kind === "session" && item.rank <= WAITING_RANK_MAX).length;
+  return items.filter(isWaitingItem).length;
 }
