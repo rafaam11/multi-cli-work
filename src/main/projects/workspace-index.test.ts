@@ -738,4 +738,25 @@ describe("resolveLogicalPath", () => {
     expect(resolveLogicalPath(root, extra, "")).toBeNull();
     expect(resolveLogicalPath(root, extra, "   ")).toBeNull();
   });
+
+  it("`..` 조각이 있으면 어느 구분자든 null이다 — 루트 밖으로 새지 않는다", () => {
+    for (const escape of [
+      "..",
+      "../secret",
+      "dev/../../Windows",
+      "wiki\\..\\..\\x",
+      "drive/reading/../..",
+      "onedrive\\..",
+    ]) {
+      expect(resolveLogicalPath(root, extra, escape), escape).toBeNull();
+    }
+    // 조각의 일부로 든 점은 괜찮다.
+    expect(resolveLogicalPath(root, extra, "dev/a..b/.hidden")).toBe(path.join("C:\\dev", "a..b", ".hidden"));
+  });
+
+  it("절대경로·드라이브 문자는 null이다 — 논리 경로가 아니다", () => {
+    for (const absolute of ["C:\\work\\wiki", "C:/work/wiki", "c:", "D:relative", "/etc/passwd", "\\\\server\\share", "\\root"]) {
+      expect(resolveLogicalPath(root, extra, absolute), absolute).toBeNull();
+    }
+  });
 });

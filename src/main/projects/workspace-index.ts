@@ -233,12 +233,16 @@ async function statProjects(root: string): Promise<{ projects: ProjectStat[]; wa
  * 유령 경로가 되기 때문이고, 원본이 던지는 이유도 그것이다.
  */
 export function resolveLogicalPath(root: WorkspaceRoot, extra: ExtraRoots, logical: string): string | null {
-  const segments = logical
-    .replace(/\\/g, "/")
+  const normalized = logical.trim().replace(/\\/g, "/");
+  // 논리 경로는 루트 안의 상대경로뿐이다 — 절대경로·드라이브 문자는 받지 않는다.
+  if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) return null;
+  const segments = normalized
     .split("/")
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
   if (segments.length === 0) return null;
+  // `..`로 루트 밖에 닿는 값은 푸는 대신 버린다 — work 쪽 `ABS_OR_ESCAPE_RE`와 같은 선.
+  if (segments.includes("..")) return null;
   const [head, ...rest] = segments;
   if (head === "dev") return path.join(root.dev, ...rest);
   if (head === "data") return path.join(root.data, ...rest);
