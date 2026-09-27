@@ -26,6 +26,7 @@ import {
 } from "./keymap";
 import { publishNotionTokenStatus } from "./notion-token-status";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
+import { errorMessage } from "./ipc-error";
 
 type SettingsTab =
   | "general"
@@ -70,13 +71,6 @@ interface SettingsDialogProps {
   onClose(): void;
 }
 
-/** Electron이 invoke 실패에 덧붙이는 접두어를 걷어내 메인 프로세스가 낸 사유만 보인다. */
-function ipcReason(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  const match = /Error invoking remote method '[^']+': (?:Error: )?([\s\S]*)$/.exec(raw);
-  return match ? match[1] : raw;
-}
-
 /**
  * 노션 탭만 AppSettings를 쓰지 않는다 — 통합 토큰은 시크릿이라 평문 settings.json이 아니라
  * 메인 프로세스의 암호화 저장소에 있고, 렌더러는 설정 여부만 알 수 있다.
@@ -96,7 +90,7 @@ function NotionSettings() {
         if (alive) setStatus(next);
       })
       .catch((cause: unknown) => {
-        if (alive) setError(ipcReason(cause));
+        if (alive) setError(errorMessage(cause));
       });
     return () => {
       alive = false;
@@ -115,7 +109,7 @@ function NotionSettings() {
         // 열려 있는 업무 프로젝트 상세 페이지가 곧바로 조회를 시작할 수 있게 알린다.
         publishNotionTokenStatus(next);
       })
-      .catch((cause: unknown) => setError(ipcReason(cause)))
+      .catch((cause: unknown) => setError(errorMessage(cause)))
       .finally(() => setBusy(false));
   };
 
@@ -209,7 +203,7 @@ function WorkspaceSettings() {
         if (alive) setSnapshot(next);
       })
       .catch((cause: unknown) => {
-        if (alive) setError(ipcReason(cause));
+        if (alive) setError(errorMessage(cause));
       });
     return () => {
       alive = false;
@@ -227,7 +221,7 @@ function WorkspaceSettings() {
         setSnapshot(next);
         setNotice(done);
       })
-      .catch((cause: unknown) => setError(ipcReason(cause)))
+      .catch((cause: unknown) => setError(errorMessage(cause)))
       .finally(() => setBusy(false));
   };
 

@@ -366,7 +366,7 @@ describe("app state", () => {
     const snapshot = await readAppState({ statePath });
 
     expect(snapshot).toMatchObject({ source: "backup", writable: false, state: backup });
-    expect(snapshot.warning).toMatch(/missing/i);
+    expect(snapshot.warning).toMatch(/파일이 없어 백업을/);
   });
 
   it("keeps only the newest bounded terminal output", async () => {

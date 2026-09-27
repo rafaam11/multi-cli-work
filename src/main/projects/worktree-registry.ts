@@ -75,6 +75,7 @@ export function emptyWorktreeRegistry(now = new Date().toISOString()): WorktreeR
 
 const STORE: JsonStoreSpec<WorktreeRegistryV1> = {
   label: "worktree registry",
+  displayName: "워크트리 목록(worktrees.json)",
   parse: parseWorktreeRegistry,
   empty: () => emptyWorktreeRegistry(),
   error: (message, options) => new WorktreeRegistryError(message, options),

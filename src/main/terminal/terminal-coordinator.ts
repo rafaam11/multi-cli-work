@@ -813,7 +813,7 @@ export class TerminalCoordinator {
    */
   private requireAgent(agentId: AgentId): AgentDefinition {
     const agent = this.options.getAgent(agentId);
-    if (!agent) throw new Error(`Unknown agent: ${agentId}. Add it back to agents.json to run it again.`);
+    if (!agent) throw new Error(`에이전트 "${agentId}"가 목록에 없습니다. agents.json에 다시 추가하면 실행할 수 있습니다.`);
     return agent;
   }
 

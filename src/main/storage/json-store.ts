@@ -13,6 +13,8 @@ import lockfile from "proper-lockfile";
 export interface JsonStoreSpec<T> {
   /** Lower-case name used in messages, e.g. "project registry" → "Primary project registry is invalid: …". */
   label: string;
+  /** 사용자가 보는 경고에 쓰는 한국어 이름, e.g. "폴더 목록(projects.json)". */
+  displayName: string;
   parse(value: unknown): T;
   empty(): T;
   /** Wraps a failure so each store keeps throwing its own error type. */
@@ -63,8 +65,8 @@ export async function readJsonStore<T>(spec: JsonStoreSpec<T>, filePath: string)
       source: "backup",
       writable: false,
       warning: isMissing(primaryError)
-        ? `Primary ${spec.label} is missing; using the backup read-only.`
-        : `Primary ${spec.label} is invalid: ${(primaryError as Error).message}`,
+        ? `${spec.displayName} 파일이 없어 백업을 읽기 전용으로 씁니다.`
+        : `${spec.displayName} 파일이 손상돼 백업을 읽기 전용으로 씁니다 — ${(primaryError as Error).message}`,
     };
   } catch (backupError) {
     if (isMissing(primaryError) && isMissing(backupError)) {

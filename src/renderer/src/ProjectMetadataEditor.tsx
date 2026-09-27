@@ -1,14 +1,11 @@
 import type { SharedProject } from "@shared/project-types";
 import { useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { errorMessage } from "./ipc-error";
 
 interface ProjectMetadataEditorProps {
   project: SharedProject;
   onSaved(project: SharedProject): void;
   onClose(): void;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export function ProjectMetadataEditor({ project, onSaved, onClose }: ProjectMetadataEditorProps) {

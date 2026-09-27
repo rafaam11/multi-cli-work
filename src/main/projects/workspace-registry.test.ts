@@ -147,7 +147,7 @@ describe("workspace registry storage", () => {
     await fs.writeFile(registryPath, "{ not json", "utf8");
     // A corrupt primary falls back to the backup read-only rather than losing the list.
     expect((await readWorkspaceRegistry({ registryPath })).roots).toHaveLength(1);
-    await expect(updateWorkspaceRegistry((registry) => registry, { registryPath })).rejects.toThrow(/invalid/);
+    await expect(updateWorkspaceRegistry((registry) => registry, { registryPath })).rejects.toThrow(/손상돼/);
   });
 
   it("provides an empty registry factory with canonical timestamps", () => {

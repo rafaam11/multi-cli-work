@@ -7,6 +7,7 @@ import { fileExtensionOf } from "./file-tabs";
 import { buildChangeOverlay, changeOriginLabel, changeRowClass, type FileTreeChangeOverlay } from "./file-tree-changes";
 import { buildGitOverlay, gitRowClass, type FileTreeGitOverlay } from "./file-tree-git";
 import { FileTreeContextMenu, type FileTreeCopyKind } from "./FileTreeContextMenu";
+import { errorMessage } from "./ipc-error";
 
 export interface FileExplorerProps {
   /** True while another right-sidebar tab is active or the sidebar is collapsed to its rail. */
@@ -57,10 +58,6 @@ function parentRelativePathOf(relativePath: string): string {
 /** True for the entry itself and, when it is a folder, for everything below it. */
 function isAtOrBelow(relativePath: string, root: string): boolean {
   return relativePath === root || relativePath.startsWith(`${root}/`);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Pixels one level of nesting adds. Rows read it as padding, the guide line as its x position. */

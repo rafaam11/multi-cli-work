@@ -211,6 +211,7 @@ export function emptyWorkProjectRegistry(now = new Date().toISOString()): WorkPr
 
 const STORE: JsonStoreSpec<WorkProjectRegistryV1> = {
   label: "work project registry",
+  displayName: "업무 프로젝트 목록(work-projects.json)",
   parse: parseWorkProjectRegistry,
   empty: () => emptyWorkProjectRegistry(),
   error: (message, options) => new WorkProjectRegistryError(message, options),

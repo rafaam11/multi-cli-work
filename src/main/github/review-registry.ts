@@ -133,6 +133,7 @@ export function parseReviewRegistry(value: unknown): PullRequestReviewRegistryV2
 
 const STORE: JsonStoreSpec<PullRequestReviewRegistryV2> = {
   label: "PR review registry",
+  displayName: "PR 리뷰 목록(pr-reviews.json)",
   parse: parseReviewRegistry,
   empty: () => ({ schemaVersion: 2, updatedAt: new Date().toISOString(), reviews: {}, annotationSets: {} }),
   error: (message, options) => new ReviewRegistryError(message, options),

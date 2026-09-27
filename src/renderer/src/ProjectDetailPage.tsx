@@ -8,10 +8,7 @@ import { FileDiff, FolderOpen, GitBranch, Plus, RefreshCw, Send, Trash2, Triangl
 import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { AgentIcon, GitHubIcon, VSCodeIcon, agentAccentClass } from "./brand-icons";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+import { errorMessage } from "./ipc-error";
 
 function toggleTrackItem(tracks: ProjectTrack[], trackId: string, itemId: string): ProjectTrack[] {
   return tracks.map((track) =>

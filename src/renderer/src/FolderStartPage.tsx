@@ -7,10 +7,7 @@ import { FolderOpen, GitBranch, PanelsTopLeft, Plus, RefreshCw } from "lucide-re
 import { useCallback, useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, VSCodeIcon, agentAccentClass } from "./brand-icons";
 import { newSessionLabel, projectName } from "./session-labels";
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+import { errorMessage } from "./ipc-error";
 
 interface FolderStartPageProps {
   project: SharedProject;

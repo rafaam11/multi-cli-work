@@ -281,6 +281,7 @@ interface RegistryStorageOptions {
 
 const STORE: JsonStoreSpec<ProjectRegistryV1> = {
   label: "project registry",
+  displayName: "폴더 목록(projects.json)",
   parse: parseProjectRegistry,
   empty: () => emptyProjectRegistry(),
   error: (message, options) => new ProjectRegistryError(message, options),

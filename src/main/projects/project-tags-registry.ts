@@ -83,6 +83,7 @@ export function emptyProjectTags(now = new Date().toISOString()): ProjectTagsV1 
 
 const STORE: JsonStoreSpec<ProjectTagsV1> = {
   label: "project tags registry",
+  displayName: "업무 프로젝트 태그(project-tags.json)",
   parse: parseProjectTags,
   empty: () => emptyProjectTags(),
   error: (message, options) => new ProjectTagsRegistryError(message, options),

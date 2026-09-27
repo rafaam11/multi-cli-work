@@ -18,12 +18,9 @@ import { subscribeNotionTokenStatus } from "./notion-token-status";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 import { TagEditor } from "./TagEditor";
 import { categoryAccentClass } from "./work-project-accent";
+import { errorMessage } from "./ipc-error";
 
 const STATUS_OPTIONS: Array<ProjectStatus | ""> = ["", "진행중", "보류", "완료", "보관"];
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 const AUTOSAVE_DELAY_MS = 400;
 

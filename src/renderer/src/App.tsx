@@ -94,6 +94,7 @@ import {
   viewPageSize,
 } from "./slot-view";
 import { isTypingTarget, normalizeKeyEvent, resolveKeymap } from "./keymap";
+import { errorMessage } from "./ipc-error";
 
 type ActiveView = "home" | "detail" | "work-project" | "terminal";
 
@@ -245,10 +246,6 @@ interface WorktreeForceState {
 interface DiffViewState {
   title: string;
   result: GitDiffResult;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function replaceSession(sessions: TerminalSessionView[], next: TerminalSessionView): TerminalSessionView[] {

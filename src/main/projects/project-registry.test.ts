@@ -314,7 +314,7 @@ describe("project registry storage", () => {
     const snapshot = await readProjectRegistry({ registryPath });
 
     expect(snapshot).toMatchObject({ source: "backup", writable: false, registry: backup });
-    expect(snapshot.warning).toMatch(/missing/i);
+    expect(snapshot.warning).toMatch(/폴더 목록\(projects\.json\) 파일이 없어/);
   });
 
   it("serializes concurrent updates without dropping either project", async () => {

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { PullRequestPanel } from "./PullRequestPanel";
+import { errorMessage } from "./ipc-error";
 
 export interface GitWorktreeOption {
   /** null selects the project's main repository. */
@@ -43,10 +44,6 @@ const POLL_INTERVAL_MS = 10_000;
 
 function targetKey(target: FileExplorerTarget | null): string {
   return target ? `${target.kind}:${target.id}` : "";
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Same dismissal contract as WorkspaceHeader's menus: any press outside the anchor closes. */

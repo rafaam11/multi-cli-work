@@ -10,6 +10,7 @@ class SettingsStoreError extends Error {}
  */
 const spec: JsonStoreSpec<AppSettings> = {
   label: "settings store",
+  displayName: "설정(settings.json)",
   parse: parseSettings,
   empty: () => parseSettings(undefined),
   error: (message, options) => new SettingsStoreError(message, options),

@@ -140,6 +140,7 @@ export function emptyWorkspaceRegistry(now = new Date().toISOString()): Workspac
 
 const STORE: JsonStoreSpec<WorkspaceRegistryV1> = {
   label: "workspace registry",
+  displayName: "워크스페이스 루트 목록(workspace.json)",
   parse: parseWorkspaceRegistry,
   empty: () => emptyWorkspaceRegistry(),
   error: (message, options) => new WorkspaceRegistryError(message, options),

@@ -80,7 +80,7 @@ describe("agent registry", () => {
     const snapshot = await readAgentRegistry({ registryPath, platform: "win32" });
 
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(["powershell", "claude", "codex"]);
-    expect(snapshot.warning).toMatch(/built-in agents are available/i);
+    expect(snapshot.warning).toMatch(/빌트인 에이전트만 씁니다/);
   });
 });
 

@@ -271,8 +271,8 @@ export async function readAppState(options: StateOptions): Promise<AppStateSnaps
       source: "backup",
       writable: false,
       warning: missing
-        ? "Primary app state is missing; using the backup read-only."
-        : `Primary app state is invalid: ${(primaryError as Error).message}`,
+        ? "화면 상태(state.json) 파일이 없어 백업을 읽기 전용으로 씁니다."
+        : `화면 상태(state.json) 파일이 손상돼 백업을 읽기 전용으로 씁니다 — ${(primaryError as Error).message}`,
     };
   } catch (backupError) {
     if (

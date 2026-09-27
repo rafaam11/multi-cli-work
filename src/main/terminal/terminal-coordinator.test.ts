@@ -1415,7 +1415,7 @@ describe("an agent that is no longer installed", () => {
     const { instance, worker } = await coordinator(root);
 
     await expect(instance.create({ projectId: "project-1", kind: "gemini", cols: 80, rows: 24 })).rejects.toThrow(
-      /unknown agent: gemini.*agents\.json/i,
+      /"gemini".*agents\.json/,
     );
     expect(worker.create).not.toHaveBeenCalled();
   });
@@ -1444,7 +1444,7 @@ describe("an agent that is no longer installed", () => {
 
     expect(after.list().map((session) => session.kind)).toEqual(["claude"]);
     await expect(after.attach("session-1")).resolves.toMatchObject({ session: { id: "session-1" } });
-    await expect(after.resume({ sessionId: "session-1", cols: 80, rows: 24 })).rejects.toThrow(/unknown agent/i);
+    await expect(after.resume({ sessionId: "session-1", cols: 80, rows: 24 })).rejects.toThrow(/목록에 없습니다/);
   });
 });
 

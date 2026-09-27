@@ -189,6 +189,7 @@ export function emptyAgentRegistry(now = new Date().toISOString()): AgentRegistr
 
 const STORE: JsonStoreSpec<AgentRegistryV1> = {
   label: "agent registry",
+  displayName: "에이전트 목록(agents.json)",
   parse: parseAgentRegistry,
   empty: () => emptyAgentRegistry(),
   error: (message, options) => new AgentRegistryError(message, options),
@@ -220,7 +221,7 @@ export async function readAgentRegistry(options: AgentRegistryOptions = {}): Pro
   } catch (error) {
     return {
       agents: builtins,
-      warning: `${(error as Error).message}. Only the built-in agents are available.`,
+      warning: `에이전트 목록(agents.json)을 읽지 못해 빌트인 에이전트만 씁니다 — ${(error as Error).message}`,
     };
   }
   return {

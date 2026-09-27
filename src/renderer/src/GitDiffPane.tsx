@@ -4,6 +4,7 @@ import { FileWarning, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { monaco } from "./monaco-setup";
 import { MONACO_DIFF_TYPOGRAPHY } from "./renderer-typography";
+import { errorMessage } from "./ipc-error";
 
 export interface GitDiffFile {
   target: FileExplorerTarget;
@@ -28,10 +29,6 @@ interface DiffContents {
 
 function fileKey(file: GitDiffFile): string {
   return `${file.target.kind}:${file.target.id}:${file.path}`;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Fresh models per open; a stale model under the same URI would shadow the new content. */

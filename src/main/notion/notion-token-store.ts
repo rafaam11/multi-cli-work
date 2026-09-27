@@ -27,6 +27,7 @@ function parseCredentials(value: unknown): NotionCredentials {
 
 const spec: JsonStoreSpec<NotionCredentials> = {
   label: "notion credentials",
+  displayName: "노션 자격 증명",
   parse: parseCredentials,
   empty: () => ({ token: null }),
   error: (message, options) => new NotionCredentialsError(message, options),
