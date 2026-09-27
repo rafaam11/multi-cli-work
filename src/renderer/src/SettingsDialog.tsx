@@ -512,6 +512,7 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>("general");
   const [error, setError] = useState<string | null>(null);
   const [capturingActionId, setCapturingActionId] = useState<string | null>(null);
+  const [capturingSummon, setCapturingSummon] = useState(false);
   const [captureNotice, setCaptureNotice] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ actionId: string; accelerator: string; existing: KeymapAction } | null>(null);
   const [newExtension, setNewExtension] = useState("");
@@ -527,7 +528,10 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
 
   const update = (patch: AppSettingsPatch) => {
     setError(null);
-    window.multiCliWork.settings.update(patch).catch(() => setError("설정 저장에 실패했습니다"));
+    // main's own reason (a shortcut another program holds, a rejected value) says more than a generic line.
+    window.multiCliWork.settings
+      .update(patch)
+      .catch((cause: unknown) => setError(`설정 저장에 실패했습니다 — ${errorMessage(cause)}`));
   };
 
   /** 기본값과 같은 값은 오버라이드가 아니다 — 지워서 미래의 기본 키맵 변경을 따라가게 한다. */
@@ -579,6 +583,31 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, [capturingActionId, settings.keybindings]);
+
+  // The summon key is system-wide, so it needs Ctrl or Alt — a bare key would be stolen from every app.
+  useEffect(() => {
+    if (!capturingSummon) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") {
+        setCapturingSummon(false);
+        setCaptureNotice(null);
+        return;
+      }
+      const accelerator = normalizeKeyEvent(event);
+      if (!accelerator) return;
+      if (!/(?:^|\+)(?:Ctrl|Alt)\+/.test(accelerator)) {
+        setCaptureNotice("전역 단축키에는 Ctrl이나 Alt가 필요합니다");
+        return;
+      }
+      setCapturingSummon(false);
+      setCaptureNotice(null);
+      update({ general: { summonShortcut: accelerator } });
+    };
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [capturingSummon]);
 
   const numberField = (
     label: string,
@@ -653,6 +682,33 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
                 settings.general.autoCheckUpdates,
                 (next) => ({ general: { autoCheckUpdates: next } }),
               )}
+              <div className="settings-row">
+                <span>창 불러오기 단축키</span>
+                <span className="settings-key-controls">
+                  <span className="settings-key" aria-label="창 불러오기 단축키 값">
+                    {capturingSummon ? "키를 누르세요…" : (settings.general.summonShortcut ?? "없음")}
+                  </span>
+                  <button type="button" onClick={() => setCapturingSummon(true)} disabled={capturingSummon}>
+                    키 지정
+                  </button>
+                  <button
+                    type="button"
+                    disabled={settings.general.summonShortcut === null}
+                    onClick={() => update({ general: { summonShortcut: null } })}
+                  >
+                    해제
+                  </button>
+                </span>
+              </div>
+              <p className="settings-hint">
+                트레이에 숨어 있을 때도 이 키로 창을 불러옵니다. 다른 프로그램에서도 먹는 전역 키라 Ctrl이나 Alt가
+                필요합니다.
+              </p>
+              {tab === "general" && captureNotice && capturingSummon ? (
+                <p className="settings-error" role="alert">
+                  {captureNotice}
+                </p>
+              ) : null}
             </>
           ) : null}
           {tab === "terminal" ? (

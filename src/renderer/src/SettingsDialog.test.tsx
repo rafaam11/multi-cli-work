@@ -75,6 +75,34 @@ describe("SettingsDialog", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith({ notifications: { snoozedUntil: null } }));
   });
 
+  it("창 불러오기 단축키를 눌러 지정하고, 수식어 없는 키는 받지 않으며, 해제할 수 있다", async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    expect(screen.getByLabelText("창 불러오기 단축키 값")).toHaveTextContent("없음");
+    fireEvent.click(screen.getByRole("button", { name: "키 지정" }));
+
+    fireEvent.keyDown(window, { key: "m" });
+    expect(await screen.findByText("전역 단축키에는 Ctrl이나 Alt가 필요합니다")).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "m", ctrlKey: true, altKey: true });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ general: { summonShortcut: "Ctrl+Alt+M" } }));
+
+    cleanup();
+    const bound = { ...DEFAULT_SETTINGS, general: { ...DEFAULT_SETTINGS.general, summonShortcut: "Ctrl+Alt+M" } };
+    render(<SettingsDialog settings={bound} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "해제" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ general: { summonShortcut: null } }));
+  });
+
+  it("저장이 거부되면 main이 준 사유를 그대로 보여 준다", async () => {
+    update.mockRejectedValueOnce(
+      new Error("Error invoking remote method 'settings:update': Error: Ctrl+Alt+T는 다른 프로그램이 이미 쓰고 있어 등록할 수 없습니다"),
+    );
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.click(screen.getByLabelText("창을 닫으면 트레이에 남기기"));
+    expect(await screen.findByText(/다른 프로그램이 이미 쓰고 있어/)).toBeInTheDocument();
+  });
+
   it("적용되지 않는 언어 선택은 보여 주지 않는다", () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
     expect(screen.queryByLabelText("언어")).not.toBeInTheDocument();

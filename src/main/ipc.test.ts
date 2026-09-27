@@ -786,6 +786,16 @@ describe("main IPC boundary", () => {
     expect(settingsGateway.update).not.toHaveBeenCalled();
   });
 
+  it("accepts a summon shortcut with a modifier and rejects a bare key", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("settings:update")!({}, { general: { summonShortcut: "Ctrl+Alt+M" } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({ general: { summonShortcut: "Ctrl+Alt+M" } });
+    await handlers.get("settings:update")!({}, { general: { summonShortcut: null } });
+    expect(() => handlers.get("settings:update")!({}, { general: { summonShortcut: "M" } })).toThrow(/summonShortcut/);
+    expect(() => handlers.get("settings:update")!({}, { general: { summonShortcut: "Shift+M" } })).toThrow(/summonShortcut/);
+  });
+
   it("accepts quiet hours and a snooze, and rejects malformed ones", async () => {
     const { handlers, settingsGateway } = setup();
 

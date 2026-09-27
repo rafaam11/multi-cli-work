@@ -29,6 +29,7 @@ describe("parseSettings", () => {
       closeToTray: true,
       autoResumeSessions: true,
       autoCheckUpdates: true,
+      summonShortcut: null,
     });
     expect(DEFAULT_SETTINGS.notifications).toEqual({
       desktop: true,

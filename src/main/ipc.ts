@@ -550,7 +550,11 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
     patch.language = raw.language;
   }
   if (raw.general !== undefined) {
-    const general = exactObject(raw.general, ["closeToTray", "autoResumeSessions", "autoCheckUpdates"], "Settings general");
+    const general = exactObject(
+      raw.general,
+      ["closeToTray", "autoResumeSessions", "autoCheckUpdates", "summonShortcut"],
+      "Settings general",
+    );
     patch.general = {};
     if (general.closeToTray !== undefined) patch.general.closeToTray = booleanValue(general.closeToTray, "Settings closeToTray");
     if (general.autoResumeSessions !== undefined) {
@@ -558,6 +562,14 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
     }
     if (general.autoCheckUpdates !== undefined) {
       patch.general.autoCheckUpdates = booleanValue(general.autoCheckUpdates, "Settings autoCheckUpdates");
+    }
+    if (general.summonShortcut !== undefined) {
+      const shortcut = general.summonShortcut;
+      // A global key with no modifier would swallow that key in every other program.
+      if (shortcut !== null && (typeof shortcut !== "string" || shortcut.length > 64 || !/^(?:(?:Ctrl|Alt|Shift|Super)\+)+[^+]+$/.test(shortcut) || !/(?:Ctrl|Alt|Super)\+/.test(shortcut))) {
+        throw new Error("Settings summonShortcut must be a key with Ctrl, Alt or Super, or null");
+      }
+      patch.general.summonShortcut = shortcut;
     }
   }
   if (raw.terminal !== undefined) {

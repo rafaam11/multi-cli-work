@@ -17,6 +17,8 @@ export interface GeneralSettings {
   autoResumeSessions: boolean;
   /** 시작 시 업데이트 자동 확인. 꺼도 도움말 > 업데이트 확인은 동작한다. */
   autoCheckUpdates: boolean;
+  /** 트레이에 있을 때도 창을 불러오는 시스템 전역 단축키(예: "Ctrl+Alt+M"). null이면 없다. */
+  summonShortcut: string | null;
 }
 
 export interface TerminalSettings {
@@ -133,7 +135,7 @@ const MAX_FILE_OPEN_WITH_ENTRIES = 200;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "ko",
-  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true },
+  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null },
   terminal: {
     fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -292,6 +294,12 @@ export function parseSettings(value: unknown): AppSettings {
       closeToTray: readBoolean(general.closeToTray, defaults.general.closeToTray),
       autoResumeSessions: readBoolean(general.autoResumeSessions, defaults.general.autoResumeSessions),
       autoCheckUpdates: readBoolean(general.autoCheckUpdates, defaults.general.autoCheckUpdates),
+      summonShortcut:
+        typeof general.summonShortcut === "string" &&
+        general.summonShortcut.length > 0 &&
+        general.summonShortcut.length <= MAX_ACCELERATOR_LENGTH
+          ? general.summonShortcut
+          : null,
     },
     terminal: {
       fontFamily: readText(terminal.fontFamily, defaults.terminal.fontFamily),

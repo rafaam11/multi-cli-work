@@ -1,5 +1,6 @@
 import {
   app,
+  globalShortcut,
   BrowserWindow,
   clipboard,
   dialog,
@@ -110,6 +111,7 @@ import {
   type RestartableTerminalWorkerTransport,
 } from "./terminal/restarting-terminal-worker";
 import { consumeRecoveryMarker, writeRecoveryMarkerSync } from "./state/recovery-marker";
+import { createSummonShortcut } from "./summon-shortcut";
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -476,8 +478,27 @@ export async function createDesktopRuntime(
     notificationSettings: () => settingsService.current().notifications,
   });
 
+  // 트레이에 숨어 있어도 창을 불러오는 전역 단축키. 저장 전에 먼저 잡아 본다 — 다른 프로그램이 쥔
+  // 키를 저장해 두면 눌러도 아무 일이 없는 설정이 남는다.
+  const summonShortcut = createSummonShortcut(globalShortcut, showMainWindow);
+  const savedSummon = settingsService.current().general.summonShortcut;
+  if (savedSummon && !summonShortcut.apply(savedSummon)) {
+    console.error(`Summon shortcut ${savedSummon} could not be registered; another program may hold it.`);
+  }
+
   const updateSettings = async (patch: AppSettingsPatch): Promise<AppSettings> => {
-    const next = await settingsService.update(patch);
+    const wanted = patch.general?.summonShortcut;
+    const previous = summonShortcut.current();
+    if (wanted !== undefined && !summonShortcut.apply(wanted)) {
+      throw new Error(`${wanted}는 다른 프로그램이 이미 쓰고 있어 등록할 수 없습니다`);
+    }
+    let next: AppSettings;
+    try {
+      next = await settingsService.update(patch);
+    } catch (error) {
+      if (wanted !== undefined) summonShortcut.apply(previous);
+      throw error;
+    }
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("settings:changed", next);
     return next;
   };
@@ -727,6 +748,7 @@ export async function createDesktopRuntime(
   });
 
   const dispose = createRetryableDisposer([
+    () => void summonShortcut.apply(null),
     () => htmlPreviewController.dispose(),
     () => controlServer?.close(),
     () => statusWatcher.close(),
