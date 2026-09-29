@@ -25,6 +25,7 @@ import {
   MAX_FAN_OUT_TEMPLATES,
   MAX_FAN_OUT_TEMPLATE_NAME_LENGTH,
   MAX_FAN_OUT_TEMPLATE_TEXT_LENGTH,
+  REMOTE_PORT_RANGE,
   TERMINAL_FONT_SIZE_RANGE,
   TERMINAL_LINE_HEIGHT_RANGE,
   TERMINAL_SCROLLBACK_RANGE,
@@ -541,7 +542,7 @@ function exportTimestamp(now: Date): string {
 function validateSettingsPatch(value: unknown): AppSettingsPatch {
   const raw = exactObject(
     value,
-    ["language", "general", "terminal", "notifications", "keybindings", "projects", "files", "fanOut", "appearance"],
+    ["language", "general", "terminal", "notifications", "keybindings", "projects", "files", "fanOut", "appearance", "remote"],
     "Settings patch",
   );
   const patch: AppSettingsPatch = {};
@@ -673,6 +674,18 @@ function validateSettingsPatch(value: unknown): AppSettingsPatch {
     }
     if (files.unsupportedOpensWithOs !== undefined) {
       patch.files.unsupportedOpensWithOs = booleanValue(files.unsupportedOpensWithOs, "Settings files.unsupportedOpensWithOs");
+    }
+  }
+  if (raw.remote !== undefined) {
+    const remote = exactObject(raw.remote, ["enabled", "port"], "Settings remote");
+    patch.remote = {};
+    if (remote.enabled !== undefined) patch.remote.enabled = booleanValue(remote.enabled, "Settings remote enabled");
+    if (remote.port !== undefined) {
+      const port = integer(remote.port, "Settings remote port");
+      if (port < REMOTE_PORT_RANGE.min || port > REMOTE_PORT_RANGE.max) {
+        throw new Error(`Settings remote port must be ${REMOTE_PORT_RANGE.min}–${REMOTE_PORT_RANGE.max}`);
+      }
+      patch.remote.port = port;
     }
   }
   if (raw.appearance !== undefined) {

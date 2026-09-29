@@ -269,3 +269,20 @@ describe("테마", () => {
     expect(mergeSettingsPatch(DEFAULT_SETTINGS, { appearance: { theme: "light" } }).appearance.theme).toBe("light");
   });
 });
+
+describe("remote settings", () => {
+  it("defaults to off on port 47821", () => {
+    expect(parseSettings(undefined).remote).toEqual({ enabled: false, port: 47821 });
+  });
+
+  it("keeps a valid saved value and drops out-of-range ports", () => {
+    expect(parseSettings({ remote: { enabled: true, port: 50000 } }).remote).toEqual({ enabled: true, port: 50000 });
+    expect(parseSettings({ remote: { enabled: true, port: 80 } }).remote.port).toBe(47821);
+    expect(parseSettings({ remote: { enabled: "yes", port: 50000.5 } }).remote).toEqual({ enabled: false, port: 47821 });
+  });
+
+  it("merges a partial patch", () => {
+    const next = mergeSettingsPatch(DEFAULT_SETTINGS, { remote: { enabled: true } });
+    expect(next.remote).toEqual({ enabled: true, port: 47821 });
+  });
+});

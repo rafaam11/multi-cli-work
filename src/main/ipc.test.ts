@@ -786,6 +786,14 @@ describe("main IPC boundary", () => {
     expect(settingsGateway.update).not.toHaveBeenCalled();
   });
 
+  it("validates the remote settings patch", async () => {
+    const { handlers, settingsGateway } = setup();
+    await handlers.get("settings:update")!({}, { remote: { enabled: true, port: 50000 } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({ remote: { enabled: true, port: 50000 } });
+    expect(() => handlers.get("settings:update")!({}, { remote: { port: 80 } })).toThrow(/port/);
+    expect(() => handlers.get("settings:update")!({}, { remote: { host: "0.0.0.0" } })).toThrow(/Settings remote/);
+  });
+
   it("accepts a theme and rejects an unknown one", async () => {
     const { handlers, settingsGateway } = setup();
     await handlers.get("settings:update")!({}, { appearance: { theme: "light" } });

@@ -89,6 +89,15 @@ export interface AppearanceSettings {
   theme: ThemePreference;
 }
 
+export interface RemoteSettings {
+  /** 모바일 연결 서버를 켠다. 켜도 Tailscale 주소가 없으면 listen하지 않는다. */
+  enabled: boolean;
+  port: number;
+}
+
+export const DEFAULT_REMOTE_PORT = 47821;
+export const REMOTE_PORT_RANGE = { min: 1024, max: 65535 } as const;
+
 export interface AppSettings {
   /** 지금은 선택 저장만 한다 — i18n 도입은 별도 작업. */
   language: "ko" | "en";
@@ -102,6 +111,7 @@ export interface AppSettings {
   files: FileSettings;
   fanOut: FanOutSettings;
   appearance: AppearanceSettings;
+  remote: RemoteSettings;
 }
 
 export interface AppSettingsPatch {
@@ -123,6 +133,7 @@ export interface AppSettingsPatch {
   /** 템플릿 목록은 통째 교체 — 삭제·순서 변경을 부분 병합으로 표현할 수 없다. */
   fanOut?: { templates?: FanOutTemplate[] };
   appearance?: Partial<AppearanceSettings>;
+  remote?: Partial<RemoteSettings>;
 }
 
 export const TERMINAL_FONT_SIZE_RANGE = { min: 8, max: 32 } as const;
@@ -164,6 +175,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   files: { openWith: {}, unsupportedOpensWithOs: true },
   fanOut: { templates: [] },
   appearance: { theme: "dark" },
+  remote: { enabled: false, port: DEFAULT_REMOTE_PORT },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -288,6 +300,7 @@ export function parseSettings(value: unknown): AppSettings {
   const files = isRecord(raw.files) ? raw.files : {};
   const fanOut = isRecord(raw.fanOut) ? raw.fanOut : {};
   const appearance = isRecord(raw.appearance) ? raw.appearance : {};
+  const remote = isRecord(raw.remote) ? raw.remote : {};
   const openWith: Record<string, FileOpenTarget> = {};
   if (isRecord(files.openWith)) {
     for (const [extension, target] of Object.entries(files.openWith)) {
@@ -374,6 +387,16 @@ export function parseSettings(value: unknown): AppSettings {
           ? appearance.theme
           : defaults.appearance.theme,
     },
+    remote: {
+      enabled: readBoolean(remote.enabled, defaults.remote.enabled),
+      port:
+        typeof remote.port === "number" &&
+        Number.isInteger(remote.port) &&
+        remote.port >= REMOTE_PORT_RANGE.min &&
+        remote.port <= REMOTE_PORT_RANGE.max
+          ? remote.port
+          : defaults.remote.port,
+    },
   };
 }
 
@@ -406,5 +429,6 @@ export function mergeSettingsPatch(current: AppSettings, patch: AppSettingsPatch
     },
     fanOut: { templates: patch.fanOut?.templates ?? current.fanOut.templates },
     appearance: { ...current.appearance, ...patch.appearance },
+    remote: { ...current.remote, ...patch.remote },
   };
 }
