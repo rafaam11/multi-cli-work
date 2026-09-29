@@ -85,6 +85,13 @@ describe("startRemoteServer", () => {
     expect(html).toContain("0.3.0");
   });
 
+  it("404s /shell.apk when the manifest exists but the APK file is gone", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "mcw-shell-"));
+    const shell = { release: { versionCode: 3, versionName: "0.3.0", sha256: "b".repeat(64) }, apkPath: path.join(dir, "shell.apk") };
+    const { base } = await start({ shell });
+    expect((await fetch(`${base}/shell.apk`)).status).toBe(404);
+  });
+
   it("explains a missing shell on /install and 404s the rest", async () => {
     const { base } = await start({ shell: null });
     expect((await fetch(`${base}/shell.json`)).status).toBe(404);

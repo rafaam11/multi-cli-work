@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
+import { pipeline } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import type { RemotePairResponse } from "../../shared/remote-types";
 import type { RemoteSessionHub } from "./remote-session-hub";
@@ -154,7 +155,9 @@ async function handleRequest(options: RemoteServerOptions, request: http.Incomin
       "cache-control": "no-cache",
       "x-content-type-options": "nosniff",
     });
-    createReadStream(options.shell.apkPath).pipe(response);
+    pipeline(createReadStream(options.shell.apkPath), response, (error) => {
+      if (error) response.destroy();
+    });
     return;
   }
   if (pathname === "/install") return send(response, 200, installPage(options.shell ?? null), CONTENT_TYPES[".html"]);
