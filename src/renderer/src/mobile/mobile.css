@@ -1,0 +1,36 @@
+:root {
+  color-scheme: dark;
+  --m-bg: #101214;
+  --m-surface: #1a1d21;
+  --m-text: #e6e6e6;
+  --m-muted: #8b9098;
+  --m-accent: #4c8dff;
+  --m-warn: #e0a526;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--m-bg); color: var(--m-text); font: 15px/1.4 system-ui, sans-serif; }
+button { font: inherit; color: inherit; background: var(--m-surface); border: 1px solid #2a2f36; border-radius: 8px; padding: 8px 12px; min-height: 40px; }
+input, textarea { font: inherit; color: inherit; background: var(--m-surface); border: 1px solid #2a2f36; border-radius: 8px; padding: 8px; width: 100%; }
+.m-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); }
+.m-bar h1 { flex: 1; font-size: 16px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-pair { display: grid; gap: 12px; padding: 24px 16px; max-width: 420px; margin: 0 auto; }
+.m-pair label { display: grid; gap: 4px; color: var(--m-muted); }
+.m-error { color: #ff6b6b; }
+.m-notice, .m-banner { color: var(--m-warn); padding: 0 12px; }
+.m-list section { padding: 0 12px 12px; }
+.m-list h2 { font-size: 13px; color: var(--m-muted); margin: 12px 0 6px; }
+.m-session { display: flex; width: 100%; justify-content: space-between; align-items: center; margin-bottom: 6px; text-align: left; }
+.m-session-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-empty { color: var(--m-muted); padding: 24px 12px; }
+.m-status { font-size: 12px; color: var(--m-muted); white-space: nowrap; }
+.m-status-awaiting-input, .m-status-awaiting-approval { color: var(--m-warn); }
+.m-status-working { color: var(--m-accent); }
+.m-session-screen { display: grid; grid-template-rows: auto auto 1fr auto auto; height: 100%; }
+.m-tools { display: flex; gap: 6px; padding: 0 12px 6px; }
+.m-tools [aria-pressed="true"] { border-color: var(--m-accent); color: var(--m-accent); }
+.m-terminal { min-height: 0; overflow: auto; padding: 0 4px; }
+.m-keys { display: flex; gap: 4px; overflow-x: auto; padding: 6px 8px; }
+.m-keys button { flex: 0 0 auto; min-width: 44px; }
+.m-composer { display: flex; gap: 6px; padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+.m-composer button { flex: 0 0 auto; }
