@@ -112,6 +112,12 @@ import {
 } from "./terminal/restarting-terminal-worker";
 import { consumeRecoveryMarker, writeRecoveryMarkerSync } from "./state/recovery-marker";
 import { createSummonShortcut } from "./summon-shortcut";
+import { RemoteAccess } from "./remote/remote-access";
+import { RemoteDeviceStore } from "./remote/device-store";
+import { PairingCodes } from "./remote/pairing-codes";
+import { RemoteSessionHub } from "./remote/remote-session-hub";
+import { TerminalSizeArbiter } from "./remote/size-arbiter";
+import { tailscaleAddresses } from "./remote/tailscale-address";
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -478,6 +484,33 @@ export async function createDesktopRuntime(
     notificationSettings: () => settingsService.current().notifications,
   });
 
+  // 모바일 컴패니언: 폰은 데스크톱 렌더러와 같은 코디네이터를 쓰는 두 번째 클라이언트다.
+  const sizes = new TerminalSizeArbiter((sessionId, cols, rows) => coordinator.resize(sessionId, cols, rows));
+  const remoteDevices = new RemoteDeviceStore(path.join(userData, "remote-devices.json"));
+  const remoteHub = new RemoteSessionHub({
+    gateway: {
+      list: () => coordinator.list(),
+      attach: (sessionId) => coordinator.attachForRenderer(sessionId),
+      write: (sessionId, data) => coordinator.write(sessionId, data),
+      onEvent: (listener) => coordinator.onEvent(listener),
+      projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
+    },
+    devices: remoteDevices,
+    sizes,
+    hostId: () => remoteDevices.hostId(),
+    hostName: os.hostname(),
+  });
+  const remoteAccess = new RemoteAccess({
+    hub: remoteHub,
+    devices: remoteDevices,
+    pairing: new PairingCodes(),
+    rendererDir: path.join(__dirname, "../renderer"),
+    hostName: os.hostname(),
+    bindOverride: process.env.MULTI_CLI_WORK_REMOTE_BIND ?? null,
+    addresses: () => tailscaleAddresses(os.networkInterfaces()),
+  });
+  void remoteAccess.apply(settingsService.current().remote);
+
   // 트레이에 숨어 있어도 창을 불러오는 전역 단축키. 저장 전에 먼저 잡아 본다 — 다른 프로그램이 쥔
   // 키를 저장해 두면 눌러도 아무 일이 없는 설정이 남는다.
   const summonShortcut = createSummonShortcut(globalShortcut, showMainWindow);
@@ -499,6 +532,7 @@ export async function createDesktopRuntime(
       if (wanted !== undefined) summonShortcut.apply(previous);
       throw error;
     }
+    if (patch.remote) await remoteAccess.apply(next.remote);
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("settings:changed", next);
     return next;
   };
@@ -555,6 +589,13 @@ export async function createDesktopRuntime(
     },
     coordinator,
     notion: notionService,
+    remote: {
+      status: () => remoteAccess.status(),
+      issuePairingCode: () => remoteAccess.issuePairingCode(),
+      listDevices: () => remoteAccess.listDevices(),
+      revokeDevice: (deviceId) => remoteAccess.revokeDevice(deviceId),
+    },
+    sizes,
     settings: {
       get: () => settingsService.current(),
       update: (patch) => updateSettings(patch),
@@ -751,6 +792,7 @@ export async function createDesktopRuntime(
     () => void summonShortcut.apply(null),
     () => htmlPreviewController.dispose(),
     () => controlServer?.close(),
+    () => remoteAccess.dispose(),
     () => statusWatcher.close(),
     () => coordinator.shutdown(),
     () => worker.dispose(),

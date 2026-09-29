@@ -239,6 +239,16 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     clearToken: vi.fn(async () => ({ configured: false, encryptionAvailable: true })),
     inspectLink: vi.fn(async (_url: string) => notionLinkCheck("ok", "삼성서울병원 채널")),
   };
+  const remoteGateway = {
+    status: vi.fn(() => ({ state: "off" as const, url: null, port: 47821, message: null })),
+    issuePairingCode: vi.fn(() => ({ code: "ABCD-EFGH", expiresAt: "x", url: "u" })),
+    listDevices: vi.fn(async () => []),
+    revokeDevice: vi.fn(async (_deviceId: string) => undefined),
+  };
+  const sizesGateway = {
+    desktopResize: vi.fn(async (_id: string, _cols: number, _rows: number) => undefined),
+    desktopInput: vi.fn(async (_id: string) => undefined),
+  };
   const readRegistry = vi.fn(async () => ({ registry, source: "primary" as const, writable: true }));
   registerMainIpc(ipc, {
     projectService,
@@ -270,9 +280,13 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     onSessionSelected: options.onSessionSelected,
     settings: settingsGateway,
     notion: notionGateway,
+    remote: remoteGateway,
+    sizes: sizesGateway,
   });
   return {
     handlers,
+    remoteGateway,
+    sizesGateway,
     projectService,
     settingsGateway,
     notionGateway,
@@ -784,6 +798,23 @@ describe("main IPC boundary", () => {
       /notification statuses/i,
     );
     expect(settingsGateway.update).not.toHaveBeenCalled();
+  });
+
+  it("routes desktop resize and input through the size arbiter", async () => {
+    const { handlers, sizesGateway } = setup();
+    await handlers.get("terminals:resize")!({}, "s1", 120, 40);
+    expect(sizesGateway.desktopResize).toHaveBeenCalledWith("s1", 120, 40);
+    await handlers.get("terminals:write")!({}, "s1", "x");
+    expect(sizesGateway.desktopInput).toHaveBeenCalledWith("s1");
+  });
+
+  it("exposes remote access status, pairing, and device revocation", async () => {
+    const { handlers, remoteGateway } = setup();
+    expect(await handlers.get("remote:status")!({})).toMatchObject({ state: "off" });
+    expect(await handlers.get("remote:issue-pairing-code")!({})).toMatchObject({ code: "ABCD-EFGH" });
+    await handlers.get("remote:revoke-device")!({}, "d1");
+    expect(remoteGateway.revokeDevice).toHaveBeenCalledWith("d1");
+    expect(() => handlers.get("remote:revoke-device")!({}, "")).toThrow(/Device id/);
   });
 
   it("validates the remote settings patch", async () => {

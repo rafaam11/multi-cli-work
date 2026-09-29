@@ -213,6 +213,12 @@ const api: MultiCliWorkApi = {
     clearToken: () => ipcRenderer.invoke("notion:clear-token"),
     inspectLink: (url) => ipcRenderer.invoke("notion:inspect-link", url),
   },
+  remote: {
+    status: () => ipcRenderer.invoke("remote:status"),
+    issuePairingCode: () => ipcRenderer.invoke("remote:issue-pairing-code"),
+    listDevices: () => ipcRenderer.invoke("remote:list-devices"),
+    revokeDevice: (deviceId) => ipcRenderer.invoke("remote:revoke-device", deviceId),
+  },
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     update: (patch) => ipcRenderer.invoke("settings:update", patch),

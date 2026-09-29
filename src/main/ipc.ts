@@ -49,6 +49,7 @@ import type {
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "../shared/github-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "../shared/notion-types";
+import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "../shared/remote-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type { ProjectTagsV1 } from "../shared/project-tags-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "../shared/work-project-types";
@@ -125,6 +126,19 @@ interface TerminalCoordinatorGateway {
   select(projectId: string | null, sessionId: string | null): Promise<unknown>;
   setVisibleSessions(sessionIds: readonly string[]): Promise<unknown>;
   setSlotViews(input: SlotViewsInput): Promise<unknown>;
+}
+
+interface RemoteGateway {
+  status(): RemoteAccessStatus;
+  issuePairingCode(): RemotePairingCode;
+  listDevices(): Promise<RemoteDeviceInfo[]>;
+  revokeDevice(deviceId: string): Promise<void>;
+}
+
+/** 데스크톱 패인의 resize·입력은 크기 중재자를 거친다 — 폰이 크기를 가져간 세션을 되찾는 계기. */
+interface TerminalSizeGateway {
+  desktopResize(sessionId: string, cols: number, rows: number): Promise<void>;
+  desktopInput(sessionId: string): Promise<void>;
 }
 
 interface UpdaterGateway {
@@ -273,6 +287,8 @@ interface MainIpcDependencies {
   shell: ShellGateway;
   clipboard: ClipboardGateway;
   notion: NotionGateway;
+  remote: RemoteGateway;
+  sizes: TerminalSizeGateway;
   windowControls: WindowControlsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;
@@ -1303,12 +1319,15 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("terminals:refresh", (_event, sessionId: unknown) =>
     dependencies.coordinator.attach(nonEmptyString(sessionId, "Session id")),
   );
-  ipc.handle("terminals:write", (_event, sessionId: unknown, data: unknown) => {
+  ipc.handle("terminals:write", async (_event, sessionId: unknown, data: unknown) => {
     if (typeof data !== "string") throw new Error("Terminal input must be a string");
-    return dependencies.coordinator.write(nonEmptyString(sessionId, "Session id"), data);
+    const id = nonEmptyString(sessionId, "Session id");
+    // 폰이 이 세션의 크기를 가져갔다면 데스크톱이 입력하는 순간 되찾는다. 되찾기가 실패해도 입력은 보낸다.
+    await dependencies.sizes.desktopInput(id).catch((error) => console.error("Failed to reclaim terminal size", error));
+    return dependencies.coordinator.write(id, data);
   });
   ipc.handle("terminals:resize", (_event, sessionId: unknown, cols: unknown, rows: unknown) =>
-    dependencies.coordinator.resize(
+    dependencies.sizes.desktopResize(
       nonEmptyString(sessionId, "Session id"),
       integer(cols, "Terminal columns"),
       integer(rows, "Terminal rows"),
@@ -1374,6 +1393,12 @@ export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependen
   ipc.handle("app:open-releases", () => dependencies.updater.openReleases());
   ipc.handle("app:open-repository", () => dependencies.updater.openRepository());
 
+  ipc.handle("remote:status", () => dependencies.remote.status());
+  ipc.handle("remote:issue-pairing-code", () => dependencies.remote.issuePairingCode());
+  ipc.handle("remote:list-devices", () => dependencies.remote.listDevices());
+  ipc.handle("remote:revoke-device", (_event, deviceId: unknown) =>
+    dependencies.remote.revokeDevice(nonEmptyString(deviceId, "Device id")),
+  );
   ipc.handle("notion:status", () => dependencies.notion.status());
   // async라 잘못된 입력의 throw가 다른 핸들러들처럼 rejected invoke로 렌더러에 도달한다.
   ipc.handle("notion:set-token", async (_event, token: unknown) =>

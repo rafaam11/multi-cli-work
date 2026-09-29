@@ -391,6 +391,12 @@ function createApi(options?: {
       clearToken: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true }),
       inspectLink: vi.fn().mockResolvedValue({ state: "no-token", title: null, message: null }),
     },
+    remote: {
+      status: vi.fn().mockResolvedValue({ state: "off", url: null, port: 47821, message: null }),
+      issuePairingCode: vi.fn(),
+      listDevices: vi.fn().mockResolvedValue([]),
+      revokeDevice: vi.fn().mockResolvedValue(undefined),
+    },
     worktrees: {
       list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
       sync: vi.fn().mockResolvedValue({

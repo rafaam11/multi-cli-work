@@ -31,6 +31,7 @@ import type {
 } from "./worktree-types";
 import type { AppSettings, AppSettingsPatch } from "./settings-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "./notion-types";
+import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "./remote-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -528,6 +529,12 @@ export interface MultiCliWorkApi {
     clearToken(): Promise<NotionTokenStatus>;
     /** 제목 조회 겸 "이 링크가 통합(=MCP)에서 보이는가" 검증. */
     inspectLink(url: string): Promise<NotionLinkCheck>;
+  };
+  remote: {
+    status(): Promise<RemoteAccessStatus>;
+    issuePairingCode(): Promise<RemotePairingCode>;
+    listDevices(): Promise<RemoteDeviceInfo[]>;
+    revokeDevice(deviceId: string): Promise<void>;
   };
   settings: {
     get(): Promise<AppSettings>;
