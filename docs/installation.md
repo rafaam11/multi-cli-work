@@ -44,6 +44,42 @@ chmod +x Multi-CLI-Work-x.y.z-linux-x64.AppImage
 DEB로 설치한 경우에는 자리에서 교체할 수 없으므로, 새 DEB를 받아 위 명령으로 다시 설치한다.
 개발 빌드(`npm run dev`)에는 업데이트 피드가 없어 항상 `idle`이다.
 
+## 모바일(Android) 컴패니언
+
+폰에서 PC의 세션을 보고 조작하는 Android 앱이다. 데스크톱 설치본이 앱(APK)을 동봉해 직접 나눠준다.
+
+- 요구: PC와 폰 모두 Tailscale에 로그인되어 있어야 하고, Android 12 이상(권장 14 이상)이어야 한다.
+- 처음 설치: 설정 ▸ 모바일을 켜고 **기기 추가**를 누른다. 표시된 **앱 설치 QR**을 폰 카메라로 찍어
+  APK를 내려받고, 설치 허용 안내가 뜨면 허용한 뒤 설치한다.
+- 페어링: 앱의 **QR로 PC 추가**로 페어링 QR을 찍거나, 앱 밖에서 폰 카메라로 페어링 QR(`mcw://pair`
+  딥링크)을 찍는다. 같은 PC를 다시 페어링하면 중복 없이 기존 항목이 갱신된다.
+- 업데이트: 새 데스크톱 버전이 더 높은 셸을 동봉하면 앱 첫 화면에 배너가 뜬다. **업데이트**를 누른다.
+  처음 한 번은 "이 출처의 앱 설치 허용"을 켜야 한다. 서명이나 해시가 설치본과 다르면 설치하지 않는다.
+
+### 개발 빌드에서 동봉하기
+
+릴리스 CI는 셸 APK를 항상 동봉한다. 반면 로컬 `npm run dist:*`는 `build/mobile`을 먼저 준비하지
+않으면 셸을 **포함하지 않는다** — electron-builder가 경고만 하고 `resources/mobile` 없이 패키징한다.
+로컬에서 동봉하려면 dist 전에 아래를 실행한다.
+
+```powershell
+cd android; .\gradlew.bat assembleRelease; cd ..; npm run mobile:prepare
+```
+
+### 서명 키 백업
+
+> **`%USERPROFILE%\.multi-cli-work-signing\`을 반드시 백업한다.** 이 키를 잃으면 서명이 달라져
+> 기존 앱을 업데이트할 수 없고, 폰에서 앱을 지우고 다시 깔아야 한다(저장된 호스트·토큰도 사라진다).
+
+올바른 키인지는 서명 인증서 SHA-256 지문으로 확인한다.
+
+```
+f313f9a57702bff47c5e2b6fa10b032e3f434513004ca14ca8834457ffb844e9
+```
+
+CI는 같은 키를 GitHub Secrets(`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`)로 받는다.
+
 ## 제거
 
 - Windows — 설정 → 앱에서 제거하거나 설치 폴더의 언인스톨러를 실행한다

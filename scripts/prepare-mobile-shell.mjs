@@ -1,5 +1,5 @@
 // 빌드된 셸 APK를 데스크톱 설치본이 동봉할 자리(build/mobile/)에 놓고 shell.json을 쓴다.
-// 릴리스 CI와 로컬 dist 모두 이 스크립트를 거친다. 사용: node scripts/prepare-mobile-shell.mjs [--apk <path>]
+// 릴리스 CI가 이 스크립트를 거친다. 로컬 dist 전에는 직접 `npm run mobile:prepare`를 실행한다. 사용: node scripts/prepare-mobile-shell.mjs [--apk <path>]
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";

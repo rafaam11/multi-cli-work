@@ -72,6 +72,7 @@
 - JS 브리지 `window.McwShell`: `bridgeVersion`, 알림 딥링크 전달, 진동, 호스트 목록으로 돌아가기.
 - 호스트 주소가 Tailscale IP라 cleartext HTTP를 허용한다(network security config). WebView는 등록된 호스트 origin 외로 이동하지 않는다.
 - 포그라운드 서비스(§7)와 자가 업데이트(§8)를 가진다.
+- 업데이트 확인은 네이티브가 각 호스트의 `/shell.json`을 직접 조회한다(P3 상태 연결 전까지).
 
 ## 4. 페어링과 보안
 
@@ -79,6 +80,7 @@
    `mcw://pair?host=<tailscale-ip>:<port>&name=<PC 이름>&code=<일회용 코드>&fp=<호스트 ID>`
 2. 같은 화면에 최초 설치용 `http://<tailscale-ip>:<port>/install` QR을 함께 보여준다. 폰 브라우저로 APK를 받는 건 **이때 한 번뿐**이다.
 3. 셸이 QR을 스캔 → `POST /pair {code, deviceName}` → 호스트가 256bit 기기 토큰을 발급한다. 코드는 한 번 쓰면 폐기된다.
+   폰 카메라로 페어링 QR을 찍어 딥링크(`mcw://pair`)로 앱을 열어도 같은 방식으로 페어링된다.
 4. 호스트는 토큰의 **해시만** `userData/remote-devices.json`에 둔다(`{deviceId, name, tokenHash, createdAt, lastSeenAt}`). 시크릿 계열인 `notion-credentials.json`과 같은 자리이고, 기존 storage 계층(`json-store`)의 atomic write를 쓴다.
 5. 설정에 기기 목록(이름·마지막 접속)과 **철회** 버튼을 둔다. 철회하면 그 기기의 열린 WS를 즉시 끊는다.
 
