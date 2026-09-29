@@ -21,6 +21,11 @@ export interface RemoteAccessOptions {
 const NO_TAILSCALE_MESSAGE =
   "Tailscale 주소(100.64.0.0/10)를 찾지 못했습니다. Tailscale이 켜지면 자동으로 다시 시도합니다.";
 
+export function pairingUri(input: { address: string; hostName: string; code: string; hostId: string }): string {
+  const code = input.code.replace(/-/g, "");
+  return `mcw://pair?host=${input.address}&name=${encodeURIComponent(input.hostName)}&code=${code}&fp=${encodeURIComponent(input.hostId)}`;
+}
+
 /**
  * 설정(remote.enabled·port)을 실제 서버 상태로 맞추는 곳. 적용은 한 번에 하나씩 순서대로 하고,
  * Tailscale이 아직 없으면 retryMs마다 다시 본다 — 부팅 때 Tailscale이 앱보다 늦게 뜨는 경우.
@@ -44,12 +49,20 @@ export class RemoteAccess {
     return this.chain;
   }
 
-  issuePairingCode(): RemotePairingCode {
-    if (this.current.state !== "listening" || this.current.url === null) {
+  async issuePairingCode(): Promise<RemotePairingCode> {
+    const running = this.running;
+    if (this.current.state !== "listening" || this.current.url === null || running === null) {
       throw new Error("모바일 연결이 켜져 있지 않습니다");
     }
     const { code, expiresAt } = this.options.pairing.issue();
-    return { code, expiresAt: new Date(expiresAt).toISOString(), url: this.current.url };
+    const address = `${running.host}:${running.port}`;
+    return {
+      code,
+      expiresAt: new Date(expiresAt).toISOString(),
+      url: this.current.url,
+      pairUri: pairingUri({ address, hostName: this.options.hostName, code, hostId: await this.options.devices.hostId() }),
+      installUrl: `http://${address}/install`,
+    };
   }
 
   async pair(code: string, deviceName: string, clientIp: string): Promise<PairOutcome> {

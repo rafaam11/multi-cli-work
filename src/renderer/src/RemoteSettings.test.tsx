@@ -16,7 +16,10 @@ afterEach(cleanup);
 beforeEach(() => {
   remote.status.mockResolvedValue({ state: "listening", url: "http://100.64.0.9:47821/mobile/", port: 47821, message: null });
   remote.listDevices.mockResolvedValue([{ deviceId: "d1", name: "내 폰", createdAt: "2026-09-30T00:00:00.000Z", lastSeenAt: null }]);
-  remote.issuePairingCode.mockResolvedValue({ code: "ABCD-EFGH", expiresAt: "2026-09-30T00:05:00.000Z", url: "http://100.64.0.9:47821/mobile/" });
+  remote.issuePairingCode.mockResolvedValue({ code: "ABCD-EFGH", expiresAt: "2026-09-30T00:05:00.000Z", url: "http://100.64.0.9:47821/mobile/",
+    pairUri: "mcw://pair?host=100.64.0.9:47821&name=PC&code=ABCDEFGH&fp=h",
+    installUrl: "http://100.64.0.9:47821/install",
+  });
   remote.revokeDevice.mockResolvedValue(undefined);
   update.mockResolvedValue(DEFAULT_SETTINGS);
   (window as unknown as { multiCliWork: unknown }).multiCliWork = { remote, settings: { update } };
@@ -35,6 +38,14 @@ describe("RemoteSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "기기 추가" }));
     expect(await screen.findByText("ABCD-EFGH")).toBeInTheDocument();
     expect(screen.getByText("내 폰")).toBeInTheDocument();
+  });
+
+  it("draws the pairing and install QR codes", async () => {
+    render(<RemoteSettings settings={{ ...DEFAULT_SETTINGS, remote: { enabled: true, port: 47821 } }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "기기 추가" }));
+    const pairQr = await screen.findByRole("img", { name: "페어링 QR 코드" });
+    expect(pairQr.getAttribute("src")).toMatch(/^data:image\/svg\+xml/);
+    expect(screen.getByRole("img", { name: "앱 설치 QR 코드" })).toBeInTheDocument();
   });
 
   it("revokes a device and refreshes the list", async () => {

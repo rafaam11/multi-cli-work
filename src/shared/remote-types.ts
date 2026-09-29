@@ -132,6 +132,10 @@ export interface RemotePairingCode {
   code: string;
   expiresAt: string;
   url: string;
+  /** 셸 앱이 스캔하는 QR 내용. */
+  pairUri: string;
+  /** 처음 설치할 때 폰 브라우저로 여는 주소. */
+  installUrl: string;
 }
 
 export interface RemoteDeviceInfo {

@@ -241,7 +241,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
   };
   const remoteGateway = {
     status: vi.fn(() => ({ state: "off" as const, url: null, port: 47821, message: null })),
-    issuePairingCode: vi.fn(() => ({ code: "ABCD-EFGH", expiresAt: "x", url: "u" })),
+    issuePairingCode: vi.fn(async () => ({ code: "ABCD-EFGH", expiresAt: "x", url: "u", pairUri: "p", installUrl: "i" })),
     listDevices: vi.fn(async () => []),
     revokeDevice: vi.fn(async (_deviceId: string) => undefined),
   };

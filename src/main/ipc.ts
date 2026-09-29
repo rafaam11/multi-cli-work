@@ -130,7 +130,7 @@ interface TerminalCoordinatorGateway {
 
 interface RemoteGateway {
   status(): RemoteAccessStatus;
-  issuePairingCode(): RemotePairingCode;
+  issuePairingCode(): Promise<RemotePairingCode>;
   listDevices(): Promise<RemoteDeviceInfo[]>;
   revokeDevice(deviceId: string): Promise<void>;
 }

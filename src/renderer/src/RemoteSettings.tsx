@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AppSettings } from "@shared/settings-types";
 import { REMOTE_PORT_RANGE } from "@shared/settings-types";
 import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "@shared/remote-types";
+import QRCode from "qrcode";
 import { errorMessage } from "./ipc-error";
 
 const STATE_LABEL: Record<RemoteAccessStatus["state"], string> = {
@@ -10,6 +11,8 @@ const STATE_LABEL: Record<RemoteAccessStatus["state"], string> = {
   "no-tailscale": "Tailscale 미감지",
   error: "오류",
 };
+
+const svgDataUrl = (svg: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 
 function formatTime(iso: string | null): string {
   return iso === null ? "접속 기록 없음" : new Date(iso).toLocaleString("ko-KR");
@@ -23,6 +26,7 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null);
   const [devices, setDevices] = useState<RemoteDeviceInfo[]>([]);
   const [pairing, setPairing] = useState<RemotePairingCode | null>(null);
+  const [qr, setQr] = useState<{ pair: string; install: string } | null>(null);
   const [portDraft, setPortDraft] = useState(String(settings.remote.port));
   const [error, setError] = useState<string | null>(null);
 
@@ -56,7 +60,14 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
     setError(null);
     window.multiCliWork.remote
       .issuePairingCode()
-      .then(setPairing)
+      .then(async (next) => {
+        const [pair, install] = await Promise.all([
+          QRCode.toString(next.pairUri, { type: "svg", margin: 1 }),
+          QRCode.toString(next.installUrl, { type: "svg", margin: 1 }),
+        ]);
+        setPairing(next);
+        setQr({ pair: svgDataUrl(pair), install: svgDataUrl(install) });
+      })
       .catch((cause: unknown) => setError(errorMessage(cause)));
   };
 
@@ -113,11 +124,21 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
           기기 추가
         </button>
       </div>
-      {pairing ? (
-        <p className="settings-hint">
-          폰 브라우저에서 <code>{pairing.url}</code>을 열고 코드 <strong>{pairing.code}</strong>를 입력하세요.
-          {" "}{new Date(pairing.expiresAt).toLocaleTimeString("ko-KR")}까지 한 번만 쓸 수 있습니다.
-        </p>
+      {pairing && qr ? (
+        <div className="settings-remote-pairing">
+          <figure>
+            <img src={qr.pair} alt="페어링 QR 코드" width={180} height={180} />
+            <figcaption>셸 앱의 "QR로 PC 추가"로 찍으세요</figcaption>
+          </figure>
+          <figure>
+            <img src={qr.install} alt="앱 설치 QR 코드" width={140} height={140} />
+            <figcaption>앱이 아직 없다면 폰 카메라로 먼저 이것을 찍어 설치하세요</figcaption>
+          </figure>
+          <p className="settings-hint">
+            브라우저로 쓸 때는 <code>{pairing.url}</code>에서 코드 <strong>{pairing.code}</strong>를 입력합니다.{" "}
+            {new Date(pairing.expiresAt).toLocaleTimeString("ko-KR")}까지 한 번만 쓸 수 있습니다.
+          </p>
+        </div>
       ) : null}
       {devices.length === 0 ? <p className="settings-hint">페어링된 기기가 없습니다.</p> : null}
       {devices.map((device) => (

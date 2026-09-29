@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RemoteAccess, type RemoteAccessOptions } from "./remote-access";
+import { pairingUri, RemoteAccess, type RemoteAccessOptions } from "./remote-access";
 
 function setup(overrides: Partial<RemoteAccessOptions> = {}) {
   let addresses = ["100.101.102.103"];
@@ -89,15 +89,23 @@ describe("RemoteAccess", () => {
     expect(status).toMatchObject({ state: "error", message: expect.stringContaining("EADDRINUSE") });
   });
 
-  it("issues a pairing code only while listening", async () => {
+  it("issues a pairing code with a QR URI and install URL only while listening", async () => {
     const { access } = setup();
-    expect(() => access.issuePairingCode()).toThrow(/켜져/);
+    await expect(access.issuePairingCode()).rejects.toThrow(/켜져/);
     await access.apply({ enabled: true, port: 47821 });
-    expect(access.issuePairingCode()).toEqual({
+    expect(await access.issuePairingCode()).toEqual({
       code: "ABCD-EFGH",
       expiresAt: new Date(1_000).toISOString(),
       url: "http://100.101.102.103:47821/mobile/",
+      pairUri: "mcw://pair?host=100.101.102.103:47821&name=PC&code=ABCDEFGH&fp=host-1",
+      installUrl: "http://100.101.102.103:47821/install",
     });
+  });
+
+  it("encodes the host name in the pairing URI", () => {
+    expect(pairingUri({ address: "100.64.0.1:47821", hostName: "내 PC & 노트북", code: "ABCD-EFGH", hostId: "h" })).toBe(
+      "mcw://pair?host=100.64.0.1:47821&name=%EB%82%B4%20PC%20%26%20%EB%85%B8%ED%8A%B8%EB%B6%81&code=ABCDEFGH&fp=h",
+    );
   });
 
   it("pairs a device through the one-shot code", async () => {

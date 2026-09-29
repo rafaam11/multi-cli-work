@@ -4357,6 +4357,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font: var(--type-secondary);
 }
 
+.settings-remote-pairing { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin: 8px 0; }
+.settings-remote-pairing figure { margin: 0; display: grid; gap: 4px; justify-items: center; max-width: 200px; }
+.settings-remote-pairing img { background: #fff; border-radius: 6px; padding: 6px; }
+.settings-remote-pairing figcaption { font-size: 12px; color: var(--muted); text-align: center; }
+
 .settings-error {
   margin: 10px 0 0;
   color: var(--muted);
