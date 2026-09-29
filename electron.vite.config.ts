@@ -30,5 +30,14 @@ export default defineConfig({
       },
     },
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve("src/renderer/index.html"),
+          // 모바일 컴패니언 화면. 데스크톱 설치본에 같이 들어가고 원격 서버가 /mobile/로 서빙한다.
+          mobile: resolve("src/renderer/mobile.html"),
+        },
+      },
+    },
   },
 });
