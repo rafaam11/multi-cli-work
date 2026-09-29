@@ -32,4 +32,18 @@ describe("tailscaleAddresses", () => {
   it("returns an empty list when Tailscale is down", () => {
     expect(tailscaleAddresses({ Ethernet: [entry("10.0.0.2")] })).toEqual([]);
   });
+
+  it("ignores carrier-grade NAT addresses on interfaces that are not Tailscale", () => {
+    expect(
+      tailscaleAddresses({
+        "Cellular Modem": [entry("100.72.1.5")],
+        Tailscale: [entry("100.101.102.103"), entry("fd7a:115c:a1e0::1", "IPv6")],
+      }),
+    ).toEqual(["100.101.102.103"]);
+    expect(tailscaleAddresses({ "Cellular Modem": [entry("100.72.1.5")] })).toEqual([]);
+  });
+
+  it("recognises the Tailscale adapter by name even without its IPv6 address", () => {
+    expect(tailscaleAddresses({ tailscale0: [entry("100.64.0.9")] })).toEqual(["100.64.0.9"]);
+  });
 });

@@ -112,7 +112,8 @@ describe("RemoteSessionHub", () => {
   it("closes a connection that never says hello", async () => {
     const { close } = setup();
     await new Promise((resolve) => setTimeout(resolve, 80));
-    expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.unauthorized, "hello timeout");
+    expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.retry, "hello timeout");
+    expect(close).not.toHaveBeenCalledWith(REMOTE_CLOSE.unauthorized, expect.anything());
   });
 
   it("forwards data that arrives while attach is in flight, and only for attached sessions", async () => {
@@ -204,5 +205,45 @@ describe("RemoteSessionHub", () => {
     handle.receive("{{{");
     await flush();
     expect(sent.at(-1)).toMatchObject({ type: "error", code: "bad-message" });
+  });
+
+  it("a failing token check closes with a retryable code and no internal detail", async () => {
+    const { handle, sent, close, devices } = setup();
+    devices.verify.mockRejectedValueOnce(new Error("EBUSY: C:/Users/secret/remote-devices.json"));
+    handle.receive(JSON.stringify({ type: "hello", token: "good", protocolVersion: REMOTE_PROTOCOL_VERSION, mode: "ui" }));
+    await flush();
+    await flush();
+    expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.retry, expect.any(String));
+    expect(JSON.stringify(sent)).not.toContain("secret");
+  });
+
+  it("a revoked device cannot write even before its socket finishes closing", async () => {
+    const { hub, handle, hello, attachWith, gateway } = setup();
+    await hello();
+    handle.receive('{"type":"attach","sessionId":"s1"}');
+    await flush();
+    attachWith("", 0);
+    await flush();
+    hub.disconnectDevice("phone");
+    handle.receive('{"type":"write","sessionId":"s1","data":"rm -rf"}');
+    await flush();
+    expect(gateway.write).not.toHaveBeenCalled();
+  });
+
+  it("drops a client whose socket buffer is backed up instead of queueing without limit", async () => {
+    const setupWith = setup();
+    const { hub, emit } = setupWith;
+    const sent: unknown[] = [];
+    const close = vi.fn();
+    const slow = hub.open({ send: (message) => sent.push(message), close, bufferedAmount: () => 5 * 1024 * 1024 });
+    slow.receive(JSON.stringify({ type: "hello", token: "good", protocolVersion: REMOTE_PROTOCOL_VERSION, mode: "ui" }));
+    await flush();
+    await flush();
+    slow.receive('{"type":"attach","sessionId":"s1"}');
+    await flush();
+    const before = sent.length;
+    emit({ type: "data", sessionId: "s1", data: "flood", sequence: 1 });
+    expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.retry, "slow consumer");
+    expect(sent.length).toBe(before);
   });
 });

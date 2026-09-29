@@ -6,8 +6,11 @@ import type { TerminalKind, TerminalStatus } from "./terminal-types";
 
 export const REMOTE_PROTOCOL_VERSION = 1;
 
-/** WS close 코드. 4401·4403이면 클라이언트는 재연결하지 않고 다시 페어링하게 한다. */
-export const REMOTE_CLOSE = { protocol: 4400, unauthorized: 4401, revoked: 4403 } as const;
+/**
+ * WS close 코드. 4401·4403이면 클라이언트는 재연결하지 않고 다시 페어링하게 한다 — 토큰이 확실히
+ * 틀렸을 때만 쓴다. 4408은 hello 지연·호스트 쪽 오류·버퍼 초과처럼 "잠시 뒤 다시"인 경우다.
+ */
+export const REMOTE_CLOSE = { protocol: 4400, unauthorized: 4401, revoked: 4403, retry: 4408 } as const;
 
 /** 크기를 가진 쪽: 데스크톱이거나, 크기를 가져간 기기의 deviceId. */
 export type SizeOwner = string;

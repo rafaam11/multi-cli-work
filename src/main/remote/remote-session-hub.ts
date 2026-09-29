@@ -28,7 +28,12 @@ export interface RemoteHubDevices {
 export interface RemoteConnection {
   send(message: RemoteServerMessage): void;
   close(code: number, reason: string): void;
+  /** 소켓에 쌓여 아직 못 보낸 바이트. 없으면 흐름 제어를 하지 않는다. */
+  bufferedAmount?(): number;
 }
+
+/** 폰이 이만큼 못 받고 밀리면 끊는다 — 다시 붙으면 replay가 화면을 되살린다. */
+const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 
 export interface RemoteClientHandle {
   receive(raw: string): void;
@@ -47,6 +52,8 @@ export interface RemoteHubOptions {
 interface Client {
   connection: RemoteConnection;
   device: RemoteDevice | null;
+  /** 철회·강제 종료된 연결. 소켓이 닫히는 동안 도착한 메시지도 더는 처리하지 않는다. */
+  closed: boolean;
   attached: Set<string>;
   helloTimer: ReturnType<typeof setTimeout>;
 }
@@ -86,9 +93,10 @@ export class RemoteSessionHub {
     const client: Client = {
       connection,
       device: null,
+      closed: false,
       attached: new Set(),
       helloTimer: setTimeout(
-        () => connection.close(REMOTE_CLOSE.unauthorized, "hello timeout"),
+        () => connection.close(REMOTE_CLOSE.retry, "hello timeout"),
         this.options.helloTimeoutMs ?? 10_000,
       ),
     };
@@ -98,7 +106,16 @@ export class RemoteSessionHub {
       receive: (raw) => {
         queue = queue
           .then(() => this.handle(client, raw))
-          .catch((error) => connection.send({ type: "error", code: "failed", message: errorText(error) }));
+          .catch((error) => {
+            if (client.closed) return;
+            if (client.device === null) {
+              // 인증 전 실패(기기 파일 읽기 등)는 토큰 문제가 아니다 — 다시 시도하게 하고, 내부 문구는 보내지 않는다.
+              connection.send({ type: "error", code: "failed", message: "호스트가 잠시 응답하지 못했습니다" });
+              connection.close(REMOTE_CLOSE.retry, "host error");
+              return;
+            }
+            connection.send({ type: "error", code: "failed", message: errorText(error) });
+          });
       },
       closed: () => {
         queue = queue.then(() => this.drop(client));
@@ -108,7 +125,11 @@ export class RemoteSessionHub {
 
   disconnectDevice(deviceId: string): void {
     for (const client of this.clients) {
-      if (client.device?.deviceId === deviceId) client.connection.close(REMOTE_CLOSE.revoked, "revoked");
+      if (client.device?.deviceId !== deviceId) continue;
+      // 닫힘 핸드셰이크를 기다리는 동안에도 입력이 통하면 안 된다 — 여기서 바로 끊어 둔다.
+      client.closed = true;
+      client.attached.clear();
+      client.connection.close(REMOTE_CLOSE.revoked, "revoked");
     }
   }
 
@@ -122,6 +143,7 @@ export class RemoteSessionHub {
   }
 
   private async handle(client: Client, raw: string): Promise<void> {
+    if (client.closed) return;
     const message = parseRemoteClientMessage(raw);
     if (!message) {
       client.connection.send({ type: "error", code: "bad-message", message: "알 수 없는 메시지입니다" });
@@ -226,16 +248,21 @@ export class RemoteSessionHub {
   }
 
   private authenticated(): Client[] {
-    return [...this.clients].filter((client) => client.device !== null);
+    return [...this.clients].filter((client) => client.device !== null && !client.closed);
   }
 
   private forward(event: TerminalEvent): void {
     switch (event.type) {
       case "data":
         for (const client of this.authenticated()) {
-          if (client.attached.has(event.sessionId)) {
-            client.connection.send({ type: "data", sessionId: event.sessionId, data: event.data, sequence: event.sequence });
+          if (!client.attached.has(event.sessionId)) continue;
+          if ((client.connection.bufferedAmount?.() ?? 0) > MAX_BUFFERED_BYTES) {
+            client.closed = true;
+            client.attached.clear();
+            client.connection.close(REMOTE_CLOSE.retry, "slow consumer");
+            continue;
           }
+          client.connection.send({ type: "data", sessionId: event.sessionId, data: event.data, sequence: event.sequence });
         }
         return;
       case "status":

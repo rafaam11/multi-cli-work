@@ -74,6 +74,16 @@ describe("RemoteClient", () => {
     }
   });
 
+  it("keeps the pairing and retries on the retryable close code", async () => {
+    vi.useFakeTimers();
+    const { remote, states } = client();
+    remote.connect();
+    FakeSocket.instances[0]!.onclose?.({ code: REMOTE_CLOSE.retry });
+    expect(states).toEqual(["reconnecting"]);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(FakeSocket.instances).toHaveLength(2);
+  });
+
   it("does not reconnect after close()", async () => {
     vi.useFakeTimers();
     const { remote } = client();

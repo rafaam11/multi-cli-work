@@ -37,6 +37,7 @@ const CONTENT_TYPES: Record<string, string> = {
 const ASSET_NAME = /^[\w.-]+$/;
 const MAX_PAIR_BODY_BYTES = 4_096;
 const MAX_WS_PAYLOAD_BYTES = 1024 * 1024;
+const CLOSE_GRACE_MS = 2_000;
 
 function send(response: http.ServerResponse, status: number, body: string, type = "text/plain; charset=utf-8") {
   response.writeHead(status, {
@@ -165,7 +166,12 @@ export async function startRemoteServer(options: RemoteServerOptions): Promise<R
         send: (message) => {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
         },
-        close: (code, reason) => ws.close(code, reason),
+        close: (code, reason) => {
+          ws.close(code, reason);
+          // 상대가 닫힘 핸드셰이크에 답하지 않아도 오래 붙잡지 않는다.
+          setTimeout(() => ws.terminate(), CLOSE_GRACE_MS).unref();
+        },
+        bufferedAmount: () => ws.bufferedAmount,
       });
       ws.on("message", (data, isBinary) => {
         if (isBinary) ws.close(1003, "text only");
