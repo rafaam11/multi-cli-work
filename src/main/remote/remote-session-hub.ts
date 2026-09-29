@@ -7,6 +7,7 @@ import {
   type RemoteClientMessage,
   type RemoteServerMessage,
   type RemoteSessionSummary,
+  type ShellRelease,
 } from "../../shared/remote-types";
 import type { RemoteDevice } from "./device-store";
 import type { SizeState, TerminalSizeArbiter } from "./size-arbiter";
@@ -47,6 +48,7 @@ export interface RemoteHubOptions {
   hostId(): Promise<string>;
   hostName: string;
   helloTimeoutMs?: number;
+  shellLatest?: () => ShellRelease | null;
 }
 
 interface Client {
@@ -219,6 +221,7 @@ export class RemoteSessionHub {
       hostName: this.options.hostName,
       deviceId: device.deviceId,
       protocolVersion: REMOTE_PROTOCOL_VERSION,
+      shellLatest: this.options.shellLatest?.() ?? null,
     });
     client.connection.send({ type: "sessions", sessions: await this.summaries() });
   }

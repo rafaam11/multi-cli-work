@@ -16,6 +16,13 @@ export const REMOTE_CLOSE = { protocol: 4400, unauthorized: 4401, revoked: 4403,
 export type SizeOwner = string;
 export const DESKTOP_SIZE_OWNER = "desktop";
 
+/** PC 설치본에 동봉된 셸 APK. 폰은 이 값으로 자기 업데이트 여부를 정한다. */
+export interface ShellRelease {
+  versionCode: number;
+  versionName: string;
+  sha256: string;
+}
+
 export interface RemoteSessionSummary {
   id: string;
   projectId: string | null;
@@ -38,7 +45,14 @@ export type RemoteClientMessage =
 export type RemoteErrorCode = "bad-message" | "protocol" | "unauthorized" | "not-attached" | "failed";
 
 export type RemoteServerMessage =
-  | { type: "welcome"; hostId: string; hostName: string; deviceId: string; protocolVersion: number }
+  | {
+      type: "welcome";
+      hostId: string;
+      hostName: string;
+      deviceId: string;
+      protocolVersion: number;
+      shellLatest: ShellRelease | null;
+    }
   | { type: "sessions"; sessions: RemoteSessionSummary[] }
   | {
       type: "attached";

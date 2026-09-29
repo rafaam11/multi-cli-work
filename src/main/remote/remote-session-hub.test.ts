@@ -53,7 +53,7 @@ function setup() {
   };
   const resize = vi.fn(async () => undefined);
   const sizes = new TerminalSizeArbiter(resize);
-  const hub = new RemoteSessionHub({ gateway, devices, sizes, hostId: async () => "host-1", hostName: "PC", helloTimeoutMs: 50 });
+  const hub = new RemoteSessionHub({ gateway, devices, sizes, hostId: async () => "host-1", hostName: "PC", helloTimeoutMs: 50, shellLatest: () => ({ versionCode: 2, versionName: "0.2.0", sha256: "c".repeat(64) }) });
   const sent: RemoteServerMessage[] = [];
   const close = vi.fn();
   const handle = hub.open({ send: (message) => sent.push(message), close });
@@ -73,7 +73,14 @@ describe("RemoteSessionHub", () => {
   it("welcomes a valid token and sends the session list", async () => {
     const { sent, hello, devices } = setup();
     await hello();
-    expect(sent[0]).toEqual({ type: "welcome", hostId: "host-1", hostName: "PC", deviceId: "phone", protocolVersion: 1 });
+    expect(sent[0]).toEqual({
+      type: "welcome",
+      hostId: "host-1",
+      hostName: "PC",
+      deviceId: "phone",
+      protocolVersion: 1,
+      shellLatest: { versionCode: 2, versionName: "0.2.0", sha256: "c".repeat(64) },
+    });
     expect(sent[1]).toEqual({
       type: "sessions",
       sessions: [

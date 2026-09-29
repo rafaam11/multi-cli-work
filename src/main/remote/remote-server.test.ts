@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import type { RemoteConnection } from "./remote-session-hub";
 import { startRemoteServer, type RunningRemoteServer } from "./remote-server";
+import type { ShellArtifact } from "./shell-artifact";
 
 const servers: RunningRemoteServer[] = [];
 afterEach(async () => {
@@ -23,7 +24,7 @@ async function rendererDir(withBundle = true) {
   return dir;
 }
 
-async function start(options: { withBundle?: boolean; pair?: () => Promise<never> } = {}) {
+async function start(options: { withBundle?: boolean; pair?: () => Promise<never>; shell?: ShellArtifact | null } = {}) {
   const connections: RemoteConnection[] = [];
   const received: string[] = [];
   const hub = {
@@ -39,7 +40,7 @@ async function start(options: { withBundle?: boolean; pair?: () => Promise<never
           ? { ok: true as const, response: { token: "t", deviceId: "d", hostId: "h", hostName: "PC" } }
           : { ok: false as const, reason: "invalid" as const }),
   );
-  const server = await startRemoteServer({ host: "127.0.0.1", port: 0, rendererDir: await rendererDir(options.withBundle), hub, pair });
+  const server = await startRemoteServer({ host: "127.0.0.1", port: 0, rendererDir: await rendererDir(options.withBundle), hub, pair, shell: options.shell ?? null });
   servers.push(server);
   return { server, base: `http://127.0.0.1:${server.port}`, hub, pair, connections, received };
 }
@@ -64,6 +65,33 @@ describe("startRemoteServer", () => {
     expect((await fetch(`${base}/mobile/assets/..%2Fmobile.html`)).status).toBe(404);
     expect((await fetch(`${base}/mobile/assets/../../etc/passwd`)).status).toBe(404);
     expect((await fetch(`${base}/nope`)).status).toBe(404);
+  });
+
+  it("serves the bundled shell APK, its manifest, and an install page", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "mcw-shell-"));
+    await writeFile(path.join(dir, "shell.apk"), "APKBYTES");
+    const shell = { release: { versionCode: 3, versionName: "0.3.0", sha256: "b".repeat(64) }, apkPath: path.join(dir, "shell.apk") };
+    const { base } = await start({ shell });
+    const manifest = await fetch(`${base}/shell.json`);
+    expect(await manifest.json()).toEqual(shell.release);
+    const apk = await fetch(`${base}/shell.apk`);
+    expect(apk.headers.get("content-type")).toBe("application/vnd.android.package-archive");
+    expect(apk.headers.get("content-disposition")).toContain("Multi-CLI-Work-Mobile-0.3.0.apk");
+    expect(await apk.text()).toBe("APKBYTES");
+    const install = await fetch(`${base}/install`);
+    expect(install.headers.get("content-type")).toContain("text/html");
+    const html = await install.text();
+    expect(html).toContain('href="/shell.apk"');
+    expect(html).toContain("0.3.0");
+  });
+
+  it("explains a missing shell on /install and 404s the rest", async () => {
+    const { base } = await start({ shell: null });
+    expect((await fetch(`${base}/shell.json`)).status).toBe(404);
+    expect((await fetch(`${base}/shell.apk`)).status).toBe(404);
+    const install = await fetch(`${base}/install`);
+    expect(install.status).toBe(200);
+    expect(await install.text()).toContain("모바일 앱이 들어 있지 않습니다");
   });
 
   it("503 when the mobile bundle is missing", async () => {

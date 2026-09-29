@@ -1,9 +1,11 @@
+import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import type { RemotePairResponse } from "../../shared/remote-types";
 import type { RemoteSessionHub } from "./remote-session-hub";
+import type { ShellArtifact } from "./shell-artifact";
 
 export type PairOutcome = { ok: true; response: RemotePairResponse } | { ok: false; reason: "invalid" | "rate-limited" };
 
@@ -15,6 +17,7 @@ export interface RemoteServerOptions {
   hub: Pick<RemoteSessionHub, "open">;
   pair(code: string, deviceName: string, clientIp: string): Promise<PairOutcome>;
   pingIntervalMs?: number;
+  shell?: ShellArtifact | null;
 }
 
 export interface RunningRemoteServer {
@@ -106,6 +109,26 @@ async function handlePair(options: RemoteServerOptions, request: http.IncomingMe
   else send(response, 401, "코드가 맞지 않거나 만료되었습니다");
 }
 
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+}
+
+/** 폰 브라우저가 처음 한 번 여는 페이지. 스크립트 없이 링크와 안내만 있다. */
+function installPage(shell: ShellArtifact | null): string {
+  const body = shell
+    ? `<p><a class="button" href="/shell.apk">모바일 앱 받기 (v${escapeHtml(shell.release.versionName)})</a></p>
+<ol>
+<li>받은 파일을 열고, "이 출처의 앱 설치 허용"을 켠 뒤 설치합니다.</li>
+<li>앱에서 <b>QR로 PC 추가</b>를 누르고 PC의 설정 ▸ 모바일 ▸ 기기 추가 QR을 찍습니다.</li>
+<li>이후 업데이트는 앱이 PC에서 직접 받아 설치합니다.</li>
+</ol>`
+    : "<p>이 PC 설치본에는 모바일 앱이 들어 있지 않습니다. 릴리스 설치본을 쓰거나 개발 빌드에서 build/mobile을 준비하세요.</p>";
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>멀티 터미널 작업기 모바일 설치</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;background:#101214;color:#e6e6e6;margin:0;padding:24px}a.button{display:inline-block;padding:12px 16px;border-radius:8px;background:#4c8dff;color:#fff;text-decoration:none}</style>
+</head><body><h1>모바일 앱 설치</h1>${body}</body></html>`;
+}
+
 async function handleRequest(options: RemoteServerOptions, request: http.IncomingMessage, response: http.ServerResponse) {
   const url = new URL(request.url ?? "/", "http://host");
   const pathname = url.pathname;
@@ -116,6 +139,25 @@ async function handleRequest(options: RemoteServerOptions, request: http.Incomin
     response.end();
     return;
   }
+  if (pathname === "/shell.json") {
+    if (!options.shell) return send(response, 404, "동봉된 모바일 앱이 없습니다");
+    return send(response, 200, JSON.stringify(options.shell.release), CONTENT_TYPES[".json"]);
+  }
+  if (pathname === "/shell.apk") {
+    if (!options.shell) return send(response, 404, "동봉된 모바일 앱이 없습니다");
+    const stat = await fs.stat(options.shell.apkPath).catch(() => null);
+    if (!stat) return send(response, 404, "동봉된 모바일 앱이 없습니다");
+    response.writeHead(200, {
+      "content-type": "application/vnd.android.package-archive",
+      "content-length": String(stat.size),
+      "content-disposition": `attachment; filename="Multi-CLI-Work-Mobile-${options.shell.release.versionName}.apk"`,
+      "cache-control": "no-cache",
+      "x-content-type-options": "nosniff",
+    });
+    createReadStream(options.shell.apkPath).pipe(response);
+    return;
+  }
+  if (pathname === "/install") return send(response, 200, installPage(options.shell ?? null), CONTENT_TYPES[".html"]);
   if (pathname === "/mobile" || pathname === "/mobile/") {
     const served = await serveFile(response, path.join(options.rendererDir, "mobile.html"), "no-cache");
     if (!served) send(response, 503, "모바일 화면 번들이 없습니다. 호스트에서 npm run build를 먼저 실행하세요.");
