@@ -20,7 +20,8 @@ object ApkInstaller {
             setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
         val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
+        val session = installer.openSession(sessionId)
+        try {
             session.openWrite("shell.apk", 0, apk.length()).use { out ->
                 apk.inputStream().use { it.copyTo(out) }
                 session.fsync(out)
@@ -33,6 +34,11 @@ object ApkInstaller {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
             session.commit(pending.intentSender)
+        } catch (error: Throwable) {
+            runCatching { session.abandon() }
+            throw error
+        } finally {
+            session.close()
         }
     }
 }
