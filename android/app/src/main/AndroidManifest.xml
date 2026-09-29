@@ -20,6 +20,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- 폰 카메라 앱으로 데스크톱 QR을 찍어도 바로 이 앱의 페어링 확인으로 온다. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mcw" android:host="pair" />
+            </intent-filter>
         </activity>
+        <activity
+            android:name=".SessionActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
     </application>
 </manifest>
