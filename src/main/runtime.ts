@@ -116,6 +116,7 @@ import { RemoteAccess } from "./remote/remote-access";
 import { RemoteDeviceStore } from "./remote/device-store";
 import { PairingCodes } from "./remote/pairing-codes";
 import { RemoteSessionHub } from "./remote/remote-session-hub";
+import { readShellArtifact } from "./remote/shell-artifact";
 import { TerminalSizeArbiter } from "./remote/size-arbiter";
 import { tailscaleAddresses } from "./remote/tailscale-address";
 
@@ -485,6 +486,11 @@ export async function createDesktopRuntime(
   });
 
   // 모바일 컴패니언: 폰은 데스크톱 렌더러와 같은 코디네이터를 쓰는 두 번째 클라이언트다.
+  // 설치본에 동봉된 셸 APK(resources/mobile). dev에서는 `npm run mobile:prepare`가 채우는 build/mobile.
+  const shellDir =
+    process.env.MULTI_CLI_WORK_SHELL_DIR ??
+    (app.isPackaged ? path.join(process.resourcesPath, "mobile") : path.join(app.getAppPath(), "build", "mobile"));
+  const shellArtifact = await readShellArtifact(shellDir);
   const sizes = new TerminalSizeArbiter((sessionId, cols, rows) => coordinator.resize(sessionId, cols, rows));
   const remoteDevices = new RemoteDeviceStore(path.join(userData, "remote-devices.json"));
   const remoteHub = new RemoteSessionHub({
@@ -499,6 +505,7 @@ export async function createDesktopRuntime(
     sizes,
     hostId: () => remoteDevices.hostId(),
     hostName: os.hostname(),
+    shellLatest: () => shellArtifact?.release ?? null,
   });
   const remoteAccess = new RemoteAccess({
     hub: remoteHub,
@@ -508,6 +515,7 @@ export async function createDesktopRuntime(
     hostName: os.hostname(),
     bindOverride: process.env.MULTI_CLI_WORK_REMOTE_BIND ?? null,
     addresses: () => tailscaleAddresses(os.networkInterfaces()),
+    shell: shellArtifact,
   });
   void remoteAccess.apply(settingsService.current().remote);
 

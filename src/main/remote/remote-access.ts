@@ -3,6 +3,7 @@ import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "..
 import type { RemoteDevice, RemoteDeviceStore } from "./device-store";
 import type { PairingCodes } from "./pairing-codes";
 import type { RemoteSessionHub } from "./remote-session-hub";
+import type { ShellArtifact } from "./shell-artifact";
 import { startRemoteServer, type PairOutcome, type RunningRemoteServer } from "./remote-server";
 
 export interface RemoteAccessOptions {
@@ -14,6 +15,8 @@ export interface RemoteAccessOptions {
   /** MULTI_CLI_WORK_REMOTE_BIND — e2e·개발용. 설정 화면에서는 바꿀 수 없다. */
   bindOverride: string | null;
   addresses(): string[];
+  /** 설치본에 동봉된 셸 APK. 없으면 /install 페이지가 안내만 한다. */
+  shell?: ShellArtifact | null;
   start?: typeof startRemoteServer;
   retryMs?: number;
 }
@@ -115,6 +118,7 @@ export class RemoteAccess {
         port: settings.port,
         rendererDir: this.options.rendererDir,
         hub: this.options.hub,
+        shell: this.options.shell ?? null,
         pair: (code, deviceName, clientIp) => this.pair(code, deviceName, clientIp),
       });
       return this.set({ state: "listening", url: `http://${host}:${this.running.port}/mobile/`, port: settings.port, message: null });

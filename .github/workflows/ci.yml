@@ -22,6 +22,19 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
 
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests and debug build
+        working-directory: android
+        run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+
   windows-smoke:
     if: github.event_name == 'pull_request'
     runs-on: windows-2022

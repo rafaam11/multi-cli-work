@@ -36,6 +36,13 @@ function setup(overrides: Partial<RemoteAccessOptions> = {}) {
 afterEach(() => vi.useRealTimers());
 
 describe("RemoteAccess", () => {
+  it("hands the bundled shell to the server", async () => {
+    const shell = { release: { versionCode: 1, versionName: "0.1.0", sha256: "a".repeat(64) }, apkPath: "x" };
+    const { access, start } = setup({ shell });
+    await access.apply({ enabled: true, port: 47821 });
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ shell }));
+  });
+
   it("stays off by default and listens on the Tailscale address when enabled", async () => {
     const { access, start } = setup();
     expect((await access.apply({ enabled: false, port: 47821 })).state).toBe("off");

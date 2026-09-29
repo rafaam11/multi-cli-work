@@ -23,8 +23,46 @@ jobs:
             exit 1
           }
 
-  windows:
+  android:
     needs: verify-version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+      - name: Decode the shell signing key
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: echo "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/mcw-shell.jks"
+      - name: Test and build the signed shell
+        working-directory: android
+        env:
+          MCW_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/mcw-shell.jks
+          MCW_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MCW_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MCW_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew testDebugUnitTest assembleRelease --stacktrace
+      - name: Refuse an unsigned shell
+        run: |
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify android/app/build/outputs/apk/release/app-release.apk
+      - run: node scripts/prepare-mobile-shell.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mobile-shell
+          path: build/mobile/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-mobile
+          path: release/Multi-CLI-Work-Mobile-*.apk
+
+  windows:
+    needs: [verify-version, android]
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
@@ -36,6 +74,10 @@ jobs:
         with:
           python-version: "3.11"
       - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: mobile-shell
+          path: build/mobile
       - run: npm test
       - run: npm run test:e2e
       - run: npx electron-builder --win --publish never
@@ -48,7 +90,7 @@ jobs:
             release/latest.yml
 
   linux:
-    needs: verify-version
+    needs: [verify-version, android]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -58,6 +100,10 @@ jobs:
           cache: npm
       - run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1
       - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: mobile-shell
+          path: build/mobile
       - name: Rebuild node-pty for the native Electron ABI
         run: npm run rebuild:native
       - run: npm test
@@ -74,7 +120,7 @@ jobs:
 
   draft-release:
     if: github.ref_type == 'tag'
-    needs: [windows, linux]
+    needs: [android, windows, linux]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v8
