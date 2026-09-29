@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handlePairIntent(intent)
+        if (savedInstanceState == null) handlePairIntent(intent)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 HostListScreen(
@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handlePairIntent(intent)
     }
 
@@ -78,6 +79,8 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePairIntent(intent: Intent?) {
         val data = intent?.data ?: return
+        // 한 번 쓴 페어링 코드가 액티비티 재생성 때 다시 열리지 않도록 소비한 인텐트의 data를 지운다.
+        setIntent(Intent(intent).setData(null))
         acceptPairText(data.toString())
     }
 
