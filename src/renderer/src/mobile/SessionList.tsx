@@ -26,16 +26,17 @@ interface SessionListProps {
   sessions: RemoteSessionSummary[];
   onOpen(sessionId: string): void;
   onUnpair(): void;
+  leaveLabel?: string;
 }
 
-export function SessionList({ hostName, connection, sessions, onOpen, onUnpair }: SessionListProps) {
+export function SessionList({ hostName, connection, sessions, onOpen, onUnpair, leaveLabel }: SessionListProps) {
   const banner = CONNECTION_LABEL[connection];
   return (
     <main className="m-list">
       <header className="m-bar">
         <h1>{hostName}</h1>
         <button type="button" onClick={onUnpair}>
-          연결 해제
+          {leaveLabel ?? "연결 해제"}
         </button>
       </header>
       {banner ? <p className="m-banner">{banner}</p> : null}

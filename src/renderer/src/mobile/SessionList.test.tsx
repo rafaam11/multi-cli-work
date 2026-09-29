@@ -16,8 +16,10 @@ describe("SessionList", () => {
         ]}
         onOpen={onOpen}
         onUnpair={vi.fn()}
+        leaveLabel="호스트 목록"
       />,
     );
+    expect(screen.getByRole("button", { name: "호스트 목록" })).toBeInTheDocument();
     expect(screen.getByText("입력 대기")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
     expect(onOpen).toHaveBeenCalledWith("1");

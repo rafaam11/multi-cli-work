@@ -13,6 +13,7 @@ import {
 import { SessionList } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
 import { applySessionMessage } from "./session-list-model";
+import { readShellBridge } from "./shell-bridge";
 
 function storage(): Storage | null {
   try {
@@ -23,7 +24,8 @@ function storage(): Storage | null {
 }
 
 export function MobileApp() {
-  const [pairing, setPairing] = useState<StoredPairing | null>(() => loadPairing(storage()));
+  const [bridge] = useState(() => readShellBridge(window as unknown as { McwShell?: unknown }));
+  const [pairing, setPairing] = useState<StoredPairing | null>(() => bridge?.pairing ?? loadPairing(storage()));
   const [notice, setNotice] = useState<string | null>(null);
   const [connection, setConnection] = useState<RemoteClientState>("connecting");
   const [sessions, setSessions] = useState<RemoteSessionSummary[]>([]);
@@ -40,6 +42,10 @@ export function MobileApp() {
     const offState = next.onState((state) => {
       setConnection(state);
       if (state === "unauthorized") {
+        if (bridge) {
+          bridge.unpaired();
+          return;
+        }
         clearPairing(storage());
         setNotice("이 기기의 연결이 해제되었습니다. 다시 페어링하세요.");
         setPairing(null);
@@ -53,8 +59,11 @@ export function MobileApp() {
       next.close();
       setClient(null);
     };
-  }, [pairing]);
+  }, [pairing, bridge]);
 
+  if (bridge && !pairing) {
+    return <p className="m-banner">셸에 이 PC의 페어링 정보가 없습니다. 호스트 목록에서 다시 추가하세요.</p>;
+  }
   if (pairing && !client) return <p className="m-banner">연결 중…</p>;
   if (!pairing || !client) {
     return (
@@ -81,7 +90,12 @@ export function MobileApp() {
       connection={connection}
       sessions={sessions}
       onOpen={setOpenSessionId}
+      leaveLabel={bridge ? "호스트 목록" : "연결 해제"}
       onUnpair={() => {
+        if (bridge) {
+          bridge.backToHosts();
+          return;
+        }
         clearPairing(storage());
         setPairing(null);
       }}
