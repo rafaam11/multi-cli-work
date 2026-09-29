@@ -26,6 +26,7 @@ import {
 } from "./keymap";
 import { publishNotionTokenStatus } from "./notion-token-status";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
+import { RemoteSettings } from "./RemoteSettings";
 import { errorMessage } from "./ipc-error";
 
 type SettingsTab =
@@ -36,6 +37,7 @@ type SettingsTab =
   | "workspace"
   | "files"
   | "notion"
+  | "mobile"
   | "keybindings";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
@@ -46,6 +48,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "workspace", label: "워크스페이스" },
   { id: "files", label: "파일" },
   { id: "notion", label: "노션" },
+  { id: "mobile", label: "모바일" },
   { id: "keybindings", label: "단축키" },
 ];
 
@@ -932,6 +935,7 @@ export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
             </>
           ) : null}
           {tab === "notion" ? <NotionSettings /> : null}
+          {tab === "mobile" ? <RemoteSettings settings={settings} /> : null}
           {tab === "keybindings" ? (
             <>
               <h2>단축키</h2>

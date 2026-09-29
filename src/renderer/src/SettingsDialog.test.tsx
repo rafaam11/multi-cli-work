@@ -22,6 +22,12 @@ beforeEach(() => {
   window.multiCliWork = {
     settings: { get: vi.fn().mockResolvedValue(DEFAULT_SETTINGS), update, onChange: vi.fn(() => () => undefined) },
     notion,
+    remote: {
+      status: vi.fn().mockResolvedValue({ state: "off", url: null, port: 47821, message: null }),
+      issuePairingCode: vi.fn(),
+      listDevices: vi.fn().mockResolvedValue([]),
+      revokeDevice: vi.fn(),
+    },
   } as unknown as MultiCliWorkApi;
 });
 
@@ -269,6 +275,15 @@ describe("프로젝트 탭", () => {
         projects: { categories: [{ name: "영업", color: 1 }, ...DEFAULT_CATEGORIES.slice(1)] },
       }),
     );
+  });
+});
+
+describe("모바일 탭", () => {
+  it("모바일 연결 설정을 보여 준다", async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "모바일" }));
+    expect(screen.getByLabelText("모바일 연결 켜기")).not.toBeChecked();
+    expect(await screen.findByText("꺼짐")).toBeInTheDocument();
   });
 });
 
