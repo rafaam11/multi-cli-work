@@ -33,5 +33,6 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+        <receiver android:name=".update.InstallResultReceiver" android:exported="false" />
     </application>
 </manifest>

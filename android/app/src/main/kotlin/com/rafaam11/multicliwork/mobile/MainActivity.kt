@@ -1,8 +1,10 @@
 package com.rafaam11.multicliwork.mobile
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,9 +23,14 @@ import com.rafaam11.multicliwork.mobile.net.PairingException
 import com.rafaam11.multicliwork.mobile.ui.HostListScreen
 import com.rafaam11.multicliwork.mobile.ui.PairDialog
 import com.rafaam11.multicliwork.mobile.ui.UpdateBanner
+import com.rafaam11.multicliwork.mobile.update.ApkInstaller
+import com.rafaam11.multicliwork.mobile.update.ApkVerifier
+import com.rafaam11.multicliwork.mobile.update.Candidate
+import com.rafaam11.multicliwork.mobile.update.UpdateCheck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private var hosts by mutableStateOf(emptyList<Host>())
@@ -31,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private var pairBusy by mutableStateOf(false)
     private var pairError by mutableStateOf<String?>(null)
     internal var update by mutableStateOf<UpdateBanner?>(null)
+    private var candidate: Candidate? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +54,7 @@ class MainActivity : ComponentActivity() {
                     onRemove = { ShellGraph.hosts(this).remove(it.hostId); reload() },
                     onScan = ::scan,
                     onPaste = ::acceptPairText,
-                    onUpdate = { },
+                    onUpdate = ::runUpdate,
                 )
                 pending?.let { request ->
                     PairDialog(
@@ -65,6 +73,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         reload()
+        checkForUpdate()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -75,6 +84,42 @@ class MainActivity : ComponentActivity() {
 
     private fun reload() {
         hosts = ShellGraph.hosts(this).list()
+    }
+
+
+    private fun checkForUpdate() {
+        val known = ShellGraph.hosts(this).list()
+        lifecycleScope.launch {
+            val found = withContext(Dispatchers.IO) { UpdateCheck(ShellGraph.api::shellRelease).find(BuildConfig.VERSION_CODE, known) }
+            candidate = found
+            update = found?.let { UpdateBanner(it.release, busy = false, message = null) }
+        }
+    }
+
+    private fun runUpdate() {
+        val found = candidate ?: return
+        if (!packageManager.canRequestPackageInstalls()) {
+            update = update?.copy(message = "먼저 '이 출처의 앱 설치 허용'을 켜 주세요")
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        update = update?.copy(busy = true, message = null)
+        lifecycleScope.launch {
+            val apk = File(cacheDir, "shell-update.apk")
+            val problem = withContext(Dispatchers.IO) {
+                runCatching { ShellGraph.api.downloadApk(found.host.address, apk) }.exceptionOrNull()?.let { return@withContext "받지 못했습니다: ${it.message}" }
+                if (!ApkVerifier.sha256Matches(apk, found.release.sha256)) return@withContext "파일이 손상됐습니다(sha256 불일치)"
+                if (!ApkVerifier.sameSigner(this@MainActivity, apk)) return@withContext "서명이 설치본과 달라 설치하지 않습니다"
+                null
+            }
+            if (problem != null) {
+                apk.delete()
+                update = update?.copy(busy = false, message = problem)
+                return@launch
+            }
+            ApkInstaller.install(this@MainActivity, apk)
+            update = update?.copy(busy = false, message = "설치를 시작했습니다")
+        }
     }
 
     private fun handlePairIntent(intent: Intent?) {
