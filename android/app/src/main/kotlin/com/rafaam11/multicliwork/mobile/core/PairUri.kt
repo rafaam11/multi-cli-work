@@ -10,7 +10,8 @@ data class PairRequest(val address: String, val hostName: String, val code: Stri
  * Tailscale 대역(100.64.0.0/10)뿐이다 — 다른 QR로 엉뚱한 서버에 토큰을 받으러 가지 않게.
  */
 object PairUri {
-    private val TAILNET_IPV4 = Regex("""^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.(\d{1,3})\.(\d{1,3})$""")
+    private val TAILNET_IPV4 = Regex("""^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})$""")
+    private val PORT = Regex("""^[1-9]\d{3,4}$""")
     private val CODE = Regex("""^[A-Za-z0-9-]{8,9}$""")
 
     fun parse(raw: String): PairRequest? {
@@ -27,6 +28,7 @@ object PairUri {
         if (parts.size != 2) return null
         val match = TAILNET_IPV4.matchEntire(parts[0]) ?: return null
         if (match.groupValues.drop(2).any { it.toInt() > 255 }) return null
+        if (!PORT.matches(parts[1])) return null
         val port = parts[1].toIntOrNull() ?: return null
         if (port !in 1024..65535) return null
 

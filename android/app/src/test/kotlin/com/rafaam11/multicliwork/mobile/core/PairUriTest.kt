@@ -31,6 +31,19 @@ class PairUriTest {
             "mcw://pair?host=100.64.0.1:47821&code=ABCDEFGH",
             "mcw://pair?host=100.64.0.1:47821&code=AB/../CD&fp=h",
             "not a uri at all %%%",
+            "mcw://pair?host=100.64.010.1:47821&code=ABCDEFGH&fp=h",
+            "mcw://pair?host=100.64.0.01:47821&code=ABCDEFGH&fp=h",
+            "mcw://pair?host=100.64.0.1:%2B47821&code=ABCDEFGH&fp=h",
+            "mcw://pair?host=100.64.0.1:047821&code=ABCDEFGH&fp=h",
+            "mcw://pair?host=100.64.0.1:1023&code=ABCDEFGH&fp=h",
+            "mcw://pair?host=100.64.0.1:65536&code=ABCDEFGH&fp=h",
+            "mcw://pair?host=100.64.0.256:47821&code=ABCDEFGH&fp=h",
         ).forEach { assertNull(it, PairUri.parse(it)) }
+    }
+
+    @Test
+    fun acceptsTheRangeBoundaries() {
+        assertEquals("100.64.0.1:1024", PairUri.parse("mcw://pair?host=100.64.0.1:1024&code=ABCDEFGH&fp=h")?.address)
+        assertEquals("100.127.255.255:65535", PairUri.parse("mcw://pair?host=100.127.255.255:65535&code=ABCDEFGH&fp=h")?.address)
     }
 }
