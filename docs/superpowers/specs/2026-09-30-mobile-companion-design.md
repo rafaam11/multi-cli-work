@@ -79,7 +79,7 @@
    `mcw://pair?host=<tailscale-ip>:<port>&name=<PC 이름>&code=<일회용 코드>&fp=<호스트 ID>`
 2. 같은 화면에 최초 설치용 `http://<tailscale-ip>:<port>/install` QR을 함께 보여준다. 폰 브라우저로 APK를 받는 건 **이때 한 번뿐**이다.
 3. 셸이 QR을 스캔 → `POST /pair {code, deviceName}` → 호스트가 256bit 기기 토큰을 발급한다. 코드는 한 번 쓰면 폐기된다.
-4. 호스트는 토큰의 **해시만** `~/.multi-cli-work/remote-devices.json`에 둔다(`{deviceId, name, tokenHash, createdAt, lastSeenAt}`). 기존 storage 계층의 atomic write를 쓴다.
+4. 호스트는 토큰의 **해시만** `userData/remote-devices.json`에 둔다(`{deviceId, name, tokenHash, createdAt, lastSeenAt}`). 시크릿 계열인 `notion-credentials.json`과 같은 자리이고, 기존 storage 계층(`json-store`)의 atomic write를 쓴다.
 5. 설정에 기기 목록(이름·마지막 접속)과 **철회** 버튼을 둔다. 철회하면 그 기기의 열린 WS를 즉시 끊는다.
 
 규칙:
@@ -97,9 +97,9 @@ JSON 메시지, 연결 시 첫 메시지는 반드시 `hello`. `protocolVersion`
 
 | type | 필드 | 설명 |
 |---|---|---|
-| `hello` | `token, protocolVersion, shellVersion?, mode: "ui" \| "status"` | 인증. `status`는 알림 전용 연결 |
+| `hello` | `token, protocolVersion, shellVersion?, mode: "ui" \| "status"` | 인증. `status`는 알림 전용 연결(P3에서 추가 — P1은 `"ui"`만 받는다) |
 | `list` | — | 세션 목록 요청 |
-| `attach` | `sessionId, lastSequence?` | 세션 붙기. `lastSequence`가 있으면 이어받기 시도 |
+| `attach` | `sessionId` | 세션 붙기. 붙기만 해서는 PTY 크기를 바꾸지 않는다 |
 | `detach` | `sessionId` | 떼기(크기 소유 반환 포함) |
 | `write` | `sessionId, data` | 입력 |
 | `resize` | `sessionId, cols, rows` | "폰 크기로" 켜진 동안만 보냄 |
@@ -109,7 +109,7 @@ JSON 메시지, 연결 시 첫 메시지는 반드시 `hello`. `protocolVersion`
 
 | type | 필드 |
 |---|---|
-| `welcome` | `hostId, hostName, protocolVersion, shellLatest{versionCode, versionName, sha256}` |
+| `welcome` | `hostId, hostName, deviceId, protocolVersion` (+ P2에서 `shellLatest{versionCode, versionName, sha256}`) |
 | `sessions` | `TerminalSessionView[]` (projectId·제목·상태 포함) |
 | `attached` | `sessionId, replay, sequence, cols, rows, sizeOwner` |
 | `data` | `sessionId, data, sequence` |
@@ -119,7 +119,7 @@ JSON 메시지, 연결 시 첫 메시지는 반드시 `hello`. `protocolVersion`
 | `error` | `code, message` |
 
 - `mode: "status"` 연결에는 `sessions`·`status`·`title`·`exit`·`created`·`attention`만 보내고 `data`는 보내지 않는다.
-- 재연결: `attach{lastSequence}` → 서버는 링 버퍼로 이어 줄 수 있으면 그 뒤의 `data`만, 아니면 전체 `replay`를 담은 `attached`를 보낸다.
+- 재연결: 다시 `attach`해서 **전체 `replay`**를 받는다. 워커 링 버퍼에는 "특정 sequence 이후만" 주는 API가 없어서 이어받기는 하지 않는다. 클라이언트는 `attached.sequence` 이하의 `data`를 버린다.
 - 서버는 30초 간격 ping, 셸·UI는 끊기면 지수 백오프로 재연결한다.
 
 ## 6. 화면 크기 ("폰에서 선택")
@@ -127,8 +127,8 @@ JSON 메시지, 연결 시 첫 메시지는 반드시 `hello`. `protocolVersion`
 PTY는 크기가 하나뿐이다.
 
 - **기본: PC 크기 유지.** 폰 xterm은 `attached`/`size`에 담긴 PC의 cols·rows 그대로 렌더하고, 핀치 줌·가로 스크롤로 본다.
-- **"📱 폰 크기로" 켜기:** 폰 폭에 맞춘 `resize`를 보낸다. 호스트는 세션별 `sizeOwner = deviceId`를 기록하고, 데스크톱 렌더러에 알려 해당 패인에 "폰에서 크기 사용 중" 표시를 띄운다.
-- **PC가 회수하는 경우:** 데스크톱에서 그 패인에 포커스나 입력이 들어올 때, 폰이 `releaseSize`/`detach`를 보낼 때, 폰 WS가 끊길 때. 이때 호스트가 데스크톱의 마지막 크기로 되돌리고 `sizeOwner = "desktop"`으로 바꾼 뒤 `size`를 방송한다.
+- **"📱 폰 크기로" 켜기:** 폰 폭에 맞춘 `resize`를 보낸다. 호스트는 세션별 `sizeOwner = deviceId`를 기록한다. 데스크톱 패인의 "폰에서 크기 사용 중" 표시는 P4에서 넣는다.
+- **PC가 회수하는 경우:** 데스크톱에서 그 세션에 입력하거나 패인 크기가 바뀔 때(`terminals:write`·`terminals:resize`가 `TerminalSizeArbiter`를 거친다), 폰이 `releaseSize`/`detach`를 보낼 때, 폰 WS가 끊길 때. 이때 호스트가 데스크톱의 마지막 크기로 되돌리고 `sizeOwner = "desktop"`으로 바꾼 뒤 `size`를 방송한다.
 - 구현 지점: 데스크톱 렌더러의 resize 경로(→ `TerminalCoordinator.resize`)에 "데스크톱 크기 기억"과 "포커스 시 회수" 훅을 추가한다.
 
 ## 7. 알림
@@ -169,14 +169,14 @@ PTY는 크기가 하나뿐이다.
 
 | 단계 | 내용 | 완료 기준 |
 |---|---|---|
-| **P1** | RemoteServer(설정 토글·Tailscale bind·기기 토큰·WS 프로토콜) + 모바일 웹 UI(목록·세션·입력·빠른 키·크기 토글) + 데스크톱 설정 화면(페어링 코드는 텍스트로 표시) | 폰 브라우저에서 Tailscale IP로 접속해 토큰으로 세션을 보고 입력할 수 있다 |
+| **P1** | RemoteServer(설정 토글·Tailscale bind·기기 토큰·WS 프로토콜) + 모바일 웹 UI(목록·세션·입력·빠른 키·크기 토글) + 데스크톱 설정 "모바일" 탭(페어링 코드·주소를 텍스트로 표시, 폰 브라우저가 `/mobile/`에서 코드 입력) | 폰 브라우저에서 Tailscale IP로 접속해 페어링 코드로 세션을 보고 입력할 수 있다 |
 | **P2** | Kotlin 셸 v1(QR 페어링·다중 호스트·WebView·자가 업데이트) + release.yml `android` 잡 + APK 동봉 + 데스크톱 QR 표시 | 설치본 하나로 페어링·접속되고, shellVersion을 올린 테스트 빌드로 업데이트 1사이클이 성공한다. 서명 키 백업을 확인했다 |
 | **P3** | 포그라운드 서비스 + `attention` 이벤트 + 알림 딥링크 + 포커스 억제 | 폰이 잠긴 상태에서 입력 대기 알림을 받고, 탭하면 그 세션이 열린다 |
 | **P4** | 크기 소유 UX 다듬기, 기기 관리 UI 개선, 후속 기능 후보(새 세션 시작·종료, 파일·diff 보기) 검토 | — |
 
 ## 10. 검증
 
-- **vitest** (`--pool=threads`): RemoteServer의 토큰 인증·철회 즉시 차단, 페어링 코드 만료·일회성·rate limit, Tailscale 외 주소 bind 거부, `attach{lastSequence}` 이어받기와 전체 replay 분기, `sizeOwner` 전이(폰 resize → 데스크톱 포커스 회수 → WS 끊김 회수), `status` 모드에 `data`가 흐르지 않음.
+- **vitest** (`--pool=threads`): RemoteServer의 토큰 인증·철회 즉시 차단, 페어링 코드 만료·일회성·rate limit, Tailscale 외 주소 bind 거부, attach 중 도착한 출력의 sequence 정리와 재연결 시 전체 replay, `sizeOwner` 전이(폰 resize → 데스크톱 포커스 회수 → WS 끊김 회수), `status` 모드에 `data`가 흐르지 않음.
 - **Playwright**: 모바일 뷰포트로 서빙된 `/mobile/`에 접속해 목록 → 세션 → 입력 → 빠른 키 → 크기 토글을 e2e로 확인한다.
 - **Kotlin 단위 테스트**: QR URI 파싱, 버전 비교(여러 호스트 최대값), sha256 검증.
 - **실기기 체크리스트**: Tailscale 켠 폰에서 접속, 잠금 상태 알림, 업데이트 1사이클, Windows 방화벽의 첫 listen 허용 프롬프트 안내 문구.

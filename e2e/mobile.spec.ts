@@ -1,0 +1,153 @@
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import fs from "node:fs/promises";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+
+const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
+const NOW = "2026-07-11T12:00:00.000Z";
+const WINDOWS = process.platform === "win32";
+const SHELL_ID = WINDOWS ? "powershell" : "bash";
+const SHELL_LABEL = WINDOWS ? "PowerShell" : "Bash";
+
+let tempRoot: string;
+let app: ElectronApplication;
+let page: Page;
+let port: number;
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const found = typeof address === "object" && address ? address.port : 0;
+      server.close(() => resolve(found));
+    });
+  });
+}
+
+/**
+ * 폰 역할은 같은 Electron 안에 띄운 두 번째 창이 맡는다 — 별도 브라우저를 설치하지 않아도 되고,
+ * 그 창은 preload 없이 원격 서버가 서빙한 /mobile/ 페이지만 본다. 서버는 Tailscale 대신
+ * MULTI_CLI_WORK_REMOTE_BIND=127.0.0.1에 뜬다.
+ */
+test.describe.serial("Mobile companion", () => {
+  test.beforeAll(async () => {
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "multi-cli-work-mobile-e2e-"));
+    port = await freePort();
+    const projectRoot = path.join(tempRoot, "sample-project");
+    await Promise.all([
+      fs.mkdir(projectRoot, { recursive: true }),
+      fs.mkdir(path.join(tempRoot, "registry"), { recursive: true }),
+      fs.mkdir(path.join(tempRoot, "codex-sessions"), { recursive: true }),
+      fs.mkdir(path.join(tempRoot, "user-data"), { recursive: true }),
+    ]);
+    await fs.writeFile(
+      path.join(tempRoot, "registry", "projects.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          updatedAt: NOW,
+          projects: {
+            [PROJECT_ID]: {
+              id: PROJECT_ID,
+              rootPath: projectRoot,
+              displayName: "Sample Project",
+              sources: ["manual"],
+              providerRefs: { claude: [], codex: [] },
+              status: "진행중",
+              memo: "",
+              tracks: [],
+              hidden: false,
+              order: 0,
+              createdAt: NOW,
+              updatedAt: NOW,
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(tempRoot, "user-data", "settings.json"),
+      `${JSON.stringify({ remote: { enabled: true, port } })}\n`,
+      "utf8",
+    );
+    app = await electron.launch({
+      args: [path.resolve("out/main/index.js")],
+      env: {
+        ...process.env,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+        MULTI_CLI_WORK_USER_DATA: path.join(tempRoot, "user-data"),
+        MULTI_CLI_WORK_REGISTRY_PATH: path.join(tempRoot, "registry", "projects.json"),
+        MULTI_CLI_WORK_CODEX_SESSIONS_DIR: path.join(tempRoot, "codex-sessions"),
+        MULTI_CLI_WORK_AGENTS_PATH: path.join(tempRoot, "registry", "agents.json"),
+        MULTI_CLI_WORK_WORK_PROJECTS_PATH: path.join(tempRoot, "registry", "work-projects.json"),
+        MULTI_CLI_WORK_WORKTREES_PATH: path.join(tempRoot, "registry", "worktrees.json"),
+        MULTI_CLI_WORK_PR_REVIEWS_PATH: path.join(tempRoot, "registry", "pr-reviews.json"),
+        MULTI_CLI_WORK_WORKSPACE_PATH: path.join(tempRoot, "registry", "workspace.json"),
+        MULTI_CLI_WORK_PROJECT_TAGS_PATH: path.join(tempRoot, "registry", "project-tags.json"),
+        MULTI_CLI_WORK_REMOTE_BIND: "127.0.0.1",
+      },
+    });
+    page = await app.firstWindow();
+  });
+
+  test.afterAll(async () => {
+    await app?.evaluate(({ dialog }) => {
+      dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
+    }).catch(() => undefined);
+    await app?.close().catch(() => undefined);
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  });
+
+  test("pairs a phone, lists the session, and types into it", async () => {
+    await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await expect(page.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeVisible();
+
+    await expect
+      .poll(() => page.evaluate(() => window.multiCliWork.remote.status().then((status) => status.state)))
+      .toBe("listening");
+    const pairing = await page.evaluate(() => window.multiCliWork.remote.issuePairingCode());
+    expect(pairing.url).toBe(`http://127.0.0.1:${port}/mobile/`);
+
+    const phonePromise = app.waitForEvent("window");
+    await app.evaluate(({ BrowserWindow }, url) => {
+      const phoneWindow = new BrowserWindow({ width: 390, height: 844, show: true });
+      void phoneWindow.loadURL(url);
+    }, pairing.url);
+    const phone = await phonePromise;
+    await phone.setViewportSize({ width: 390, height: 844 });
+
+    await phone.getByLabel("페어링 코드").fill(pairing.code.toLowerCase());
+    await phone.getByRole("button", { name: "연결" }).click();
+    const sessionButton = phone.locator(".m-session").first();
+    await expect(sessionButton).toBeVisible();
+    await expect(phone.getByRole("heading", { name: "Sample Project" })).toBeVisible();
+
+    // 같은 코드는 두 번 못 쓴다.
+    const reuse = await phone.evaluate(
+      async (code) => (await fetch("/pair", { method: "POST", body: JSON.stringify({ code, deviceName: "x" }) })).status,
+      pairing.code,
+    );
+    expect(reuse).toBe(401);
+
+    await sessionButton.click();
+    await expect(phone.locator(".m-terminal .xterm-rows")).toBeVisible();
+    await phone.getByLabel("입력").fill(WINDOWS ? "Write-Output MCW_FROM_PHONE" : "echo MCW_FROM_PHONE");
+    await phone.getByRole("button", { name: "전송" }).click();
+    await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_FROM_PHONE");
+    await expect(page.locator(".xterm-rows")).toContainText("MCW_FROM_PHONE");
+
+    // 철회하면 폰은 페어링 화면으로 돌아간다.
+    const devices = await page.evaluate(() => window.multiCliWork.remote.listDevices());
+    expect(devices).toHaveLength(1);
+    await page.evaluate((deviceId) => window.multiCliWork.remote.revokeDevice(deviceId), devices[0]!.deviceId);
+    await expect(phone.getByText("이 기기의 연결이 해제되었습니다. 다시 페어링하세요.")).toBeVisible();
+  });
+});
