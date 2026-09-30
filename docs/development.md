@@ -64,9 +64,12 @@ CI는 Node.js 22.12.0으로 고정하고, E2E 잡은 Claude 상태 훅에 필요
 `v*` 태그를 푸시하면:
 
 1. `verify-version` — 태그 이름과 `package.json` 버전이 어긋나면 여기서 멈춘다
-2. `windows`(windows-2022) / `linux`(ubuntu-22.04) — 각자 `npm test` → 전체 `npm run test:e2e` →
-   `electron-builder` 패키징 → 아티팩트 업로드
-3. 마지막 잡이 두 플랫폼 아티팩트를 모아 **하나의 draft 릴리스**에 올린다
+2. `android`(ubuntu-22.04) — `android/`의 단위 테스트 → 서명된 `assembleRelease`(Secrets
+   `ANDROID_KEYSTORE_B64`·`ANDROID_KEYSTORE_PASSWORD`·`ANDROID_KEY_ALIAS`·`ANDROID_KEY_PASSWORD`) →
+   인증서 지문 확인 → `scripts/prepare-mobile-shell.mjs`로 `build/mobile` 준비 → 아티팩트 업로드
+3. `windows`(windows-2022) / `linux`(ubuntu-22.04) — 각자 `npm test` → 전체 `npm run test:e2e` →
+   `build/mobile`을 받아 `electron-builder` 패키징(셸 APK 동봉) → 아티팩트 업로드
+4. 마지막 잡이 모든 아티팩트(모바일 APK 포함)를 모아 **하나의 draft 릴리스**에 올린다
 
 릴리스 노트는 `docs/release/<버전>.md`에 남긴다.
 
