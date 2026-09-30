@@ -6,6 +6,7 @@ import type { RemoteSessionSummary } from "@shared/remote-types";
 import type { RemoteClient } from "./remote-client";
 import { STATUS_LABEL } from "./SessionList";
 import { createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
+import { planTouchScroll } from "./touch-scroll";
 
 interface SessionScreenProps {
   client: RemoteClient;
@@ -79,10 +80,70 @@ export function SessionScreen({ client, session, deviceId, onBack }: SessionScre
     client.send({ type: "attach", sessionId: session.id });
     const input = terminal.onData((data) => client.send({ type: "write", sessionId: session.id, data }));
 
+    // xterm은 손가락 드래그를 스크롤백 이동으로 바꾸지 않는다. 세로 드래그는 여기서 받아, 넘친 틀
+    // (PC 크기로 그릴 때)과 스크롤백 사이에 나눠 쓴다. 가로 드래그는 틀의 기본 스크롤에 맡긴다.
+    let touchStart: { x: number; y: number } | null = null;
+    let touchAxis: "x" | "y" | null = null;
+    let lastTouchY = 0;
+    let touchCarry = 0;
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) {
+        touchStart = null;
+        return;
+      }
+      const touch = event.touches[0]!;
+      touchStart = { x: touch.clientX, y: touch.clientY };
+      lastTouchY = touch.clientY;
+      touchAxis = null;
+      touchCarry = 0;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (!touchStart || event.touches.length !== 1) return;
+      const touch = event.touches[0]!;
+      if (touchAxis === null) {
+        const dx = Math.abs(touch.clientX - touchStart.x);
+        const dy = Math.abs(touch.clientY - touchStart.y);
+        if (dx < 6 && dy < 6) return;
+        touchAxis = dy >= dx ? "y" : "x";
+      }
+      if (touchAxis !== "y") return;
+      event.preventDefault();
+      const dy = touch.clientY - lastTouchY;
+      lastTouchY = touch.clientY;
+      const screen = host.querySelector<HTMLElement>(".xterm-screen");
+      const cellHeight = screen && terminal.rows > 0 ? screen.clientHeight / terminal.rows : 16;
+      const buffer = terminal.buffer.active;
+      const step = planTouchScroll(
+        {
+          containerTop: host.scrollTop,
+          containerMax: host.scrollHeight - host.clientHeight,
+          viewportY: buffer.viewportY,
+          baseY: buffer.baseY,
+        },
+        dy,
+        cellHeight,
+        touchCarry,
+      );
+      if (step.containerDelta !== 0) host.scrollTop += step.containerDelta;
+      if (step.lines !== 0) terminal.scrollLines(step.lines);
+      touchCarry = step.remainder;
+    };
+    const onTouchEnd = () => {
+      touchStart = null;
+    };
+    host.addEventListener("touchstart", onTouchStart, { passive: true });
+    host.addEventListener("touchmove", onTouchMove, { passive: false });
+    host.addEventListener("touchend", onTouchEnd);
+    host.addEventListener("touchcancel", onTouchEnd);
+
     return () => {
       offMessage();
       offState();
       input.dispose();
+      host.removeEventListener("touchstart", onTouchStart);
+      host.removeEventListener("touchmove", onTouchMove);
+      host.removeEventListener("touchend", onTouchEnd);
+      host.removeEventListener("touchcancel", onTouchEnd);
       if (phoneSizeRef.current) client.send({ type: "releaseSize", sessionId: session.id });
       client.send({ type: "detach", sessionId: session.id });
       terminal.dispose();

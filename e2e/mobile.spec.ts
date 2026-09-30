@@ -144,6 +144,30 @@ test.describe.serial("Mobile companion", () => {
     await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_FROM_PHONE");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_FROM_PHONE");
 
+    // 폰 크기로 맞춘 뒤에도 손가락 드래그로 스크롤백을 거슬러 올라갈 수 있다.
+    await phone.getByLabel("입력").fill(
+      WINDOWS ? "1..120 | ForEach-Object { 'MCW_TOUCH_' + $_ }" : "i=1; while [ $i -le 120 ]; do echo MCW_TOUCH_$i; i=$((i+1)); done",
+    );
+    await phone.getByRole("button", { name: "전송" }).click();
+    await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_TOUCH_120");
+    await phone.getByRole("button", { name: "📱 폰 크기로" }).click();
+    await expect(phone.getByRole("button", { name: "📱 폰 크기로" })).toHaveAttribute("aria-pressed", "true");
+    const firstTouchRow = phone.locator(".m-terminal .xterm-rows > div").filter({ hasText: /^MCW_TOUCH_1$/ });
+    await expect(firstTouchRow).toBeHidden();
+    const box = await phone.locator(".m-terminal").boundingBox();
+    if (!box) throw new Error("phone terminal is not on screen");
+    const cdp = await phone.context().newCDPSession(phone);
+    const x = box.x + box.width / 2;
+    for (let drag = 0; drag < 6; drag += 1) {
+      const top = box.y + 20;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: top }] });
+      for (let step = 1; step <= 10; step += 1) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: top + step * ((box.height - 40) / 10) }] });
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    }
+    await expect(firstTouchRow).toBeVisible();
+
     // 철회하면 폰은 페어링 화면으로 돌아간다.
     const devices = await page.evaluate(() => window.multiCliWork.remote.listDevices());
     expect(devices).toHaveLength(1);
