@@ -113,20 +113,42 @@ export function SessionScreen({ client, session, deviceId, onBack }: SessionScre
       const screen = host.querySelector<HTMLElement>(".xterm-screen");
       const cellHeight = screen && terminal.rows > 0 ? screen.clientHeight / terminal.rows : 16;
       const buffer = terminal.buffer.active;
+      // claude 같은 전체 화면 앱은 스크롤백이 없고 휠 입력으로 스스로 스크롤한다.
+      const fullScreen = buffer.type === "alternate";
       const step = planTouchScroll(
         {
           containerTop: host.scrollTop,
           containerMax: host.scrollHeight - host.clientHeight,
           viewportY: buffer.viewportY,
           baseY: buffer.baseY,
+          unbounded: fullScreen,
         },
         dy,
         cellHeight,
         touchCarry,
       );
       if (step.containerDelta !== 0) host.scrollTop += step.containerDelta;
-      if (step.lines !== 0) terminal.scrollLines(step.lines);
+      if (step.lines !== 0) {
+        if (fullScreen && screen) sendWheel(screen, step.lines, cellHeight);
+        else terminal.scrollLines(step.lines);
+      }
       touchCarry = step.remainder;
+    };
+    // 휠을 xterm에 넘기면 앱이 켠 마우스 방식(SGR 등)에 맞춰 PTY로 보낸다 — PC에서 휠을 굴린 것과 같다.
+    const sendWheel = (target: HTMLElement, steps: number, cellHeight: number) => {
+      const rect = target.getBoundingClientRect();
+      for (let index = 0; index < Math.abs(steps); index += 1) {
+        target.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY: Math.sign(steps) * cellHeight,
+            deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
     };
     const onTouchEnd = () => {
       touchStart = null;

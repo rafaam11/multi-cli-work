@@ -57,4 +57,26 @@ describe("planTouchScroll", () => {
   it("a sub-line drag only accumulates", () => {
     expect(planTouchScroll(state(), 4, CELL, 0)).toEqual({ containerDelta: 0, lines: 0, remainder: 4 });
   });
+
+  describe("unbounded (full-screen apps like claude scroll themselves)", () => {
+    const alt = (overrides: Partial<Parameters<typeof planTouchScroll>[0]> = {}) => state({ viewportY: 0, baseY: 0, unbounded: true, ...overrides });
+
+    it("turns the whole drag into steps even with no xterm scrollback", () => {
+      expect(planTouchScroll(alt(), 25, CELL, 0)).toEqual({ containerDelta: 0, lines: -2, remainder: 5 });
+      expect(planTouchScroll(alt(), -25, CELL, 0)).toEqual({ containerDelta: 0, lines: 2, remainder: -5 });
+    });
+
+    it("still moves an oversized container first, in both directions", () => {
+      expect(planTouchScroll(alt({ containerTop: 5, containerMax: 200 }), 30, CELL, 0)).toEqual({
+        containerDelta: -5,
+        lines: -2,
+        remainder: 5,
+      });
+      expect(planTouchScroll(alt({ containerTop: 190, containerMax: 200 }), -30, CELL, 0)).toEqual({
+        containerDelta: 10,
+        lines: 2,
+        remainder: 0,
+      });
+    });
+  });
 });

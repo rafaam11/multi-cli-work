@@ -5,6 +5,11 @@ export interface TouchScrollState {
   /** xterm 버퍼의 보고 있는 줄과 맨 아래(라이브) 줄. */
   viewportY: number;
   baseY: number;
+  /**
+   * 전체 화면(alternate screen) 앱 — claude처럼 xterm 스크롤백 없이 휠 입력을 받아 스스로 스크롤한다.
+   * 이때 lines는 스크롤백 줄이 아니라 앱에 보낼 휠 단계이고, 끝이 없다.
+   */
+  unbounded?: boolean;
 }
 
 export interface TouchScrollStep {
@@ -22,6 +27,7 @@ export interface TouchScrollStep {
  */
 export function planTouchScroll(state: TouchScrollState, dy: number, cellHeight: number, carry: number): TouchScrollStep {
   const total = carry + dy;
+  if (state.unbounded) return planUnbounded(state, total, cellHeight);
   if (total > 0) {
     const containerUse = Math.min(total, state.containerTop);
     const rest = total - containerUse;
@@ -45,4 +51,20 @@ export function planTouchScroll(state: TouchScrollState, dy: number, cellHeight:
     return { containerDelta: 0, lines: n, remainder: rest === 0 ? 0 : -rest };
   }
   return { containerDelta: 0, lines: 0, remainder: 0 };
+}
+
+/** 넘친 틀을 양방향 모두 먼저 움직이고, 남은 거리는 휠 단계로 바꾼다. */
+function planUnbounded(state: TouchScrollState, total: number, cellHeight: number): TouchScrollStep {
+  if (total === 0) return { containerDelta: 0, lines: 0, remainder: 0 };
+  const direction = total > 0 ? 1 : -1;
+  const room = direction > 0 ? state.containerTop : state.containerMax - state.containerTop;
+  const containerUse = Math.min(Math.abs(total), Math.max(0, room));
+  const rest = Math.abs(total) - containerUse;
+  const n = Math.floor(rest / cellHeight);
+  const leftover = rest - n * cellHeight;
+  return {
+    containerDelta: containerUse === 0 ? 0 : -direction * containerUse,
+    lines: n === 0 ? 0 : -direction * n,
+    remainder: leftover === 0 ? 0 : direction * leftover,
+  };
 }
