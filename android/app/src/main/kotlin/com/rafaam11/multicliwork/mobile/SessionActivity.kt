@@ -3,10 +3,13 @@ package com.rafaam11.multicliwork.mobile
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -35,7 +38,11 @@ class SessionActivity : ComponentActivity() {
         enableEdgeToEdge()
         webView = WebView(this)
         // edge-to-edge(targetSdk 35+)에서 상태바·내비게이션바·키보드 아래로 웹 화면이 깔리지 않게 한다.
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
+        // 여백은 WebView가 아니라 감싸는 틀에 준다 — WebView는 자기 padding으로는 뷰포트를 줄이지 않아,
+        // 키보드가 올라와도 페이지가 그대로 있고 입력창이 가려진다. 틀이 줄면 WebView 높이가 실제로 줄어든다.
+        val container = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#101214")) }
+        container.addView(webView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             WindowInsetsCompat.CONSUMED
@@ -65,7 +72,7 @@ class SessionActivity : ComponentActivity() {
                 if (webView.canGoBack()) webView.goBack() else finish()
             }
         })
-        setContentView(webView)
+        setContentView(container)
         webView.loadUrl(HostOrigin.startUrl(host.address))
     }
 
