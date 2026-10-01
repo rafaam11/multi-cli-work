@@ -183,47 +183,49 @@ process.stdin.on("data", (data) => {
     await expect(firstTouchRow).toBeVisible();
 
     // 전체 화면 앱(claude)에는 스크롤백이 없다 — 드래그가 휠 입력으로 바뀌어 앱에 닿아야 한다.
-    const dragDown = async () => {
-      const area = await phone.locator(".m-terminal").boundingBox();
-      if (!area) throw new Error("phone terminal is not on screen");
-      const startY = area.y + 20;
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: startY }] });
-      for (let step = 1; step <= 10; step += 1) {
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: startY + step * ((area.height - 40) / 10) }] });
-      }
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    };
-    await phone.getByLabel("입력").fill(`node "${mouseScript}"`);
-    await phone.getByRole("button", { name: "전송" }).click();
-    await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_ALT_READY");
-    // 폰이 PC로 보내는 입력을 엿본다 — "앱이 받았는가"가 아니라 "폰이 스크롤 입력을 보냈는가"로 확인한다.
-    // Linux PTY는 마우스 모드 요청을 그대로 넘기므로 xterm이 SGR 휠(ESC[<64;…)을 보낸다. Windows ConPTY는
-    // raw 모드 node가 켠 마우스 모드를 삼켜서(claude처럼 VT 입력을 켜야 넘긴다) xterm이 전체 화면용
-    // 위 화살표(ESC[A)로 대신 보낸다. 둘 다 "드래그가 앱의 스크롤 입력이 됐다"는 뜻이다.
-    const wheelInput = WINDOWS ? /\u001b\[<64;|\u001b\[A/ : /\u001b\[<64;/;
-    await phone.evaluate(() => {
-      const sent: string[] = [];
-      (window as unknown as { __mcwSent: string[] }).__mcwSent = sent;
-      const original = WebSocket.prototype.send;
-      WebSocket.prototype.send = function (this: WebSocket, data: string | ArrayBufferLike | Blob | ArrayBufferView) {
-        if (typeof data === "string") sent.push(data);
-        return original.call(this, data);
+    // Linux에서만 확인한다: Windows ConPTY는 버전에 따라 전체 화면 전환(ESC[?1049h)을 xterm에 넘기지
+    // 않거나(Server 2022 러너), raw 모드 node가 켠 마우스 모드를 넘기지 않는다. claude는 VT 입력을 켜서
+    // Windows 11에서도 둘 다 넘어오지만, 이 테스트 앱으로는 러너마다 재현이 달라 판정이 흔들린다.
+    if (!WINDOWS) {
+      const dragDown = async () => {
+        const area = await phone.locator(".m-terminal").boundingBox();
+        if (!area) throw new Error("phone terminal is not on screen");
+        const startY = area.y + 20;
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: startY }] });
+        for (let step = 1; step <= 10; step += 1) {
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: startY + step * ((area.height - 40) / 10) }] });
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       };
-    });
-    await dragDown();
-    await expect
-      .poll(async () => {
-        const writes = await phone.evaluate(() =>
-          (window as unknown as { __mcwSent: string[] }).__mcwSent
-            .map((message) => JSON.parse(message) as { type: string; data?: string })
-            .filter((message) => message.type === "write")
-            .map((message) => message.data ?? ""),
-        );
-        return writes.some((data) => wheelInput.test(data));
-      })
-      .toBe(true);
-    await phone.getByLabel("입력").fill("q");
-    await phone.getByRole("button", { name: "전송" }).click();
+      await phone.getByLabel("입력").fill(`node "${mouseScript}"`);
+      await phone.getByRole("button", { name: "전송" }).click();
+      await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_ALT_READY", { timeout: 30_000 });
+      // 폰이 PC로 보내는 입력을 엿본다 — "앱이 받았는가"가 아니라 "폰이 SGR 휠(ESC[<64;…)을 보냈는가"로 확인한다.
+      const wheelInput = /\u001b\[<64;/;
+      await phone.evaluate(() => {
+        const sent: string[] = [];
+        (window as unknown as { __mcwSent: string[] }).__mcwSent = sent;
+        const original = WebSocket.prototype.send;
+        WebSocket.prototype.send = function (this: WebSocket, data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+          if (typeof data === "string") sent.push(data);
+          return original.call(this, data);
+        };
+      });
+      await dragDown();
+      await expect
+        .poll(async () => {
+          const writes = await phone.evaluate(() =>
+            (window as unknown as { __mcwSent: string[] }).__mcwSent
+              .map((message) => JSON.parse(message) as { type: string; data?: string })
+              .filter((message) => message.type === "write")
+              .map((message) => message.data ?? ""),
+          );
+          return writes.some((data) => wheelInput.test(data));
+        })
+        .toBe(true);
+      await phone.getByLabel("입력").fill("q");
+      await phone.getByRole("button", { name: "전송" }).click();
+    }
 
     // 철회하면 폰은 페어링 화면으로 돌아간다.
     const devices = await page.evaluate(() => window.multiCliWork.remote.listDevices());
