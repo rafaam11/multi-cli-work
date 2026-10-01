@@ -30,7 +30,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Unit tests and debug build
         working-directory: android
         run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
