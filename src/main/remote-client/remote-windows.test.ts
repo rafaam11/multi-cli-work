@@ -151,8 +151,21 @@ describe("RemoteWindows", () => {
     await windows.open("host-1");
     await windows.open("host-1", "s2");
     expect(createWindow).toHaveBeenCalledOnce();
-    expect(fakes[0]!.window.loadURL).toHaveBeenLastCalledWith("http://100.64.0.9:47821/mobile/#session=s2");
+    expect(fakes[0]!.window.loadURL.mock.calls.at(-1)![0]).toMatch(/^http:\/\/100\.64\.0\.9:47821\/mobile\/#session=s2&n=\d+$/);
     expect(fakes[0]!.window.focus).toHaveBeenCalled();
+  });
+
+  it("asks for the same session again with an address the page has not seen", async () => {
+    const { windows, fakes } = setup();
+    await windows.open("host-1");
+    // 알림으로 s2를 열고, 사용자가 화면에서 다른 세션으로 옮긴 뒤, s2의 알림을 또 누른다. 주소가
+    // 지난번과 같으면 페이지는 아무 변화도 보지 못한다(hashchange가 없다).
+    await windows.open("host-1", "s2");
+    await windows.open("host-1", "s2");
+    const [first, second] = fakes[0]!.window.loadURL.mock.calls.slice(-2).map((call) => call[0]);
+    expect(first).toContain("#session=s2");
+    expect(second).toContain("#session=s2");
+    expect(second).not.toBe(first);
   });
 
   it("clears the pairing when the page reports it was rejected", async () => {

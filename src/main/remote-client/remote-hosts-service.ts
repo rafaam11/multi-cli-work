@@ -48,7 +48,15 @@ export function createRemoteHostsService(options: RemoteHostsServiceOptions) {
     return known.map((host) => ({ ...host, ...options.links.snapshot(host.hostId) }));
   };
   const announce = async () => options.announce(await view());
-  const relink = async () => options.links.sync(await options.registry.pairings());
+  // 갱신은 한 번에 하나씩, 요청한 순서대로 한다. 각자 읽고 맞추게 두면 먼저 읽은 쪽이 나중에 끝나
+  // 옛 목록으로 덮어쓴다 — 방금 지운 호스트에 다시 붙거나, 방금 추가한 호스트의 연결을 닫는다.
+  let relinking: Promise<void> = Promise.resolve();
+  const relink = (): Promise<void> => {
+    relinking = relinking
+      .catch(() => undefined)
+      .then(async () => options.links.sync(await options.registry.pairings()));
+    return relinking;
+  };
 
   return {
     list: view,

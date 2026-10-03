@@ -110,6 +110,21 @@ describe("remote hosts service", () => {
     expect(announce).toHaveBeenCalledOnce();
   });
 
+  it("re-links in the order the changes happened, so a slow earlier read cannot win", async () => {
+    const { service, registry, links } = setup();
+    let finishFirstRead: (hosts: HostPairing[]) => void = () => undefined;
+    registry.pairings
+      .mockImplementationOnce(() => new Promise<HostPairing[]>((resolve) => { finishFirstRead = resolve; }))
+      .mockImplementationOnce(async () => []);
+    const starting = service.start();
+    const removing = service.remove("host-1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finishFirstRead([PAIRING]);
+    await Promise.all([starting, removing]);
+    // 앱이 뜨며 읽은 목록(호스트 있음)이 삭제 뒤의 목록(없음)을 덮어쓰면, 지운 호스트에 다시 붙는다.
+    expect(links.sync.mock.calls.map((call) => call[0])).toEqual([[PAIRING], []]);
+  });
+
   it("opens a host", async () => {
     const { service, windows } = setup();
     await service.open("host-1");

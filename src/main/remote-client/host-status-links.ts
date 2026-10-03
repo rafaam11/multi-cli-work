@@ -26,10 +26,13 @@ function linkKey(host: HostPairing): string {
  */
 export class HostStatusLinks {
   private readonly links = new Map<string, { key: string; link: LinkLike }>();
+  /** 종료한 뒤다. 그때까지 끝나지 않았던 갱신이 뒤늦게 와도 새로 붙지 않는다. */
+  private closed = false;
 
   constructor(private readonly options: HostStatusLinksOptions) {}
 
   sync(hosts: readonly HostPairing[]): void {
+    if (this.closed) return;
     const wanted = new Map(hosts.map((host) => [host.hostId, host]));
     for (const [hostId, entry] of [...this.links]) {
       const host = wanted.get(hostId);
@@ -56,6 +59,7 @@ export class HostStatusLinks {
   }
 
   closeAll(): void {
+    this.closed = true;
     for (const hostId of [...this.links.keys()]) this.drop(hostId);
   }
 

@@ -54,6 +54,12 @@ export class RemoteWindows {
   /** hostId → 아직 로드 중인 창. 그동안 다시 열려는 요청은 이 결과를 같이 기다린다. */
   private readonly loading = new Map<string, Promise<void>>();
   private readonly securedSessions = new WeakSet<Session>();
+  /**
+   * 열려 있는 창에 세션을 가리킬 때 덧붙이는 번호. 사용자가 화면에서 다른 세션으로 옮겨도 주소의
+   * 해시는 그대로라서, 같은 세션을 다시 가리키면 주소가 지난번과 같아지고 페이지는 아무 변화도 보지
+   * 못한다. 번호가 달라야 hashchange가 난다.
+   */
+  private linkSeq = 0;
 
   constructor(private readonly options: RemoteWindowsOptions) {
     options.ipc.on(REMOTE_SHELL_CHANNELS.pairing, (event) => {
@@ -83,7 +89,10 @@ export class RemoteWindows {
     const existing = [...this.windows.values()].find((entry) => entry.hostId === hostId && !entry.window.isDestroyed());
     if (existing) {
       // 같은 문서에서 해시만 바뀐다 — 웹 UI가 hashchange로 그 세션을 연다.
-      if (sessionId) await existing.window.loadURL(url).catch(() => undefined);
+      if (sessionId) {
+        this.linkSeq += 1;
+        await existing.window.loadURL(`${url}&n=${this.linkSeq}`).catch(() => undefined);
+      }
       if (existing.window.isMinimized()) existing.window.restore();
       existing.window.show();
       existing.window.focus();

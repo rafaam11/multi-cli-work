@@ -75,11 +75,14 @@ describe("HostStatusLinks", () => {
     expect(links.snapshot("a")).toEqual({ link: "off", awaiting: 0 });
   });
 
-  it("closes everything on shutdown", () => {
+  it("closes everything on shutdown and links nothing afterwards", () => {
     const { links, created } = setup();
     links.sync([host("a"), host("b")]);
     links.closeAll();
     expect(created.every((entry) => entry.close.mock.calls.length === 1)).toBe(true);
     expect(links.snapshot("a")).toEqual({ link: "off", awaiting: 0 });
+    // 종료 중에 뒤늦게 끝난 갱신이 소켓을 새로 열면 안 된다.
+    links.sync([host("a")]);
+    expect(created).toHaveLength(2);
   });
 });

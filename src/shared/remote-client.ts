@@ -64,7 +64,15 @@ export class RemoteClient {
 
   connect(): void {
     if (this.stopped) return;
-    const socket = (this.options.createSocket ?? ((url) => new WebSocket(url)))(this.options.url);
+    let socket: RemoteSocketLike;
+    try {
+      socket = (this.options.createSocket ?? ((url) => new WebSocket(url)))(this.options.url);
+    } catch {
+      // 소켓을 만들지도 못했다(주소가 깨졌다 등). 재시도는 타이머 콜백에서 도는데, 거기서 던지면
+      // 받을 곳이 없다 — 끊긴 것과 같이 다룬다.
+      this.retryLater();
+      return;
+    }
     this.socket = socket;
     socket.onopen = () => {
       socket.send(
@@ -102,12 +110,16 @@ export class RemoteClient {
         this.setState("incompatible");
         return;
       }
-      this.setState("reconnecting");
-      const delays = this.options.delaysMs ?? DEFAULT_DELAYS_MS;
-      const delay = delays[Math.min(this.attempt, delays.length - 1)]!;
-      this.attempt += 1;
-      this.timer = setTimeout(() => this.connect(), delay);
+      this.retryLater();
     };
+  }
+
+  private retryLater(): void {
+    this.setState("reconnecting");
+    const delays = this.options.delaysMs ?? DEFAULT_DELAYS_MS;
+    const delay = delays[Math.min(this.attempt, delays.length - 1)]!;
+    this.attempt += 1;
+    this.timer = setTimeout(() => this.connect(), delay);
   }
 
   send(message: RemoteClientMessage): boolean {

@@ -97,6 +97,29 @@ describe("RemoteClient", () => {
     expect(JSON.parse(FakeSocket.instances[0]!.sent[0]!)).toMatchObject({ type: "hello", protocolVersion: 7 });
   });
 
+  it("retries when the socket cannot even be created", async () => {
+    vi.useFakeTimers();
+    FakeSocket.instances = [];
+    let attempts = 0;
+    const remote = new RemoteClient({
+      url: "ws://bad host/ws",
+      token: "tok",
+      createSocket: (url) => {
+        attempts += 1;
+        if (attempts === 1) throw new SyntaxError("Invalid URL");
+        return new FakeSocket(url);
+      },
+      delaysMs: [10],
+    });
+    const states: string[] = [];
+    remote.onState((state) => states.push(state));
+    // main의 상태 연결에서는 이 예외가 타이머 콜백 안에서 나면 잡을 곳이 없다.
+    expect(() => remote.connect()).not.toThrow();
+    expect(states).toEqual(["reconnecting"]);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
   it("keeps the pairing and retries on the retryable close code", async () => {
     vi.useFakeTimers();
     const { remote, states } = client();

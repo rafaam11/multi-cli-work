@@ -118,13 +118,14 @@ describe("HostStatusLink", () => {
     expect(notices.at(-1)).toMatchObject({ status: "exited" });
   });
 
-  it("stays quiet while the host's window is focused, and speaks up once it is not", () => {
+  it("stays quiet while the host's window is focused, without counting the skipped notice as sent", () => {
     const { notices, connect, allow } = setup();
     const socket = connect([session("s1", "working")]);
     allow(false);
     socket.receive({ type: "status", sessionId: "s1", status: "awaiting-input" });
     expect(notices).toEqual([]);
-    // 건너뛴 것은 알린 것으로 치지 않는다 — 같은 상태가 다시 오면 그때 알린다.
+    // 건너뛴 것은 알린 것으로 치지 않는다. 다만 호스트는 같은 상태를 다시 보내지 않으므로, 실제로는
+    // 보고 있는 동안 생긴 대기는 나중에도 알림이 오지 않는다(대기 수로만 보인다) — 아래는 기록 규칙만 본다.
     allow(true);
     socket.receive({ type: "status", sessionId: "s1", status: "awaiting-input" });
     expect(notices).toHaveLength(1);
