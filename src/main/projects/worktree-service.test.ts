@@ -328,13 +328,16 @@ describe("worktree service against a real repo", () => {
     const stale = await worktrees.create("project-1", "feature-stale-race");
     await git(repoRoot, "worktree", "remove", stale.path);
 
+    // Both waits sit on real git commands. vi.waitFor's default 1 s is shorter than those can take
+    // on a loaded Windows runner, so the bound is spelled out — and the test's own with it.
+    const gitWait = { timeout: 10_000 };
     const inFlight = worktrees.sync([project()]);
-    await vi.waitFor(() => expect(staleChecks).toBe(1));
+    await vi.waitFor(() => expect(staleChecks).toBe(1), gitWait);
     const creating = worktrees.create("project-1", "feature-race");
     await vi.waitFor(async () => {
       const { worktrees: entries } = await readWorktreeRegistry({ registryPath });
       expect(Object.values(entries).some((entry) => entry.branch === "feature-race")).toBe(true);
-    });
+    }, gitWait);
     release();
 
     const created = await creating;
@@ -347,7 +350,7 @@ describe("worktree service against a real repo", () => {
       branch: "feature-race",
       availability: "available",
     });
-  });
+  }, 30_000);
 
   it("keeps stale registry entries that still own sessions during explicit cleanup", async () => {
     const active = new Set<string>();
