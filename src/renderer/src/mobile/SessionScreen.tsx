@@ -13,6 +13,8 @@ interface SessionScreenProps {
   session: RemoteSessionSummary;
   deviceId: string;
   onBack(): void;
+  /** 넓은 화면(PC): 목록이 옆에 있고, 터미널을 이 창 크기에 맞추며, 키보드로 바로 입력한다. */
+  wide?: boolean;
 }
 
 const FONT_SIZES = [9, 10, 11, 12, 13, 14, 16] as const;

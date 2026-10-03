@@ -27,9 +27,11 @@ interface SessionListProps {
   onOpen(sessionId: string): void;
   onUnpair(): void;
   leaveLabel?: string;
+  /** 넓은 화면에서 옆에 열려 있는 세션. */
+  activeSessionId?: string | null;
 }
 
-export function SessionList({ hostName, connection, sessions, onOpen, onUnpair, leaveLabel }: SessionListProps) {
+export function SessionList({ hostName, connection, sessions, onOpen, onUnpair, leaveLabel, activeSessionId }: SessionListProps) {
   const banner = CONNECTION_LABEL[connection];
   return (
     <main className="m-list">
@@ -45,7 +47,13 @@ export function SessionList({ hostName, connection, sessions, onOpen, onUnpair, 
         <section key={group.projectName}>
           <h2>{group.projectName}</h2>
           {group.sessions.map((session) => (
-            <button type="button" className="m-session" key={session.id} onClick={() => onOpen(session.id)}>
+            <button
+              type="button"
+              className="m-session"
+              key={session.id}
+              aria-current={session.id === activeSessionId ? "true" : undefined}
+              onClick={() => onOpen(session.id)}
+            >
               <span className="m-session-label">{session.label}</span>
               <span className={`m-status m-status-${session.status}`}>{STATUS_LABEL[session.status]}</span>
             </button>

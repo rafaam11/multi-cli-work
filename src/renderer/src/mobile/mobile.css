@@ -34,3 +34,8 @@ input, textarea { font: inherit; color: inherit; background: var(--m-surface); b
 .m-keys button { flex: 0 0 auto; min-width: 44px; }
 .m-composer { display: flex; gap: 6px; padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
 .m-composer button { flex: 0 0 auto; }
+.m-session[aria-current="true"] { border-color: var(--m-accent); }
+.m-wide { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100%; }
+.m-wide .m-list { overflow-y: auto; border-right: 1px solid #2a2f36; }
+.m-wide .m-session-screen { min-width: 0; }
+.m-wide-placeholder { align-self: center; justify-self: center; }

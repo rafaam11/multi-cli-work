@@ -14,6 +14,7 @@ import { SessionList } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
 import { applySessionMessage } from "./session-list-model";
 import { readShellBridge } from "./shell-bridge";
+import { sessionIdFromHash, useWideLayout } from "./wide-layout";
 
 function storage(): Storage | null {
   try {
@@ -29,7 +30,18 @@ export function MobileApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [connection, setConnection] = useState<RemoteClientState>("connecting");
   const [sessions, setSessions] = useState<RemoteSessionSummary[]>([]);
-  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(() => sessionIdFromHash(window.location.hash));
+  const wide = useWideLayout();
+
+  // 셸이 열려 있는 창에 다른 세션을 가리키는 링크를 다시 로드하면 해시만 바뀐다.
+  useEffect(() => {
+    const onHashChange = () => {
+      const sessionId = sessionIdFromHash(window.location.hash);
+      if (sessionId) setOpenSessionId(sessionId);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   const [client, setClient] = useState<RemoteClient | null>(null);
 
@@ -79,17 +91,13 @@ export function MobileApp() {
   }
 
   const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
-  if (openSession) {
-    return (
-      <SessionScreen client={client} session={openSession} deviceId={pairing.deviceId} onBack={() => setOpenSessionId(null)} />
-    );
-  }
-  return (
+  const list = (
     <SessionList
       hostName={pairing.hostName}
       connection={connection}
       sessions={sessions}
       onOpen={setOpenSessionId}
+      activeSessionId={wide ? (openSession?.id ?? null) : null}
       leaveLabel={bridge ? "호스트 목록" : "연결 해제"}
       onUnpair={() => {
         if (bridge) {
@@ -101,4 +109,24 @@ export function MobileApp() {
       }}
     />
   );
+  const screen = openSession ? (
+    <SessionScreen
+      key={openSession.id}
+      client={client}
+      session={openSession}
+      deviceId={pairing.deviceId}
+      wide={wide}
+      onBack={() => setOpenSessionId(null)}
+    />
+  ) : null;
+
+  if (wide) {
+    return (
+      <div className="m-wide">
+        {list}
+        {screen ?? <p className="m-empty m-wide-placeholder">왼쪽에서 세션을 고르세요</p>}
+      </div>
+    );
+  }
+  return screen ?? list;
 }
