@@ -3,7 +3,13 @@
 import type { BrowserWindow } from "electron";
 import { describe, expect, it, vi } from "vitest";
 import type { HostPairing } from "./host-registry";
-import { REMOTE_SHELL_CHANNELS, remoteWindowUrl, RemoteWindows, type RemoteShellEvent } from "./remote-windows";
+import {
+  REMOTE_SHELL_CHANNELS,
+  REMOTE_WINDOW_LOAD_TIMEOUT_MS,
+  remoteWindowUrl,
+  RemoteWindows,
+  type RemoteShellEvent,
+} from "./remote-windows";
 
 type Listener = (...args: any[]) => unknown;
 
@@ -176,6 +182,71 @@ describe("RemoteWindows", () => {
     });
     await expect(windows.open("host-1")).rejects.toThrow("호스트에 연결하지 못했습니다");
     expect(fakes[0]!.window.destroy).toHaveBeenCalled();
+    expect(fakes[0]!.window.show).not.toHaveBeenCalled();
+  });
+
+  it("waits for a window that is still loading instead of showing it blank", async () => {
+    const { windows, fakes, createWindow } = setup();
+    let finishLoad: () => void = () => undefined;
+    createWindow.mockImplementationOnce(() => {
+      const fake = fakeWindow(100);
+      fake.window.loadURL.mockImplementationOnce(
+        () =>
+          new Promise<undefined>((resolve) => {
+            finishLoad = () => resolve(undefined);
+          }),
+      );
+      fakes.push(fake);
+      return fake.window as unknown as BrowserWindow;
+    });
+    const first = windows.open("host-1");
+    const second = windows.open("host-1");
+    await vi.waitFor(() => expect(createWindow).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fakes[0]!.window.show).not.toHaveBeenCalled();
+    finishLoad();
+    await Promise.all([first, second]);
+    expect(createWindow).toHaveBeenCalledOnce();
+    expect(fakes[0]!.window.show).toHaveBeenCalled();
+  });
+
+  it("gives up on a host that does not answer in time", async () => {
+    vi.useFakeTimers();
+    try {
+      const { windows, fakes, createWindow } = setup();
+      createWindow.mockImplementationOnce(() => {
+        const fake = fakeWindow(100);
+        fake.window.loadURL.mockImplementationOnce(() => new Promise<undefined>(() => undefined));
+        fakes.push(fake);
+        return fake.window as unknown as BrowserWindow;
+      });
+      const failed = expect(windows.open("host-1")).rejects.toThrow("호스트에 연결하지 못했습니다");
+      await vi.advanceTimersByTimeAsync(REMOTE_WINDOW_LOAD_TIMEOUT_MS);
+      await failed;
+      expect(fakes[0]!.window.destroy).toHaveBeenCalled();
+      // 다음 시도는 새 창으로 한다.
+      await windows.open("host-1");
+      expect(createWindow).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says nothing when the user closes the window while it loads", async () => {
+    const { windows, fakes, createWindow } = setup();
+    createWindow.mockImplementationOnce(() => {
+      const fake = fakeWindow(100);
+      fake.window.destroy.mockImplementation(() => {
+        throw new Error("Object has been destroyed");
+      });
+      fake.window.loadURL.mockImplementationOnce(async () => {
+        fake.window.close();
+        throw new Error("ERR_ABORTED");
+      });
+      fakes.push(fake);
+      return fake.window as unknown as BrowserWindow;
+    });
+    await expect(windows.open("host-1")).resolves.toBeUndefined();
     expect(fakes[0]!.window.show).not.toHaveBeenCalled();
   });
 

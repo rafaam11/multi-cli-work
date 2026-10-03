@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteHostInfo } from "@shared/remote-types";
 import { RemoteHostsSection } from "./RemoteHostsSection";
@@ -41,6 +41,24 @@ describe("RemoteHostsSection", () => {
     expect(screen.getByText("다시 페어링 필요")).toBeInTheDocument();
     expect(onOpenSettings).toHaveBeenCalledOnce();
     expect(remoteHosts.open).not.toHaveBeenCalled();
+  });
+
+  it("shows that a host is being opened until the window is up", async () => {
+    let finish: () => void = () => undefined;
+    remoteHosts.open.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<RemoteHostsSection onOpenSettings={vi.fn()} />);
+    const button = await screen.findByRole("button", { name: /회사PC/ });
+    fireEvent.click(button);
+    expect(await screen.findByText("여는 중…")).toBeInTheDocument();
+    expect(button).toBeDisabled();
+    finish();
+    await waitFor(() => expect(screen.queryByText("여는 중…")).not.toBeInTheDocument());
+    expect(button).toBeEnabled();
   });
 
   it("says why a host could not be opened", async () => {

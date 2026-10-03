@@ -10,6 +10,8 @@ import { errorMessage } from "./ipc-error";
 export function RemoteHostsSection({ onOpenSettings }: { onOpenSettings(): void }) {
   const [hosts, setHosts] = useState<RemoteHostInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** 창이 뜰 때까지 — 응답 없는 호스트는 몇 초가 걸린다. */
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   useEffect(() => {
     void window.multiCliWork.remoteHosts.list().then(setHosts).catch(() => undefined);
@@ -24,17 +26,29 @@ export function RemoteHostsSection({ onOpenSettings }: { onOpenSettings(): void 
       return;
     }
     setError(null);
-    window.multiCliWork.remoteHosts.open(host.hostId).catch((cause: unknown) => setError(errorMessage(cause)));
+    setOpeningId(host.hostId);
+    window.multiCliWork.remoteHosts
+      .open(host.hostId)
+      .catch((cause: unknown) => setError(errorMessage(cause)))
+      .finally(() => setOpeningId((current) => (current === host.hostId ? null : current)));
   };
 
   return (
     <section className="remote-hosts" aria-label="원격 PC">
       <h2>원격 PC</h2>
       {hosts.map((host) => (
-        <button type="button" className="remote-host" key={host.hostId} title={host.address} onClick={() => open(host)}>
+        <button
+          type="button"
+          className="remote-host"
+          key={host.hostId}
+          title={host.address}
+          disabled={openingId === host.hostId}
+          onClick={() => open(host)}
+        >
           <Monitor size={13} aria-hidden="true" />
           <span className="remote-host-name">{host.name}</span>
           {host.paired ? null : <span className="remote-host-note">다시 페어링 필요</span>}
+          {openingId === host.hostId ? <span className="remote-host-note">여는 중…</span> : null}
         </button>
       ))}
       {error ? (

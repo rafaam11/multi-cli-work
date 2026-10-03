@@ -37,6 +37,9 @@ interface OpenWindow {
 
 const UNREACHABLE = "호스트에 연결하지 못했습니다. 그 PC의 앱이 켜져 있는지와 Tailscale 연결을 확인하세요";
 
+/** 응답 없는 호스트를 기다리는 한도. 꺼진 Tailscale 기기는 TCP 타임아웃까지 수십 초를 끈다. */
+export const REMOTE_WINDOW_LOAD_TIMEOUT_MS = 15_000;
+
 export function remoteWindowUrl(address: string, sessionId?: string): string {
   return `http://${address}/mobile/${sessionId ? `#session=${encodeURIComponent(sessionId)}` : ""}`;
 }
@@ -48,6 +51,8 @@ export function remoteWindowUrl(address: string, sessionId?: string): string {
 export class RemoteWindows {
   /** webContents id → 창. */
   private readonly windows = new Map<number, OpenWindow>();
+  /** hostId → 아직 로드 중인 창. 그동안 다시 열려는 요청은 이 결과를 같이 기다린다. */
+  private readonly loading = new Map<string, Promise<void>>();
   private readonly securedSessions = new WeakSet<Session>();
 
   constructor(private readonly options: RemoteWindowsOptions) {
@@ -71,6 +76,9 @@ export class RemoteWindows {
   async open(hostId: string, sessionId?: string): Promise<void> {
     const pairing = await this.options.pairing(hostId);
     if (!pairing) throw new Error("이 PC는 다시 페어링해야 합니다");
+    // 로드가 끝나지 않은 창을 빈 채로 내보이지 않는다 — 먼저 연 쪽의 결과(실패 포함)를 같이 받는다.
+    // 기다릴 것이 없을 때는 await하지 않는다: 그 한 틱 사이에 다른 호출이 끼어들어 같은 창을 찾는다.
+    for (let pending = this.loading.get(hostId); pending; pending = this.loading.get(hostId)) await pending;
     const url = remoteWindowUrl(pairing.address, sessionId);
     const existing = [...this.windows.values()].find((entry) => entry.hostId === hostId && !entry.window.isDestroyed());
     if (existing) {
@@ -82,6 +90,16 @@ export class RemoteWindows {
       return;
     }
 
+    const loading = this.load(hostId, pairing, url);
+    this.loading.set(hostId, loading);
+    try {
+      await loading;
+    } finally {
+      if (this.loading.get(hostId) === loading) this.loading.delete(hostId);
+    }
+  }
+
+  private async load(hostId: string, pairing: HostPairing, url: string): Promise<void> {
     const window = this.options.createWindow({
       width: 1200,
       height: 800,
@@ -114,14 +132,25 @@ export class RemoteWindows {
     secureBrowserWindow(window, origin, isSameOriginNavigation);
     this.secureSession(contents.session);
 
+    const loaded = window.loadURL(url);
+    // 시간 초과로 먼저 포기한 뒤에 늦게 오는 실패는 받을 곳이 없다.
+    loaded.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("load timed out")), REMOTE_WINDOW_LOAD_TIMEOUT_MS);
+    });
     try {
-      await window.loadURL(url);
+      await Promise.race([loaded, timedOut]);
     } catch {
+      // 기다리다 사용자가 창을 닫았으면 알릴 것이 없다.
+      if (window.isDestroyed()) return;
       window.destroy();
       this.windows.delete(id);
       throw new Error(UNREACHABLE);
+    } finally {
+      clearTimeout(timer);
     }
-    window.show();
+    if (!window.isDestroyed()) window.show();
   }
 
   closeHost(hostId: string): void {

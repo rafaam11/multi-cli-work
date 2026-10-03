@@ -55,16 +55,19 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
     terminalRef.current = terminal;
     fitRef.current = fit;
 
-    terminal.attachCustomKeyEventHandler((event) => {
-      const action = clipboardKeyAction(event, terminal.hasSelection());
-      if (action === null) return true;
-      // 붙여넣기는 xterm이 키를 먹지 않게만 한다 — 브라우저의 paste 이벤트가 xterm에 닿아 처리된다.
-      if (action === "paste") return false;
-      event.preventDefault();
-      // copy 이벤트는 xterm이 받아 선택 영역을 클립보드에 넣는다. http 출처라 navigator.clipboard는 없다.
-      if (action === "copy" && event.type === "keydown") document.execCommand("copy");
-      return false;
-    });
+    // 키보드로 쓰는 넓은 화면에서만 복사·붙여넣기 키를 가로챈다. 폰 화면의 키 처리는 전과 같다.
+    if (wide) {
+      terminal.attachCustomKeyEventHandler((event) => {
+        const action = clipboardKeyAction(event, terminal.hasSelection());
+        if (action === null) return true;
+        // 붙여넣기는 xterm이 키를 먹지 않게만 한다 — 브라우저의 paste 이벤트가 xterm에 닿아 처리된다.
+        if (action === "paste") return false;
+        event.preventDefault();
+        // copy 이벤트는 xterm이 받아 선택 영역을 클립보드에 넣는다. http 출처라 navigator.clipboard는 없다.
+        if (action === "copy" && event.type === "keydown") document.execCommand("copy");
+        return false;
+      });
+    }
 
     const autoFit = wide
       ? createAutoFit({
