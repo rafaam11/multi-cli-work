@@ -121,6 +121,8 @@ import { RemoteSessionHub } from "./remote/remote-session-hub";
 import { readShellArtifact } from "./remote/shell-artifact";
 import { TerminalSizeArbiter } from "./remote/size-arbiter";
 import { tailscaleAddresses } from "./remote/tailscale-address";
+import { buildRemoteCatalog } from "./remote/remote-catalog";
+import { assertNotReviewSession } from "./terminal/review-guard";
 import { RemoteHostRegistry } from "./remote-client/host-registry";
 import { pairWithHost } from "./remote-client/pair-host";
 import { createRemoteHostsService } from "./remote-client/remote-hosts-service";
@@ -497,6 +499,19 @@ export async function createDesktopRuntime(
       write: (sessionId, data) => coordinator.write(sessionId, data),
       onEvent: (listener) => coordinator.onEvent(listener),
       projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
+      catalog: async () =>
+        buildRemoteCatalog(
+          Object.values((await readProjectRegistry({ registryPath })).registry.projects),
+          (await listAgents()).agents,
+        ),
+      // 원격에서 띄우거나 되살린 세션은 이 PC 화면의 선택을 가져가지 않는다 — 제어 CLI의 spawn과 같다.
+      create: (input) => coordinator.create(input, { updateSelection: false }),
+      resume: (input) => coordinator.resume(input, { updateSelection: false }),
+      stop: (sessionId) => coordinator.stop(sessionId),
+      remove: async (sessionId) => {
+        assertNotReviewSession(await github.activeReviews(), sessionId);
+        await coordinator.remove(sessionId);
+      },
     },
     devices: remoteDevices,
     sizes,

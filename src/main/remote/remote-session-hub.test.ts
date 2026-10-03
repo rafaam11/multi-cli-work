@@ -44,6 +44,18 @@ function setup() {
       return () => listeners.delete(listener);
     },
     projectName: vi.fn(async () => "Sample Project"),
+    catalog: vi.fn(async () => ({
+      projects: [{ id: "p1", name: "Sample Project" }],
+      agents: [{ id: "claude", label: "Claude" }],
+    })),
+    create: vi.fn(async (input: { projectId: string; kind: string; cols: number; rows: number }) =>
+      view("s-new", { kind: input.kind, status: "starting" }),
+    ),
+    resume: vi.fn(async (input: { sessionId: string; cols: number; rows: number }) =>
+      view(input.sessionId, { status: "starting" }),
+    ),
+    stop: vi.fn(async (_sessionId: string) => undefined),
+    remove: vi.fn(async (_sessionId: string) => undefined),
   };
   const devices = {
     verify: vi.fn(async (token: string) =>
@@ -251,6 +263,118 @@ describe("RemoteSessionHub", () => {
     const before = sent.length;
     emit({ type: "data", sessionId: "s1", data: "flood", sequence: 1 });
     expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.retry, "slow consumer");
+    expect(sent.length).toBe(before);
+  });
+});
+
+describe("RemoteSessionHub session management", () => {
+  const finished = () => [view("s1", { status: "exited", pid: null, exitCode: 0 })];
+
+  it("answers a catalog request", async () => {
+    const { handle, sent, hello } = setup();
+    await hello();
+    handle.receive('{"type":"catalog"}');
+    await flush();
+    expect(sent.at(-1)).toEqual({
+      type: "catalog",
+      projects: [{ id: "p1", name: "Sample Project" }],
+      agents: [{ id: "claude", label: "Claude" }],
+    });
+  });
+
+  it("starts a session sized by the host and owned by the desktop, and tells only the requester", async () => {
+    const { hub, handle, sent, hello, gateway, sizes, resize } = setup();
+    await hello();
+    const other: RemoteServerMessage[] = [];
+    const second = hub.open({ send: (message) => other.push(message), close: vi.fn() });
+    second.receive(JSON.stringify({ type: "hello", token: "good", protocolVersion: REMOTE_PROTOCOL_VERSION, mode: "ui" }));
+    await flush();
+    await flush();
+
+    handle.receive('{"type":"create","projectId":"p1","kind":"codex"}');
+    await flush();
+
+    expect(gateway.create).toHaveBeenCalledWith({ projectId: "p1", kind: "codex", cols: 80, rows: 24 });
+    expect(sent.at(-1)).toEqual({ type: "started", sessionId: "s-new" });
+    expect(other.some((message) => message.type === "started")).toBe(false);
+    // 만든 기기가 크기를 갖지 않는다 — 폰이 "폰 크기로"를 켠 적이 없는데 켜진 것처럼 보이면 안 된다.
+    expect(sizes.current("s-new")).toEqual({ cols: 80, rows: 24, owner: "desktop" });
+    expect(resize).not.toHaveBeenCalled();
+  });
+
+  it("stops a running session", async () => {
+    const { handle, hello, gateway } = setup();
+    await hello();
+    handle.receive('{"type":"stop","sessionId":"s1"}');
+    await flush();
+    expect(gateway.stop).toHaveBeenCalledWith("s1");
+  });
+
+  it("refuses to restart a running session and to stop a finished one", async () => {
+    const { handle, sent, hello, gateway } = setup();
+    await hello();
+    handle.receive('{"type":"resume","sessionId":"s1"}');
+    await flush();
+    expect(sent.at(-1)).toEqual({ type: "error", code: "failed", message: "이미 실행 중인 세션입니다" });
+    expect(gateway.resume).not.toHaveBeenCalled();
+
+    gateway.list.mockReturnValue(finished());
+    handle.receive('{"type":"stop","sessionId":"s1"}');
+    await flush();
+    expect(sent.at(-1)).toEqual({ type: "error", code: "failed", message: "이미 끝난 세션입니다" });
+    expect(gateway.stop).not.toHaveBeenCalled();
+
+    handle.receive('{"type":"stop","sessionId":"gone"}');
+    await flush();
+    expect(sent.at(-1)).toEqual({ type: "error", code: "failed", message: "세션을 찾을 수 없습니다" });
+  });
+
+  it("restarts a finished session at its last size", async () => {
+    const { handle, sent, hello, gateway, sizes } = setup();
+    await hello();
+    await sizes.desktopResize("s1", 120, 40);
+    gateway.list.mockReturnValue(finished());
+    handle.receive('{"type":"resume","sessionId":"s1"}');
+    await flush();
+    expect(gateway.resume).toHaveBeenCalledWith({ sessionId: "s1", cols: 120, rows: 40 });
+    expect(sent.at(-1)).toEqual({ type: "started", sessionId: "s1" });
+  });
+
+  it("restarts a session nobody has sized yet at the default size", async () => {
+    const { handle, hello, gateway, sizes } = setup();
+    await hello();
+    gateway.list.mockReturnValue(finished());
+    handle.receive('{"type":"resume","sessionId":"s1"}');
+    await flush();
+    expect(gateway.resume).toHaveBeenCalledWith({ sessionId: "s1", cols: 80, rows: 24 });
+    expect(sizes.current("s1")).toEqual({ cols: 80, rows: 24, owner: "desktop" });
+  });
+
+  it("says why a session could not be removed", async () => {
+    const { handle, sent, hello, gateway } = setup();
+    await hello();
+    gateway.remove.mockRejectedValueOnce(new Error("진행 중인 PR 리뷰 세션은 '리뷰 완료' 흐름에서 정리하세요."));
+    handle.receive('{"type":"remove","sessionId":"s1"}');
+    await flush();
+    expect(gateway.remove).toHaveBeenCalledWith("s1");
+    expect(sent.at(-1)).toEqual({
+      type: "error",
+      code: "failed",
+      message: "진행 중인 PR 리뷰 세션은 '리뷰 완료' 흐름에서 정리하세요.",
+    });
+  });
+
+  it("broadcasts a removed session and stops forwarding it", async () => {
+    const { handle, sent, emit, hello, attachWith } = setup();
+    await hello();
+    handle.receive('{"type":"attach","sessionId":"s1"}');
+    await flush();
+    attachWith("", 0);
+    await flush();
+    emit({ type: "removed", sessionId: "s1" });
+    expect(sent.at(-1)).toEqual({ type: "removed", sessionId: "s1" });
+    const before = sent.length;
+    emit({ type: "data", sessionId: "s1", data: "late", sequence: 9 });
     expect(sent.length).toBe(before);
   });
 });

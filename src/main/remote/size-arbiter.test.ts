@@ -71,6 +71,19 @@ describe("TerminalSizeArbiter", () => {
     expect(sizes.current("s")).toEqual({ cols: 45, rows: 30, owner: "desktop" });
   });
 
+  it("records a session the host just started without resizing it or handing it to a device", async () => {
+    const { apply, sizes, changes } = arbiter();
+    sizes.hostStarted("s", 80, 24);
+    expect(apply).not.toHaveBeenCalled();
+    expect(sizes.current("s")).toEqual({ cols: 80, rows: 24, owner: "desktop" });
+    expect(changes.at(-1)).toEqual(["s", { cols: 80, rows: 24, owner: "desktop" }]);
+    // 기기가 가져갔다 돌려주면 호스트가 시작한 크기로 돌아온다.
+    await sizes.deviceResize("phone", "s", 40, 20);
+    await sizes.deviceRelease("phone", "s");
+    expect(apply).toHaveBeenLastCalledWith("s", 80, 24);
+    expect(sizes.current("s")).toEqual({ cols: 80, rows: 24, owner: "desktop" });
+  });
+
   it("a failed resize changes nothing", async () => {
     const apply = vi.fn(async () => {
       throw new Error("Terminal dimensions are invalid");

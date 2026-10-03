@@ -1,9 +1,10 @@
 import type { TerminalAttachResult, TerminalSessionView } from "../../shared/api-types";
-import type { TerminalEvent } from "../../shared/terminal-types";
+import { DEFAULT_TERMINAL_SIZE, type TerminalEvent } from "../../shared/terminal-types";
 import {
   parseRemoteClientMessage,
   REMOTE_CLOSE,
   REMOTE_PROTOCOL_VERSION,
+  type RemoteCatalog,
   type RemoteClientMessage,
   type RemoteServerMessage,
   type RemoteSessionSummary,
@@ -19,6 +20,14 @@ export interface RemoteHubGateway {
   write(sessionId: string, data: string): Promise<void>;
   onEvent(listener: (event: TerminalEvent) => void): () => void;
   projectName(projectId: string): Promise<string | null>;
+  /** 새 세션을 띄울 수 있는 폴더와 에이전트. */
+  catalog(): Promise<RemoteCatalog>;
+  /** 호스트 데스크톱의 선택·그리드를 건드리지 않고 시작한다. */
+  create(input: { projectId: string; kind: string; cols: number; rows: number }): Promise<TerminalSessionView>;
+  resume(input: { sessionId: string; cols: number; rows: number }): Promise<TerminalSessionView>;
+  stop(sessionId: string): Promise<void>;
+  /** 지울 수 없는 세션(진행 중인 PR 리뷰)이면 이유를 담아 거절한다. */
+  remove(sessionId: string): Promise<void>;
 }
 
 export interface RemoteHubDevices {
@@ -193,7 +202,48 @@ export class RemoteSessionHub {
       case "releaseSize":
         await this.options.sizes.deviceRelease(deviceId, message.sessionId);
         return;
+      case "catalog":
+        client.connection.send({ type: "catalog", ...(await this.options.gateway.catalog()) });
+        return;
+      case "create": {
+        // 만드는 쪽에는 아직 터미널이 없어 크기를 잴 수 없다. 호스트의 기본 크기로 시작하고, 크기는
+        // 호스트 것으로 적어 둔다 — 붙은 뒤의 맞춤은 다른 세션과 같은 규칙을 따른다.
+        const { cols, rows } = DEFAULT_TERMINAL_SIZE;
+        const session = await this.options.gateway.create({ projectId: message.projectId, kind: message.kind, cols, rows });
+        this.options.sizes.hostStarted(session.id, cols, rows);
+        client.connection.send({ type: "started", sessionId: session.id });
+        return;
+      }
+      case "stop":
+        // 두 기기가 같은 세션을 보고 있으면 이미 끝난 세션에 중지가 올 수 있다.
+        if (!this.isRunning(this.requireSession(message.sessionId))) throw new Error("이미 끝난 세션입니다");
+        await this.options.gateway.stop(message.sessionId);
+        return;
+      case "resume": {
+        // 돌고 있는 세션을 다시 시작하면 같은 대화에 프로세스가 둘 붙는다.
+        if (this.isRunning(this.requireSession(message.sessionId))) throw new Error("이미 실행 중인 세션입니다");
+        const last = this.options.sizes.current(message.sessionId);
+        const cols = last.cols ?? DEFAULT_TERMINAL_SIZE.cols;
+        const rows = last.rows ?? DEFAULT_TERMINAL_SIZE.rows;
+        await this.options.gateway.resume({ sessionId: message.sessionId, cols, rows });
+        if (last.cols === null || last.rows === null) this.options.sizes.hostStarted(message.sessionId, cols, rows);
+        client.connection.send({ type: "started", sessionId: message.sessionId });
+        return;
+      }
+      case "remove":
+        await this.options.gateway.remove(message.sessionId);
+        return;
     }
+  }
+
+  private requireSession(sessionId: string): TerminalSessionView {
+    const session = this.options.gateway.list().find((candidate) => candidate.id === sessionId);
+    if (!session) throw new Error("세션을 찾을 수 없습니다");
+    return session;
+  }
+
+  private isRunning(session: TerminalSessionView): boolean {
+    return session.pid !== null && session.status !== "exited" && session.status !== "error";
   }
 
   private async authenticate(client: Client, message: RemoteClientMessage): Promise<void> {
@@ -276,6 +326,10 @@ export class RemoteSessionHub {
         return;
       case "exit":
         this.broadcast({ type: "exit", sessionId: event.sessionId, exitCode: event.exitCode });
+        return;
+      case "removed":
+        for (const client of this.clients) client.attached.delete(event.sessionId);
+        this.broadcast({ type: "removed", sessionId: event.sessionId });
         return;
       case "created": {
         const projectId = event.session.projectId;

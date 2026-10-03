@@ -42,6 +42,18 @@ export class TerminalSizeArbiter {
     this.emit(sessionId);
   }
 
+  /**
+   * 호스트가 정한 크기로 막 시작한 세션(원격에서 만들었거나 재시작한 것). PTY는 이미 그 크기라서
+   * 다시 적용하지 않고 적어만 둔다. 크기는 호스트 것이다 — 만든 기기가 소유자가 되지 않으며, 기기가
+   * 가져갔다 돌려주면 이 크기로 돌아온다.
+   */
+  hostStarted(sessionId: string, cols: number, rows: number): void {
+    this.applied.set(sessionId, { cols, rows });
+    this.desktop.set(sessionId, { cols, rows });
+    this.owners.delete(sessionId);
+    this.emit(sessionId);
+  }
+
   async desktopInput(sessionId: string): Promise<void> {
     if (!this.owners.has(sessionId)) return;
     await this.reclaim(sessionId);
