@@ -2,6 +2,7 @@
  * 모바일 컴패니언과 데스크톱 호스트가 주고받는 것. 와이어 메시지(WS)와, 설정 탭이 쓰는 데스크톱
  * API 타입을 한곳에 둔다. 설계: docs/superpowers/specs/2026-09-30-mobile-companion-design.md §5.
  */
+import { AGENT_ID_PATTERN } from "./agent-types";
 import type { TerminalKind, TerminalStatus } from "./terminal-types";
 
 export const REMOTE_PROTOCOL_VERSION = 1;
@@ -40,7 +41,19 @@ export type RemoteClientMessage =
   | { type: "detach"; sessionId: string }
   | { type: "write"; sessionId: string; data: string }
   | { type: "resize"; sessionId: string; cols: number; rows: number }
-  | { type: "releaseSize"; sessionId: string };
+  | { type: "releaseSize"; sessionId: string }
+  // 세션 관리. 크기는 보내지 않는다 — 만드는 시점에는 클라이언트에 터미널이 없고, 호스트가 정한다.
+  | { type: "catalog" }
+  | { type: "create"; projectId: string; kind: TerminalKind }
+  | { type: "stop"; sessionId: string }
+  | { type: "resume"; sessionId: string }
+  | { type: "remove"; sessionId: string };
+
+/** 새 세션을 어디에 무엇으로 띄울 수 있는지. 숨긴 폴더와 실행 파일이 없는 에이전트는 들어 있지 않다. */
+export interface RemoteCatalog {
+  projects: Array<{ id: string; name: string }>;
+  agents: Array<{ id: string; label: string }>;
+}
 
 export type RemoteErrorCode = "bad-message" | "protocol" | "unauthorized" | "not-attached" | "failed";
 
@@ -69,6 +82,10 @@ export type RemoteServerMessage =
   | { type: "exit"; sessionId: string; exitCode: number }
   | { type: "created"; session: RemoteSessionSummary }
   | { type: "size"; sessionId: string; cols: number; rows: number; sizeOwner: SizeOwner }
+  | ({ type: "catalog" } & RemoteCatalog)
+  /** create·resume을 보낸 연결에만 간다 — 그 화면이 이 세션을 연다. */
+  | { type: "started"; sessionId: string }
+  | { type: "removed"; sessionId: string }
   | { type: "error"; code: RemoteErrorCode; message: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -105,6 +122,18 @@ export function parseRemoteClientMessage(raw: string): RemoteClientMessage | nul
       return text(value.sessionId) ? { type: "detach", sessionId: value.sessionId } : null;
     case "releaseSize":
       return text(value.sessionId) ? { type: "releaseSize", sessionId: value.sessionId } : null;
+    case "catalog":
+      return { type: "catalog" };
+    case "create":
+      return text(value.projectId) && typeof value.kind === "string" && AGENT_ID_PATTERN.test(value.kind)
+        ? { type: "create", projectId: value.projectId, kind: value.kind }
+        : null;
+    case "stop":
+      return text(value.sessionId) ? { type: "stop", sessionId: value.sessionId } : null;
+    case "resume":
+      return text(value.sessionId) ? { type: "resume", sessionId: value.sessionId } : null;
+    case "remove":
+      return text(value.sessionId) ? { type: "remove", sessionId: value.sessionId } : null;
     case "write":
       return text(value.sessionId) && typeof value.data === "string"
         ? { type: "write", sessionId: value.sessionId, data: value.data }

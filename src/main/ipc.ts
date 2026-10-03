@@ -68,6 +68,7 @@ import type {
   WorktreeWorkspaceSnapshot,
 } from "../shared/worktree-types";
 import type { ToolCommand } from "../shared/terminal-types";
+import { AGENT_ID_PATTERN } from "../shared/agent-types";
 import type { ProjectMetadataUpdate } from "./projects/project-service";
 import type { WorkProjectMetadataUpdate } from "./projects/work-project-service";
 
@@ -326,7 +327,6 @@ interface MainIpcDependencies {
 
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
 const WINDOW_ZOOM_ACTIONS: readonly WindowZoomAction[] = ["in", "out", "reset"];
-const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

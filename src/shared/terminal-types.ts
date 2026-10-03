@@ -1,6 +1,9 @@
 import type { AgentId, StatusAdapter } from "./agent-types";
 import type { TerminalSessionView } from "./api-types";
 
+/** The size a session starts at before any pane has measured itself against it. */
+export const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 } as const;
+
 /**
  * Which agent a session runs. Sessions record the agent's id rather than a closed union, so a CLI
  * the user adds in `agents.json` is a first-class session and an agent they later remove leaves its
@@ -74,6 +77,8 @@ export type TerminalEvent =
   | TerminalWorkerEvent
   | { type: "title"; sessionId: string; title: string }
   | { type: "created"; sessionId: string; session: TerminalSessionView }
+  // The session is gone for good — removed here, from a folder teardown, or by a remote client.
+  | { type: "removed"; sessionId: string }
   | { type: "workspace"; sessionId: string; session: TerminalSessionView }
   // No paths on this one — the renderer never handles absolute paths; it re-fetches the changed set.
   | { type: "agent-edits"; sessionId: string };

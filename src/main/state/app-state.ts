@@ -9,14 +9,14 @@ import {
   type SlotViewState,
 } from "../../shared/app-state-types";
 import type { ToolCommand } from "../../shared/terminal-types";
-import { tailOnUtf8Boundary } from "../utf8";
-
 /**
  * A session's agent is checked for shape, not for membership in the agent registry. The registry is
  * a separate, editable file: if removing an agent from it could invalidate the state file, one edit
  * to `agents.json` would cost the user every session they have.
  */
-const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+import { AGENT_ID_PATTERN } from "../../shared/agent-types";
+import { tailOnUtf8Boundary } from "../utf8";
+
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
 const SESSION_KEYS = [
   "id",

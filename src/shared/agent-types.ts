@@ -4,6 +4,9 @@
  */
 export type AgentId = string;
 
+/** What an agent id may look like. Checked wherever an id arrives from outside the main process. */
+export const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
 export const BUILTIN_AGENT_IDS = ["powershell", "bash", "claude", "codex"] as const;
 export type BuiltinAgentId = (typeof BUILTIN_AGENT_IDS)[number];
 

@@ -17,7 +17,7 @@ import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/projec
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
 import { pathStyleFor, resolveShellRefForPath, shellLinkKey } from "@shared/workspace-path";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
-import type { TerminalEvent, TerminalKind, ToolCommand } from "@shared/terminal-types";
+import { DEFAULT_TERMINAL_SIZE, type TerminalEvent, type TerminalKind, type ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
 import {
   lazy,
@@ -168,7 +168,6 @@ function restoreFolderViews(
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
 const ACTIVITY_LOG_LIMIT = 20;
 
-const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 };
 const EMPTY_AVAILABILITY: ProviderAvailability = { vscode: false };
 const DEFAULT_SIDEBAR_WIDTH = 264;
 const MIN_SIDEBAR_WIDTH = 200;
