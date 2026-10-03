@@ -32,7 +32,7 @@ import {
 } from "react";
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
-import { SettingsDialog } from "./SettingsDialog";
+import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
 import type { GitDiffFile } from "./GitDiffPane";
 import { GitGraphEmbed } from "./GitGraphEmbed";
 import type { GitWorktreeOption } from "./GitPanel";
@@ -354,6 +354,8 @@ export function App() {
   const [fanOutVisible, setFanOutVisible] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** 설정을 특정 탭으로 열 때만 값이 있다. */
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   /** Each folder's saved grid, keyed by `folderViewKeyOf`. */
   const [folderViews, setFolderViews] = useState<Record<string, SlotViewState>>({});
@@ -3026,6 +3028,10 @@ export function App() {
       }
     >
       <ProjectSidebar
+        onOpenRemoteSettings={() => {
+          setSettingsTab("mobile");
+          setSettingsOpen(true);
+        }}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
         snapshot={snapshot}
@@ -3573,7 +3579,16 @@ export function App() {
         />
       ) : null}
 
-      {settingsOpen ? <SettingsDialog settings={appSettings} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? (
+        <SettingsDialog
+          settings={appSettings}
+          initialTab={settingsTab}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsTab(undefined);
+          }}
+        />
+      ) : null}
 
       {worktreeCreateProject ? (
         <WorktreeCreateDialog

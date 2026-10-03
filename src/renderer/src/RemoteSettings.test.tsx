@@ -22,14 +22,27 @@ beforeEach(() => {
   });
   remote.revokeDevice.mockResolvedValue(undefined);
   update.mockResolvedValue(DEFAULT_SETTINGS);
-  (window as unknown as { multiCliWork: unknown }).multiCliWork = { remote, settings: { update } };
+  (window as unknown as { multiCliWork: unknown }).multiCliWork = {
+    remote,
+    settings: { update },
+    clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    remoteHosts: { list: vi.fn().mockResolvedValue([]), onChanged: vi.fn(() => () => undefined) },
+  };
 });
 
 describe("RemoteSettings", () => {
   it("toggles the server through settings", async () => {
     render(<RemoteSettings settings={DEFAULT_SETTINGS} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: "모바일 연결 켜기" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "원격 접속 허용" }));
     expect(update).toHaveBeenCalledWith({ remote: { enabled: true } });
+  });
+
+  it("copies the pairing link for another PC", async () => {
+    render(<RemoteSettings settings={{ ...DEFAULT_SETTINGS, remote: { enabled: true, port: 47821 } }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "기기 추가" }));
+    fireEvent.click(await screen.findByRole("button", { name: "페어링 링크 복사" }));
+    const api = (window as unknown as { multiCliWork: { clipboard: { writeText: ReturnType<typeof vi.fn> } } }).multiCliWork;
+    expect(api.clipboard.writeText).toHaveBeenCalledWith("mcw://pair?host=100.64.0.9:47821&name=PC&code=ABCDEFGH&fp=h");
   });
 
   it("shows the address, issues a pairing code, and lists devices", async () => {

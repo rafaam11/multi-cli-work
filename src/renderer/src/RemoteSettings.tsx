@@ -4,6 +4,7 @@ import { REMOTE_PORT_RANGE } from "@shared/settings-types";
 import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "@shared/remote-types";
 import QRCode from "qrcode";
 import { errorMessage } from "./ipc-error";
+import { RemoteHostsSettings } from "./RemoteHostsSettings";
 
 const STATE_LABEL: Record<RemoteAccessStatus["state"], string> = {
   off: "꺼짐",
@@ -19,7 +20,7 @@ function formatTime(iso: string | null): string {
 }
 
 /**
- * 모바일 연결 탭. 켜기·포트는 AppSettings(remote)로 저장하고, 서버 상태·페어링 코드·기기 목록은
+ * 원격 탭. 켜기·포트는 AppSettings(remote)로 저장하고, 서버 상태·페어링 코드·기기 목록은
  * main의 RemoteAccess에 직접 묻는다 — 토큰 해시 같은 건 렌더러로 오지 않는다.
  */
 export function RemoteSettings({ settings }: { settings: AppSettings }) {
@@ -82,12 +83,13 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
 
   return (
     <>
-      <h2>모바일</h2>
+      <h2>원격</h2>
       <p className="settings-hint">
-        Tailscale로 묶인 휴대폰에서 이 PC의 세션을 보고 입력합니다. 서버는 Tailscale 주소(100.x)에서만 열립니다.
+        Tailscale로 묶인 휴대폰이나 다른 PC에서 이 PC의 세션을 보고 입력합니다. 서버는 Tailscale 주소(100.x)에서만 열립니다.
       </p>
+      <h3>이 PC에 접속 허용</h3>
       <div className="settings-row">
-        <label htmlFor="settings-remote-enabled">모바일 연결 켜기</label>
+        <label htmlFor="settings-remote-enabled">원격 접속 허용</label>
         <input
           id="settings-remote-enabled"
           type="checkbox"
@@ -111,7 +113,7 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
       </div>
       {status?.url ? (
         <div className="settings-row">
-          <span>폰에서 열 주소</span>
+          <span>접속 주소</span>
           <code>{status.url}</code>
         </div>
       ) : null}
@@ -138,6 +140,19 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
             브라우저로 쓸 때는 <code>{pairing.url}</code>에서 코드 <strong>{pairing.code}</strong>를 입력합니다.{" "}
             {new Date(pairing.expiresAt).toLocaleTimeString("ko-KR")}까지 한 번만 쓸 수 있습니다.
           </p>
+          <p className="settings-hint">
+            다른 PC에서는 설정 ▸ 원격 ▸ PC 추가에 아래 링크를 붙여 넣거나, 위 주소와 코드를 입력합니다.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                window.multiCliWork.clipboard
+                  .writeText(pairing.pairUri)
+                  .catch((cause: unknown) => setError(errorMessage(cause)));
+              }}
+            >
+              페어링 링크 복사
+            </button>
+          </p>
         </div>
       ) : null}
       {devices.length === 0 ? <p className="settings-hint">페어링된 기기가 없습니다.</p> : null}
@@ -153,6 +168,7 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
         </div>
       ))}
       {error ? <p className="settings-error">{error}</p> : null}
+      <RemoteHostsSettings />
     </>
   );
 }

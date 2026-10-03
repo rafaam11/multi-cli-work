@@ -20,7 +20,7 @@ export function PairScreen({ notice, onPaired }: { notice: string | null; onPair
   return (
     <form className="m-pair" onSubmit={submit}>
       <h1>PC와 연결</h1>
-      <p>PC의 설정 ▸ 모바일 ▸ 기기 추가에 나온 코드를 입력하세요.</p>
+      <p>PC의 설정 ▸ 원격 ▸ 기기 추가에 나온 코드를 입력하세요.</p>
       {notice ? <p className="m-notice">{notice}</p> : null}
       <label>
         페어링 코드

@@ -120,7 +120,7 @@ function installPage(shell: ShellArtifact | null): string {
     ? `<p><a class="button" href="/shell.apk">모바일 앱 받기 (v${escapeHtml(shell.release.versionName)})</a></p>
 <ol>
 <li>받은 파일을 열고, "이 출처의 앱 설치 허용"을 켠 뒤 설치합니다.</li>
-<li>앱에서 <b>QR로 PC 추가</b>를 누르고 PC의 설정 ▸ 모바일 ▸ 기기 추가 QR을 찍습니다.</li>
+<li>앱에서 <b>QR로 PC 추가</b>를 누르고 PC의 설정 ▸ 원격 ▸ 기기 추가 QR을 찍습니다.</li>
 <li>이후 업데이트는 앱이 PC에서 직접 받아 설치합니다.</li>
 </ol>`
     : "<p>이 PC 설치본에는 모바일 앱이 들어 있지 않습니다. 릴리스 설치본을 쓰거나 개발 빌드에서 build/mobile을 준비하세요.</p>";

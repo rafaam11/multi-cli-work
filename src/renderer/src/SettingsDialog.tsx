@@ -29,7 +29,7 @@ import type { WorkspaceSnapshot } from "@shared/workspace-types";
 import { RemoteSettings } from "./RemoteSettings";
 import { errorMessage } from "./ipc-error";
 
-type SettingsTab =
+export type SettingsTab =
   | "general"
   | "terminal"
   | "notifications"
@@ -48,7 +48,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "workspace", label: "워크스페이스" },
   { id: "files", label: "파일" },
   { id: "notion", label: "노션" },
-  { id: "mobile", label: "모바일" },
+  { id: "mobile", label: "원격" },
   { id: "keybindings", label: "단축키" },
 ];
 
@@ -72,6 +72,8 @@ const FILE_EXTENSION_INPUT_PATTERN = /^[a-z0-9]{1,16}$/;
 interface SettingsDialogProps {
   settings: AppSettings;
   onClose(): void;
+  /** 사이드바의 "다시 페어링 필요"처럼 특정 탭으로 바로 열 때. */
+  initialTab?: SettingsTab;
 }
 
 /**
@@ -511,8 +513,8 @@ function ProjectsSettings({
  * 저장 버튼이 없는 즉시 적용 폼. 컨트롤 변경 → settings:update → settings:changed 브로드캐스트로
  * App의 사본이 갱신되어 되돌아온다 — 이 다이얼로그 자신도 그 사본을 props로 받는다.
  */
-export function SettingsDialog({ settings, onClose }: SettingsDialogProps) {
-  const [tab, setTab] = useState<SettingsTab>("general");
+export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialogProps) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? "general");
   const [error, setError] = useState<string | null>(null);
   const [capturingActionId, setCapturingActionId] = useState<string | null>(null);
   const [capturingSummon, setCapturingSummon] = useState(false);

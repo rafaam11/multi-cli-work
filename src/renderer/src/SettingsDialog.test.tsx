@@ -28,6 +28,7 @@ beforeEach(() => {
       listDevices: vi.fn().mockResolvedValue([]),
       revokeDevice: vi.fn(),
     },
+    remoteHosts: { list: vi.fn().mockResolvedValue([]), onChanged: vi.fn(() => () => undefined) },
   } as unknown as MultiCliWorkApi;
 });
 
@@ -278,12 +279,18 @@ describe("프로젝트 탭", () => {
   });
 });
 
-describe("모바일 탭", () => {
-  it("모바일 연결 설정을 보여 준다", async () => {
+describe("원격 탭", () => {
+  it("원격 접속 설정을 보여 준다", async () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
-    fireEvent.click(screen.getByRole("button", { name: "모바일" }));
-    expect(screen.getByLabelText("모바일 연결 켜기")).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "원격" }));
+    expect(screen.getByLabelText("원격 접속 허용")).not.toBeChecked();
     expect(await screen.findByText("꺼짐")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "다른 PC에 접속" })).toBeInTheDocument();
+  });
+
+  it("처음부터 원격 탭으로 열 수 있다", () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} initialTab="mobile" onClose={() => undefined} />);
+    expect(screen.getByLabelText("원격 접속 허용")).toBeInTheDocument();
   });
 });
 

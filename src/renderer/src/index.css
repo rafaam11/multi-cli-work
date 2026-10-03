@@ -3410,6 +3410,66 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: rgb(216 162 74 / 14%);
 }
 
+.remote-hosts {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border-top: 1px solid var(--line);
+}
+
+.remote-hosts h2 {
+  margin: 0 4px 2px;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+  font-weight: 600;
+}
+
+.remote-host {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--type-secondary-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.remote-host:hover {
+  background: var(--surface-raised);
+}
+
+.remote-host svg {
+  flex: 0 0 auto;
+}
+
+.remote-host-name {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-host-note,
+.remote-host-error {
+  margin: 0;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+  white-space: nowrap;
+}
+
+.remote-host-note {
+  margin-left: auto;
+}
+
+.project-sidebar.collapsed .remote-hosts {
+  display: none;
+}
+
 .update-badge {
   display: flex;
   min-width: 0;
@@ -4361,6 +4421,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .settings-remote-pairing figure { margin: 0; display: grid; gap: 4px; justify-items: center; max-width: 200px; }
 .settings-remote-pairing img { background: #fff; border-radius: 6px; padding: 6px; }
 .settings-remote-pairing figcaption { font-size: 12px; color: var(--muted); text-align: center; }
+.settings-remote-host-form { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; }
+.settings-remote-host-form input { flex: 1 1 auto; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); color: var(--text); font: var(--type-secondary); }
+.settings-remote-host-form input[aria-label="페어링 코드"] { flex: 0 0 120px; }
+.settings-remote-host-form input:disabled { opacity: 0.5; }
+.settings-remote-host-form button { flex: 0 0 auto; white-space: nowrap; }
+.settings-remote-host-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 
 .settings-error {
   margin: 10px 0 0;

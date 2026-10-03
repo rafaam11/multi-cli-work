@@ -43,6 +43,7 @@ import { DocumentRow, SessionRow } from "./PaneRows";
 import { reorderIds, type DropPosition } from "./project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { SessionPanel } from "./SessionPanel";
+import { RemoteHostsSection } from "./RemoteHostsSection";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon, GitHubIcon, TeamsIcon } from "./brand-icons";
 import { DocumentPaneIcon, paneRowClass, type DocumentPane, type PaneRow } from "./pane-items";
@@ -68,6 +69,8 @@ import { folderActivityClass, isFolderActive } from "./folder-status";
 import { SHELF_KINDS, SHELF_TEXT, type ShelfKind } from "./shelves";
 
 interface ProjectSidebarProps {
+  /** 원격 PC를 다시 페어링해야 할 때 설정의 "원격" 탭을 연다. */
+  onOpenRemoteSettings(): void;
   snapshot: ProjectWorkspaceSnapshot | null;
   projects: SharedProject[];
   /** Work projects in display order; folders whose id is absent from every membership are 미분류. */
@@ -272,6 +275,7 @@ function attentionLabel(attention: SessionAttention): string {
 }
 
 export function ProjectSidebar({
+  onOpenRemoteSettings,
   snapshot,
   projects,
   workProjects,
@@ -1393,6 +1397,7 @@ export function ProjectSidebar({
           ) : null}
         </div>
       ) : null}
+      <RemoteHostsSection onOpenSettings={onOpenRemoteSettings} />
       <UpdateBadge />
       <footer className="sidebar-footer">
         <span className="connection-dot" aria-hidden="true" />

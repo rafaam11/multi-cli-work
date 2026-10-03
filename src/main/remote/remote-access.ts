@@ -55,7 +55,7 @@ export class RemoteAccess {
   async issuePairingCode(): Promise<RemotePairingCode> {
     const running = this.running;
     if (this.current.state !== "listening" || this.current.url === null || running === null) {
-      throw new Error("모바일 연결이 켜져 있지 않습니다");
+      throw new Error("원격 접속이 켜져 있지 않습니다");
     }
     const { code, expiresAt } = this.options.pairing.issue();
     const address = `${running.host}:${running.port}`;
