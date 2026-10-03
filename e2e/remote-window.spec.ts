@@ -94,6 +94,12 @@ test.describe.serial("Remote PC window", () => {
       },
     });
     page = await app.firstWindow();
+    // 호스트 토큰은 safeStorage로 암호화해 저장하고, 암호화할 수 없으면 등록을 거부한다. Linux CI 러너
+    // 에는 OS 키링이 없어 그 거부에 걸린다 — 실제 데스크톱에는 gnome-keyring 같은 것이 있다. 여기서는
+    // Electron이 주는 대체 모드(메모리 키)를 켜서 저장 경로를 지나가게 한다. Windows에서는 아무 일도 없다.
+    await app.evaluate(({ safeStorage }) => {
+      (safeStorage as unknown as { setUsePlainTextEncryption?: (use: boolean) => void }).setUsePlainTextEncryption?.(true);
+    });
   });
 
   test.afterAll(async () => {
