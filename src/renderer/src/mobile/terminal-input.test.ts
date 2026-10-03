@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
+import { clipboardKeyAction, createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
 
 describe("encodeComposerInput", () => {
   it("sends a single line followed by Enter", () => {
@@ -40,5 +40,40 @@ describe("createReplayGate", () => {
     gate.data("while-away", 9);
     gate.attached("B", 8);
     expect(written).toEqual(["A", "B", "while-away"]);
+  });
+});
+
+describe("clipboardKeyAction", () => {
+  const key = (code: string, modifiers: Partial<{ ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }> = {}) => ({
+    code,
+    key: code,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+    ...modifiers,
+  });
+
+  it("copies with Ctrl+C only when something is selected", () => {
+    expect(clipboardKeyAction(key("KeyC", { ctrlKey: true }), true)).toBe("copy");
+    // 선택이 없으면 Ctrl+C는 인터럽트로 PTY에 간다.
+    expect(clipboardKeyAction(key("KeyC", { ctrlKey: true }), false)).toBeNull();
+  });
+
+  it("always takes Ctrl+Shift+C as the copy key", () => {
+    expect(clipboardKeyAction(key("KeyC", { ctrlKey: true, shiftKey: true }), true)).toBe("copy");
+    expect(clipboardKeyAction(key("KeyC", { ctrlKey: true, shiftKey: true }), false)).toBe("swallow");
+  });
+
+  it("pastes with Ctrl+V and Ctrl+Shift+V", () => {
+    expect(clipboardKeyAction(key("KeyV", { ctrlKey: true }), false)).toBe("paste");
+    expect(clipboardKeyAction(key("KeyV", { ctrlKey: true, shiftKey: true }), true)).toBe("paste");
+  });
+
+  it("leaves every other key to the terminal", () => {
+    expect(clipboardKeyAction(key("KeyC"), true)).toBeNull();
+    expect(clipboardKeyAction(key("KeyV", { ctrlKey: true, altKey: true }), false)).toBeNull();
+    expect(clipboardKeyAction(key("KeyC", { ctrlKey: true, metaKey: true }), true)).toBeNull();
+    expect(clipboardKeyAction(key("KeyX", { ctrlKey: true }), true)).toBeNull();
   });
 });

@@ -39,3 +39,5 @@ input, textarea { font: inherit; color: inherit; background: var(--m-surface); b
 .m-wide .m-list { overflow-y: auto; border-right: 1px solid #2a2f36; }
 .m-wide .m-session-screen { min-width: 0; }
 .m-wide-placeholder { align-self: center; justify-self: center; }
+.m-tools { align-items: center; flex-wrap: wrap; }
+.m-fit-notice { display: inline-flex; align-items: center; gap: 6px; color: var(--m-warn); font-size: 13px; }

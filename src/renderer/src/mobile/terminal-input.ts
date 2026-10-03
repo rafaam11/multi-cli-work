@@ -56,3 +56,21 @@ export function createReplayGate(write: (data: string) => void) {
     },
   };
 }
+
+export type ClipboardKeyAction = "copy" | "paste" | "swallow" | null;
+
+/**
+ * 데스크톱 TerminalPane과 같은 키 규칙. Ctrl+C는 선택이 있을 때만 복사이고(없으면 인터럽트로 PTY에
+ * 간다), Ctrl+Shift+C는 복사할 것이 없어도 복사 키로 먹는다. Ctrl+V·Ctrl+Shift+V는 붙여넣기다.
+ */
+export function clipboardKeyAction(
+  event: Pick<KeyboardEvent, "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "code" | "key">,
+  hasSelection: boolean,
+): ClipboardKeyAction {
+  if (!event.ctrlKey || event.altKey || event.metaKey) return null;
+  const key = event.code || event.key;
+  if (key === "KeyV") return "paste";
+  if (key !== "KeyC") return null;
+  if (hasSelection) return "copy";
+  return event.shiftKey ? "swallow" : null;
+}
