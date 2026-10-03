@@ -18,7 +18,11 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve("src/preload/index.ts"),
+        input: {
+          index: resolve("src/preload/index.ts"),
+          // 원격 창(다른 PC가 서빙한 페이지)에 심는 셸 브리지.
+          "remote-shell": resolve("src/preload/remote-shell.ts"),
+        },
       },
     },
   },
