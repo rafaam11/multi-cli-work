@@ -1,6 +1,6 @@
 # 원격 PC 이어받기(데스크톱 원격 창) 설계
 
-> 상태: 설계 확정 (2026-10-03 인터뷰) · 구현 전
+> 상태: R1 구현됨 (2026-10-03) · R2·R3 구현 전
 > 범위: 한 PC의 multi-cli-work에서 다른 PC의 multi-cli-work가 돌리는 세션을 열어 이어서 작업하고, 세션을 만들고 정리하고, 입력 대기 알림을 받는다.
 > 선행 설계: [모바일 컴패니언](2026-09-30-mobile-companion-design.md) — 호스트 서버·인증·프로토콜·웹 UI를 그대로 쓴다.
 
@@ -52,7 +52,7 @@ main 프로세스
   - 같은 `hostId`를 다시 추가하면 그 항목을 새 토큰으로 바꾼다.
   - 호스트가 토큰을 거절하면(철회) 항목은 남기고 `token`만 `null`로 바꾼다. 그런 호스트는 "다시 페어링 필요"로 표시하고, 원격 창과 상태 연결을 열지 않는다. 다시 추가하면 풀린다.
 - `pair-host.ts`: 입력은 `{address, code}` 또는 `{uri}`(`mcw://pair?host=…&name=…&code=…&fp=…`, 형식은 `remote-access.ts`의 `pairingUri`).
-  - 주소의 IP는 `isTailscaleAddress`(`src/main/remote/tailscale-address.ts`)를 통과해야 한다. loopback은 `MULTI_CLI_WORK_REMOTE_BIND`가 설정돼 있을 때만 허용한다(e2e·개발용).
+  - 주소의 IP는 `isTailscaleAddress`(`src/main/remote/tailscale-address.ts`)를 통과해야 한다. loopback은 `MULTI_CLI_WORK_REMOTE_BIND`가 설정돼 있을 때만 허용한다(e2e·개발용). 호스트 설정이 보여 주는 `http://…/mobile/` 주소를 그대로 붙여 넣어도 받는다.
   - `POST http://<address>/pair {code, deviceName: os.hostname()}` → `{token, deviceId, hostId, hostName}`.
   - URI로 추가했으면 응답 `hostId`가 `fp`와 같아야 한다. 다르면 저장하지 않는다.
 - 호스트 쪽 설정 화면에 **페어링 링크 복사** 버튼을 둔다(`pairUri` 문자열). 다른 PC에서는 QR을 찍을 수 없기 때문이다.
@@ -83,16 +83,16 @@ main 프로세스
   - 빠른 키 바와 입력창을 접어 두고 버튼으로 펼친다. 키 입력은 `terminal.onData`로 이미 PTY에 간다.
   - 세션을 열면 터미널에 포커스를 준다.
   - 터미널 크기는 §6의 자동 맞춤.
-  - 복사: 선택 영역이 있을 때 Ctrl+Shift+C → `document.execCommand("copy")`. 붙여넣기: Ctrl+V·Ctrl+Shift+V를 xterm이 가로채지 않게 해서 브라우저의 paste 이벤트가 xterm에 닿게 한다.
-- 복사가 비보안 출처에서 동작하지 않는 것으로 e2e에서 확인되면 **쓰기 전용** `McwShell.copyText(text)`를 추가하고 `bridgeVersion`을 2로 올린다. 읽기 메서드는 추가하지 않는다.
+  - 복사: 선택 영역이 있을 때 Ctrl+C 또는 Ctrl+Shift+C → `document.execCommand("copy")`. 데스크톱 `TerminalPane`과 같은 키 규칙이라, 선택이 없으면 Ctrl+C는 인터럽트로 PTY에 간다. 붙여넣기: Ctrl+V·Ctrl+Shift+V를 xterm이 가로채지 않게 해서 브라우저의 paste 이벤트가 xterm에 닿게 한다.
+- 이 방식의 복사가 비보안 출처(http://100.x)에서도 동작하는 것을 e2e로 확인했다(R1). 그래서 쓰기 전용 `McwShell.copyText`는 넣지 않았고 `bridgeVersion`은 1이다. 읽기 메서드는 앞으로도 추가하지 않는다.
 
 ### 3.4 메인 창 UI
 
 - `ProjectSidebar.tsx`의 `UpdateBadge` 위에 `RemoteHostsSection.tsx`: 등록된 호스트마다 한 행(이름). 클릭하면 원격 창을 연다. "다시 페어링 필요"인 호스트는 그렇게 표시하고, 클릭하면 설정의 "원격" 탭을 연다. 호스트가 없으면 섹션을 그리지 않는다.
 - `SettingsDialog.tsx`의 탭 이름을 "모바일"에서 "원격"으로 바꾼다. `RemoteSettings.tsx`는 두 부분으로 나눈다.
-  - **이 PC에 접속 허용** — 기존 내용(켜기·포트·상태·기기 목록·페어링 코드)과 페어링 링크 복사 버튼.
-  - **다른 PC에 접속** — 호스트 목록(이름·주소·알림 토글·삭제)과 "PC 추가"(주소+코드 입력, 또는 페어링 링크 붙여넣기).
-- IPC: `remote-hosts:list` · `add` · `remove` · `open` · `set-notify`, 이벤트 `remote-hosts:changed`. 렌더러로 가는 `RemoteHostInfo{hostId, name, address, notify, paired, addedAt}`에는 토큰이 없다.
+  - **이 PC에 접속 허용** — 기존 내용(켜기·포트·상태·기기 목록·페어링 코드)과 페어링 링크 복사 버튼. 체크박스 문구는 "원격 접속 허용"이다. Android 셸 안의 안내 문구("설정 ▸ 모바일")는 다음 셸 릴리스에서 고친다 — 문구 하나로 `shellVersion`을 올리지 않는다.
+  - **다른 PC에 접속** — 호스트 목록(이름·주소·열기·삭제, 알림 토글은 R3)과 "PC 추가"(주소+코드 입력, 또는 페어링 링크 붙여넣기).
+- IPC: `remote-hosts:list` · `add` · `remove` · `open` · `set-notify`(R3), 이벤트 `remote-hosts:changed`. 렌더러로 가는 `RemoteHostInfo{hostId, name, address, notify, paired, addedAt}`에는 토큰이 없다.
 - `PairScreen.tsx`의 안내 문구 "설정 ▸ 모바일"을 "설정 ▸ 원격"으로 고친다.
 
 ## 4. 보안
