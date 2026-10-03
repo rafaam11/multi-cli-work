@@ -1,6 +1,6 @@
 # 원격 PC 이어받기(데스크톱 원격 창) 설계
 
-> 상태: R1·R2 구현됨 (2026-10-03) · R3 구현 전
+> 상태: R1·R2·R3 구현됨 (2026-10-03)
 > 범위: 한 PC의 multi-cli-work에서 다른 PC의 multi-cli-work가 돌리는 세션을 열어 이어서 작업하고, 세션을 만들고 정리하고, 입력 대기 알림을 받는다.
 > 선행 설계: [모바일 컴패니언](2026-09-30-mobile-companion-design.md) — 호스트 서버·인증·프로토콜·웹 UI를 그대로 쓴다.
 
@@ -92,8 +92,8 @@ main 프로세스
 - `ProjectSidebar.tsx`의 `UpdateBadge` 위에 `RemoteHostsSection.tsx`: 등록된 호스트마다 한 행(이름). 클릭하면 원격 창을 연다. "다시 페어링 필요"인 호스트는 그렇게 표시하고, 클릭하면 설정의 "원격" 탭을 연다. 호스트가 없으면 섹션을 그리지 않는다.
 - `SettingsDialog.tsx`의 탭 이름을 "모바일"에서 "원격"으로 바꾼다. `RemoteSettings.tsx`는 두 부분으로 나눈다.
   - **이 PC에 접속 허용** — 기존 내용(켜기·포트·상태·기기 목록·페어링 코드)과 페어링 링크 복사 버튼. 체크박스 문구는 "원격 접속 허용"이다. Android 셸 안의 안내 문구("설정 ▸ 모바일")는 다음 셸 릴리스에서 고친다 — 문구 하나로 `shellVersion`을 올리지 않는다.
-  - **다른 PC에 접속** — 호스트 목록(이름·주소·열기·삭제, 알림 토글은 R3)과 "PC 추가"(주소+코드 입력, 또는 페어링 링크 붙여넣기).
-- IPC: `remote-hosts:list` · `add` · `remove` · `open` · `set-notify`(R3), 이벤트 `remote-hosts:changed`. 렌더러로 가는 `RemoteHostInfo{hostId, name, address, notify, paired, addedAt}`에는 토큰이 없다.
+  - **다른 PC에 접속** — 호스트 목록(이름·주소·알림 토글·열기·삭제)과 "PC 추가"(주소+코드 입력, 또는 페어링 링크 붙여넣기).
+- IPC: `remote-hosts:list` · `add` · `remove` · `open` · `set-notify`, 이벤트 `remote-hosts:changed`. 렌더러로 가는 `RemoteHostInfo{hostId, name, address, notify, paired, addedAt}`에는 토큰이 없다.
 - `PairScreen.tsx`의 안내 문구 "설정 ▸ 모바일"을 "설정 ▸ 원격"으로 고친다.
 
 ## 4. 보안
@@ -180,7 +180,10 @@ main 프로세스
   4. `createTerminalNotificationDeduper`(`notification-policy.ts`)가 같은 상태의 반복이 아니라고 하는가.
 
   모두 통과하면 Electron `Notification`을 띄운다. 제목은 `<호스트 이름> · <세션 이름>`, 본문은 로컬 알림과 같은 문구. 클릭하면 그 호스트의 원격 창을 `#session=<id>`로 연다.
-- 사이드바의 호스트 행에 링크 상태와 대기(`awaiting-*`) 세션 수를 보인다. `RemoteHostInfo`에 `link`와 `awaiting`을 더하고 `remote-hosts:changed`로 알린다.
+- 사이드바의 호스트 행에 링크 상태(연결됨·연결 중·연결 끊김·버전이 맞지 않음)와 대기(`awaiting-*`) 세션 수를 보인다. 렌더러로 가는 `RemoteHostView`는 `RemoteHostInfo`에 `link`와 `awaiting`을 더한 것이고 `remote-hosts:changed`로 알린다.
+- **알림은 상태가 바뀌는 메시지(`status`)에서만 낸다.** 연결할 때 받는 `sessions` 목록에 이미 기다리는 세션이 있어도 알리지 않는다 — 앱을 켜거나 다시 붙을 때 알림이 쏟아지지 않게. 그 수는 대기 수로만 보인다. 지금 알릴 수 없어(음소거, 원격 창 포커스) 건너뛴 것은 알린 것으로 치지 않는다.
+- 연결이 끊긴 동안은 그 호스트의 세션을 모르는 것으로 본다(대기 수 0). 다시 붙으면 호스트가 목록을 새로 준다.
+- main의 소켓은 `ws`다. `ws`는 듣는 곳 없는 `error`를 예외로 던지므로 `createStatusSocket`이 받아 두고, 뒤따르는 close가 재시도로 이어진다. 응답 없는 주소에 오래 매달리지 않게 핸드셰이크는 10초로 제한한다.
 - 호스트 PC 앞에 사람이 있는지는 따지지 않는다. 이 PC에 사람이 없으면 알림은 해가 없다.
 
 ## 8. 버전 호환

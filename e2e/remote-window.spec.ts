@@ -134,6 +134,8 @@ test.describe.serial("Remote PC window", () => {
     expect(added.paired).toBe(true);
     const hostButton = hostsSection.getByRole("button", { name: added.name });
     await expect(hostButton).toBeVisible();
+    // 원격 창을 열지 않아도 상태 연결이 붙는다 — 알림과 대기 수가 이 연결에서 온다.
+    await expect(hostButton.getByLabel("연결됨")).toBeVisible();
     // 토큰은 암호문으로만 저장된다(이 PC가 호스트이기도 해서 기기 목록에 자기 이름이 보인다).
     const devices = await page.evaluate(() => window.multiCliWork.remote.listDevices());
     expect(devices).toHaveLength(1);
@@ -265,6 +267,8 @@ test.describe.serial("Remote PC window", () => {
     await page.evaluate((deviceId) => window.multiCliWork.remote.revokeDevice(deviceId), devices[0]!.deviceId);
     await closed;
     await expect(hostsSection.getByText("다시 페어링 필요")).toBeVisible();
+    // 상태 연결도 같은 토큰이라 함께 끊기고, 다시 붙으려 하지 않는다.
+    await expect(hostsSection.getByRole("img")).toHaveCount(0);
     const reopen = await page.evaluate(
       (hostId) => window.multiCliWork.remoteHosts.open(hostId).then(() => "ok", (error: Error) => error.message),
       added.hostId,
