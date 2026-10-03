@@ -45,3 +45,15 @@ input, textarea { font: inherit; color: inherit; background: var(--m-surface); b
 .m-fit-notice { display: flex; flex: 1 1 0; min-width: 0; align-items: center; gap: 6px; color: var(--m-warn); font-size: 13px; }
 .m-fit-notice button { flex: 0 0 auto; white-space: nowrap; }
 .m-fit-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 머리줄의 버튼은 줄지 않고, 제목이 대신 줄어든다. 줄바꿈하면 넓은 화면에서 터미널 영역의 높이가 바뀐다. */
+.m-bar button { flex: 0 0 auto; white-space: nowrap; }
+.m-danger { border-color: #ff6b6b; color: #ff6b6b; }
+select { font: inherit; color: inherit; background: var(--m-surface); border: 1px solid #2a2f36; border-radius: 8px; padding: 8px; width: 100%; min-height: 40px; }
+.m-new-session { display: grid; gap: 8px; padding: 4px 12px 12px; }
+.m-new-session label { display: grid; gap: 4px; color: var(--m-muted); }
+.m-new-session .m-empty, .m-new-session .m-notice { padding: 0; margin: 0; }
+.m-new-session-actions { display: flex; gap: 6px; }
+.m-new-session-actions button { flex: 1 1 0; }
+.m-toast { position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 10; display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border: 1px solid #ff6b6b; border-radius: 8px; background: var(--m-surface); color: var(--m-text); }
+.m-toast span { flex: 1 1 auto; min-width: 0; }
+.m-toast button { flex: 0 0 auto; }

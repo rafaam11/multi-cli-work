@@ -27,6 +27,22 @@ describe("applySessionMessage", () => {
     ]);
   });
 
+  it("drops a removed session", () => {
+    const list = applySessionMessage([s("1"), s("2")], { type: "removed", sessionId: "1" });
+    expect(list.map((entry) => entry.id)).toEqual(["2"]);
+  });
+
+  it("takes a known session's new state from a created event — a restart announces itself that way", () => {
+    const list = applySessionMessage([s("1", { status: "exited" }), s("2")], {
+      type: "created",
+      session: s("1", { status: "starting" }),
+    });
+    expect(list.map((entry) => [entry.id, entry.status])).toEqual([
+      ["1", "starting"],
+      ["2", "working"],
+    ]);
+  });
+
   it("ignores unrelated messages and returns the same array", () => {
     const list = [s("1")];
     expect(applySessionMessage(list, { type: "data", sessionId: "1", data: "x", sequence: 1 })).toBe(list);

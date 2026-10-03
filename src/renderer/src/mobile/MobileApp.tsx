@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { RemoteSessionSummary } from "@shared/remote-types";
+import type { RemoteCatalog, RemoteSessionSummary } from "@shared/remote-types";
+import { NewSessionForm } from "./NewSessionForm";
 import { PairScreen } from "./PairScreen";
 import {
   clearPairing,
@@ -32,6 +33,11 @@ export function MobileApp() {
   const [sessions, setSessions] = useState<RemoteSessionSummary[]>([]);
   const [openSessionId, setOpenSessionId] = useState<string | null>(() => sessionIdFromHash(window.location.hash));
   const wide = useWideLayout();
+  /** 새 세션 폼이 열려 있는지와, 호스트가 알려 준 폴더·에이전트 목록. */
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [catalog, setCatalog] = useState<RemoteCatalog | null>(null);
+  /** 호스트가 거절한 이유 — 이미 끝난 세션, 지울 수 없는 세션 같은 것. */
+  const [refusal, setRefusal] = useState<string | null>(null);
 
   // 셸이 열려 있는 창에 다른 세션을 가리키는 링크를 다시 로드하면 해시만 바뀐다.
   useEffect(() => {
@@ -50,7 +56,16 @@ export function MobileApp() {
   useEffect(() => {
     if (!pairing) return;
     const next = new RemoteClient({ url: remoteSocketUrl(window.location), token: pairing.token });
-    const offMessage = next.onMessage((message) => setSessions((current) => applySessionMessage(current, message)));
+    const offMessage = next.onMessage((message) => {
+      setSessions((current) => applySessionMessage(current, message));
+      if (message.type === "catalog") setCatalog({ projects: message.projects, agents: message.agents });
+      // 이 화면이 만들거나 다시 시작한 세션 — 바로 연다. 목록에는 created가 따로 실어 온다.
+      else if (message.type === "started") setOpenSessionId(message.sessionId);
+      // 인증·버전 오류는 연결이 끊기며 따로 처리된다. 여기서는 요청이 거절된 이유만 보인다.
+      else if (message.type === "error" && message.code !== "unauthorized" && message.code !== "protocol") {
+        setRefusal(message.message);
+      }
+    });
     const offState = next.onState((state) => {
       setConnection(state);
       if (state === "unauthorized") {
@@ -107,8 +122,33 @@ export function MobileApp() {
         clearPairing(storage());
         setPairing(null);
       }}
-    />
+      onNewSession={() => {
+        // 폴더·에이전트는 열 때마다 다시 묻는다 — 호스트에서 그사이 바뀌었을 수 있다.
+        setCatalog(null);
+        setNewSessionOpen(true);
+        client.send({ type: "catalog" });
+      }}
+    >
+      {newSessionOpen ? (
+        <NewSessionForm
+          catalog={catalog}
+          onStart={(projectId, kind) => {
+            client.send({ type: "create", projectId, kind });
+            setNewSessionOpen(false);
+          }}
+          onCancel={() => setNewSessionOpen(false)}
+        />
+      ) : null}
+    </SessionList>
   );
+  const toast = refusal ? (
+    <p className="m-toast" role="alert">
+      <span>{refusal}</span>
+      <button type="button" onClick={() => setRefusal(null)}>
+        닫기
+      </button>
+    </p>
+  ) : null;
   const screen = openSession ? (
     <SessionScreen
       key={openSession.id}
@@ -122,11 +162,19 @@ export function MobileApp() {
 
   if (wide) {
     return (
-      <div className="m-wide">
-        {list}
-        {screen ?? <p className="m-empty m-wide-placeholder">왼쪽에서 세션을 고르세요</p>}
-      </div>
+      <>
+        <div className="m-wide">
+          {list}
+          {screen ?? <p className="m-empty m-wide-placeholder">왼쪽에서 세션을 고르세요</p>}
+        </div>
+        {toast}
+      </>
     );
   }
-  return screen ?? list;
+  return (
+    <>
+      {screen ?? list}
+      {toast}
+    </>
+  );
 }

@@ -38,6 +38,9 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
   const [toolsOpen, setToolsOpen] = useState(!wide);
   const [fontIndex, setFontIndex] = useState(3);
   const [draft, setDraft] = useState("");
+  /** 삭제는 되돌릴 수 없어서 두 번 묻는다. window.confirm은 Android WebView가 조용히 거절한다. */
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const running = session.status !== "exited" && session.status !== "error";
 
   useEffect(() => {
     const host = hostRef.current;
@@ -114,6 +117,11 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
         applySize(message.cols, message.rows);
         if (autoFit) autoFit.owner(message.sizeOwner);
         else giveBackToggle(message.sizeOwner);
+      } else if (message.type === "started") {
+        // 이 세션이 다시 시작됐다. 새 프로세스의 출력은 sequence를 처음부터 세므로, 문을 비우고
+        // 새로 붙어야 이전 출력의 번호에 밀려 버려지지 않는다.
+        gate.reset();
+        client.send({ type: "attach", sessionId: session.id });
       }
     });
     const offState = client.onState((state) => {
@@ -278,6 +286,36 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
         )}
         <h1>{session.label}</h1>
         <span className={`m-status m-status-${session.status}`}>{STATUS_LABEL[session.status]}</span>
+        {running ? (
+          <button type="button" onClick={() => client.send({ type: "stop", sessionId: session.id })}>
+            중지
+          </button>
+        ) : (
+          <button type="button" onClick={() => client.send({ type: "resume", sessionId: session.id })}>
+            재시작
+          </button>
+        )}
+        {confirmingRemove ? (
+          <>
+            <button
+              type="button"
+              className="m-danger"
+              onClick={() => {
+                client.send({ type: "remove", sessionId: session.id });
+                setConfirmingRemove(false);
+              }}
+            >
+              정말 삭제
+            </button>
+            <button type="button" onClick={() => setConfirmingRemove(false)}>
+              취소
+            </button>
+          </>
+        ) : (
+          <button type="button" onClick={() => setConfirmingRemove(true)}>
+            삭제
+          </button>
+        )}
       </header>
       <div className="m-tools">
         {wide ? (

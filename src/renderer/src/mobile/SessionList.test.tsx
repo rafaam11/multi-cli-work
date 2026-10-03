@@ -16,6 +16,7 @@ describe("SessionList", () => {
         ]}
         onOpen={onOpen}
         onUnpair={vi.fn()}
+        onNewSession={vi.fn()}
         leaveLabel="호스트 목록"
       />,
     );
@@ -26,7 +27,7 @@ describe("SessionList", () => {
   });
 
   it("says when there is nothing to show and when the link is down", () => {
-    render(<SessionList hostName="PC" connection="reconnecting" sessions={[]} onOpen={vi.fn()} onUnpair={vi.fn()} />);
+    render(<SessionList hostName="PC" connection="reconnecting" sessions={[]} onOpen={vi.fn()} onUnpair={vi.fn()} onNewSession={vi.fn()} />);
     expect(screen.getByText("열린 세션이 없습니다")).toBeInTheDocument();
     expect(screen.getByText("다시 연결하는 중…")).toBeInTheDocument();
   });

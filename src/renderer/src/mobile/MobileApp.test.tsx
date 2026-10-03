@@ -17,10 +17,13 @@ class FakeSocket {
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: ((event: { code: number }) => void) | null = null;
+  sent: Array<{ type: string; [key: string]: unknown }> = [];
   constructor(public url: string) {
     FakeSocket.last = this;
   }
-  send(): void {}
+  send(data: string): void {
+    this.sent.push(JSON.parse(data) as { type: string });
+  }
   close(): void {}
   receive(message: unknown): void {
     this.onmessage?.({ data: JSON.stringify(message) });
@@ -99,6 +102,55 @@ describe("MobileApp", () => {
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
     expect(screen.getByTestId("screen")).toHaveTextContent("리팩터");
+  });
+
+  it("asks for the catalog and starts a session", () => {
+    useScreen(true);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
+    expect(FakeSocket.last!.sent).toContainEqual({ type: "catalog" });
+    expect(screen.getByText("불러오는 중…")).toBeInTheDocument();
+    act(() => {
+      FakeSocket.last!.receive({
+        type: "catalog",
+        projects: [{ id: "p1", name: "multi-cli-work" }],
+        agents: [{ id: "claude", label: "Claude" }],
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    expect(FakeSocket.last!.sent).toContainEqual({ type: "create", projectId: "p1", kind: "claude" });
+    expect(screen.queryByRole("button", { name: "시작" })).not.toBeInTheDocument();
+  });
+
+  it("opens the session the host says was started", () => {
+    useScreen(true);
+    render(<MobileApp />);
+    connect();
+    act(() => FakeSocket.last!.receive({ type: "started", sessionId: "s2" }));
+    expect(screen.getByTestId("screen")).toHaveTextContent("테스트");
+  });
+
+  it("shows what the host refused and lets it be dismissed", () => {
+    useScreen(false);
+    render(<MobileApp />);
+    connect();
+    act(() => FakeSocket.last!.receive({ type: "error", code: "failed", message: "이미 실행 중인 세션입니다" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("이미 실행 중인 세션입니다");
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("goes back to the list when the open session is removed", () => {
+    useScreen(false);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    expect(screen.getByTestId("screen")).toBeInTheDocument();
+    act(() => FakeSocket.last!.receive({ type: "removed", sessionId: "s1" }));
+    expect(screen.queryByTestId("screen")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /테스트/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /리팩터/ })).not.toBeInTheDocument();
   });
 
   it("shows the list when the linked session does not exist", () => {

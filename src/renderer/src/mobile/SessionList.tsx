@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { TerminalStatus } from "@shared/terminal-types";
 import type { RemoteSessionSummary } from "@shared/remote-types";
 import type { RemoteClientState } from "./remote-client";
@@ -29,19 +30,36 @@ interface SessionListProps {
   leaveLabel?: string;
   /** 넓은 화면에서 옆에 열려 있는 세션. */
   activeSessionId?: string | null;
+  onNewSession(): void;
+  /** 머리줄 아래에 그리는 것 — 새 세션 폼. */
+  children?: ReactNode;
 }
 
-export function SessionList({ hostName, connection, sessions, onOpen, onUnpair, leaveLabel, activeSessionId }: SessionListProps) {
+export function SessionList({
+  hostName,
+  connection,
+  sessions,
+  onOpen,
+  onUnpair,
+  leaveLabel,
+  activeSessionId,
+  onNewSession,
+  children,
+}: SessionListProps) {
   const banner = CONNECTION_LABEL[connection];
   return (
     <main className="m-list">
       <header className="m-bar">
         <h1>{hostName}</h1>
+        <button type="button" disabled={connection !== "open"} onClick={onNewSession}>
+          새 세션
+        </button>
         <button type="button" onClick={onUnpair}>
           {leaveLabel ?? "연결 해제"}
         </button>
       </header>
       {banner ? <p className="m-banner">{banner}</p> : null}
+      {children}
       {sessions.length === 0 ? <p className="m-empty">열린 세션이 없습니다</p> : null}
       {groupSessions(sessions).map((group) => (
         <section key={group.projectName}>
