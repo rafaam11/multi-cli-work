@@ -69,6 +69,7 @@ import type {
 } from "../shared/worktree-types";
 import type { ToolCommand } from "../shared/terminal-types";
 import { AGENT_ID_PATTERN } from "../shared/agent-types";
+import { assertNotReviewSession } from "./terminal/review-guard";
 import type { ProjectMetadataUpdate } from "./projects/project-service";
 import type { WorkProjectMetadataUpdate } from "./projects/work-project-service";
 
@@ -1375,9 +1376,7 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   ipc.handle("terminals:resume", (_event, input: unknown) => dependencies.coordinator.resume(validateResumeInput(input)));
   ipc.handle("terminals:remove", async (_event, sessionId: unknown) => {
     const id = nonEmptyString(sessionId, "Session id");
-    if ((await dependencies.github.activeReviews()).some((review) => review.sessionId === id)) {
-      throw new Error("진행 중인 PR 리뷰 세션은 '리뷰 완료' 흐름에서 정리하세요.");
-    }
+    assertNotReviewSession(await dependencies.github.activeReviews(), id);
     return dependencies.coordinator.remove(id);
   });
   ipc.handle("terminals:export-log", async (_event, sessionId: unknown, fileLabel: unknown) => {
