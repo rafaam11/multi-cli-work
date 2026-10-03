@@ -98,6 +98,8 @@ describe("RemoteWindows", () => {
       webviewTag: false,
     });
     expect(options.title).toBe("회사PC — 원격");
+    // 최소 크기는 콘텐츠 기준이어야 한다 — 창 테두리만큼 모자라면 넓은 화면이 폰 화면으로 바뀐다.
+    expect(options).toMatchObject({ minWidth: 900, useContentSize: true });
     const fake = fakes[0]!;
     expect(fake.window.loadURL).toHaveBeenCalledWith("http://100.64.0.9:47821/mobile/");
     expect(fake.window.show).toHaveBeenCalled();

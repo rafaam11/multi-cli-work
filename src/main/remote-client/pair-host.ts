@@ -21,12 +21,17 @@ function normalizeAddress(raw: string, allowLoopback: boolean): string {
     .trim()
     .replace(/^https?:\/\//i, "")
     .replace(/\/.*$/, "");
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(bare)) {
+    throw new Error("포트가 빠졌습니다. 100.x.y.z:포트 형식으로 입력하세요");
+  }
   const match = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/.exec(bare);
   if (!match) throw new Error("주소는 100.x.y.z:포트 형식이어야 합니다");
   const ip = match[1]!;
   const port = Number(match[2]);
-  const validOctets = ip.split(".").every((octet) => Number(octet) <= 255);
-  const allowed = validOctets && (isTailscaleAddress(ip) || (allowLoopback && ip === "127.0.0.1"));
+  if (!ip.split(".").every((octet) => Number(octet) <= 255)) {
+    throw new Error("IP 주소의 각 숫자는 0~255여야 합니다");
+  }
+  const allowed = isTailscaleAddress(ip) || (allowLoopback && ip === "127.0.0.1");
   if (!allowed) throw new Error("Tailscale 주소(100.64.0.0/10)만 등록할 수 있습니다");
   if (port < 1 || port > 65535) throw new Error("포트가 올바르지 않습니다");
   return `${ip}:${port}`;

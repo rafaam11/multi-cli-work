@@ -105,6 +105,8 @@ export class RemoteWindows {
       height: 800,
       minWidth: 900,
       minHeight: 600,
+      // 크기는 콘텐츠 기준이다 — 창 테두리만큼 모자라면 최소 크기에서 넓은 화면이 폰 화면으로 바뀐다.
+      useContentSize: true,
       show: false,
       backgroundColor: "#101214",
       title: `${pairing.hostName} — 원격`,
