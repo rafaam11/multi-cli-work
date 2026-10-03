@@ -1062,6 +1062,30 @@ describe("folder workspace", () => {
     expect(await screen.findByRole("region", { name: "스폰된 세션" })).toBeInTheDocument();
   });
 
+  it("drops a session removed elsewhere, even the one on screen", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "PowerShell" });
+    await act(async () => {
+      harness.emit({
+        type: "created",
+        sessionId: "session-other",
+        session: { ...powershellSession, id: "session-other", name: "남는 세션", status: "starting" },
+      });
+    });
+    await screen.findByRole("button", { name: /남는 세션 세션 열기/ });
+
+    // A remote client removed it — this window never asked for the removal.
+    await act(async () => {
+      harness.emit({ type: "removed", sessionId: powershellSession.id });
+    });
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "PowerShell" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /남는 세션 세션 열기/ })).toBeInTheDocument();
+    expect(harness.api.terminals.remove).not.toHaveBeenCalled();
+  });
+
   it("sends a new session to its own page instead of collapsing the grid onto it", async () => {
     const crowd = Array.from({ length: 6 }, (_, index): TerminalSessionView => ({
       ...powershellSession,

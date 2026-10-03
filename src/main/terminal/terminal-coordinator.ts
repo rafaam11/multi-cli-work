@@ -514,6 +514,9 @@ export class TerminalCoordinator {
     this.pendingWorkerEvents.delete(sessionId);
     this.generations.delete(sessionId);
     this.pendingReleases.delete(sessionId);
+    // Everyone watching the list — the renderer, remote clients — drops it. The renderer that asked
+    // for the removal hears this too; whoever did not ask has no other way to find out.
+    this.publish({ type: "removed", sessionId });
   }
 
   /**

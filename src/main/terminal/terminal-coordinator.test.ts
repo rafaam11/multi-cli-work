@@ -172,6 +172,19 @@ describe("TerminalCoordinator", () => {
     expect(worker.release).toHaveBeenLastCalledWith("session-1", worker.create.mock.calls[1][0].generation, true);
   });
 
+  it("announces a removed session to its listeners, and nothing for an unknown one", async () => {
+    const root = await tempRoot();
+    const { instance } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    const events: TerminalEvent[] = [];
+    instance.onEvent((event) => events.push(event));
+    await instance.remove("session-1");
+    expect(events.at(-1)).toEqual({ type: "removed", sessionId: "session-1" });
+    events.length = 0;
+    await instance.remove("session-unknown");
+    expect(events).toEqual([]);
+  });
+
   it("keeps failed in-flight chunks ahead of newly received output without timer retry loops", async () => {
     const root = await tempRoot();
     const gate = deferred<void>();

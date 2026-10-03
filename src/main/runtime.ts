@@ -814,7 +814,7 @@ export async function createDesktopRuntime(
 
   coordinator.onEvent((event: TerminalEvent) => {
     sendToMainWindow(host.getMainWindow(), "terminal:event", event);
-    if (event.type === "exit") attention.clear(event.sessionId);
+    if (event.type === "exit" || event.type === "removed") attention.clear(event.sessionId);
     if (event.type !== "status") return;
     void attention.handleStatus(event.sessionId, event.status).catch((error) =>
       console.error("Failed to update terminal attention", error),

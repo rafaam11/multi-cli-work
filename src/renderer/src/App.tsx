@@ -1069,6 +1069,14 @@ export function App() {
           setSessions((current) => replaceSession(current, event.session));
           return;
         }
+        // Removed by someone else — a remote client, a folder teardown. A removal this window asked
+        // for arrives here too; `removeSessionById` then picks the next selection on top of this.
+        if (event.type === "removed") {
+          setSessions((current) => current.filter((session) => session.id !== event.sessionId));
+          setFocusedPaneId((current) => (current === event.sessionId ? null : current));
+          setSelectedSessionId((current) => (current === event.sessionId ? null : current));
+          return;
+        }
         if (event.type === "workspace") {
           setSessions((current) => replaceSession(current, event.session));
           // Keep the live pane in place. Its sidebar row and next folder selection use the new
