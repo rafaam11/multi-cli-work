@@ -31,6 +31,8 @@
 |---|---|
 | `state.json` | 창 크기, 선택된 폴더, 레이아웃, 패인 배치, 작업공간·숨김 소속 |
 | `notion-credentials.json` | 노션 통합 토큰. OS 자격 증명 저장소(safeStorage)로 암호화한 암호문만 담는다 |
+| `remote-devices.json` | 이 PC에 접속을 허용한 기기(폰·다른 PC)와 이 PC의 호스트 ID. 기기 토큰은 해시만 담는다 |
+| `remote-hosts.json` | 이 PC가 접속하려고 등록한 다른 PC. 기기 토큰은 safeStorage로 암호화한 암호문만 담는다 |
 | `settings.json` | 언어·터미널·알림·단축키·업무 프로젝트 구분 목록. 모르는 필드는 버린다 |
 | `shutdown-recovery.json` | 정상 종료 표시. 없으면 지난 실행이 비정상 종료된 것으로 본다 |
 | `session-logs/` | 세션별 스크롤백. 세션마다 상한이 있는 링 버퍼라 무한히 자라지 않는다 |
