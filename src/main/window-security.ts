@@ -97,9 +97,22 @@ export function isAllowedRendererNavigation(
   }
 }
 
+/** 원격 창용: 등록된 호스트 출처 안에서만 움직인다. */
+export function isSameOriginNavigation(navigationUrl: string, origin: string): boolean {
+  try {
+    const navigation = new URL(navigationUrl);
+    if (navigation.protocol !== "http:" && navigation.protocol !== "https:") return false;
+    if (navigation.username || navigation.password) return false;
+    return navigation.origin === new URL(origin).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function secureBrowserWindow(
   window: BrowserWindow,
   loadedAppUrl: string,
+  isAllowed: (navigationUrl: string, loadedAppUrl: string) => boolean = isAllowedRendererNavigation,
 ): void {
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
@@ -107,7 +120,7 @@ export function secureBrowserWindow(
     event: Electron.Event,
     navigationUrl: string,
   ): void => {
-    if (!isAllowedRendererNavigation(navigationUrl, loadedAppUrl)) {
+    if (!isAllowed(navigationUrl, loadedAppUrl)) {
       event.preventDefault();
     }
   };

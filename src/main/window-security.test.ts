@@ -5,6 +5,7 @@ import {
   RENDERER_CONTENT_SECURITY_POLICY,
   isAllowedRendererNavigation,
   isLoopbackRendererUrl,
+  isSameOriginNavigation,
   resolveRendererTarget,
   secureBrowserWindow,
 } from "./window-security";
@@ -157,5 +158,47 @@ describe("renderer CSP", () => {
     expect(html).toContain(
       `<meta http-equiv="Content-Security-Policy" content="${RENDERER_CONTENT_SECURITY_POLICY}" />`,
     );
+  });
+});
+
+describe("isSameOriginNavigation", () => {
+  it("allows navigation within the given origin", () => {
+    expect(isSameOriginNavigation("http://100.64.0.9:47821/mobile/#session=a", "http://100.64.0.9:47821")).toBe(true);
+  });
+
+  it.each([
+    "http://100.64.0.9:47822/mobile/",
+    "http://100.64.0.10:47821/mobile/",
+    "https://100.64.0.9:47821/mobile/",
+    "http://user:pw@100.64.0.9:47821/mobile/",
+    "file:///C:/Windows/win.ini",
+    "javascript:alert(1)",
+    "not a url",
+  ])("rejects %s", (value) => {
+    expect(isSameOriginNavigation(value, "http://100.64.0.9:47821")).toBe(false);
+  });
+});
+
+describe("secureBrowserWindow with a custom rule", () => {
+  it("uses the rule it was given", () => {
+    const listeners = new Map<string, (event: Electron.Event, url: string) => void>();
+    const window = {
+      webContents: {
+        setWindowOpenHandler: vi.fn(),
+        on: vi.fn((name: string, listener: (event: Electron.Event, url: string) => void) => {
+          listeners.set(name, listener);
+        }),
+      },
+    } as unknown as Electron.BrowserWindow;
+
+    secureBrowserWindow(window, "http://100.64.0.9:47821", isSameOriginNavigation);
+
+    const inside = { preventDefault: vi.fn() } as unknown as Electron.Event;
+    listeners.get("will-navigate")?.(inside, "http://100.64.0.9:47821/mobile/");
+    expect(inside.preventDefault).not.toHaveBeenCalled();
+
+    const outside = { preventDefault: vi.fn() } as unknown as Electron.Event;
+    listeners.get("will-navigate")?.(outside, "http://example.com/");
+    expect(outside.preventDefault).toHaveBeenCalledOnce();
   });
 });

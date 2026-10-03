@@ -103,6 +103,7 @@ import { SessionTitleReader } from "./providers/session-title";
 import { AgentEditReader } from "./providers/agent-edits";
 import type { AttentionSnapshot } from "./attention-policy";
 import { createSessionAttentionController } from "./session-attention-controller";
+import { isMainWindowSender, mainWindowState, sendToMainWindow } from "./main-window";
 import { checkForUpdates, openReleasesPage, openRepositoryPage, updaterStatus } from "./updater";
 import { discoverSessionEnvironment, prependPath } from "./platform-env";
 import { TerminalCoordinator } from "./terminal/terminal-coordinator";
@@ -427,7 +428,7 @@ export async function createDesktopRuntime(
   const projectActions = createProjectActions({ getExecutables });
   const htmlPreviewController = new HtmlPreviewController({
     view: new HtmlPreviewView(),
-    getWindow: () => BrowserWindow.getAllWindows()[0] ?? null,
+    getWindow: () => host.getMainWindow(),
     resolvePath: resolveWorkspaceFilePath,
   });
 
@@ -435,9 +436,7 @@ export async function createDesktopRuntime(
   // renderer's sidebar badges (via the broadcast).
   const publishAttention = (snapshot: AttentionSnapshot) => {
     applyAttention(snapshot);
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send("attention:event", snapshot.unread);
-    }
+    sendToMainWindow(host.getMainWindow(), "attention:event", snapshot.unread);
   };
   const NOTIFICATION_BODY: Record<NotifiableStatus, string> = {
     "awaiting-input": "입력을 기다리는 중입니다",
@@ -453,13 +452,7 @@ export async function createDesktopRuntime(
         visibleSessionIds: state.visibleSessionIds ?? [],
       };
     },
-    windowState: () => {
-      const windows = BrowserWindow.getAllWindows();
-      return {
-        visible: windows.some((window) => window.isVisible()),
-        focused: windows.some((window) => window.isVisible() && window.isFocused()),
-      };
-    },
+    windowState: () => mainWindowState(host.getMainWindow()),
     publish: publishAttention,
     notify(sessionId, status, onClick) {
       if (!Notification.isSupported()) return;
@@ -477,9 +470,7 @@ export async function createDesktopRuntime(
     },
     navigate(sessionId) {
       showMainWindow();
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send("navigation:session-requested", { sessionId });
-      }
+      sendToMainWindow(host.getMainWindow(), "navigation:session-requested", { sessionId });
     },
     logError: (message, error) => console.error(message, error),
     notificationSettings: () => settingsService.current().notifications,
@@ -541,13 +532,13 @@ export async function createDesktopRuntime(
       throw error;
     }
     if (patch.remote) await remoteAccess.apply(next.remote);
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("settings:changed", next);
+    sendToMainWindow(host.getMainWindow(), "settings:changed", next);
     return next;
   };
 
   // 워크스페이스 동기화는 업무 프로젝트·태그 파일을 렌더러 모르게 바꾼다 — 바꾼 뒤엔 반드시 알린다.
   const announceWorkspaceChange = () => {
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("workspace:changed");
+    sendToMainWindow(host.getMainWindow(), "workspace:changed");
   };
 
   registerMainIpc(ipcMain, {
@@ -737,7 +728,7 @@ export async function createDesktopRuntime(
       await restoreProjectRegistryFromBackup({ registryPath });
     },
     async chooseDirectory(defaultPath?: string) {
-      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const window = host.getMainWindow();
       const options: Electron.OpenDialogOptions = {
         properties: ["openDirectory", "createDirectory"],
         ...(defaultPath ? { defaultPath } : {}),
@@ -746,7 +737,7 @@ export async function createDesktopRuntime(
       return result.canceled ? null : result.filePaths[0] ?? null;
     },
     async saveTextFile(defaultName: string, text: string) {
-      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const window = host.getMainWindow();
       const options: Electron.SaveDialogOptions = {
         defaultPath: path.join(app.getPath("downloads"), defaultName),
         filters: [{ name: "텍스트", extensions: ["txt"] }],
@@ -765,6 +756,7 @@ export async function createDesktopRuntime(
     onSessionSelected(sessionId) {
       attention.markSeen(sessionId);
     },
+    isTrustedSender: (event) => isMainWindowSender(host.getMainWindow(), event),
   });
 
   // 등록에서 빠진 폴더의 세션 브리프는 다시 쓰일 일이 없다 — 시작할 때 한 번 치운다.
@@ -788,7 +780,7 @@ export async function createDesktopRuntime(
   })().catch((error) => console.error("Failed to sync work projects from the workspace", error));
 
   coordinator.onEvent((event: TerminalEvent) => {
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("terminal:event", event);
+    sendToMainWindow(host.getMainWindow(), "terminal:event", event);
     if (event.type === "exit") attention.clear(event.sessionId);
     if (event.type !== "status") return;
     void attention.handleStatus(event.sessionId, event.status).catch((error) =>

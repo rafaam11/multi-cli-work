@@ -7,7 +7,12 @@ import { DEFAULT_SETTINGS } from "../shared/settings-types";
 import { notionLinkCheck } from "../shared/notion-types";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
 
-function setup(options: { onSessionSelected?: (sessionId: string | null) => void } = {}) {
+function setup(
+  options: {
+    onSessionSelected?: (sessionId: string | null) => void;
+    isTrustedSender?: (event: unknown) => boolean;
+  } = {},
+) {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const ipc: IpcRegistrar = {
     handle: (channel, listener) => {
@@ -278,6 +283,7 @@ function setup(options: { onSessionSelected?: (sessionId: string | null) => void
     editAgents: vi.fn(async () => undefined),
     attentionState: vi.fn(() => ({ "session-1": "input" as const })),
     onSessionSelected: options.onSessionSelected,
+    isTrustedSender: options.isTrustedSender,
     settings: settingsGateway,
     notion: notionGateway,
     remote: remoteGateway,
@@ -815,6 +821,12 @@ describe("main IPC boundary", () => {
     await handlers.get("remote:revoke-device")!({}, "d1");
     expect(remoteGateway.revokeDevice).toHaveBeenCalledWith("d1");
     expect(() => handlers.get("remote:revoke-device")!({}, "")).toThrow(/Device id/);
+  });
+
+  it("rejects requests that do not come from the main window", async () => {
+    const { handlers } = setup({ isTrustedSender: (event) => (event as { trusted?: boolean }).trusted === true });
+    expect(await handlers.get("remote:status")!({ trusted: true })).toMatchObject({ state: "off" });
+    expect(() => handlers.get("remote:status")!({})).toThrow(/Untrusted sender/);
   });
 
   it("validates the remote settings patch", async () => {

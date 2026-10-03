@@ -1,7 +1,8 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, shell } from "electron";
 import electronUpdater, { type ProgressInfo, type UpdateInfo } from "electron-updater";
 import path from "node:path";
 import type { UpdaterStatus } from "../shared/api-types";
+import { sendToMainWindow, type MainWindowLike } from "./main-window";
 import { createUpdaterLogger } from "./updater-log";
 import { quitAndInstallArguments } from "./updater-platform";
 
@@ -12,10 +13,11 @@ const RELEASES_URL = "https://github.com/rafaam11/multi-cli-work/releases/latest
 const REPOSITORY_URL = "https://github.com/rafaam11/multi-cli-work";
 
 let currentStatus: UpdaterStatus = { state: "idle" };
+let getWindow: () => MainWindowLike | null = () => null;
 
 function publish(status: UpdaterStatus): void {
   currentStatus = status;
-  for (const window of BrowserWindow.getAllWindows()) window.webContents.send("updater:event", status);
+  sendToMainWindow(getWindow(), "updater:event", status);
 }
 
 /** The renderer mounts after the first check starts, so it reads the current state instead of waiting for an event. */
@@ -27,7 +29,8 @@ export function updaterStatus(): UpdaterStatus {
  * Wires autoUpdater and starts one silent check.
  * Development builds have no update feed, so every entry point is a no-op that reports "idle".
  */
-export function initUpdater(options: { autoCheck?: boolean } = {}): void {
+export function initUpdater(options: { autoCheck?: boolean; getWindow?: () => MainWindowLike | null } = {}): void {
+  if (options.getWindow) getWindow = options.getWindow;
   if (!app.isPackaged) return;
   // Before anything else: a silent install has no window to report from, so this file is the
   // only place a stalled or refused install ever says so.

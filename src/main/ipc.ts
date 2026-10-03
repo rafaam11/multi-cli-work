@@ -301,6 +301,8 @@ interface MainIpcDependencies {
   editAgents(): Promise<void>;
   attentionState(): Record<string, SessionAttention>;
   onSessionSelected?(sessionId: string | null): void;
+  /** 메인 창의 렌더러가 보낸 요청인지. 없으면(테스트) 모든 요청을 받는다. */
+  isTrustedSender?(event: unknown): boolean;
   settings: {
     get(): AppSettings;
     update(patch: AppSettingsPatch): Promise<AppSettings>;
@@ -832,7 +834,17 @@ function projectForPath(registry: ProjectRegistryV1, rootPath: string): SharedPr
   return project;
 }
 
-export function registerMainIpc(ipc: IpcRegistrar, dependencies: MainIpcDependencies): void {
+export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDependencies): void {
+  // 원격 창처럼 메인 렌더러가 아닌 곳에서 온 요청은 어떤 채널도 받지 않는다.
+  const ipc: IpcRegistrar = {
+    handle: (channel, listener) =>
+      registrar.handle(channel, (event, ...args) => {
+        if (dependencies.isTrustedSender && !dependencies.isTrustedSender(event)) {
+          throw new Error(`Untrusted sender for ${channel}`);
+        }
+        return listener(event, ...args);
+      }),
+  };
   const annotateMissingRoots = async (snapshot: ProjectRegistrySnapshot) => ({
     ...snapshot,
     missingRootProjectIds: await dependencies.projectService.findMissingProjectRoots(snapshot.registry),

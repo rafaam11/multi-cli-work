@@ -253,7 +253,10 @@ if (!hasSingleInstanceLock) {
         mainWindow.show();
         console.error("Tray creation failed; close will quit instead of hiding the app.", error);
       }
-      initUpdater({ autoCheck: runtime?.settings.current().general.autoCheckUpdates ?? true });
+      initUpdater({
+        autoCheck: runtime?.settings.current().general.autoCheckUpdates ?? true,
+        getWindow: () => mainWindow,
+      });
       if (shouldFocusWhenReady) showMainWindow();
     } catch (error) {
       await dialog.showMessageBox({
