@@ -31,7 +31,13 @@ import type {
 } from "./worktree-types";
 import type { AppSettings, AppSettingsPatch } from "./settings-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "./notion-types";
-import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "./remote-types";
+import type {
+  RemoteAccessStatus,
+  RemoteDeviceInfo,
+  RemoteHostAddInput,
+  RemoteHostInfo,
+  RemotePairingCode,
+} from "./remote-types";
 
 export interface ProjectMetadataPatch {
   displayName?: string | null;
@@ -535,6 +541,15 @@ export interface MultiCliWorkApi {
     issuePairingCode(): Promise<RemotePairingCode>;
     listDevices(): Promise<RemoteDeviceInfo[]>;
     revokeDevice(deviceId: string): Promise<void>;
+  };
+  /** 이 PC가 클라이언트로서 등록해 둔 다른 PC. 토큰은 main에만 있다. */
+  remoteHosts: {
+    list(): Promise<RemoteHostInfo[]>;
+    add(input: RemoteHostAddInput): Promise<RemoteHostInfo>;
+    remove(hostId: string): Promise<void>;
+    /** 그 PC의 세션 화면을 별도 창으로 연다. */
+    open(hostId: string): Promise<void>;
+    onChanged(listener: (hosts: RemoteHostInfo[]) => void): () => void;
   };
   settings: {
     get(): Promise<AppSettings>;

@@ -250,6 +250,12 @@ function setup(
     listDevices: vi.fn(async () => []),
     revokeDevice: vi.fn(async (_deviceId: string) => undefined),
   };
+  const remoteHostsGateway = {
+    list: vi.fn(async () => []),
+    add: vi.fn(async (_input: unknown) => ({ hostId: "h1" })),
+    remove: vi.fn(async (_hostId: string) => undefined),
+    open: vi.fn(async (_hostId: string) => undefined),
+  };
   const sizesGateway = {
     desktopResize: vi.fn(async (_id: string, _cols: number, _rows: number) => undefined),
     desktopInput: vi.fn(async (_id: string) => undefined),
@@ -287,11 +293,13 @@ function setup(
     settings: settingsGateway,
     notion: notionGateway,
     remote: remoteGateway,
+    remoteHosts: remoteHostsGateway as never,
     sizes: sizesGateway,
   });
   return {
     handlers,
     remoteGateway,
+    remoteHostsGateway,
     sizesGateway,
     projectService,
     settingsGateway,
@@ -821,6 +829,22 @@ describe("main IPC boundary", () => {
     await handlers.get("remote:revoke-device")!({}, "d1");
     expect(remoteGateway.revokeDevice).toHaveBeenCalledWith("d1");
     expect(() => handlers.get("remote:revoke-device")!({}, "")).toThrow(/Device id/);
+  });
+
+  it("validates remote host requests", async () => {
+    const { handlers, remoteHostsGateway } = setup();
+    expect(await handlers.get("remote-hosts:list")!({})).toEqual([]);
+    await handlers.get("remote-hosts:add")!({}, { address: "100.64.0.9:47821", code: "ABCD-EFGH", extra: 1 });
+    expect(remoteHostsGateway.add).toHaveBeenLastCalledWith({ address: "100.64.0.9:47821", code: "ABCD-EFGH" });
+    await handlers.get("remote-hosts:add")!({}, { uri: "mcw://pair?host=h&code=c&fp=f" });
+    expect(remoteHostsGateway.add).toHaveBeenLastCalledWith({ uri: "mcw://pair?host=h&code=c&fp=f" });
+    await expect(handlers.get("remote-hosts:add")!({}, { address: "100.64.0.9:47821" })).rejects.toThrow(/Pairing code/);
+    await expect(handlers.get("remote-hosts:add")!({}, "nope")).rejects.toThrow(/Remote host/);
+    await handlers.get("remote-hosts:open")!({}, "h1");
+    expect(remoteHostsGateway.open).toHaveBeenCalledWith("h1");
+    await handlers.get("remote-hosts:remove")!({}, "h1");
+    expect(remoteHostsGateway.remove).toHaveBeenCalledWith("h1");
+    expect(() => handlers.get("remote-hosts:remove")!({}, "")).toThrow(/Host id/);
   });
 
   it("rejects requests that do not come from the main window", async () => {

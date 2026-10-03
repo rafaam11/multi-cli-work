@@ -49,7 +49,13 @@ import type {
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "../shared/github-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "../shared/notion-types";
-import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "../shared/remote-types";
+import type {
+  RemoteAccessStatus,
+  RemoteDeviceInfo,
+  RemoteHostAddInput,
+  RemoteHostInfo,
+  RemotePairingCode,
+} from "../shared/remote-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type { ProjectTagsV1 } from "../shared/project-tags-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "../shared/work-project-types";
@@ -133,6 +139,14 @@ interface RemoteGateway {
   issuePairingCode(): Promise<RemotePairingCode>;
   listDevices(): Promise<RemoteDeviceInfo[]>;
   revokeDevice(deviceId: string): Promise<void>;
+}
+
+/** 이 PC가 클라이언트로서 붙는 다른 PC들. */
+interface RemoteHostsGateway {
+  list(): Promise<RemoteHostInfo[]>;
+  add(input: RemoteHostAddInput): Promise<RemoteHostInfo>;
+  remove(hostId: string): Promise<void>;
+  open(hostId: string): Promise<void>;
 }
 
 /** 데스크톱 패인의 resize·입력은 크기 중재자를 거친다 — 폰이 크기를 가져간 세션을 되찾는 계기. */
@@ -288,6 +302,7 @@ interface MainIpcDependencies {
   clipboard: ClipboardGateway;
   notion: NotionGateway;
   remote: RemoteGateway;
+  remoteHosts: RemoteHostsGateway;
   sizes: TerminalSizeGateway;
   windowControls: WindowControlsGateway;
   appVersion(): string;
@@ -555,6 +570,15 @@ export function exportFileStem(label: string): string {
 function exportTimestamp(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+function validateRemoteHostAdd(value: unknown): RemoteHostAddInput {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Remote host request must be an object");
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.uri !== undefined) return { uri: nonEmptyString(raw.uri, "Pairing link") };
+  return { address: nonEmptyString(raw.address, "Host address"), code: nonEmptyString(raw.code, "Pairing code") };
 }
 
 function validateSettingsPatch(value: unknown): AppSettingsPatch {
@@ -1410,6 +1434,17 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   ipc.handle("remote:list-devices", () => dependencies.remote.listDevices());
   ipc.handle("remote:revoke-device", (_event, deviceId: unknown) =>
     dependencies.remote.revokeDevice(nonEmptyString(deviceId, "Device id")),
+  );
+  ipc.handle("remote-hosts:list", () => dependencies.remoteHosts.list());
+  // async라 잘못된 입력의 throw가 rejected invoke로 렌더러에 도달한다.
+  ipc.handle("remote-hosts:add", async (_event, input: unknown) =>
+    dependencies.remoteHosts.add(validateRemoteHostAdd(input)),
+  );
+  ipc.handle("remote-hosts:remove", (_event, hostId: unknown) =>
+    dependencies.remoteHosts.remove(nonEmptyString(hostId, "Host id")),
+  );
+  ipc.handle("remote-hosts:open", (_event, hostId: unknown) =>
+    dependencies.remoteHosts.open(nonEmptyString(hostId, "Host id")),
   );
   ipc.handle("notion:status", () => dependencies.notion.status());
   // async라 잘못된 입력의 throw가 다른 핸들러들처럼 rejected invoke로 렌더러에 도달한다.

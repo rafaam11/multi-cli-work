@@ -5,6 +5,7 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  nativeImage,
   Notification,
   safeStorage,
   shell,
@@ -120,6 +121,11 @@ import { RemoteSessionHub } from "./remote/remote-session-hub";
 import { readShellArtifact } from "./remote/shell-artifact";
 import { TerminalSizeArbiter } from "./remote/size-arbiter";
 import { tailscaleAddresses } from "./remote/tailscale-address";
+import { RemoteHostRegistry } from "./remote-client/host-registry";
+import { pairWithHost } from "./remote-client/pair-host";
+import { createRemoteHostsService } from "./remote-client/remote-hosts-service";
+import { RemoteWindows } from "./remote-client/remote-windows";
+import { trayIconDataUrl } from "./tray-icon";
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -510,6 +516,27 @@ export async function createDesktopRuntime(
   });
   void remoteAccess.apply(settingsService.current().remote);
 
+  // 이 PC가 클라이언트로서 다른 PC에 붙는 쪽. 위의 호스트 역할(remoteAccess)과는 독립이다.
+  const remoteHostRegistry = new RemoteHostRegistry(path.join(userData, "remote-hosts.json"), safeStorage);
+  const remoteWindows = new RemoteWindows({
+    createWindow: (options) =>
+      new BrowserWindow({ ...options, icon: nativeImage.createFromDataURL(trayIconDataUrl(32)) }),
+    ipc: { on: (channel, listener) => ipcMain.on(channel, (event) => listener(event)) },
+    preloadPath: path.join(__dirname, "../preload/remote-shell.js"),
+    pairing: (hostId) => remoteHostRegistry.pairing(hostId),
+    onUnpaired: (hostId) => remoteHosts.unpaired(hostId),
+    showMainWindow,
+  });
+  const remoteHosts = createRemoteHostsService({
+    registry: remoteHostRegistry,
+    windows: remoteWindows,
+    pair: (target, deviceName) => pairWithHost(target, deviceName),
+    deviceName: os.hostname(),
+    // 서버를 loopback에 띄우는 e2e·개발 실행에서만 loopback 호스트를 받는다.
+    allowLoopback: Boolean(process.env.MULTI_CLI_WORK_REMOTE_BIND),
+    announce: (hosts) => sendToMainWindow(host.getMainWindow(), "remote-hosts:changed", hosts),
+  });
+
   // 트레이에 숨어 있어도 창을 불러오는 전역 단축키. 저장 전에 먼저 잡아 본다 — 다른 프로그램이 쥔
   // 키를 저장해 두면 눌러도 아무 일이 없는 설정이 남는다.
   const summonShortcut = createSummonShortcut(globalShortcut, showMainWindow);
@@ -593,6 +620,12 @@ export async function createDesktopRuntime(
       issuePairingCode: () => remoteAccess.issuePairingCode(),
       listDevices: () => remoteAccess.listDevices(),
       revokeDevice: (deviceId) => remoteAccess.revokeDevice(deviceId),
+    },
+    remoteHosts: {
+      list: () => remoteHosts.list(),
+      add: (input) => remoteHosts.add(input),
+      remove: (hostId) => remoteHosts.remove(hostId),
+      open: (hostId) => remoteHosts.open(hostId),
     },
     sizes,
     settings: {
@@ -792,6 +825,7 @@ export async function createDesktopRuntime(
     () => void summonShortcut.apply(null),
     () => htmlPreviewController.dispose(),
     () => controlServer?.close(),
+    () => remoteWindows.closeAll(),
     () => remoteAccess.dispose(),
     () => statusWatcher.close(),
     () => coordinator.shutdown(),

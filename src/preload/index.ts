@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings } from "../shared/settings-types";
 import type { MultiCliWorkApi, SessionAttention, UpdaterStatus, WindowChromeState } from "../shared/api-types";
+import type { RemoteHostInfo } from "../shared/remote-types";
 import type { TerminalEvent } from "../shared/terminal-types";
 
 const api: MultiCliWorkApi = {
@@ -218,6 +219,17 @@ const api: MultiCliWorkApi = {
     issuePairingCode: () => ipcRenderer.invoke("remote:issue-pairing-code"),
     listDevices: () => ipcRenderer.invoke("remote:list-devices"),
     revokeDevice: (deviceId) => ipcRenderer.invoke("remote:revoke-device", deviceId),
+  },
+  remoteHosts: {
+    list: () => ipcRenderer.invoke("remote-hosts:list"),
+    add: (input) => ipcRenderer.invoke("remote-hosts:add", input),
+    remove: (hostId) => ipcRenderer.invoke("remote-hosts:remove", hostId),
+    open: (hostId) => ipcRenderer.invoke("remote-hosts:open", hostId),
+    onChanged(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, hosts: RemoteHostInfo[]) => listener(hosts);
+      ipcRenderer.on("remote-hosts:changed", handler);
+      return () => ipcRenderer.removeListener("remote-hosts:changed", handler);
+    },
   },
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),

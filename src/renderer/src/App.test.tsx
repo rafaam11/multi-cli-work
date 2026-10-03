@@ -397,6 +397,13 @@ function createApi(options?: {
       listDevices: vi.fn().mockResolvedValue([]),
       revokeDevice: vi.fn().mockResolvedValue(undefined),
     },
+    remoteHosts: {
+      list: vi.fn().mockResolvedValue([]),
+      add: vi.fn(),
+      remove: vi.fn().mockResolvedValue(undefined),
+      open: vi.fn().mockResolvedValue(undefined),
+      onChanged: vi.fn(() => () => undefined),
+    },
     worktrees: {
       list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
       sync: vi.fn().mockResolvedValue({
