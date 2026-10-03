@@ -1,7 +1,8 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from "vitest";
-import type { RemoteHostInfo } from "../../shared/remote-types";
+import type { RemoteHostInfo, RemoteHostLink } from "../../shared/remote-types";
+import type { HostPairing } from "./host-registry";
 import { createRemoteHostsService } from "./remote-hosts-service";
 
 const INFO: RemoteHostInfo = {
@@ -12,16 +13,27 @@ const INFO: RemoteHostInfo = {
   paired: true,
   addedAt: "2026-10-03T00:00:00.000Z",
 };
+const PAIRING: HostPairing = { hostId: "host-1", hostName: "회사PC", address: "100.64.0.9:47821", deviceId: "dev-1", token: "tok" };
+const VIEW = { ...INFO, link: "open" as RemoteHostLink, awaiting: 2 };
 
 function setup(overrides: { canStore?: boolean; pairFails?: boolean } = {}) {
+  let hosts = [INFO];
   const registry = {
     canStore: vi.fn(() => overrides.canStore ?? true),
-    list: vi.fn(async () => [INFO]),
+    list: vi.fn(async () => hosts),
     save: vi.fn(async () => INFO),
     remove: vi.fn(async () => undefined),
     clearToken: vi.fn(async () => undefined),
+    setNotify: vi.fn(async (_hostId: string, notify: boolean) => {
+      hosts = [{ ...INFO, notify }];
+    }),
+    pairings: vi.fn(async () => [PAIRING]),
   };
   const windows = { open: vi.fn(async () => undefined), closeHost: vi.fn() };
+  const links = {
+    sync: vi.fn(),
+    snapshot: vi.fn(() => ({ link: "open" as RemoteHostLink, awaiting: 2 })),
+  };
   const pair = vi.fn(async () => {
     if (overrides.pairFails) throw new Error("코드가 맞지 않거나 만료되었습니다");
     return { token: "tok", deviceId: "dev-1", hostId: "host-1", hostName: "회사PC" };
@@ -30,18 +42,31 @@ function setup(overrides: { canStore?: boolean; pairFails?: boolean } = {}) {
   const service = createRemoteHostsService({
     registry,
     windows,
+    links,
     pair,
     deviceName: "내 노트북",
     allowLoopback: false,
     announce,
   });
-  return { service, registry, windows, pair, announce };
+  return { service, registry, windows, links, pair, announce };
 }
 
 describe("remote hosts service", () => {
-  it("pairs, saves, drops the stale window, and announces", async () => {
-    const { service, registry, windows, pair, announce } = setup();
-    expect(await service.add({ address: "100.64.0.9:47821", code: "ABCD-EFGH" })).toEqual(INFO);
+  it("lists hosts with their link state", async () => {
+    const { service, links } = setup();
+    expect(await service.list()).toEqual([VIEW]);
+    expect(links.snapshot).toHaveBeenCalledWith("host-1");
+  });
+
+  it("links the paired hosts when it starts", async () => {
+    const { service, links } = setup();
+    await service.start();
+    expect(links.sync).toHaveBeenCalledWith([PAIRING]);
+  });
+
+  it("pairs, saves, drops the stale window, re-links, and announces", async () => {
+    const { service, registry, windows, links, pair, announce } = setup();
+    expect(await service.add({ address: "100.64.0.9:47821", code: "ABCD-EFGH" })).toEqual(VIEW);
     expect(pair).toHaveBeenCalledWith({ address: "100.64.0.9:47821", code: "ABCD-EFGH", expectedHostId: null }, "내 노트북");
     expect(registry.save).toHaveBeenCalledWith({
       hostId: "host-1",
@@ -51,7 +76,8 @@ describe("remote hosts service", () => {
       token: "tok",
     });
     expect(windows.closeHost).toHaveBeenCalledWith("host-1");
-    expect(announce).toHaveBeenCalledWith([INFO]);
+    expect(links.sync).toHaveBeenCalledWith([PAIRING]);
+    expect(announce).toHaveBeenCalledWith([VIEW]);
   });
 
   it("does not pair or save when the address is wrong", async () => {
@@ -75,20 +101,45 @@ describe("remote hosts service", () => {
     expect(pair).not.toHaveBeenCalled();
   });
 
-  it("closes the window before removing a host", async () => {
-    const { service, registry, windows, announce } = setup();
+  it("closes the window, re-links, and announces when a host is removed", async () => {
+    const { service, registry, windows, links, announce } = setup();
     await service.remove("host-1");
     expect(windows.closeHost).toHaveBeenCalledWith("host-1");
     expect(registry.remove).toHaveBeenCalledWith("host-1");
+    expect(links.sync).toHaveBeenCalledOnce();
     expect(announce).toHaveBeenCalledOnce();
   });
 
-  it("opens a host and marks a rejected one", async () => {
-    const { service, registry, windows, announce } = setup();
+  it("opens a host", async () => {
+    const { service, windows } = setup();
     await service.open("host-1");
     expect(windows.open).toHaveBeenCalledWith("host-1");
+  });
+
+  it("drops the token of a host that rejected the link, and its window", async () => {
+    const { service, registry, windows, links, announce } = setup();
     await service.unpaired("host-1");
     expect(registry.clearToken).toHaveBeenCalledWith("host-1");
+    expect(windows.closeHost).toHaveBeenCalledWith("host-1");
+    expect(links.sync).toHaveBeenCalledOnce();
     expect(announce).toHaveBeenCalledOnce();
+  });
+
+  it("turns a host's notifications on and off", async () => {
+    const { service, registry, announce } = setup();
+    // 한 번도 읽지 않았으면 모른다 — 모르는 호스트의 알림은 내지 않는다.
+    expect(service.notifyEnabled("host-1")).toBe(false);
+    await service.list();
+    expect(service.notifyEnabled("host-1")).toBe(true);
+    await service.setNotify("host-1", false);
+    expect(registry.setNotify).toHaveBeenCalledWith("host-1", false);
+    expect(service.notifyEnabled("host-1")).toBe(false);
+    expect(announce).toHaveBeenLastCalledWith([{ ...VIEW, notify: false }]);
+  });
+
+  it("announces when a link's state changes", async () => {
+    const { service, announce } = setup();
+    await service.linkChanged();
+    expect(announce).toHaveBeenCalledWith([VIEW]);
   });
 });

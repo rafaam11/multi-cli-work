@@ -53,7 +53,7 @@ import type {
   RemoteAccessStatus,
   RemoteDeviceInfo,
   RemoteHostAddInput,
-  RemoteHostInfo,
+  RemoteHostView,
   RemotePairingCode,
 } from "../shared/remote-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
@@ -145,10 +145,11 @@ interface RemoteGateway {
 
 /** 이 PC가 클라이언트로서 붙는 다른 PC들. */
 interface RemoteHostsGateway {
-  list(): Promise<RemoteHostInfo[]>;
-  add(input: RemoteHostAddInput): Promise<RemoteHostInfo>;
+  list(): Promise<RemoteHostView[]>;
+  add(input: RemoteHostAddInput): Promise<RemoteHostView>;
   remove(hostId: string): Promise<void>;
   open(hostId: string): Promise<void>;
+  setNotify(hostId: string, notify: boolean): Promise<void>;
 }
 
 /** 데스크톱 패인의 resize·입력은 크기 중재자를 거친다 — 폰이 크기를 가져간 세션을 되찾는 계기. */
@@ -1444,6 +1445,9 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   );
   ipc.handle("remote-hosts:open", (_event, hostId: unknown) =>
     dependencies.remoteHosts.open(nonEmptyString(hostId, "Host id")),
+  );
+  ipc.handle("remote-hosts:set-notify", (_event, hostId: unknown, notify: unknown) =>
+    dependencies.remoteHosts.setNotify(nonEmptyString(hostId, "Host id"), booleanValue(notify, "Host notify")),
   );
   ipc.handle("notion:status", () => dependencies.notion.status());
   // async라 잘못된 입력의 throw가 다른 핸들러들처럼 rejected invoke로 렌더러에 도달한다.

@@ -18,7 +18,7 @@ import path from "node:path";
 import type { AgentDefinition } from "../shared/agent-types";
 import type { AgentsSnapshot, ProviderAvailability } from "../shared/api-types";
 import type { TerminalEvent } from "../shared/terminal-types";
-import type { AppSettings, AppSettingsPatch, NotifiableStatus } from "../shared/settings-types";
+import { notificationsMuted, type AppSettings, type AppSettingsPatch, type NotifiableStatus } from "../shared/settings-types";
 import { agentsById, readAgentRegistry } from "./agents/agent-registry";
 import { openAgentRegistryForEditing } from "./agents/agent-registry-file";
 import { createRetryableDisposer } from "./runtime-disposal";
@@ -127,6 +127,9 @@ import { RemoteHostRegistry } from "./remote-client/host-registry";
 import { pairWithHost } from "./remote-client/pair-host";
 import { createRemoteHostsService } from "./remote-client/remote-hosts-service";
 import { RemoteWindows } from "./remote-client/remote-windows";
+import { HostStatusLink } from "./remote-client/host-status-link";
+import { HostStatusLinks } from "./remote-client/host-status-links";
+import { createStatusSocket } from "./remote-client/status-socket";
 import { trayIconDataUrl } from "./tray-icon";
 
 function stringEnvironment(): Record<string, string> {
@@ -452,6 +455,13 @@ export async function createDesktopRuntime(
     exited: "세션이 종료되었습니다",
     error: "세션이 오류로 중단되었습니다",
   };
+  // 이 PC의 세션과, 등록해 둔 다른 PC의 세션이 같은 모양의 알림을 쓴다.
+  const showStatusNotification = (title: string, status: NotifiableStatus, onClick: () => void) => {
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({ title, body: NOTIFICATION_BODY[status], silent: false });
+    notification.on("click", onClick);
+    notification.show();
+  };
   const attention = createSessionAttentionController({
     readSelection: async () => {
       const { state } = await coordinator.state();
@@ -463,18 +473,11 @@ export async function createDesktopRuntime(
     windowState: () => mainWindowState(host.getMainWindow()),
     publish: publishAttention,
     notify(sessionId, status, onClick) {
-      if (!Notification.isSupported()) return;
       const session = coordinator.list().find((candidate) => candidate.id === sessionId);
       const title = session
         ? `${agentMap.get(session.kind)?.label ?? session.kind} · ${path.basename(session.cwd)}`
         : "멀티 터미널 작업기";
-      const notification = new Notification({
-        title,
-        body: NOTIFICATION_BODY[status],
-        silent: false,
-      });
-      notification.on("click", onClick);
-      notification.show();
+      showStatusNotification(title, status, onClick);
     },
     navigate(sessionId) {
       showMainWindow();
@@ -542,15 +545,50 @@ export async function createDesktopRuntime(
     onUnpaired: (hostId) => remoteHosts.unpaired(hostId),
     showMainWindow,
   });
+  // 원격 창을 닫아 둔 동안에도 그 PC의 세션이 사람을 기다리면 알 수 있게, 페어링된 호스트마다
+  // 출력 없이 상태만 받는 연결을 하나씩 유지한다.
+  const hostStatusLinks = new HostStatusLinks({
+    createLink: (pairing, hooks) =>
+      new HostStatusLink({
+        host: pairing,
+        createSocket: createStatusSocket,
+        shouldNotify: (status) => {
+          const notifications = settingsService.current().notifications;
+          return (
+            remoteHosts.notifyEnabled(pairing.hostId) &&
+            notifications.desktop &&
+            notifications.statuses[status] &&
+            !notificationsMuted(notifications, new Date()) &&
+            // 그 PC의 창을 보고 있는 중이면 눈앞의 화면이다.
+            !remoteWindows.isFocused(pairing.hostId)
+          );
+        },
+        notify: (notice) =>
+          showStatusNotification(`${notice.hostName} · ${notice.label}`, notice.status, () => {
+            void remoteWindows
+              .open(notice.hostId, notice.sessionId)
+              .catch((error) => console.error("Failed to open the remote window from a notification", error));
+          }),
+        ...hooks,
+      }),
+    onChange: () => {
+      void remoteHosts.linkChanged().catch((error) => console.error("Failed to announce remote hosts", error));
+    },
+    onRejected: (hostId) => {
+      void remoteHosts.unpaired(hostId).catch((error) => console.error("Failed to unpair a remote host", error));
+    },
+  });
   const remoteHosts = createRemoteHostsService({
     registry: remoteHostRegistry,
     windows: remoteWindows,
+    links: hostStatusLinks,
     pair: (target, deviceName) => pairWithHost(target, deviceName),
     deviceName: os.hostname(),
     // 서버를 loopback에 띄우는 e2e·개발 실행에서만 loopback 호스트를 받는다.
     allowLoopback: Boolean(process.env.MULTI_CLI_WORK_REMOTE_BIND),
     announce: (hosts) => sendToMainWindow(host.getMainWindow(), "remote-hosts:changed", hosts),
   });
+  void remoteHosts.start().catch((error) => console.error("Failed to link the paired remote hosts", error));
 
   // 트레이에 숨어 있어도 창을 불러오는 전역 단축키. 저장 전에 먼저 잡아 본다 — 다른 프로그램이 쥔
   // 키를 저장해 두면 눌러도 아무 일이 없는 설정이 남는다.
@@ -641,6 +679,7 @@ export async function createDesktopRuntime(
       add: (input) => remoteHosts.add(input),
       remove: (hostId) => remoteHosts.remove(hostId),
       open: (hostId) => remoteHosts.open(hostId),
+      setNotify: (hostId, notify) => remoteHosts.setNotify(hostId, notify),
     },
     sizes,
     settings: {
@@ -840,6 +879,7 @@ export async function createDesktopRuntime(
     () => void summonShortcut.apply(null),
     () => htmlPreviewController.dispose(),
     () => controlServer?.close(),
+    () => hostStatusLinks.closeAll(),
     () => remoteWindows.closeAll(),
     () => remoteAccess.dispose(),
     () => statusWatcher.close(),

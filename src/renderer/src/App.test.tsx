@@ -402,6 +402,7 @@ function createApi(options?: {
       add: vi.fn(),
       remove: vi.fn().mockResolvedValue(undefined),
       open: vi.fn().mockResolvedValue(undefined),
+      setNotify: vi.fn().mockResolvedValue(undefined),
       onChanged: vi.fn(() => () => undefined),
     },
     worktrees: {

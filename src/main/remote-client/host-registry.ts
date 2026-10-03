@@ -143,7 +143,17 @@ export class RemoteHostRegistry {
 
   async pairing(hostId: string): Promise<HostPairing | null> {
     const host = (await readJsonStore(spec, this.filePath)).value.hosts.find((candidate) => candidate.hostId === hostId);
-    if (!host || host.token === null) return null;
+    return host ? this.unseal(host) : null;
+  }
+
+  /** 토큰을 꺼낼 수 있는 호스트 전부 — 상태 연결을 붙일 대상이다. */
+  async pairings(): Promise<HostPairing[]> {
+    const hosts = (await readJsonStore(spec, this.filePath)).value.hosts;
+    return hosts.map((host) => this.unseal(host)).filter((pairing): pairing is HostPairing => pairing !== null);
+  }
+
+  private unseal(host: StoredHost): HostPairing | null {
+    if (host.token === null) return null;
     try {
       return {
         hostId: host.hostId,

@@ -35,7 +35,7 @@ import type {
   RemoteAccessStatus,
   RemoteDeviceInfo,
   RemoteHostAddInput,
-  RemoteHostInfo,
+  RemoteHostView,
   RemotePairingCode,
 } from "./remote-types";
 
@@ -544,12 +544,14 @@ export interface MultiCliWorkApi {
   };
   /** 이 PC가 클라이언트로서 등록해 둔 다른 PC. 토큰은 main에만 있다. */
   remoteHosts: {
-    list(): Promise<RemoteHostInfo[]>;
-    add(input: RemoteHostAddInput): Promise<RemoteHostInfo>;
+    list(): Promise<RemoteHostView[]>;
+    add(input: RemoteHostAddInput): Promise<RemoteHostView>;
     remove(hostId: string): Promise<void>;
     /** 그 PC의 세션 화면을 별도 창으로 연다. */
     open(hostId: string): Promise<void>;
-    onChanged(listener: (hosts: RemoteHostInfo[]) => void): () => void;
+    /** 그 PC의 세션이 사람을 기다릴 때 이 PC에 알림을 띄울지. */
+    setNotify(hostId: string, notify: boolean): Promise<void>;
+    onChanged(listener: (hosts: RemoteHostView[]) => void): () => void;
   };
   settings: {
     get(): Promise<AppSettings>;

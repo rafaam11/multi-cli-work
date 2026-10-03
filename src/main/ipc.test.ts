@@ -255,6 +255,7 @@ function setup(
     add: vi.fn(async (_input: unknown) => ({ hostId: "h1" })),
     remove: vi.fn(async (_hostId: string) => undefined),
     open: vi.fn(async (_hostId: string) => undefined),
+    setNotify: vi.fn(async (_hostId: string, _notify: boolean) => undefined),
   };
   const sizesGateway = {
     desktopResize: vi.fn(async (_id: string, _cols: number, _rows: number) => undefined),
@@ -845,6 +846,14 @@ describe("main IPC boundary", () => {
     await handlers.get("remote-hosts:remove")!({}, "h1");
     expect(remoteHostsGateway.remove).toHaveBeenCalledWith("h1");
     expect(() => handlers.get("remote-hosts:remove")!({}, "")).toThrow(/Host id/);
+  });
+
+  it("validates a host's notification switch", async () => {
+    const { handlers, remoteHostsGateway } = setup();
+    await handlers.get("remote-hosts:set-notify")!({}, "h1", false);
+    expect(remoteHostsGateway.setNotify).toHaveBeenCalledWith("h1", false);
+    expect(() => handlers.get("remote-hosts:set-notify")!({}, "h1", "no")).toThrow(/Host notify/);
+    expect(() => handlers.get("remote-hosts:set-notify")!({}, "", true)).toThrow(/Host id/);
   });
 
   it("rejects requests that do not come from the main window", async () => {
