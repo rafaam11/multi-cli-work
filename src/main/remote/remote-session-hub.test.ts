@@ -121,11 +121,13 @@ describe("RemoteSessionHub", () => {
     expect(early.close).toHaveBeenCalledWith(REMOTE_CLOSE.unauthorized, expect.any(String));
   });
 
-  it("closes with 4400 on a protocol version mismatch", async () => {
-    const { handle, close } = setup();
-    handle.receive(JSON.stringify({ type: "hello", token: "good", protocolVersion: 99, mode: "ui" }));
-    await flush();
-    expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.protocol, expect.any(String));
+  it("closes with 4400 on a protocol version outside the range it speaks", async () => {
+    for (const protocolVersion of [0, 99]) {
+      const { handle, close } = setup();
+      handle.receive(JSON.stringify({ type: "hello", token: "good", protocolVersion, mode: "ui" }));
+      await flush();
+      expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.protocol, expect.any(String));
+    }
   });
 
   it("closes a connection that never says hello", async () => {

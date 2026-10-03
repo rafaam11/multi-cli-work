@@ -19,6 +19,7 @@ const CONNECTION_LABEL: Record<RemoteClientState, string | null> = {
   open: null,
   reconnecting: "다시 연결하는 중…",
   unauthorized: "연결이 해제되었습니다",
+  incompatible: "호스트와 버전이 맞지 않습니다",
 };
 
 interface SessionListProps {

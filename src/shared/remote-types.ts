@@ -5,7 +5,17 @@
 import { AGENT_ID_PATTERN } from "./agent-types";
 import type { TerminalKind, TerminalStatus } from "./terminal-types";
 
+/**
+ * 버전 규칙. 호스트가 서빙하는 웹 UI와 호스트는 같은 빌드라 어긋날 일이 없다. 어긋날 수 있는 것은
+ * 다른 PC의 main이 유지하는 상태 연결뿐이다(두 PC의 앱 버전이 다를 수 있다). 그래서:
+ * - 서버 메시지는 추가만 한다. 클라이언트는 모르는 type을 무시한다.
+ * - 호스트는 MIN 이상 CURRENT 이하의 hello를 받는다.
+ * - 상태 연결은 언제나 REMOTE_STATUS_PROTOCOL_VERSION으로 hello를 보낸다.
+ */
 export const REMOTE_PROTOCOL_VERSION = 1;
+export const REMOTE_MIN_PROTOCOL_VERSION = 1;
+/** 상태 연결이 보내는 버전. 앱이 올라가도 올리지 않는다 — 구버전 호스트에도 붙어야 한다. */
+export const REMOTE_STATUS_PROTOCOL_VERSION = 1;
 
 /**
  * WS close 코드. 4401·4403이면 클라이언트는 재연결하지 않고 다시 페어링하게 한다 — 토큰이 확실히
@@ -196,3 +206,13 @@ export interface RemoteHostInfo {
 
 /** "PC 추가" 입력: 접속 주소와 코드, 또는 호스트 설정에서 복사한 mcw://pair 링크. */
 export type RemoteHostAddInput = { address: string; code: string } | { uri: string };
+
+/** 이 PC의 main이 호스트와 유지하는 상태 연결. off는 링크가 없다는 뜻이다(다시 페어링해야 하는 호스트). */
+export type RemoteHostLink = "off" | "connecting" | "open" | "reconnecting" | "incompatible";
+
+/** 렌더러가 보는 호스트: 등록 정보에 지금의 연결 상태와 대기 중인 세션 수를 더한 것. */
+export interface RemoteHostView extends RemoteHostInfo {
+  link: RemoteHostLink;
+  /** 입력·승인을 기다리는 세션 수. 연결이 끊긴 동안은 모르므로 0이다. */
+  awaiting: number;
+}

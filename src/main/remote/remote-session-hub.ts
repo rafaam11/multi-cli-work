@@ -3,6 +3,7 @@ import { DEFAULT_TERMINAL_SIZE, type TerminalEvent } from "../../shared/terminal
 import {
   parseRemoteClientMessage,
   REMOTE_CLOSE,
+  REMOTE_MIN_PROTOCOL_VERSION,
   REMOTE_PROTOCOL_VERSION,
   type RemoteCatalog,
   type RemoteClientMessage,
@@ -251,7 +252,7 @@ export class RemoteSessionHub {
       client.connection.close(REMOTE_CLOSE.unauthorized, "hello required");
       return;
     }
-    if (message.protocolVersion !== REMOTE_PROTOCOL_VERSION) {
+    if (message.protocolVersion < REMOTE_MIN_PROTOCOL_VERSION || message.protocolVersion > REMOTE_PROTOCOL_VERSION) {
       client.connection.send({ type: "error", code: "protocol", message: "앱 버전이 호스트와 맞지 않습니다" });
       client.connection.close(REMOTE_CLOSE.protocol, "protocol mismatch");
       return;

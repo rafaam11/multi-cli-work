@@ -74,6 +74,29 @@ describe("RemoteClient", () => {
     }
   });
 
+  it("stops as incompatible on 4400 instead of retrying forever", async () => {
+    vi.useFakeTimers();
+    const { remote, states } = client();
+    remote.connect();
+    FakeSocket.instances[0]!.onclose?.({ code: REMOTE_CLOSE.protocol });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(states).toEqual(["incompatible"]);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it("says hello with the protocol version it was given", () => {
+    FakeSocket.instances = [];
+    const remote = new RemoteClient({
+      url: "ws://h/ws",
+      token: "tok",
+      createSocket: (url) => new FakeSocket(url),
+      protocolVersion: 7,
+    });
+    remote.connect();
+    FakeSocket.instances[0]!.onopen?.();
+    expect(JSON.parse(FakeSocket.instances[0]!.sent[0]!)).toMatchObject({ type: "hello", protocolVersion: 7 });
+  });
+
   it("keeps the pairing and retries on the retryable close code", async () => {
     vi.useFakeTimers();
     const { remote, states } = client();
