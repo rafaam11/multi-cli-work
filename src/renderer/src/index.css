@@ -3454,6 +3454,35 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
+.remote-host-link {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--quiet);
+}
+
+.remote-host-link-open {
+  background: var(--green);
+}
+
+.remote-host-link-incompatible {
+  background: var(--amber);
+}
+
+.remote-host-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--amber);
+  color: var(--bg, #161918);
+  font-size: var(--type-caption-size);
+  font-weight: 600;
+  text-align: center;
+}
+
 .remote-host-note,
 .remote-host-error {
   margin: 0;
@@ -4426,7 +4455,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .settings-remote-host-form input[aria-label="페어링 코드"] { flex: 0 0 120px; }
 .settings-remote-host-form input:disabled { opacity: 0.5; }
 .settings-remote-host-form button { flex: 0 0 auto; white-space: nowrap; }
-.settings-remote-host-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.settings-remote-host-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.settings-remote-host-actions label { white-space: nowrap; font: var(--type-secondary); }
 
 .settings-error {
   margin: 10px 0 0;

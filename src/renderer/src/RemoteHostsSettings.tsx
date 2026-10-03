@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { RemoteHostAddInput, RemoteHostInfo } from "@shared/remote-types";
+import type { RemoteHostAddInput, RemoteHostView } from "@shared/remote-types";
 import { errorMessage } from "./ipc-error";
 
 const isPairingLink = (value: string) => value.trim().toLowerCase().startsWith("mcw://");
@@ -14,7 +14,7 @@ function toAddInput(target: string, code: string): RemoteHostAddInput {
  * 있고 여기로는 오지 않는다 — 화면은 "페어링됨/다시 필요"만 안다.
  */
 export function RemoteHostsSettings() {
-  const [hosts, setHosts] = useState<RemoteHostInfo[]>([]);
+  const [hosts, setHosts] = useState<RemoteHostView[]>([]);
   const [target, setTarget] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -89,6 +89,15 @@ export function RemoteHostsSettings() {
             </small>
           </span>
           <span className="settings-remote-host-actions">
+            <label title="그 PC의 세션이 입력·승인을 기다리거나 끝나면 이 PC에 알림을 띄웁니다">
+              <input
+                type="checkbox"
+                aria-label={`${host.name} 알림`}
+                checked={host.notify}
+                onChange={(event) => run(window.multiCliWork.remoteHosts.setNotify(host.hostId, event.target.checked))}
+              />{" "}
+              알림
+            </label>
             <button
               type="button"
               aria-label={`${host.name} 열기`}

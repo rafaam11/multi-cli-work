@@ -1,18 +1,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RemoteHostInfo } from "@shared/remote-types";
+import type { RemoteHostView } from "@shared/remote-types";
 import { RemoteHostsSettings } from "./RemoteHostsSettings";
 
-const OFFICE: RemoteHostInfo = { hostId: "h1", name: "회사PC", address: "100.64.0.9:47821", notify: true, paired: true, addedAt: "" };
-const HOME: RemoteHostInfo = { hostId: "h2", name: "집PC", address: "100.64.0.7:47821", notify: true, paired: false, addedAt: "" };
+const OFFICE: RemoteHostView = { hostId: "h1", name: "회사PC", address: "100.64.0.9:47821", notify: true, paired: true, addedAt: "", link: "open", awaiting: 0 };
+const HOME: RemoteHostView = { hostId: "h2", name: "집PC", address: "100.64.0.7:47821", notify: false, paired: false, addedAt: "", link: "off", awaiting: 0 };
 
-let changed: ((hosts: RemoteHostInfo[]) => void) | null = null;
+let changed: ((hosts: RemoteHostView[]) => void) | null = null;
 const remoteHosts = {
   list: vi.fn(),
   add: vi.fn(),
   remove: vi.fn(),
   open: vi.fn(),
-  onChanged: vi.fn((listener: (hosts: RemoteHostInfo[]) => void) => {
+  setNotify: vi.fn(),
+  onChanged: vi.fn((listener: (hosts: RemoteHostView[]) => void) => {
     changed = listener;
     return () => undefined;
   }),
@@ -25,6 +26,7 @@ beforeEach(() => {
   remoteHosts.add.mockResolvedValue(OFFICE);
   remoteHosts.remove.mockResolvedValue(undefined);
   remoteHosts.open.mockResolvedValue(undefined);
+  remoteHosts.setNotify.mockResolvedValue(undefined);
   (window as unknown as { multiCliWork: unknown }).multiCliWork = { remoteHosts };
 });
 
@@ -67,6 +69,18 @@ describe("RemoteHostsSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "PC 추가" }));
     expect(await screen.findByText(/코드가 맞지 않거나 만료되었습니다/)).toBeInTheDocument();
     expect(screen.getByLabelText("페어링 코드")).toHaveValue("WRONG");
+  });
+
+  it("turns a host's notifications off and on", async () => {
+    render(<RemoteHostsSettings />);
+    const office = await screen.findByRole("checkbox", { name: "회사PC 알림" });
+    expect(office).toBeChecked();
+    fireEvent.click(office);
+    expect(remoteHosts.setNotify).toHaveBeenCalledWith("h1", false);
+    const home = screen.getByRole("checkbox", { name: "집PC 알림" });
+    expect(home).not.toBeChecked();
+    fireEvent.click(home);
+    expect(remoteHosts.setNotify).toHaveBeenLastCalledWith("h2", true);
   });
 
   it("removes a host and follows changes from main", async () => {
