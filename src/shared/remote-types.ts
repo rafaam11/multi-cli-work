@@ -152,3 +152,18 @@ export interface RemotePairResponse {
   hostId: string;
   hostName: string;
 }
+
+/** 이 PC가 클라이언트로서 등록해 둔 다른 PC. 토큰은 main 밖으로 나가지 않는다. */
+export interface RemoteHostInfo {
+  hostId: string;
+  name: string;
+  /** "100.x.y.z:47821" */
+  address: string;
+  notify: boolean;
+  /** false면 호스트가 이 기기를 거절했다 — 다시 페어링해야 한다. */
+  paired: boolean;
+  addedAt: string;
+}
+
+/** "PC 추가" 입력: 접속 주소와 코드, 또는 호스트 설정에서 복사한 mcw://pair 링크. */
+export type RemoteHostAddInput = { address: string; code: string } | { uri: string };
