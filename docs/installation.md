@@ -71,6 +71,15 @@ cd android; .\gradlew.bat assembleRelease; cd ..; npm run mobile:prepare
 > **`%USERPROFILE%\.multi-cli-work-signing\`을 반드시 백업한다.** 이 키를 잃으면 서명이 달라져
 > 기존 앱을 업데이트할 수 없고, 폰에서 앱을 지우고 다시 깔아야 한다(저장된 호스트·토큰도 사라진다).
 
+올바른 키인지는 서명 인증서 SHA-256 지문으로 확인한다.
+
+```
+f313f9a57702bff47c5e2b6fa10b032e3f434513004ca14ca8834457ffb844e9
+```
+
+CI는 같은 키를 GitHub Secrets(`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`)로 받는다.
+
 ## 다른 PC에서 이어받기
 
 한 PC에서 돌려 둔 세션을 다른 PC의 앱에서 열어 이어서 작업할 수 있다. 두 PC가 같은 Tailscale tailnet에
@@ -82,20 +91,12 @@ cd android; .\gradlew.bat assembleRelease; cd ..; npm run mobile:prepare
 3. 사이드바 아래 **원격 PC**에서 그 PC를 누르면 세션 화면이 별도 창으로 열린다.
 
 원격 창의 터미널은 창 크기에 맞춰진다. 호스트 PC에서 그 세션에 입력하거나 패인 크기를 바꾸면 호스트가
-크기를 되찾고, 원격 창에서 **다시 맞추기**를 누르거나 창 크기를 바꾸면 다시 맞춘다. 호스트 크기 그대로
-보려면 **호스트 크기 유지**를 켠다. 복사는 Ctrl+Shift+C(선택 영역이 있으면 Ctrl+C도), 붙여넣기는 Ctrl+V다.
+크기를 되찾고, 원격 창은 맞춤을 멈춘다. 원격 창에서 **다시 맞추기**를 누르거나 창 크기를 바꾸면 다시
+맞춘다. 호스트 크기 그대로 보려면 **호스트 크기 유지**를 켠다. 복사는 Ctrl+Shift+C(선택 영역이 있으면
+Ctrl+C도), 붙여넣기는 Ctrl+V다.
 
 호스트 PC에서 이 PC의 연결을 해제하면 원격 창이 닫히고 목록에 "다시 페어링 필요"로 남는다. 2번을 다시
 하면 풀린다.
-
-올바른 키인지는 서명 인증서 SHA-256 지문으로 확인한다.
-
-```
-f313f9a57702bff47c5e2b6fa10b032e3f434513004ca14ca8834457ffb844e9
-```
-
-CI는 같은 키를 GitHub Secrets(`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-`ANDROID_KEY_PASSWORD`)로 받는다.
 
 ## 제거
 

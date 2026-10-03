@@ -1,10 +1,15 @@
 /** fitting: 이 창 크기로 맞추는 중 · paused: 호스트가 크기를 되찾아 멈춤 · host: 호스트 크기 유지를 골랐다. */
 export type AutoFitState = "fitting" | "paused" | "host";
 
+interface Size {
+  cols: number;
+  rows: number;
+}
+
 export interface AutoFitOptions {
   deviceId: string;
   /** 지금 터미널 영역에 들어가는 크기. 아직 잴 수 없으면 null. */
-  measure(): { cols: number; rows: number } | null;
+  measure(): Size | null;
   resize(cols: number, rows: number): void;
   release(): void;
   onChange(state: AutoFitState): void;
@@ -18,7 +23,8 @@ export interface AutoFitOptions {
 export function createAutoFit(options: AutoFitOptions) {
   let state: AutoFitState = "fitting";
   let attachedOnce = false;
-  let sent: { cols: number; rows: number } | null = null;
+  /** 마지막으로 보낸 크기. 맞추는 중에 같은 크기를 되풀이해 보내지 않으려고 둔다. */
+  let lastFit: Size | null = null;
 
   const set = (next: AutoFitState) => {
     if (state === next) return;
@@ -26,11 +32,13 @@ export function createAutoFit(options: AutoFitOptions) {
     options.onChange(next);
   };
 
-  const fit = (force: boolean) => {
+  const measure = (): Size | null => {
     const size = options.measure();
-    if (!size || size.cols < 2 || size.rows < 1) return;
-    if (!force && sent && sent.cols === size.cols && sent.rows === size.rows) return;
-    sent = size;
+    return size && size.cols >= 2 && size.rows >= 1 ? size : null;
+  };
+
+  const send = (size: Size) => {
+    lastFit = size;
     options.resize(size.cols, size.rows);
   };
 
@@ -40,41 +48,59 @@ export function createAutoFit(options: AutoFitOptions) {
     /** attach 응답을 받았다(재연결 포함). resize는 붙은 세션에만 통한다. */
     attached() {
       attachedOnce = true;
-      if (state === "host") return;
-      set("fitting");
-      fit(true);
+      // 멈춤(호스트가 되찾음)과 호스트 크기 유지는 재연결로 풀리지 않는다.
+      if (state !== "fitting") return;
+      const size = measure();
+      if (size) send(size);
     },
 
     /** 호스트가 알려 온 크기 소유자. 맞추는 중인데 내가 아니면 호스트가 되찾은 것이다. */
     owner(owner: string) {
       if (state !== "fitting" || owner === options.deviceId) return;
-      sent = null;
       set("paused");
     },
 
-    /** 터미널 영역의 크기가 바뀌었다 — 창 크기 변경. 멈춰 있었다면 다시 맞춘다. */
-    viewportChanged() {
+    /**
+     * 터미널 영역의 크기가 달라졌다(ResizeObserver, 글자 크기). 맞추는 중일 때만 따라간다. 멈춘 동안
+     * 에는 따라가지 않는다 — 호스트 크기로 그려진 터미널이 이 창을 넘치면 스크롤바가 생기고, 그것만
+     * 으로도 영역과 들어가는 열·행 수가 달라져서, 사용자가 아무것도 안 했는데 크기를 도로 가져가게 된다.
+     */
+    areaChanged() {
+      if (!attachedOnce || state !== "fitting") return;
+      const size = measure();
+      if (!size) return;
+      if (lastFit && lastFit.cols === size.cols && lastFit.rows === size.rows) return;
+      send(size);
+    },
+
+    /** 사용자가 창 크기를 바꿨다. 멈춰 있었다면 이것이 다시 맞추라는 뜻이다. */
+    windowResized() {
       if (!attachedOnce || state === "host") return;
-      const resumed = state === "paused";
+      const size = measure();
+      if (!size) return;
+      if (state === "fitting" && lastFit && lastFit.cols === size.cols && lastFit.rows === size.rows) return;
       set("fitting");
-      fit(resumed);
+      send(size);
     },
 
     refit() {
       if (!attachedOnce) return;
+      const size = measure();
+      if (!size) return;
       set("fitting");
-      fit(true);
+      send(size);
     },
 
     keepHost(on: boolean) {
       if (on) {
-        sent = null;
         set("host");
         options.release();
         return;
       }
       set("fitting");
-      if (attachedOnce) fit(true);
+      if (!attachedOnce) return;
+      const size = measure();
+      if (size) send(size);
     },
   };
 }

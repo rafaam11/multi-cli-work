@@ -39,5 +39,9 @@ input, textarea { font: inherit; color: inherit; background: var(--m-surface); b
 .m-wide .m-list { overflow-y: auto; border-right: 1px solid #2a2f36; }
 .m-wide .m-session-screen { min-width: 0; }
 .m-wide-placeholder { align-self: center; justify-self: center; }
-.m-tools { align-items: center; flex-wrap: wrap; }
-.m-fit-notice { display: inline-flex; align-items: center; gap: 6px; color: var(--m-warn); font-size: 13px; }
+/* 알림이 뜨고 사라질 때 도구 줄이 줄바꿈되면 터미널 영역의 높이가 바뀌어 자동 맞춤이 다시 돈다 — 한 줄로 둔다. */
+.m-wide .m-tools { align-items: center; flex-wrap: nowrap; }
+.m-wide .m-tools > button { flex: 0 0 auto; white-space: nowrap; }
+.m-fit-notice { display: flex; flex: 1 1 0; min-width: 0; align-items: center; gap: 6px; color: var(--m-warn); font-size: 13px; }
+.m-fit-notice button { flex: 0 0 auto; white-space: nowrap; }
+.m-fit-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

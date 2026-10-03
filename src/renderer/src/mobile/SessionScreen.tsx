@@ -123,16 +123,26 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
     client.send({ type: "attach", sessionId: session.id });
     const input = terminal.onData((data) => client.send({ type: "write", sessionId: session.id, data }));
 
-    // 창 크기가 바뀌면 다시 맞춘다. 끄는 동안 연달아 오는 콜백은 마지막 것만 쓴다.
+    // 터미널 영역이나 창 크기가 바뀌면 다시 맞춘다. 끄는 동안 연달아 오는 신호는 마지막에 한 번만 쓴다.
+    // 둘을 구분한다: 영역은 스크롤바가 생기는 것만으로도 바뀌지만, 창 크기는 사용자가 바꾼 것이다.
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    const observer =
-      autoFit && typeof ResizeObserver === "function"
-        ? new ResizeObserver(() => {
-            if (resizeTimer) clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => autoFit.viewportChanged(), AUTO_FIT_DEBOUNCE_MS);
-          })
-        : null;
+    let windowResized = false;
+    const scheduleFit = () => {
+      if (!autoFit) return;
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (windowResized) autoFit.windowResized();
+        else autoFit.areaChanged();
+        windowResized = false;
+      }, AUTO_FIT_DEBOUNCE_MS);
+    };
+    const onWindowResize = () => {
+      windowResized = true;
+      scheduleFit();
+    };
+    const observer = autoFit && typeof ResizeObserver === "function" ? new ResizeObserver(scheduleFit) : null;
     observer?.observe(host);
+    if (autoFit) window.addEventListener("resize", onWindowResize);
 
     // xterm은 손가락 드래그를 스크롤백 이동으로 바꾸지 않는다. 세로 드래그는 여기서 받아, 넘친 틀
     // (PC 크기로 그릴 때)과 스크롤백 사이에 나눠 쓴다. 가로 드래그는 틀의 기본 스크롤에 맡긴다.
@@ -217,6 +227,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
       offState();
       input.dispose();
       observer?.disconnect();
+      window.removeEventListener("resize", onWindowResize);
       if (resizeTimer) clearTimeout(resizeTimer);
       autoFitRef.current = null;
       host.removeEventListener("touchstart", onTouchStart);
@@ -235,7 +246,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
     const terminal = terminalRef.current;
     if (terminal) terminal.options.fontSize = FONT_SIZES[fontIndex];
     // 글자 크기가 바뀌면 같은 창에 들어가는 열·행 수가 달라진다.
-    autoFitRef.current?.viewportChanged();
+    autoFitRef.current?.areaChanged();
   }, [fontIndex]);
 
   const togglePhoneSize = () => {
@@ -296,10 +307,10 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
         </button>
         {wide && fitState === "paused" ? (
           <span className="m-fit-notice" role="status">
-            호스트가 크기를 가져갔습니다
             <button type="button" onClick={() => autoFitRef.current?.refit()}>
               다시 맞추기
             </button>
+            <span>호스트가 크기를 가져갔습니다</span>
           </span>
         ) : null}
       </div>

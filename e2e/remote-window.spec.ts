@@ -144,6 +144,8 @@ test.describe.serial("Remote PC window", () => {
     const remotePromise = app.waitForEvent("window");
     await hostButton.click();
     const remote = await remotePromise;
+    // 원격 창을 호스트 패인보다 작게 둔다 — 호스트는 큰 모니터, 이쪽은 노트북인 흔한 구성.
+    await remote.setViewportSize({ width: 920, height: 620 });
     await expect(remote.locator(".m-wide")).toBeVisible();
     await expect(remote.getByLabel("페어링 코드")).toHaveCount(0);
     expect(await remote.evaluate(() => typeof (window as unknown as { multiCliWork?: unknown }).multiCliWork)).toBe("undefined");
@@ -169,6 +171,18 @@ test.describe.serial("Remote PC window", () => {
     await page.keyboard.press("Enter");
     await expect(remote.getByText("호스트가 크기를 가져갔습니다")).toBeVisible();
     await expect(remoteRows).toContainText("MCW_FROM_HOST");
+    // 호스트 크기로 그려진 터미널이 이 창을 넘쳐 스크롤바가 생겨도, 그것을 창 크기 변경으로 보고
+    // 크기를 도로 가져가면 안 된다 — 멈춘 채로 있어야 한다.
+    await remote.waitForTimeout(1_000);
+    await expect(remote.getByText("호스트가 크기를 가져갔습니다")).toBeVisible();
+    // 사용자가 창 크기를 바꾸면 다시 맞춘다.
+    await remote.setViewportSize({ width: 960, height: 640 });
+    await expect(remote.getByText("호스트가 크기를 가져갔습니다")).toHaveCount(0);
+    // 호스트가 또 되찾으면 다시 멈추고, 버튼으로도 다시 맞출 수 있다.
+    await hostTerminal.click();
+    await page.keyboard.type(echo("MCW_HOST_AGAIN"));
+    await page.keyboard.press("Enter");
+    await expect(remote.getByText("호스트가 크기를 가져갔습니다")).toBeVisible();
     await remote.getByRole("button", { name: "다시 맞추기" }).click();
     await expect(remote.getByText("호스트가 크기를 가져갔습니다")).toHaveCount(0);
 
