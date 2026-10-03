@@ -202,6 +202,46 @@ test.describe.serial("Remote PC window", () => {
     await remote.keyboard.press("Control+Shift+C");
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("MCW_PASTED");
 
+    // 세션 관리: 원격 창에서 새 세션을 띄우고 중지·재시작·삭제한다. 호스트 화면의 선택은 그대로다.
+    const hostSessions = () => page.evaluate(() => window.multiCliWork.terminals.list());
+    const hostSelection = () =>
+      page.evaluate(() => window.multiCliWork.terminals.state().then((snapshot) => snapshot.state.selectedSessionId));
+    const selectedBefore = await hostSelection();
+    await remote.getByRole("button", { name: "새 세션" }).click();
+    await remote.getByLabel("폴더").selectOption({ label: "Sample Project" });
+    await remote.getByLabel("에이전트").selectOption({ label: SHELL_LABEL });
+    await remote.getByRole("button", { name: "시작" }).click();
+    await expect(remote.locator(".m-session")).toHaveCount(2);
+    await expect.poll(async () => (await hostSessions()).length).toBe(2);
+    expect(await hostSelection()).toBe(selectedBefore);
+
+    // 만든 쪽에서 바로 열린다.
+    const screenStatus = remote.locator(".m-session-screen .m-bar .m-status");
+    await expect(remote.getByRole("button", { name: "중지" })).toBeVisible();
+    await remote.locator(".m-terminal").click();
+    await remote.keyboard.type(echo("MCW_NEW_SESSION"));
+    await remote.keyboard.press("Enter");
+    await expect(remoteRows).toContainText("MCW_NEW_SESSION");
+
+    await remote.getByRole("button", { name: "중지" }).click();
+    await expect(remote.getByRole("button", { name: "재시작" })).toBeVisible();
+    await expect(screenStatus).toHaveText("종료됨");
+    await expect.poll(async () => (await hostSessions()).filter((session) => session.status === "exited").length).toBe(1);
+
+    // 다시 시작한 프로세스의 출력이 이 화면에 이어서 나온다(다시 붙었다는 뜻).
+    await remote.getByRole("button", { name: "재시작" }).click();
+    await expect(remote.getByRole("button", { name: "중지" })).toBeVisible();
+    await remote.locator(".m-terminal").click();
+    await remote.keyboard.type(echo("MCW_AFTER_RESTART"));
+    await remote.keyboard.press("Enter");
+    await expect(remoteRows).toContainText("MCW_AFTER_RESTART");
+
+    await remote.getByRole("button", { name: "삭제" }).click();
+    await remote.getByRole("button", { name: "정말 삭제" }).click();
+    await expect(remote.locator(".m-session")).toHaveCount(1);
+    await expect.poll(async () => (await hostSessions()).length).toBe(1);
+    expect(await hostSelection()).toBe(selectedBefore);
+
     // 호스트가 이 기기를 철회하면 원격 창이 닫히고 다시 페어링해야 한다.
     const closed = remote.waitForEvent("close");
     await page.evaluate((deviceId) => window.multiCliWork.remote.revokeDevice(deviceId), devices[0]!.deviceId);

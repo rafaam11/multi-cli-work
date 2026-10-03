@@ -1,6 +1,6 @@
 # 원격 PC 이어받기(데스크톱 원격 창) 설계
 
-> 상태: R1 구현됨 (2026-10-03) · R2·R3 구현 전
+> 상태: R1·R2 구현됨 (2026-10-03) · R3 구현 전
 > 범위: 한 PC의 multi-cli-work에서 다른 PC의 multi-cli-work가 돌리는 세션을 열어 이어서 작업하고, 세션을 만들고 정리하고, 입력 대기 알림을 받는다.
 > 선행 설계: [모바일 컴패니언](2026-09-30-mobile-companion-design.md) — 호스트 서버·인증·프로토콜·웹 UI를 그대로 쓴다.
 
@@ -121,9 +121,9 @@ main 프로세스
 | type | 필드 | 설명 |
 |---|---|---|
 | `catalog` | — | 새 세션에 쓸 프로젝트·에이전트 목록 요청 |
-| `create` | `projectId, kind, cols, rows` | 프로젝트 루트에서 새 세션 시작 |
+| `create` | `projectId, kind` | 프로젝트 루트에서 새 세션 시작 |
 | `stop` | `sessionId` | 프로세스 중지. 세션은 목록에 남는다 |
-| `resume` | `sessionId, cols, rows` | 끝난 세션을 같은 대화로 다시 시작 |
+| `resume` | `sessionId` | 끝난 세션을 같은 대화로 다시 시작 |
 | `remove` | `sessionId` | 세션과 그 로그를 지운다 |
 
 호스트 → 클라이언트:
@@ -137,17 +137,18 @@ main 프로세스
 규칙:
 
 - `create`·`resume`은 `coordinator.create/resume(input, { updateSelection: false })`로 부른다. 호스트 데스크톱의 선택과 그리드를 건드리지 않는다(제어 CLI의 선례, `runtime.ts`의 `controlContext.create`). 새 세션은 코디네이터의 `created` 이벤트로 호스트 렌더러와 다른 클라이언트의 목록에 나타난다.
-- `create`·`resume`을 보낸 기기가 그 세션의 크기 소유자가 된다. hub가 `TerminalSizeArbiter`에 크기와 소유자를 기록해서 이어지는 `attached`의 `cols`·`rows`가 비지 않게 한다. 클라이언트는 `attached.sizeOwner`가 자기 기기면 맞춤 상태로 표시한다.
-- `stop`·`resume`·`remove`는 attach 여부와 무관하게 받는다. 실패는 기존 `error{code: "failed", message}`로 알린다.
+- **크기는 호스트가 정한다.** 세션을 만드는 시점에는 클라이언트에 터미널이 없어 크기를 잴 수 없으므로 메시지에 크기를 싣지 않는다. 새 세션은 데스크톱과 같은 기본값(`DEFAULT_TERMINAL_SIZE`, 80×24)으로, 재시작은 그 세션의 마지막 크기(없으면 기본값)로 시작한다. hub가 그 크기를 `TerminalSizeArbiter.hostStarted`로 적어 `attached`의 `cols`·`rows`가 비지 않게 하고, 소유자는 호스트로 둔다 — 만든 기기가 소유자가 되지 않는다. 넓은 화면은 붙은 뒤 자동 맞춤이 가져가고, 폰은 "폰 크기로"를 켜야 가져간다. 기존 세션과 같은 규칙이다.
+- `stop`·`resume`·`remove`는 attach 여부와 무관하게 받는다. `stop`은 돌고 있는 세션에만, `resume`은 끝난 세션(`exited`·`error`)에만 통한다 — 두 기기가 같은 세션을 볼 때 엇갈린 요청이 프로세스를 둘 띄우지 않게 한다. 실패는 기존 `error{code: "failed", message}`로 알리고, 웹 UI는 그 문구를 화면 아래 알림으로 보인다.
+- 다시 시작한 세션을 보고 있던 화면은 `started`를 받으면 다시 `attach`한다. 새 프로세스의 출력은 sequence를 처음부터 세기 때문이다. 목록의 상태는 `created`가 실어 오는 새 상태로 바꾼다.
 - **삭제**
   - `TerminalEvent`에 `{type: "removed", sessionId}`를 추가하고 `TerminalCoordinator.remove()`가 끝에서 발행한다.
   - 호스트 렌더러(`App.tsx`)는 이 이벤트로 목록에서 세션을 뺀다. 지금은 자기가 지운 세션만 안다.
   - `runtime.ts`는 이 이벤트에서 그 세션의 attention을 지운다.
   - 진행 중인 PR 리뷰 세션은 지울 수 없다. `ipc.ts`의 `terminals:remove`에 있는 검사를 함수로 빼서 IPC와 원격 경로가 같이 쓴다.
-  - 웹 UI는 삭제 전에 확인 대화상자를 띄운다.
+  - 웹 UI는 삭제 전에 화면 안에서 한 번 더 묻는다("삭제" → "정말 삭제 / 취소"). `window.confirm`은 Android WebView가 조용히 거절하므로 쓰지 않는다.
 - 워크트리를 골라 만드는 것은 범위 밖이다. `create`는 프로젝트 루트만 받는다.
 
-웹 UI(`SessionList.tsx`): 목록 위에 "새 세션"(프로젝트·에이전트 선택), 세션 행에 중지·재시작·삭제. `session-list-model.ts`에 `removed` 처리를 더한다. 폰에서도 같은 버튼이 보인다.
+웹 UI: 목록 머리줄에 "새 세션"(`NewSessionForm.tsx` — 폴더·에이전트 선택, 누를 때 `catalog`를 다시 묻는다). 중지·재시작·삭제는 목록 행이 아니라 **세션 화면의 머리줄**에 둔다 — 폰의 목록 행에는 버튼 셋을 더 넣을 자리가 없다. `session-list-model.ts`에 `removed` 처리를 더한다. 폰에서도 같은 버튼이 보인다.
 
 ## 6. 터미널 크기
 
