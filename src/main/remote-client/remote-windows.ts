@@ -155,6 +155,13 @@ export class RemoteWindows {
     if (!window.isDestroyed()) window.show();
   }
 
+  /** 사용자가 지금 그 호스트의 창을 보고 있는지 — 눈앞의 화면에 대한 알림은 내지 않는다. */
+  isFocused(hostId: string): boolean {
+    return [...this.windows.values()].some(
+      (entry) => entry.hostId === hostId && !entry.window.isDestroyed() && entry.window.isFocused(),
+    );
+  }
+
   closeHost(hostId: string): void {
     for (const entry of [...this.windows.values()]) {
       if (entry.hostId === hostId) this.closeWindow(entry);

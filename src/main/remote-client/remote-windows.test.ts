@@ -38,6 +38,7 @@ function fakeWindow(id: number) {
     loadURL: vi.fn(async (_url: string) => undefined),
     isDestroyed: () => destroyed,
     isMinimized: vi.fn(() => false),
+    isFocused: vi.fn(() => false),
     restore: vi.fn(),
     show: vi.fn(),
     focus: vi.fn(),
@@ -250,6 +251,17 @@ describe("RemoteWindows", () => {
     });
     await expect(windows.open("host-1")).resolves.toBeUndefined();
     expect(fakes[0]!.window.show).not.toHaveBeenCalled();
+  });
+
+  it("knows whether a host's window is focused", async () => {
+    const { windows, fakes } = setup();
+    expect(windows.isFocused("host-1")).toBe(false);
+    await windows.open("host-1");
+    fakes[0]!.window.isFocused.mockReturnValue(true);
+    expect(windows.isFocused("host-1")).toBe(true);
+    expect(windows.isFocused("host-other")).toBe(false);
+    windows.closeHost("host-1");
+    expect(windows.isFocused("host-1")).toBe(false);
   });
 
   it("closes a host's window, or all of them", async () => {
