@@ -377,4 +377,24 @@ describe("RemoteSessionHub session management", () => {
     emit({ type: "data", sessionId: "s1", data: "late", sequence: 9 });
     expect(sent.length).toBe(before);
   });
+
+  it("does not try to give a removed session's size back when its viewer leaves", async () => {
+    const { handle, sent, emit, hello, attachWith, sizes, resize } = setup();
+    await hello();
+    await sizes.desktopResize("s1", 120, 40);
+    handle.receive('{"type":"attach","sessionId":"s1"}');
+    await flush();
+    attachWith("", 0);
+    await flush();
+    handle.receive('{"type":"resize","sessionId":"s1","cols":50,"rows":20}');
+    await flush();
+    const resizes = resize.mock.calls.length;
+
+    emit({ type: "removed", sessionId: "s1" });
+    // 화면이 닫히며 보내는 detach. 지워진 세션을 호스트 크기로 되돌리려 하면 실패가 되어 돌아간다.
+    handle.receive('{"type":"detach","sessionId":"s1"}');
+    await flush();
+    expect(resize.mock.calls.length).toBe(resizes);
+    expect(sent.some((message) => message.type === "error")).toBe(false);
+  });
 });

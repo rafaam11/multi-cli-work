@@ -41,6 +41,16 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
   /** 삭제는 되돌릴 수 없어서 두 번 묻는다. window.confirm은 Android WebView가 조용히 거절한다. */
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const running = session.status !== "exited" && session.status !== "error";
+  const reattachRef = useRef<(() => void) | null>(null);
+  const wasRunning = useRef(running);
+
+  // 끝났던 세션이 다시 돌기 시작했다 — 이 화면에서든, 다른 기기에서든, 호스트에서든. 새 프로세스의
+  // 출력은 sequence를 처음부터 세므로, 문을 비우고 새로 붙어야 이전 번호에 밀려 버려지지 않는다.
+  // 재시작을 요청한 연결에만 오는 started가 아니라 목록의 상태를 신호로 쓰는 이유다.
+  useEffect(() => {
+    if (running && !wasRunning.current) reattachRef.current?.();
+    wasRunning.current = running;
+  }, [running]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -117,13 +127,12 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
         applySize(message.cols, message.rows);
         if (autoFit) autoFit.owner(message.sizeOwner);
         else giveBackToggle(message.sizeOwner);
-      } else if (message.type === "started") {
-        // 이 세션이 다시 시작됐다. 새 프로세스의 출력은 sequence를 처음부터 세므로, 문을 비우고
-        // 새로 붙어야 이전 출력의 번호에 밀려 버려지지 않는다.
-        gate.reset();
-        client.send({ type: "attach", sessionId: session.id });
       }
     });
+    reattachRef.current = () => {
+      gate.reset();
+      client.send({ type: "attach", sessionId: session.id });
+    };
     const offState = client.onState((state) => {
       if (state !== "open") return;
       gate.reset();
@@ -237,6 +246,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
       offMessage();
       offState();
       input.dispose();
+      reattachRef.current = null;
       observer?.disconnect();
       window.removeEventListener("resize", onWindowResize);
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -286,7 +296,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
         )}
         <h1>{session.label}</h1>
         <span className={`m-status m-status-${session.status}`}>{STATUS_LABEL[session.status]}</span>
-        {running ? (
+        {confirmingRemove ? null : running ? (
           <button type="button" onClick={() => client.send({ type: "stop", sessionId: session.id })}>
             중지
           </button>

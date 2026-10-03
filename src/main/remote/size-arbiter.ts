@@ -54,6 +54,16 @@ export class TerminalSizeArbiter {
     this.emit(sessionId);
   }
 
+  /**
+   * 세션이 지워졌다. 그 세션을 보던 화면은 닫히면서 크기를 돌려주려 하는데, 되돌릴 PTY가 없으니
+   * 그 요청이 실패로 돌아가지 않게 여기서 흔적을 지운다.
+   */
+  forget(sessionId: string): void {
+    this.applied.delete(sessionId);
+    this.desktop.delete(sessionId);
+    this.owners.delete(sessionId);
+  }
+
   async desktopInput(sessionId: string): Promise<void> {
     if (!this.owners.has(sessionId)) return;
     await this.reclaim(sessionId);

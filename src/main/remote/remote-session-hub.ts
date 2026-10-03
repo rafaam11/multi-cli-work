@@ -329,6 +329,7 @@ export class RemoteSessionHub {
         return;
       case "removed":
         for (const client of this.clients) client.attached.delete(event.sessionId);
+        this.options.sizes.forget(event.sessionId);
         this.broadcast({ type: "removed", sessionId: event.sessionId });
         return;
       case "created": {

@@ -139,7 +139,8 @@ main 프로세스
 - `create`·`resume`은 `coordinator.create/resume(input, { updateSelection: false })`로 부른다. 호스트 데스크톱의 선택과 그리드를 건드리지 않는다(제어 CLI의 선례, `runtime.ts`의 `controlContext.create`). 새 세션은 코디네이터의 `created` 이벤트로 호스트 렌더러와 다른 클라이언트의 목록에 나타난다.
 - **크기는 호스트가 정한다.** 세션을 만드는 시점에는 클라이언트에 터미널이 없어 크기를 잴 수 없으므로 메시지에 크기를 싣지 않는다. 새 세션은 데스크톱과 같은 기본값(`DEFAULT_TERMINAL_SIZE`, 80×24)으로, 재시작은 그 세션의 마지막 크기(없으면 기본값)로 시작한다. hub가 그 크기를 `TerminalSizeArbiter.hostStarted`로 적어 `attached`의 `cols`·`rows`가 비지 않게 하고, 소유자는 호스트로 둔다 — 만든 기기가 소유자가 되지 않는다. 넓은 화면은 붙은 뒤 자동 맞춤이 가져가고, 폰은 "폰 크기로"를 켜야 가져간다. 기존 세션과 같은 규칙이다.
 - `stop`·`resume`·`remove`는 attach 여부와 무관하게 받는다. `stop`은 돌고 있는 세션에만, `resume`은 끝난 세션(`exited`·`error`)에만 통한다 — 두 기기가 같은 세션을 볼 때 엇갈린 요청이 프로세스를 둘 띄우지 않게 한다. 실패는 기존 `error{code: "failed", message}`로 알리고, 웹 UI는 그 문구를 화면 아래 알림으로 보인다.
-- 다시 시작한 세션을 보고 있던 화면은 `started`를 받으면 다시 `attach`한다. 새 프로세스의 출력은 sequence를 처음부터 세기 때문이다. 목록의 상태는 `created`가 실어 오는 새 상태로 바꾼다.
+- 다시 시작한 세션을 보고 있던 화면은 다시 `attach`한다. 새 프로세스의 출력은 sequence를 처음부터 세기 때문이다. 신호는 `started`가 아니라 **목록에서 그 세션의 상태가 "끝남"에서 벗어나는 것**이다 — `started`는 요청한 연결에만 가므로, 다른 기기나 호스트가 재시작했을 때는 오지 않는다. 목록의 상태는 `created`가 실어 오는 새 상태로 바꾼다.
+- 세션이 지워지면 hub는 크기 기록도 지운다(`TerminalSizeArbiter.forget`). 그 세션을 보던 화면이 닫히며 보내는 `detach`가 없는 PTY의 크기를 되돌리려다 실패로 돌아가지 않게 한다.
 - **삭제**
   - `TerminalEvent`에 `{type: "removed", sessionId}`를 추가하고 `TerminalCoordinator.remove()`가 끝에서 발행한다.
   - 호스트 렌더러(`App.tsx`)는 이 이벤트로 목록에서 세션을 뺀다. 지금은 자기가 지운 세션만 안다.

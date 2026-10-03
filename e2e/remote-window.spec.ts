@@ -235,12 +235,30 @@ test.describe.serial("Remote PC window", () => {
     await remote.keyboard.type(echo("MCW_AFTER_RESTART"));
     await remote.keyboard.press("Enter");
     await expect(remoteRows).toContainText("MCW_AFTER_RESTART");
+    expect(await hostSelection()).toBe(selectedBefore);
+
+    // 재시작을 요청하지 않은 화면도 이어 받는다: 이번에는 호스트 쪽에서 다시 시작한다.
+    await remote.getByRole("button", { name: "중지" }).click();
+    await expect(remote.getByRole("button", { name: "재시작" })).toBeVisible();
+    const stopped = (await hostSessions()).find((session) => session.status === "exited");
+    if (!stopped) throw new Error("the stopped session is missing on the host");
+    await page.evaluate(
+      (sessionId) => window.multiCliWork.terminals.resume({ sessionId, cols: 80, rows: 24 }),
+      stopped.id,
+    );
+    await expect(remote.getByRole("button", { name: "중지" })).toBeVisible();
+    await remote.locator(".m-terminal").click();
+    await remote.keyboard.type(echo("MCW_HOST_RESTARTED"));
+    await remote.keyboard.press("Enter");
+    await expect(remoteRows).toContainText("MCW_HOST_RESTARTED");
 
     await remote.getByRole("button", { name: "삭제" }).click();
     await remote.getByRole("button", { name: "정말 삭제" }).click();
     await expect(remote.locator(".m-session")).toHaveCount(1);
     await expect.poll(async () => (await hostSessions()).length).toBe(1);
-    expect(await hostSelection()).toBe(selectedBefore);
+    // 지운 세션에서 떼어 나오는 것은 실패가 아니다 — 거절 알림이 뜨면 안 된다.
+    await remote.waitForTimeout(500);
+    await expect(remote.getByRole("alert")).toHaveCount(0);
 
     // 호스트가 이 기기를 철회하면 원격 창이 닫히고 다시 페어링해야 한다.
     const closed = remote.waitForEvent("close");

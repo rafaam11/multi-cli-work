@@ -119,23 +119,31 @@ describe("SessionScreen", () => {
     render(<SessionScreen client={client} session={SESSION} deviceId="d" onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "삭제" }));
     expect(sentOf("remove")).toHaveLength(0);
+    // 묻는 동안은 두 버튼만 둔다 — 폰 머리줄에 넷이 다 들어가지 않는다.
+    expect(screen.queryByRole("button", { name: "중지" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     expect(screen.queryByRole("button", { name: "정말 삭제" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "중지" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "삭제" }));
     fireEvent.click(screen.getByRole("button", { name: "정말 삭제" }));
     expect(sentOf("remove")).toEqual([{ type: "remove", sessionId: "s1" }]);
   });
 
-  it("attaches again when its session is restarted", () => {
+  it("attaches again when its session starts running again, whoever restarted it", () => {
     const { client, deliver, sentOf } = fakeClient();
-    render(<SessionScreen client={client} session={{ ...SESSION, status: "exited" }} deviceId="d" onBack={vi.fn()} />);
+    const { rerender } = render(
+      <SessionScreen client={client} session={{ ...SESSION, status: "exited" }} deviceId="d" onBack={vi.fn()} />,
+    );
     expect(sentOf("attach")).toHaveLength(1);
-    // 다른 세션이 시작된 것은 이 화면의 일이 아니다.
-    act(() => deliver({ type: "started", sessionId: "other" }));
-    expect(sentOf("attach")).toHaveLength(1);
-    // 새 프로세스의 출력은 sequence를 처음부터 센다 — 다시 붙어야 버려지지 않는다.
+    // started는 재시작을 요청한 연결에만 온다 — 다른 기기나 호스트가 재시작하면 오지 않으니 신호로 쓰지 않는다.
     act(() => deliver({ type: "started", sessionId: "s1" }));
+    expect(sentOf("attach")).toHaveLength(1);
+    // 목록의 상태가 "끝남"에서 벗어나는 것이 신호다. 새 프로세스의 출력은 sequence를 처음부터 세므로
+    // 다시 붙어야 이전 번호에 밀려 버려지지 않는다.
+    rerender(<SessionScreen client={client} session={{ ...SESSION, status: "starting" }} deviceId="d" onBack={vi.fn()} />);
+    expect(sentOf("attach")).toHaveLength(2);
+    rerender(<SessionScreen client={client} session={{ ...SESSION, status: "working" }} deviceId="d" onBack={vi.fn()} />);
     expect(sentOf("attach")).toHaveLength(2);
   });
 });

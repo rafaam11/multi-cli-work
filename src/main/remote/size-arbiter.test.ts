@@ -84,6 +84,17 @@ describe("TerminalSizeArbiter", () => {
     expect(sizes.current("s")).toEqual({ cols: 80, rows: 24, owner: "desktop" });
   });
 
+  it("forgets a removed session: releasing it afterwards resizes nothing", async () => {
+    const { apply, sizes } = arbiter();
+    await sizes.desktopResize("s", 120, 40);
+    await sizes.deviceResize("phone", "s", 40, 20);
+    sizes.forget("s");
+    // 지워진 세션을 보던 화면이 떼어 나오며 크기를 돌려준다 — 되돌릴 PTY가 없다.
+    await sizes.deviceRelease("phone", "s");
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(sizes.current("s")).toEqual({ cols: null, rows: null, owner: "desktop" });
+  });
+
   it("a failed resize changes nothing", async () => {
     const apply = vi.fn(async () => {
       throw new Error("Terminal dimensions are invalid");
