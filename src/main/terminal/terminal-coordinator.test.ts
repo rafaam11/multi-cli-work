@@ -811,7 +811,7 @@ describe("TerminalCoordinator", () => {
     const resumed = await coordinator(root);
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      await resumed.instance.attach("session-1");
+      await resumed.instance.attachForRenderer("session-1");
       expect(resumed.worker.create).not.toHaveBeenCalled();
       expect(resumed.instance.list()[0].interruptedByShutdown).toBe(true);
     } finally {
@@ -835,6 +835,30 @@ describe("TerminalCoordinator", () => {
     await resumed.instance.flush();
 
     expect(resumed.instance.list()[0].providerConversationId).toBe("codex-picked");
+  });
+
+  it.each([false, true])("preserves the early hook id if the %s picker launch exits before the hook is replayed", async (picker) => {
+    const root = await tempRoot();
+    if (picker) {
+      const first = await coordinator(root);
+      await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    }
+    const { instance, worker } = await coordinator(root);
+    const create = worker.create.getMockImplementation()!;
+    worker.create.mockImplementation(async (spec) => {
+      instance.applyProviderStatus({ sessionId: spec.sessionId, status: "working", event: "SessionStart",
+        at: "2026-07-11T01:00:00.000Z", providerConversationId: "codex-exited", generation: spec.generation });
+      worker.emit({ type: "exit", sessionId: spec.sessionId, exitCode: 1, generation: spec.generation });
+      return create(spec);
+    });
+
+    if (picker) await instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    else await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await instance.flush();
+
+    expect(instance.list()[0]).toMatchObject({ providerConversationId: "codex-exited", status: "exited", pid: null, exitCode: 1 });
+    expect((await readAppState({ statePath: path.join(root, "state.json") })).state.sessions["session-1"].providerConversationId)
+      .toBe("codex-exited");
   });
 
   it("exposes the persisted project and session selection after initialization", async () => {

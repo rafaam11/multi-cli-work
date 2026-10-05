@@ -647,13 +647,17 @@ export class TerminalCoordinator {
     }
     const ownsCodexSession = agent?.conversationId === "provider-assigned" && event.event === "SessionStart";
     if (
-      !view || !agent || (!ownsCodexSession && agent.statusAdapter !== "claude-hook") || view.pid === null ||
-      event.status === "exited" || event.status === "error" || view.status === "exited" || view.status === "error"
+      !view || !agent || (!ownsCodexSession && agent.statusAdapter !== "claude-hook") ||
+      event.status === "exited" || event.status === "error"
     ) return;
     this.enqueueEvent(async () => {
       const current = this.views.get(event.sessionId);
-      if (!current || current.pid === null || current.status === "exited" || current.status === "error") return;
+      if (!current) return;
       if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
+      const live = current.pid !== null && current.status !== "exited" && current.status !== "error";
+      // A hook from this launch still proves ownership after its PTY exits. Retain the exact id
+      // without reviving the process; unversioned events cannot claim an inactive session.
+      if (!live && (!ownsCodexSession || !event.generation)) return;
       let metadataChanged = false;
       if (ownsCodexSession && event.providerConversationId) {
         if (current.providerConversationId && current.providerConversationId !== event.providerConversationId) {
@@ -670,7 +674,7 @@ export class TerminalCoordinator {
           metadataChanged = true;
         }
       }
-      const statusChanged = current.status !== event.status;
+      const statusChanged = live && current.status !== event.status;
       if (!metadataChanged && !statusChanged) return;
       if (statusChanged) current.status = event.status;
       current.updatedAt = this.options.now();

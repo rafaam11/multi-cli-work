@@ -42,7 +42,10 @@ process.stdin.resume();
 `);
     await fs.writeFile(path.join(bin, "codex.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0fake.cjs" %*\r\n`);
     const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== "PATH"));
-    const app = await electron.launch({ args: [path.resolve("out/main/index.js")], env: {
+    const packagedExecutable = process.env.MULTI_CLI_WORK_E2E_EXECUTABLE;
+    const app = await electron.launch({
+      ...(packagedExecutable ? { executablePath: packagedExecutable, args: [] } : { args: [path.resolve("out/main/index.js")] }),
+      env: {
       ...inherited, Path: `${bin};${process.env.Path ?? process.env.PATH}`, CODEX_HOME: path.join(root, "codex-home"),
       MULTI_CLI_WORK_USER_DATA: userData, MULTI_CLI_WORK_REGISTRY_PATH: path.join(root, "projects.json"),
       MULTI_CLI_WORK_AGENTS_PATH: path.join(root, "agents.json"), MULTI_CLI_WORK_WORK_PROJECTS_PATH: path.join(root, "work-projects.json"),
