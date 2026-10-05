@@ -80,6 +80,21 @@ describe("built-in agent command lines", () => {
     expect(launch.providerConversationId).toBe("codex-existing");
   });
 
+  it("opens Codex's explicit resume picker without inventing a conversation id", () => {
+    const launch = buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, { ...context, codexResumePicker: true });
+    expect(launch.args.slice(0, 5)).toEqual(["--profile", "multi-cli-work", "resume", "-C", context.cwd]);
+    expect(launch.providerConversationId).toBeNull();
+    expect(launch.args).not.toContain("--last");
+  });
+
+  it("resumes the known Codex conversation even if a picker was requested", () => {
+    const launch = buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, {
+      ...context, codexResumePicker: true, resumeConversationId: "codex-existing",
+    });
+    expect(launch.args.slice(0, 4)).toEqual(["--profile", "multi-cli-work", "resume", "codex-existing"]);
+    expect(launch.providerConversationId).toBe("codex-existing");
+  });
+
   it("gives PowerShell no conversation id, so resuming it just relaunches", () => {
     expect(buildAgentLaunch(BUILTIN_AGENTS.powershell, POWERSHELL_EXE, context)).toEqual({
       executable: POWERSHELL_EXE,

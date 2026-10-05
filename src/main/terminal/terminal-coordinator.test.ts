@@ -736,7 +736,7 @@ describe("TerminalCoordinator", () => {
     expect(instance.list()[0].providerConversationId).toBe("codex-early");
   });
 
-  it("refuses to guess when a Codex SessionStart hook did not link a resume id", async () => {
+  it("opens Codex's resume picker when neither a hook nor an exit footer linked the conversation", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
     await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
@@ -746,10 +746,95 @@ describe("TerminalCoordinator", () => {
     const resumedWorker = new FakeWorker();
     const resumed = await coordinator(root, resumedWorker);
 
-    await expect(resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 }))
-      .rejects.toThrow("resume ID 연결 실패");
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
 
-    expect(resumedWorker.create).not.toHaveBeenCalled();
+    expect(resumedWorker.create).toHaveBeenCalledWith(expect.objectContaining({
+      args: expect.arrayContaining(["--profile", "multi-cli-work", "resume", "-C", "C:\\Work"]),
+      providerConversationId: null,
+    }));
+    expect(resumedWorker.create.mock.calls[0][0].args).not.toContain("--last");
+  });
+
+  it("persists Codex's exit footer across split PTY chunks without a trusted SessionStart hook", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    const id = "01a10c79-b290-7af0-9e7c-23294236d4f1";
+    await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    first.worker.emit({ type: "data", sessionId: "session-1", sequence: 1, data: "\r\nSession ID: 01a10c79-b290-" });
+    first.worker.emit({ type: "data", sessionId: "session-1", sequence: 2, data: "7af0-9e7c-23294236d4f1\r\n\u001b]0;\u0007" });
+    first.worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await first.instance.flush();
+
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-1"].providerConversationId).toBe(id);
+    const resumed = await coordinator(root);
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    expect(resumed.worker.create.mock.calls[0][0]).toMatchObject({
+      args: expect.arrayContaining(["resume", id]), providerConversationId: id,
+    });
+  });
+
+  it("recovers an older unlinked Codex tab from its saved exit footer when resume is pressed", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    const id = "01a10c79-b290-7af0-9e7c-23294236d4f1";
+    await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await appendSessionLog(path.join(root, "logs"), "session-1", `\r\nTo continue this session, run codex resume ${id}\r\n`, 5 * 1024 * 1024);
+    const resumed = await coordinator(root);
+
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+
+    expect(resumed.worker.create.mock.calls[0][0]).toMatchObject({
+      args: expect.arrayContaining(["resume", id]), providerConversationId: id,
+    });
+  });
+
+  it("keeps a hook-linked Codex id when terminal text mentions another conversation", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    instance.applyProviderStatus({ sessionId: "session-1", status: "working", event: "SessionStart",
+      at: "2026-07-11T01:00:00.000Z", providerConversationId: "codex-owned" });
+    await instance.flush();
+    worker.emit({ type: "data", sessionId: "session-1", sequence: 1, data: "\r\nSession ID: 01a10c79-b290-7af0-9e7c-23294236d4f1\r\n" });
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 });
+    await instance.flush();
+
+    expect(instance.list()[0].providerConversationId).toBe("codex-owned");
+  });
+
+  it("does not open a Codex picker during lazy auto-resume when the id is unknown", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await first.instance.shutdown();
+    const resumed = await coordinator(root);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await resumed.instance.attach("session-1");
+      expect(resumed.worker.create).not.toHaveBeenCalled();
+      expect(resumed.instance.list()[0].interruptedByShutdown).toBe(true);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("links a picker selection even when SessionStart races replacement worker creation", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    const resumed = await coordinator(root);
+    const create = resumed.worker.create.getMockImplementation()!;
+    resumed.worker.create.mockImplementation(async (spec) => {
+      resumed.instance.applyProviderStatus({ sessionId: spec.sessionId, status: "working", event: "SessionStart",
+        at: "2026-07-11T01:00:00.000Z", providerConversationId: "codex-picked", generation: spec.generation });
+      return create(spec);
+    });
+
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    await resumed.instance.flush();
+
+    expect(resumed.instance.list()[0].providerConversationId).toBe("codex-picked");
   });
 
   it("exposes the persisted project and session selection after initialization", async () => {

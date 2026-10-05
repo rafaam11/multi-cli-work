@@ -27,6 +27,7 @@ import type {
   ToolCommand,
 } from "../../shared/terminal-types";
 import { buildAgentLaunch } from "../agents/agent-launch";
+import { parseCodexExitConversationId } from "../providers/codex-resume";
 import { agentExecutable, buildToolLaunch, type ProviderExecutables } from "../providers/provider-launch";
 import { cleanupProviderStatusFiles, deleteProviderStatusFile } from "../providers/provider-status";
 import type { ProviderStatusEvent } from "../providers/provider-status";
@@ -144,6 +145,8 @@ export interface LaunchOptions {
   updateSelection?: boolean;
   /** Main-owned history to seed into a replacement worker's bounded replay buffer. */
   initialReplay?: string;
+  /** Lazy auto-resume must not open an interactive conversation picker. Manual resume may. */
+  allowConversationPicker?: boolean;
 }
 
 function persistedSession(view: TerminalSessionView): PersistedTerminalSession {
@@ -283,16 +286,19 @@ export class TerminalCoordinator {
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
-    // An agent that owns no conversation (a plain shell) resumes by relaunching. Every agent with
-    // a conversation must have an exact id; silently starting a new Codex conversation here would
-    // hide a rejected/unsupported SessionStart hook and attach the tab to the wrong history.
     const agent = this.requireAgent(saved.kind);
-    if (agent.conversationId !== "none" && !saved.providerConversationId) {
-      throw new Error(
-        agent.conversationId === "provider-assigned"
-          ? "Codex resume ID 연결 실패: SessionStart hook을 /hooks에서 허용한 뒤 새 세션을 시작하세요."
-          : `${saved.kind} session does not have a resumable conversation id`,
-      );
+    const isCodex = agent.builtin && agent.id === "codex" && agent.conversationId === "provider-assigned";
+    if (isCodex && !saved.providerConversationId) {
+      await this.flushSessionLog(saved.id);
+      await this.recoverCodexConversation(saved);
+    }
+    // An unknown Codex id requires explicit selection in its native picker, never --last or a
+    // fresh conversation. Background auto-resume cannot make that selection for the user.
+    const codexResumePicker = isCodex && !saved.providerConversationId && options.allowConversationPicker !== false;
+    if (agent.conversationId !== "none" && !saved.providerConversationId && !codexResumePicker) {
+      throw new Error(isCodex
+        ? "Codex 대화 ID가 없습니다. 재개 버튼에서 이어갈 대화를 선택하세요."
+        : `${saved.kind} session does not have a resumable conversation id`);
     }
     // Folder sessions re-read the project so a relinked folder resumes at its new root; a worktree
     // session re-reads its worktree the same way — and refuses if the worktree is gone, because
@@ -320,6 +326,7 @@ export class TerminalCoordinator {
       rows: input.rows,
       createdAt: saved.createdAt,
       resumeConversationId: saved.providerConversationId,
+      codexResumePicker,
       updateSelection: options.updateSelection,
       initialReplay: options.initialReplay,
     });
@@ -388,7 +395,7 @@ export class TerminalCoordinator {
             cols: size?.cols ?? AUTO_RESUME_COLS,
             rows: size?.rows ?? AUTO_RESUME_ROWS,
           },
-          { updateSelection: false, initialReplay: restored },
+          { updateSelection: false, initialReplay: restored, allowConversationPicker: false },
         );
         const appendLog = this.options.appendLog ?? appendSessionLog;
         await appendLog(
@@ -630,7 +637,7 @@ export class TerminalCoordinator {
     if (this.removedSessionIds.has(event.sessionId)) return;
     if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
     const view = this.views.get(event.sessionId);
-    if (!view && typeof eventOrSessionId !== "string" && event.event === "SessionStart" && event.providerConversationId) {
+    if ((!view || this.launchingSessionIds.has(event.sessionId)) && typeof eventOrSessionId !== "string" && event.event === "SessionStart" && event.providerConversationId) {
       this.pendingProviderStarts.set(event.sessionId, event);
       return;
     }
@@ -713,6 +720,7 @@ export class TerminalCoordinator {
     rows: number;
     createdAt: string;
     resumeConversationId: string | null;
+    codexResumePicker?: boolean;
     title?: string | null;
     name?: string | null;
     updateSelection?: boolean;
@@ -728,6 +736,7 @@ export class TerminalCoordinator {
           claudeSettingsPath: this.options.claudeSettingsPath,
           codexProfileName: this.options.codexProfileName ?? "multi-cli-work",
           resumeConversationId: input.resumeConversationId,
+          codexResumePicker: input.codexResumePicker,
         });
     // A brief failure must never block the launch itself — the session just starts without context.
     const briefPath =
@@ -1026,6 +1035,18 @@ export class TerminalCoordinator {
     );
   }
 
+  private async recoverCodexConversation(view: TerminalSessionView): Promise<void> {
+    const agent = this.options.getAgent(view.kind);
+    if (!agent?.builtin || agent.id !== "codex" || view.providerConversationId || view.status !== "exited") return;
+    const generation = this.generations.get(view.id);
+    const log = await readSessionLog(this.options.logDir, view.id, MAX_LOG_BYTES);
+    const id = parseCodexExitConversationId(log);
+    if (!id || this.views.get(view.id) !== view || this.generations.get(view.id) !== generation || view.providerConversationId) return;
+    view.providerConversationId = id;
+    await this.persistView(view);
+    this.publish({ type: "created", sessionId: view.id, session: { ...view } });
+  }
+
   private async handleWorkerEvent(event: TerminalWorkerEvent): Promise<void> {
     if (this.removedSessionIds.has(event.sessionId)) return;
     if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
@@ -1054,6 +1075,7 @@ export class TerminalCoordinator {
       }
       this.publish(event);
       await this.flushSessionLog(event.sessionId);
+      await this.recoverCodexConversation(view);
       await this.releasePersistedSession(event.sessionId);
       return;
     }

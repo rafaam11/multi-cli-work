@@ -189,6 +189,8 @@ OS 기본 셸 · Claude Code · Codex는 코드에 박힌 특별한 존재가 �
 
 **재개** — `conversationId: "app-generated"`로 두고 `newSessionArgs`에 `{sessionId}`, `resumeArgs`에 `{conversationId}`를 넣으면 앱이 발급한 id로 대화를 이어붙인다. `"none"`이면 재개는 그냥 새로 띄우는 것이다. CLI가 자기 id를 직접 발급하는 `provider-assigned`는 빌트인 전용이다.
 
+Codex는 `SessionStart` hook이나 정상 종료 시의 `Session ID` / `codex resume` 안내에서 정확한 대화 ID를 저장한다. 이전 버전에서 ID가 빠진 세션도 재개 버튼을 누르면 저장된 종료 안내에서 복구한다. 복구할 기록이 없으면 Codex의 대화 선택 목록이 열리므로 이어갈 대화를 직접 고르면 된다. ID가 없는 세션은 자동 재개하지 않고 수동 선택을 기다린다. hook은 Codex의 정상 승인 절차를 따른다.
+
 **Shift+Enter** — 터미널은 Shift 여부와 상관없이 Enter를 CR로 보내므로, CLI는 Shift+Enter를 별도의 키로 볼 수 없다. `alt-enter`를 고르면 대신 ESC CR(Alt+Enter)을 보내 crossterm 기반 TUI가 줄바꿈으로 받는다 — 빌트인 Codex가 이걸 쓴다. 그 시퀀스를 모르는 CLI는 쓰레기 입력을 받게 되므로 기본값은 `enter`(그냥 제출)다.
 
 **빌트인 전용** — 브랜드 아이콘(`icon`), 트랜스크립트에서 읽는 세션 제목(`titleSource`), Claude 훅 오버레이(`claude-hook` 어댑터), Codex `SessionStart` hook 상관관계(`provider-assigned`)는 빌트인만 가진다. 사용자 정의 에이전트가 이들을 요구하면 로드 시점에 거부하고 이유를 말한다.

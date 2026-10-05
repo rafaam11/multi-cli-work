@@ -8,6 +8,8 @@ export interface AgentLaunchContext {
   codexProfileName: string;
   /** Non-null only when an existing conversation is being resumed. */
   resumeConversationId: string | null;
+  /** Codex can let the user select an existing conversation when its exact id was not recorded. */
+  codexResumePicker?: boolean;
 }
 
 export interface AgentLaunchCommand {
@@ -70,7 +72,9 @@ export function buildAgentLaunch(
   executable: string,
   context: AgentLaunchContext,
 ): AgentLaunchCommand {
-  const resuming = context.resumeConversationId !== null;
+  const picker = context.codexResumePicker === true && context.resumeConversationId === null &&
+    definition.builtin && definition.id === "codex";
+  const resuming = context.resumeConversationId !== null || picker;
   const values: Record<AgentArgToken, string | null> = {
     cwd: context.cwd,
     sessionId: context.sessionId,
@@ -78,7 +82,8 @@ export function buildAgentLaunch(
     claudeSettings: context.claudeSettingsPath,
     codexProfile: context.codexProfileName,
   };
-  const template = [...(resuming ? definition.resumeArgs : definition.newSessionArgs), ...definition.args];
+  const sessionArgs = resuming ? definition.resumeArgs : definition.newSessionArgs;
+  const template = [...(picker ? sessionArgs.filter((arg) => arg !== "{conversationId}") : sessionArgs), ...definition.args];
   return {
     executable,
     args: template.map((arg) => substituteAgentArg(arg, values)),
