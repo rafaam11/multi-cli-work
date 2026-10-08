@@ -60,6 +60,12 @@ describe("parseRemoteClientMessage", () => {
       cols: 120,
       rows: 40,
     });
+    expect(parseRemoteClientMessage('{"type":"create","projectId":"p1","kind":"claude","worktreeId":"w1"}')).toEqual({
+      type: "create",
+      projectId: "p1",
+      kind: "claude",
+      worktreeId: "w1",
+    });
     // 크기는 둘 다 맞을 때만 싣는다. 한쪽만 오거나 정수가 아니면 크기 없이 받는다 — 호스트 기본 크기로.
     for (const raw of [
       '{"type":"create","projectId":"p1","kind":"claude","cols":200}',
@@ -81,6 +87,8 @@ describe("parseRemoteClientMessage", () => {
       '{"type":"create","projectId":"p1","kind":"Claude"}',
       '{"type":"create","projectId":"p1","kind":"../x"}',
       `{"type":"create","projectId":"p1","kind":"${"a".repeat(33)}"}`,
+      '{"type":"create","projectId":"p1","kind":"claude","worktreeId":""}',
+      '{"type":"create","projectId":"p1","kind":"claude","worktreeId":7}',
       '{"type":"stop"}',
       '{"type":"resume","sessionId":""}',
       '{"type":"remove","sessionId":7}',

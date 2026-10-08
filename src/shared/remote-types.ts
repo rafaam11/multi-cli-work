@@ -48,6 +48,8 @@ export interface RemoteSessionSummary {
   label: string;
   status: TerminalStatus;
   updatedAt: string;
+  /** 워크트리에서 도는 세션이면 그 브랜치(v1.38.0 호스트부터). */
+  worktreeBranch?: string;
 }
 
 export type RemoteClientMessage =
@@ -60,14 +62,17 @@ export type RemoteClientMessage =
   | { type: "releaseSize"; sessionId: string }
   // 세션 관리. 새 세션의 크기는 만드는 화면이 어림해 보낸다. 없으면 호스트 기본 크기로 띄운다.
   | { type: "catalog" }
-  | { type: "create"; projectId: string; kind: TerminalKind; cols?: number; rows?: number }
+  | { type: "create"; projectId: string; kind: TerminalKind; worktreeId?: string; cols?: number; rows?: number }
   | { type: "stop"; sessionId: string }
   | { type: "resume"; sessionId: string }
   | { type: "remove"; sessionId: string };
 
-/** 새 세션을 어디에 무엇으로 띄울 수 있는지. 숨긴 폴더와 실행 파일이 없는 에이전트는 들어 있지 않다. */
+/**
+ * 새 세션을 어디에 무엇으로 띄울 수 있는지. 숨긴 폴더와 실행 파일이 없는 에이전트는 들어 있지 않다.
+ * 폴더마다 그 안에서 고를 수 있는 워크트리가 딸려 온다(v1.38.0).
+ */
 export interface RemoteCatalog {
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; worktrees: Array<{ id: string; branch: string }> }>;
   agents: Array<{ id: string; label: string }>;
 }
 
@@ -143,9 +148,14 @@ export function parseRemoteClientMessage(raw: string): RemoteClientMessage | nul
       return { type: "catalog" };
     case "create":
       if (!text(value.projectId) || typeof value.kind !== "string" || !AGENT_ID_PATTERN.test(value.kind)) return null;
-      return dimension(value.cols) && dimension(value.rows)
-        ? { type: "create", projectId: value.projectId, kind: value.kind, cols: value.cols, rows: value.rows }
-        : { type: "create", projectId: value.projectId, kind: value.kind };
+      if (value.worktreeId !== undefined && !text(value.worktreeId)) return null;
+      return {
+        type: "create",
+        projectId: value.projectId,
+        kind: value.kind,
+        ...(value.worktreeId !== undefined ? { worktreeId: value.worktreeId } : {}),
+        ...(dimension(value.cols) && dimension(value.rows) ? { cols: value.cols, rows: value.rows } : {}),
+      };
     case "stop":
       return text(value.sessionId) ? { type: "stop", sessionId: value.sessionId } : null;
     case "resume":

@@ -1,8 +1,12 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const NOW = "2026-07-11T12:00:00.000Z";
@@ -43,6 +47,17 @@ test.describe.serial("Remote PC window", () => {
       fs.mkdir(path.join(tempRoot, "codex-sessions"), { recursive: true }),
       fs.mkdir(path.join(tempRoot, "user-data"), { recursive: true }),
     ]);
+    // 실제 저장소와 워크트리 하나 — 원격에서 워크트리를 골라 세션을 띄우는 길을 진짜 git으로 지난다.
+    // 앱이 시작할 때 동기화가 이 워크트리를 찾아 등록한다.
+    await execFileAsync("git", ["init", "-b", "main"], { cwd: projectRoot });
+    await fs.writeFile(path.join(projectRoot, "readme.md"), "sample\n", "utf8");
+    await execFileAsync("git", ["add", "."], { cwd: projectRoot });
+    await execFileAsync(
+      "git",
+      ["-c", "user.email=e2e@example.com", "-c", "user.name=E2E", "commit", "-m", "init"],
+      { cwd: projectRoot },
+    );
+    await execFileAsync("git", ["-C", projectRoot, "worktree", "add", "-b", "feat/remote", path.join(tempRoot, "remote-worktree")]);
     await fs.writeFile(
       path.join(tempRoot, "registry", "projects.json"),
       `${JSON.stringify(
@@ -267,6 +282,25 @@ test.describe.serial("Remote PC window", () => {
     // 지운 세션에서 떼어 나오는 것은 실패가 아니다 — 거절 알림이 뜨면 안 된다.
     await remote.waitForTimeout(500);
     await expect(remote.getByRole("alert")).toHaveCount(0);
+
+    // 워크트리를 골라 띄운 세션은 그 워크트리에서 돈다. 목록에 브랜치가 붙는다.
+    await expect
+      .poll(() => page.evaluate(() => window.multiCliWork.worktrees.list().then((list) => list.map((worktree) => worktree.branch))))
+      .toContain("feat/remote");
+    const selectedBeforeWorktree = await hostSelection();
+    await remote.getByRole("button", { name: "새 세션" }).click();
+    await remote.getByLabel("폴더").selectOption({ label: "Sample Project" });
+    await remote.getByLabel("작업 위치").selectOption({ label: "feat/remote" });
+    await remote.getByLabel("에이전트").selectOption({ label: SHELL_LABEL });
+    await remote.getByRole("button", { name: "시작" }).click();
+    await expect(remote.locator(".m-session")).toHaveCount(2);
+    await expect(remote.locator(".m-session", { hasText: "feat/remote" })).toBeVisible();
+    const worktreeSession = (await hostSessions()).find((session) => session.worktreeId);
+    const remoteWorktree = (await page.evaluate(() => window.multiCliWork.worktrees.list())).find(
+      (worktree) => worktree.branch === "feat/remote",
+    );
+    expect(worktreeSession?.worktreeId).toBe(remoteWorktree?.id);
+    expect(await hostSelection()).toBe(selectedBeforeWorktree);
 
     // 호스트가 이 기기를 철회하면 원격 창이 닫히고 다시 페어링해야 한다.
     const closed = remote.waitForEvent("close");

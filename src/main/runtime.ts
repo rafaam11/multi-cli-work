@@ -122,7 +122,7 @@ import { RemoteSessionHub } from "./remote/remote-session-hub";
 import { readShellArtifact } from "./remote/shell-artifact";
 import { TerminalSizeArbiter } from "./remote/size-arbiter";
 import { tailscaleAddresses } from "./remote/tailscale-address";
-import { buildRemoteCatalog } from "./remote/remote-catalog";
+import { buildRemoteCatalog, existingWorktrees } from "./remote/remote-catalog";
 import { desktopPresence, PRESENCE_IDLE_THRESHOLD_SECONDS } from "./remote/desktop-presence";
 import { assertNotReviewSession } from "./terminal/review-guard";
 import { RemoteHostRegistry } from "./remote-client/host-registry";
@@ -504,10 +504,12 @@ export async function createDesktopRuntime(
       write: (sessionId, data) => coordinator.write(sessionId, data),
       onEvent: (listener) => coordinator.onEvent(listener),
       projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
+      worktreeBranch: async (worktreeId) => (await worktrees.get(worktreeId))?.branch ?? null,
       catalog: async () =>
         buildRemoteCatalog(
           Object.values((await readProjectRegistry({ registryPath })).registry.projects),
           (await listAgents()).agents,
+          await existingWorktrees(await worktrees.list(), (target) => fs.access(target).then(() => true, () => false)),
         ),
       // 원격에서 띄우거나 되살린 세션은 이 PC 화면의 선택을 가져가지 않는다 — 제어 CLI의 spawn과 같다.
       create: (input) => coordinator.create(input, { updateSelection: false }),

@@ -22,10 +22,12 @@ export interface RemoteHubGateway {
   write(sessionId: string, data: string): Promise<void>;
   onEvent(listener: (event: TerminalEvent) => void): () => void;
   projectName(projectId: string): Promise<string | null>;
+  /** 워크트리의 브랜치. 목록에서 워크트리 세션을 구별하게 한다. */
+  worktreeBranch?(worktreeId: string): Promise<string | null>;
   /** 새 세션을 띄울 수 있는 폴더와 에이전트. */
   catalog(): Promise<RemoteCatalog>;
   /** 호스트 데스크톱의 선택·그리드를 건드리지 않고 시작한다. */
-  create(input: { projectId: string; kind: string; cols: number; rows: number }): Promise<TerminalSessionView>;
+  create(input: { projectId: string; kind: string; worktreeId?: string; cols: number; rows: number }): Promise<TerminalSessionView>;
   resume(input: { sessionId: string; cols: number; rows: number }): Promise<TerminalSessionView>;
   stop(sessionId: string): Promise<void>;
   /** 지울 수 없는 세션(진행 중인 PR 리뷰)이면 이유를 담아 거절한다. */
@@ -80,7 +82,11 @@ interface Client {
   helloTimer: ReturnType<typeof setTimeout>;
 }
 
-export function toSessionSummary(view: TerminalSessionView, projectName: string | null): RemoteSessionSummary {
+export function toSessionSummary(
+  view: TerminalSessionView,
+  projectName: string | null,
+  worktreeBranch: string | null = null,
+): RemoteSessionSummary {
   return {
     id: view.id,
     projectId: view.projectId,
@@ -89,6 +95,7 @@ export function toSessionSummary(view: TerminalSessionView, projectName: string 
     label: view.name ?? view.title ?? view.kind,
     status: view.status,
     updatedAt: view.updatedAt,
+    ...(worktreeBranch ? { worktreeBranch } : {}),
   };
 }
 
@@ -221,7 +228,14 @@ export class RemoteSessionHub {
         // 둔다 — 붙은 뒤의 맞춤은 다른 세션과 같은 규칙을 따른다.
         const cols = clamp(message.cols ?? DEFAULT_TERMINAL_SIZE.cols, CREATE_COLS);
         const rows = clamp(message.rows ?? DEFAULT_TERMINAL_SIZE.rows, CREATE_ROWS);
-        const session = await this.options.gateway.create({ projectId: message.projectId, kind: message.kind, cols, rows });
+        // 워크트리가 그 폴더 것인지는 코디네이터가 확인한다. 아니면 던지고, 거절 이유가 요청한 화면에 간다.
+        const session = await this.options.gateway.create({
+          projectId: message.projectId,
+          kind: message.kind,
+          ...(message.worktreeId !== undefined ? { worktreeId: message.worktreeId } : {}),
+          cols,
+          rows,
+        });
         this.options.sizes.hostStarted(session.id, cols, rows);
         client.connection.send({ type: "started", sessionId: session.id });
         return;
@@ -309,7 +323,22 @@ export class RemoteSessionHub {
     for (const projectId of new Set(views.map((view) => view.projectId))) {
       if (projectId !== null) names.set(projectId, await this.options.gateway.projectName(projectId));
     }
-    return views.map((view) => toSessionSummary(view, view.projectId === null ? null : names.get(view.projectId) ?? null));
+    const branches = new Map<string, string | null>();
+    for (const worktreeId of new Set(views.map((view) => view.worktreeId))) {
+      if (worktreeId) branches.set(worktreeId, await this.worktreeBranch(worktreeId));
+    }
+    return views.map((view) =>
+      toSessionSummary(
+        view,
+        view.projectId === null ? null : names.get(view.projectId) ?? null,
+        view.worktreeId ? branches.get(view.worktreeId) ?? null : null,
+      ),
+    );
+  }
+
+  private async worktreeBranch(worktreeId: string | null | undefined): Promise<string | null> {
+    if (!worktreeId || !this.options.gateway.worktreeBranch) return null;
+    return this.options.gateway.worktreeBranch(worktreeId).catch(() => null);
   }
 
   private authenticated(): Client[] {
@@ -348,8 +377,13 @@ export class RemoteSessionHub {
         return;
       case "created": {
         const projectId = event.session.projectId;
-        void (projectId === null ? Promise.resolve(null) : this.options.gateway.projectName(projectId))
-          .then((name) => this.broadcast({ type: "created", session: toSessionSummary(event.session, name) }))
+        void Promise.all([
+          projectId === null ? Promise.resolve(null) : this.options.gateway.projectName(projectId),
+          this.worktreeBranch(event.session.worktreeId),
+        ])
+          .then(([name, branch]) =>
+            this.broadcast({ type: "created", session: toSessionSummary(event.session, name, branch) }),
+          )
           .catch(() => undefined);
         return;
       }

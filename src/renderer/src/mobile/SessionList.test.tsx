@@ -26,6 +26,22 @@ describe("SessionList", () => {
     expect(onOpen).toHaveBeenCalledWith("1");
   });
 
+  it("shows which worktree a session runs in", () => {
+    render(
+      <SessionList
+        hostName="PC"
+        connection="open"
+        sessions={[
+          { id: "1", projectId: "p", projectName: "A", kind: "claude", label: "리팩터", status: "idle", updatedAt: "", worktreeBranch: "feat/search" },
+        ]}
+        onOpen={vi.fn()}
+        onUnpair={vi.fn()}
+        onNewSession={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /리팩터.*feat\/search/ })).toBeInTheDocument();
+  });
+
   it("says when there is nothing to show and when the link is down", () => {
     render(<SessionList hostName="PC" connection="reconnecting" sessions={[]} onOpen={vi.fn()} onUnpair={vi.fn()} onNewSession={vi.fn()} />);
     expect(screen.getByText("열린 세션이 없습니다")).toBeInTheDocument();

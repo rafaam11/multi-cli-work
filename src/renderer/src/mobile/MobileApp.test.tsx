@@ -125,7 +125,7 @@ describe("MobileApp", () => {
     act(() => {
       FakeSocket.last!.receive({
         type: "catalog",
-        projects: [{ id: "p1", name: "multi-cli-work" }],
+        projects: [{ id: "p1", name: "multi-cli-work", worktrees: [] }],
         agents: [{ id: "claude", label: "Claude" }],
       });
     });
@@ -145,12 +145,31 @@ describe("MobileApp", () => {
     act(() => {
       FakeSocket.last!.receive({
         type: "catalog",
-        projects: [{ id: "p1", name: "multi-cli-work" }],
+        projects: [{ id: "p1", name: "multi-cli-work", worktrees: [] }],
         agents: [{ id: "claude", label: "Claude" }],
       });
     });
     fireEvent.click(screen.getByRole("button", { name: "시작" }));
     expect(FakeSocket.last!.sent).toContainEqual({ type: "create", projectId: "p1", kind: "claude", cols: 150, rows: 40 });
+  });
+
+  it("starts a session in the worktree chosen on the form", () => {
+    useScreen(true);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
+    act(() => {
+      FakeSocket.last!.receive({
+        type: "catalog",
+        projects: [{ id: "p1", name: "multi-cli-work", worktrees: [{ id: "w1", branch: "feat/x" }] }],
+        agents: [{ id: "claude", label: "Claude" }],
+      });
+    });
+    fireEvent.change(screen.getByLabelText("작업 위치"), { target: { value: "w1" } });
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    expect(FakeSocket.last!.sent).toContainEqual(
+      expect.objectContaining({ type: "create", projectId: "p1", kind: "claude", worktreeId: "w1" }),
+    );
   });
 
   it("opens the session the host says was started", () => {

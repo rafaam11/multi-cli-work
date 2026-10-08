@@ -135,13 +135,13 @@ export function MobileApp() {
       {newSessionOpen ? (
         <NewSessionForm
           catalog={catalog}
-          onStart={(projectId, kind) => {
+          onStart={(projectId, kind, worktreeId) => {
             const size = startSize({
               measured: measuredRef.current,
               wide,
               viewport: { width: window.innerWidth, height: window.innerHeight },
             });
-            client.send({ type: "create", projectId, kind, ...size });
+            client.send({ type: "create", projectId, kind, ...(worktreeId ? { worktreeId } : {}), ...size });
             setNewSessionOpen(false);
           }}
           onCancel={() => setNewSessionOpen(false)}

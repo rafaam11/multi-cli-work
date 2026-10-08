@@ -73,7 +73,10 @@ export function SessionList({
               aria-current={session.id === activeSessionId ? "true" : undefined}
               onClick={() => onOpen(session.id)}
             >
-              <span className="m-session-label">{session.label}</span>
+              <span className="m-session-label">
+                {session.label}
+                {session.worktreeBranch ? <small className="m-session-branch"> · {session.worktreeBranch}</small> : null}
+              </span>
               <span className={`m-status m-status-${session.status}`}>{STATUS_LABEL[session.status]}</span>
             </button>
           ))}

@@ -5,8 +5,15 @@ import { NewSessionForm } from "./NewSessionForm";
 
 const CATALOG: RemoteCatalog = {
   projects: [
-    { id: "p1", name: "multi-cli-work" },
-    { id: "p2", name: "atlas" },
+    { id: "p1", name: "multi-cli-work", worktrees: [] },
+    {
+      id: "p2",
+      name: "atlas",
+      worktrees: [
+        { id: "w1", branch: "feat/search" },
+        { id: "w2", branch: "fix/login" },
+      ],
+    },
   ],
   agents: [
     { id: "claude", label: "Claude" },
@@ -25,7 +32,30 @@ describe("NewSessionForm", () => {
     fireEvent.change(screen.getByLabelText("폴더"), { target: { value: "p2" } });
     fireEvent.change(screen.getByLabelText("에이전트"), { target: { value: "codex" } });
     fireEvent.click(screen.getByRole("button", { name: "시작" }));
-    expect(onStart).toHaveBeenCalledWith("p2", "codex");
+    expect(onStart).toHaveBeenCalledWith("p2", "codex", null);
+  });
+
+  it("offers the folder's worktrees and starts in the chosen one", () => {
+    const onStart = vi.fn();
+    render(<NewSessionForm catalog={CATALOG} onStart={onStart} onCancel={vi.fn()} />);
+    // 워크트리가 없는 폴더에서는 고를 것이 없다.
+    expect(screen.queryByLabelText("작업 위치")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("폴더"), { target: { value: "p2" } });
+    const place = screen.getByLabelText("작업 위치");
+    expect(place).toHaveValue("");
+    expect([...place.querySelectorAll("option")].map((option) => option.textContent)).toEqual(["루트", "feat/search", "fix/login"]);
+    fireEvent.change(place, { target: { value: "w2" } });
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    expect(onStart).toHaveBeenCalledWith("p2", "claude", "w2");
+  });
+
+  it("goes back to the folder root when another folder is chosen", () => {
+    render(<NewSessionForm catalog={CATALOG} onStart={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("폴더"), { target: { value: "p2" } });
+    fireEvent.change(screen.getByLabelText("작업 위치"), { target: { value: "w1" } });
+    fireEvent.change(screen.getByLabelText("폴더"), { target: { value: "p1" } });
+    fireEvent.change(screen.getByLabelText("폴더"), { target: { value: "p2" } });
+    expect(screen.getByLabelText("작업 위치")).toHaveValue("");
   });
 
   it("cannot start without a folder and an agent", () => {

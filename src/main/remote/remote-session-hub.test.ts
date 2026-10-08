@@ -45,7 +45,7 @@ function setup() {
     },
     projectName: vi.fn(async () => "Sample Project"),
     catalog: vi.fn(async () => ({
-      projects: [{ id: "p1", name: "Sample Project" }],
+      projects: [{ id: "p1", name: "Sample Project", worktrees: [] }],
       agents: [{ id: "claude", label: "Claude" }],
     })),
     create: vi.fn(async (input: { projectId: string; kind: string; cols: number; rows: number }) =>
@@ -135,6 +135,17 @@ describe("RemoteSessionHub", () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(close).toHaveBeenCalledWith(REMOTE_CLOSE.retry, "hello timeout");
     expect(close).not.toHaveBeenCalledWith(REMOTE_CLOSE.unauthorized, expect.anything());
+  });
+
+  it("names the branch of a session that runs in a worktree", async () => {
+    const { gateway, sent, hello } = setup();
+    gateway.list.mockReturnValue([view("s1"), view("s2", { worktreeId: "w1" })]);
+    (gateway as typeof gateway & { worktreeBranch?: (id: string) => Promise<string | null> }).worktreeBranch = vi.fn(
+      async (id: string) => (id === "w1" ? "feat/search" : null),
+    );
+    await hello();
+    const list = sent.find((message) => message.type === "sessions");
+    expect(list?.type === "sessions" && list.sessions.map((session) => session.worktreeBranch)).toEqual([undefined, "feat/search"]);
   });
 
   it("forwards data that arrives while attach is in flight, and only for attached sessions", async () => {
@@ -287,7 +298,7 @@ describe("RemoteSessionHub session management", () => {
     await flush();
     expect(sent.at(-1)).toEqual({
       type: "catalog",
-      projects: [{ id: "p1", name: "Sample Project" }],
+      projects: [{ id: "p1", name: "Sample Project", worktrees: [] }],
       agents: [{ id: "claude", label: "Claude" }],
     });
   });
@@ -324,6 +335,20 @@ describe("RemoteSessionHub session management", () => {
     handle.receive('{"type":"create","projectId":"p1","kind":"codex","cols":5,"rows":900}');
     await flush();
     expect(gateway.create).toHaveBeenLastCalledWith({ projectId: "p1", kind: "codex", cols: 20, rows: 200 });
+  });
+
+  it("starts a session in the chosen worktree and passes on the host's refusal", async () => {
+    const { handle, hello, gateway, sent } = setup();
+    await hello();
+    handle.receive('{"type":"create","projectId":"p1","kind":"codex","worktreeId":"w1"}');
+    await flush();
+    expect(gateway.create).toHaveBeenLastCalledWith({ projectId: "p1", kind: "codex", worktreeId: "w1", cols: 80, rows: 24 });
+
+    gateway.create.mockRejectedValueOnce(new Error("Worktree w9 does not belong to project p1"));
+    handle.receive('{"type":"create","projectId":"p1","kind":"codex","worktreeId":"w9"}');
+    await flush();
+    await flush();
+    expect(sent.at(-1)).toEqual({ type: "error", code: "failed", message: "Worktree w9 does not belong to project p1" });
   });
 
   it("stops a running session", async () => {
