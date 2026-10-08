@@ -1,5 +1,5 @@
 import type { AgentView } from "@shared/agent-types";
-import { isWorkingBranch, isWorkingWorktree } from "@shared/working-branches";
+import { isWorkingWorktree } from "@shared/working-branches";
 import type { SlotViewState } from "@shared/app-state-types";
 import type {
   GitChangeEntry,
@@ -47,7 +47,7 @@ import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
 import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
-import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
+import { findAgent, projectName, sessionLabel } from "./session-labels";
 import { isFolderActive } from "./folder-status";
 import { resolveLayout } from "./grid-layouts";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
@@ -117,6 +117,7 @@ import {
   WorktreeRemovalDialog,
 } from "./app/AppConfirmDialogs";
 import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
+import { buildQuickOpenItems } from "./app/quick-open-items";
 import { LAST_WORKSPACE_KEY, planRestore } from "./app/restore-plan";
 import { useTerminalEvents } from "./app/use-terminal-events";
 
@@ -1773,73 +1774,31 @@ export function App() {
   };
 
   // Ordered for the empty query: sessions (most recently active first), folders, then commands.
-  const quickOpenItems = useMemo<QuickOpenItem[]>(() => {
-    if (!quickOpenVisible) return [];
-    const nameById = new Map(projects.map((project) => [project.id, projectName(project)]));
-    const sessionItems = [...sessions]
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .map((session): QuickOpenItem => ({
-        key: `session:${session.id}`,
-        kind: "session",
-        label: sessionLabel(
-          session,
-          sessions.filter((peer) => peer.projectId === session.projectId),
-          agents,
-        ),
-        detail: session.projectId ? (nameById.get(session.projectId) ?? null) : "도구",
-      }));
-    const projectItems = projects.map(
-      (project): QuickOpenItem => ({
-        key: `project:${project.id}`,
-        kind: "project",
-        label: projectName(project),
-        detail: project.rootPath,
-      }),
-    );
-    const workspaceItems = workspaceViews.filter((workspace) => workspace.kind === "main" || isWorkingBranch(workspace.branch)).map((workspace): QuickOpenItem => ({
-      key: workspace.kind === "main" ? `workspace:main:${workspace.projectId}` : `workspace:worktree:${workspace.worktreeId}`,
-      kind: "workspace",
-      label: workspace.kind === "main" ? `${nameById.get(workspace.projectId) ?? "프로젝트"} · 메인` : workspace.branch ?? `detached @ ${workspace.head?.slice(0, 7) ?? "unknown"}`,
-      detail: workspace.path,
-    }));
-    const workProjectItems = workProjects.map(
-      (workProject): QuickOpenItem => ({
-        key: `work-project:${workProject.id}`,
-        kind: "workProject",
-        label: workProject.name,
-        detail: (tagsByWorkProjectId[workProject.id] ?? []).map((tag) => `#${tag}`).join(" ") || null,
-      }),
-    );
-    const commandItems: QuickOpenItem[] = [
-      { key: "command:home", kind: "command", label: "홈 대시보드 열기", detail: null },
-      ...(selectedProject && !selectedProjectMissing
-        ? agents
-            .filter((agent) => agent.available)
-            .map(
-              (agent): QuickOpenItem => ({
-                key: `command:new-session:${agent.id}`,
-                kind: "command",
-                label: newSessionLabel(agent),
-                detail: projectName(selectedProject),
-              }),
-            )
-        : []),
-      { key: "command:edit-agents", kind: "command", label: "에이전트 추가 (agents.json)", detail: null },
-      { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
-      { key: "command:settings", kind: "command", label: "설정 열기", detail: null },
-    ];
-    return [...sessionItems, ...workspaceItems, ...projectItems, ...workProjectItems, ...commandItems];
-  }, [
-    quickOpenVisible,
-    sessions,
-    projects,
-    workspaceViews,
-    workProjects,
-    tagsByWorkProjectId,
-    agents,
-    selectedProject,
-    selectedProjectMissing,
-  ]);
+  const quickOpenItems = useMemo<QuickOpenItem[]>(
+    () =>
+      quickOpenVisible
+        ? buildQuickOpenItems({
+            sessions,
+            projects,
+            workspaceViews,
+            workProjects,
+            tagsByWorkProjectId,
+            agents,
+            selectedProject: selectedProjectMissing ? null : selectedProject,
+          })
+        : [],
+    [
+      quickOpenVisible,
+      sessions,
+      projects,
+      workspaceViews,
+      workProjects,
+      tagsByWorkProjectId,
+      agents,
+      selectedProject,
+      selectedProjectMissing,
+    ],
+  );
 
   const handleQuickOpenSelect = (item: QuickOpenItem) => {
     setQuickOpenVisible(false);
