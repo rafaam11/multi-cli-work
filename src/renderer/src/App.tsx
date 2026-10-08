@@ -42,7 +42,6 @@ import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceGrid } from "./WorkspaceGrid";
 import { FolderStartPage } from "./FolderStartPage";
-import type { SnapZone } from "./snap-zones";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
 import { fanOutTargets } from "@shared/fan-out";
@@ -61,21 +60,15 @@ import {
   type PaneContent,
   type PaneRow,
 } from "./pane-items";
-import { OTHER_SHELF, SHELF_TEXT, type ShelfKind, type Shelves } from "./shelves";
-import type { DropPosition } from "./project-order";
+import { SHELF_TEXT, type ShelfKind, type Shelves } from "./shelves";
 import {
   appendSession,
   clampPage,
-  clearSlot,
   normalizeSlots,
   pageOfSession,
   placeInSlot,
-  placePaneRelative,
   removeSession,
   resolveView,
-  setLayout,
-  splitColumnAt,
-  mergeColumnAt,
   viewPageSize,
 } from "./slot-view";
 import { errorMessage } from "./ipc-error";
@@ -117,6 +110,7 @@ import {
   WorktreeRemovalDialog,
 } from "./app/AppConfirmDialogs";
 import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
+import { createGridActions } from "./app/grid-actions";
 import { buildQuickOpenItems } from "./app/quick-open-items";
 import { LAST_WORKSPACE_KEY, planRestore } from "./app/restore-plan";
 import { useTerminalEvents } from "./app/use-terminal-events";
@@ -732,46 +726,6 @@ export function App() {
     setFolderViews((current) => ({ ...current, [key]: mutate(current[key] ?? EMPTY_VIEW) }));
   }, []);
 
-  const updateCurrentView = (mutate: (view: SlotViewState) => SlotViewState) => {
-    if (shelfKind !== null) {
-      const kind = shelfKind;
-      setShelves((current) => ({ ...current, [kind]: mutate(current[kind]) }));
-      return;
-    }
-    updateFolderView(folderViewKey, mutate);
-  };
-
-  /**
-   * Puts a pane on one shelf and takes it off the other in a single update, because the rule the two
-   * writes keep is "exactly one shelf holds this pane" — split apart, there would be a paint in
-   * between where both do, and the sidebar would draw the pane twice.
-   */
-  const placePaneOnShelf = (
-    kind: ShelfKind,
-    paneId: string,
-    place: (view: SlotViewState) => SlotViewState,
-  ) => {
-    setShelves((current) => {
-      const other = OTHER_SHELF[kind];
-      const next: Shelves = { ...current };
-      next[kind] = place(current[kind]);
-      next[other] = removeSession(current[other], paneId);
-      return next[kind] === current[kind] && next[other] === current[other] ? current : next;
-    });
-  };
-
-  /**
-   * A drop that puts a pane on the grid in front of the user. On a shelf it is also a move between
-   * the two: whatever the drop does to this shelf, the pane leaves the other one.
-   */
-  const placePaneOnCurrentView = (paneId: string, place: (view: SlotViewState) => SlotViewState) => {
-    if (shelfKind === null) {
-      updateFolderView(folderViewKey, place);
-      return;
-    }
-    placePaneOnShelf(shelfKind, paneId, place);
-  };
-
   /**
    * A folder's grid catches up on the sessions it does not list yet. This runs when a folder view
    * comes on screen and when one of its sessions is born — never on every render, so a slot emptied
@@ -923,134 +877,43 @@ export function App() {
     persistSelection(session.projectId, session.id);
   };
 
-  /** Page-relative slots are what the grid draws; the arrangement is addressed absolutely. */
-  const absoluteSlot = (index: number) => resolvedView.page * viewPageSize(currentView) + index;
-
-  /**
-   * The ✕ on a pane. On a folder's grid it empties the slot — the session keeps running, the file
-   * stays open, and the panes behind it move forward so the grid is never left with a gap.
-   *
-   * On a shelf it moves the pane to the other one instead. Emptying a slot of 작업공간 would say
-   * nothing, since that shelf collects everything the app holds and would take the pane back on the
-   * next pass; 숨김 is where "not on 작업공간" is recorded, so that is where the pane goes.
-   */
-  const clearSlotAt = (index: number) => {
-    const paneId = resolvedView.slots[index] ?? null;
-    if (shelfKind !== null) {
-      if (paneId !== null) movePaneToOtherShelf(shelfKind, paneId);
-      return;
-    }
-    updateCurrentView((view) => clearSlot(view, absoluteSlot(index)));
-    if (paneId !== null && paneId === focusedPaneId) setFocusedPaneId(null);
-  };
-
-  /**
-   * Splitting is the one arrangement move made from the pane rather than the header, because it is
-   * the one that concerns a single column. Both handlers hand over the layout the grid is drawing —
-   * on 자동 that is a shape nothing has stored yet — so the slot index means the same thing on both
-   * sides. A split pins a 자동 view to that shape; 자동 has no room for a stacked pair.
-   */
-  const splitColumn = (index: number) => {
-    updateCurrentView((view) => splitColumnAt(view, resolvedView.layout, resolvedView.page, index));
-  };
-
-  const mergeColumn = (index: number) => {
-    updateCurrentView((view) => mergeColumnAt(view, resolvedView.layout, resolvedView.page, index));
-  };
-
-  /**
-   * A pane dragged to an edge or a corner. The zone names the arrangement that draws that region,
-   * so the snap is one move: switch the view onto that preset — off 자동 if it was on it, which is
-   * the point of asking for a shape by hand — and put the pane in the slot covering the region.
-   * Whatever no longer fits paginates, exactly as picking the preset from the header would do.
-   */
-  const snapPaneToZone = (zone: SnapZone, paneId: string) => {
-    // The zone's slot index is absolute, so the drop lands where the preview drew it.
-    setPage(0);
-    placePaneOnCurrentView(paneId, (view) =>
-      placeInSlot(setLayout(view, zone.layoutId), zone.slotIndex, paneId),
-    );
-    focusPane(paneId);
-  };
-
-  /** Dropping onto a slot inserts the pane there; whoever held it slides back one place. */
-  const dropPaneOnSlot = (index: number, paneId: string) => {
-    placePaneOnCurrentView(paneId, (view) => placeInSlot(view, absoluteSlot(index), paneId));
-    focusPane(paneId);
-  };
-
-  /**
-   * Picking an arrangement is also picking how many panes fit, so a narrower layout pushes the rest
-   * onto later pages rather than dropping them. Going back to the first page keeps the pane the user
-   * was looking at in view — it is the one that stays put in every layout.
-   */
-  const chooseLayout = (layoutId: string) => {
-    updateCurrentView((view) => setLayout(view, layoutId));
-    setPage(0);
-  };
-
-  const selectShelf = (kind: ShelfKind) => {
-    const view = shelves[kind];
-    setShelfKind(kind);
-    setPage(0);
-    setFocusedPaneId(view.slots.find((id): id is string => id !== null) ?? null);
-    setActiveView("terminal");
-    setActionError(null);
-  };
-
-  /**
-   * Moves a pane onto a shelf: it takes the first free slot there, or a new one at the end, and
-   * leaves the other shelf. This is the one road between the two, so a drag onto a sidebar row, the
-   * 세션 menu and the ✕ on a pane all end up here and all mean the same thing.
-   */
-  const movePaneToShelf = (kind: ShelfKind, paneId: string) => {
-    placePaneOnShelf(kind, paneId, (view) => appendSession(view, paneId));
-    // The pane has just left the grid on screen, so the focus cannot stay on it.
-    if (shelfKind !== null && shelfKind !== kind) {
-      setFocusedPaneId((current) => (current === paneId ? null : current));
-    }
-  };
-
-  /**
-   * A sidebar pane row is an insertion target rather than an append target. Moving between shelves
-   * and placing beside the named row happen in the same state update, preserving the one-shelf rule.
-   */
-  const placePaneOnShelfRow = (
-    kind: ShelfKind,
-    paneId: string,
-    targetPaneId: string,
-    position: DropPosition,
-  ) => {
-    setShelves((current) => {
-      if (!current[kind].slots.includes(targetPaneId)) return current;
-      const other = OTHER_SHELF[kind];
-      const placed = placePaneRelative(current[kind], paneId, targetPaneId, position);
-      const removed = removeSession(current[other], paneId);
-      if (placed === current[kind] && removed === current[other]) return current;
-      return { ...current, [kind]: placed, [other]: removed };
-    });
-    if (shelfKind !== null && shelfKind !== kind) {
-      setFocusedPaneId((current) => (current === paneId ? null : current));
-    }
-  };
-
-  /** One press of ✕: 작업공간 → 숨김, 숨김 → 작업공간. The session keeps running either way. */
-  const movePaneToOtherShelf = (from: ShelfKind, paneId: string) =>
-    movePaneToShelf(OTHER_SHELF[from], paneId);
-
-  /**
-   * A pane picked from an expanded shelf row. Unlike `selectShelf` it knows which pane was meant, so
-   * it turns to the page holding it — that is how a pane on the shelf's second page gets on screen
-   * now that there is no tab bar to click.
-   */
-  const revealShelfPane = (kind: ShelfKind, paneId: string) => {
-    const view = shelves[kind];
-    setShelfKind(kind);
-    setPage(pageOfSession(view.slots, viewPageSize(view), paneId) ?? 0);
-    setFocusedPaneId(paneId);
-    setActiveView("terminal");
-    setActionError(null);
-  };
+  const {
+    updateCurrentView,
+    placePaneOnShelf,
+    placePaneOnCurrentView,
+    absoluteSlot,
+    clearSlotAt,
+    splitColumn,
+    mergeColumn,
+    snapPaneToZone,
+    dropPaneOnSlot,
+    chooseLayout,
+    selectShelf,
+    movePaneToShelf,
+    placePaneOnShelfRow,
+    movePaneToOtherShelf,
+    revealShelfPane,
+    openPaneOn,
+    openPane,
+    dropPaneEverywhere,
+  } = createGridActions({
+    shelfKind,
+    folderViewKey,
+    folderViews,
+    shelves,
+    currentView,
+    resolvedView,
+    focusedPaneId,
+    setFolderViews,
+    setShelves,
+    setShelfKind,
+    setPage,
+    setFocusedPaneId,
+    setActiveView,
+    setActionError,
+    updateFolderView,
+    focusPane,
+  });
 
   useEffect(() => {
     revealSessionRef.current = revealSession;
@@ -1519,35 +1382,6 @@ export function App() {
    * or a new one at the end, and goes to it. A document opened from the right sidebar lands here
    * exactly as a session does, which is what makes the two interchangeable in a slot.
    */
-  const openPaneOn = (target: ShelfKind | null, paneId: string) => {
-    const view = target === null ? (folderViews[folderViewKey] ?? EMPTY_VIEW) : shelves[target];
-    const next = appendSession(view, paneId);
-    if (target === null) updateFolderView(folderViewKey, () => next);
-    else placePaneOnShelf(target, paneId, () => next);
-    setShelfKind(target);
-    setPage(pageOfSession(next.slots, viewPageSize(next), paneId) ?? 0);
-    setFocusedPaneId(paneId);
-    setActiveView("terminal");
-  };
-
-  /**
-   * Opening something onto 숨김 would be a contradiction — a pane the user just asked for is not one
-   * they are putting away — so that one case steps across to 작업공간 and opens there.
-   */
-  const openPane = (paneId: string) => openPaneOn(shelfKind === "hidden" ? "active" : shelfKind, paneId);
-
-  /** A closed document leaves every arrangement — unlike a session, it has no life off the grid. */
-  const dropPaneEverywhere = (paneId: string) => {
-    setFolderViews((current) =>
-      Object.fromEntries(Object.entries(current).map(([key, view]) => [key, removeSession(view, paneId)])),
-    );
-    setShelves((current) => ({
-      active: removeSession(current.active, paneId),
-      hidden: removeSession(current.hidden, paneId),
-    }));
-    setFocusedPaneId((current) => (current === paneId ? null : current));
-  };
-
   const {
     openFile,
     openWithOs,
