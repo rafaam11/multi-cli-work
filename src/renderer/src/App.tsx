@@ -84,7 +84,6 @@ import {
   folderViewKeyOf,
   EMPTY_VIEW,
   emptyShelves,
-  ACTIVITY_LOG_LIMIT,
   EMPTY_AVAILABILITY,
   MIN_SIDEBAR_WIDTH,
   SIDEBAR_RAIL_WIDTH,
@@ -96,7 +95,6 @@ import {
   documentTargetKey,
   replaceSession,
   mergeAttachedSession,
-  applyEvent,
   type ActiveView,
   type OpenDocument,
   type ContextMenuState,
@@ -120,6 +118,7 @@ import {
 } from "./app/AppConfirmDialogs";
 import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
 import { LAST_WORKSPACE_KEY, planRestore } from "./app/restore-plan";
+import { useTerminalEvents } from "./app/use-terminal-events";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
@@ -136,7 +135,6 @@ export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("home");
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const sessionsRef = useRef<TerminalSessionView[]>([]);
-  const activityIdRef = useRef(0);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => {
     try {
@@ -701,68 +699,17 @@ export function App() {
 
   useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
 
-  useEffect(
-    () =>
-      window.multiCliWork.terminals.onEvent((event) => {
-        if (event.type === "data") return;
-        // A session the renderer did not start itself — a lazy auto-resume in the other pane, a
-        // jk-coding-cli spawn — still has to appear in the list.
-        if (event.type === "created") {
-          setSessions((current) => replaceSession(current, event.session));
-          return;
-        }
-        // Removed by someone else — a remote client, a folder teardown. A removal this window asked
-        // for arrives here too; `removeSessionById` then picks the next selection on top of this.
-        if (event.type === "removed") {
-          setSessions((current) => current.filter((session) => session.id !== event.sessionId));
-          setFocusedPaneId((current) => (current === event.sessionId ? null : current));
-          setSelectedSessionId((current) => (current === event.sessionId ? null : current));
-          return;
-        }
-        if (event.type === "workspace") {
-          setSessions((current) => replaceSession(current, event.session));
-          // Keep the live pane in place. Its sidebar row and next folder selection use the new
-          // binding; moving/unmounting the active grid would interrupt an in-progress interaction.
-          void window.multiCliWork.worktrees.sync().then((next) => {
-            setWorkspaceViews(next.workspaces);
-            setWorktreeWarnings(next.warnings);
-            return window.multiCliWork.worktrees.list();
-          }).then(setWorktrees).catch(() => undefined);
-          return;
-        }
-        if (event.type === "agent-edits") {
-          // No path is in the event (renderer never sees absolute paths) and no session field
-          // changes — just tell FileExplorer to re-pull changedPaths for whatever target is open,
-          // same as GitPanel's mcw:git-refresh.
-          window.dispatchEvent(new Event("mcw:agent-edits"));
-          return;
-        }
-        if (event.type === "status") {
-          const previous = sessionsRef.current.find((session) => session.id === event.sessionId);
-          if (previous && previous.status !== event.status) {
-            const peers = sessionsRef.current.filter((session) => session.projectId === previous.projectId);
-            setActivityLog((log) =>
-              [
-                {
-                  id: `activity-${activityIdRef.current++}`,
-                  timestamp: new Date().toISOString(),
-                  projectId: previous.projectId,
-                  sessionId: previous.id,
-                  sessionLabel: sessionLabel(previous, peers, agentsRef.current),
-                  fromStatus: previous.status,
-                  toStatus: event.status,
-                },
-                ...log,
-              ].slice(0, ACTIVITY_LOG_LIMIT),
-            );
-          }
-        }
-        setSessions((current) =>
-          current.map((session) => (session.id === event.sessionId ? applyEvent(session, event) : session)),
-        );
-      }),
-    [],
-  );
+  useTerminalEvents({
+    setSessions,
+    setFocusedPaneId,
+    setSelectedSessionId,
+    setWorkspaceViews,
+    setWorktreeWarnings,
+    setWorktrees,
+    setActivityLog,
+    sessionsRef,
+    agentsRef,
+  });
 
   const persistSelection = useCallback((projectId: string | null, sessionId: string | null) => {
     void window.multiCliWork.terminals.select(projectId, sessionId).catch((error) => {
