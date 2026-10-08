@@ -103,6 +103,11 @@ export function createGridActions(context: GridContext) {
     placePaneOnShelf(shelfKind, paneId, place);
   };
 
+  /**
+   * Puts a pane on one named surface — a shelf, or the selected folder — taking the first free slot
+   * or a new one at the end, and goes to it. A document opened from the right sidebar lands here
+   * exactly as a session does, which is what makes the two interchangeable in a slot.
+   */
   const openPaneOn = (target: ShelfKind | null, paneId: string) => {
     const view = target === null ? (folderViews[folderViewKey] ?? EMPTY_VIEW) : shelves[target];
     const next = appendSession(view, paneId);

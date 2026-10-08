@@ -1377,11 +1377,6 @@ export function App() {
     }
   };
 
-  /**
-   * Puts a pane on one named surface — a shelf, or the selected folder — taking the first free slot
-   * or a new one at the end, and goes to it. A document opened from the right sidebar lands here
-   * exactly as a session does, which is what makes the two interchangeable in a slot.
-   */
   const {
     openFile,
     openWithOs,
