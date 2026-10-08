@@ -3,21 +3,19 @@ import { isWorkingBranch, isWorkingWorktree } from "@shared/working-branches";
 import type { SlotViewState } from "@shared/app-state-types";
 import type {
   GitChangeEntry,
-  GitDiffResult,
   ProjectWorkspaceSnapshot,
-  ProviderAvailability,
   SessionAttention,
   TerminalSessionView,
 } from "@shared/api-types";
 import { needsRunConfirmation, type FileExplorerTarget, type FileTreeEntry } from "@shared/file-explorer-types";
 import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
-import type { WorkProject, WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
+import type { WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
 import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
 import { pathStyleFor, resolveShellRefForPath, shellLinkKey } from "@shared/workspace-path";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
-import { DEFAULT_TERMINAL_SIZE, type TerminalEvent, type TerminalKind, type ToolCommand } from "@shared/terminal-types";
+import { DEFAULT_TERMINAL_SIZE, type TerminalKind, type ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
 import {
   lazy,
@@ -33,7 +31,6 @@ import {
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
 import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
-import type { GitDiffFile } from "./GitDiffPane";
 import { GitGraphEmbed } from "./GitGraphEmbed";
 import type { GitWorktreeOption } from "./GitPanel";
 import { RightSidebar, type RightSidebarTab } from "./RightSidebar";
@@ -63,7 +60,7 @@ import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { findAgent, newSessionLabel, projectName, sessionLabel } from "./session-labels";
 import { isFolderActive } from "./folder-status";
-import { DEFAULT_LAYOUT_ID, resolveLayout } from "./grid-layouts";
+import { resolveLayout } from "./grid-layouts";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
 import { recentProjects } from "./recent-folders";
 import { buildSessionPanelItems, type SessionScopeTarget } from "./session-panel";
@@ -91,196 +88,51 @@ import {
   setLayout,
   splitColumnAt,
   mergeColumnAt,
-  pruneFolderViews,
   viewPageSize,
 } from "./slot-view";
 import { isTypingTarget, normalizeKeyEvent, resolveKeymap } from "./keymap";
 import { errorMessage } from "./ipc-error";
 import { useConfirmDialog } from "./confirm-dialog";
 import { applyTheme, resolveTheme } from "./theme";
-
-type ActiveView = "home" | "detail" | "work-project" | "terminal";
-
-/**
- * A grid belongs to a surface, and a surface is either a folder (a project, or one of its
- * worktrees, or the tool sessions that belong to none) or one of the two shelves. Folder surfaces
- * are keyed by a string so they can all live in one persisted record; the prefixes keep a
- * worktree's grid from colliding with a project id.
- */
-const TOOLS_VIEW_KEY = "@tools";
-
-function folderViewKeyOf(projectId: string | null, worktreeId: string | null): string {
-  if (worktreeId) return `@worktree:${worktreeId}`;
-  return projectId ?? TOOLS_VIEW_KEY;
-}
-
-const EMPTY_VIEW: SlotViewState = { layoutId: DEFAULT_LAYOUT_ID, slots: [] };
-
-/** 작업공간 and 숨김 always exist, even before anything has been put on either. */
-function emptyShelves(): Shelves {
-  return {
-    active: { layoutId: DEFAULT_LAYOUT_ID, slots: [] },
-    hidden: { layoutId: DEFAULT_LAYOUT_ID, slots: [] },
-  };
-}
-
-/**
- * Restores the two shelves. Main has already folded a pre-v1.20 file's 작업공간1/2/3 into the single
- * `workspace`, and a file from before v1.14.0 has neither but does carry `visibleSessionIds` — the
- * panes that were on screen when the app last closed. Those become the 작업공간, so an upgrade never
- * opens on an arrangement the user never asked for.
- *
- * Coming back short is safe: what matters is which panes were hidden, and the reconciler collects
- * everything else into 작업공간 on the first pass.
- */
-function restoreShelves(
-  savedWorkspace: SlotViewState | undefined,
-  savedHiddenPanes: SlotViewState | undefined,
-  legacyVisibleSessionIds: readonly string[] | undefined,
-  paneIds: readonly string[],
-): Shelves {
-  const source =
-    savedWorkspace ??
-    (legacyVisibleSessionIds && legacyVisibleSessionIds.length > 0
-      ? { layoutId: DEFAULT_LAYOUT_ID, slots: [...legacyVisibleSessionIds] }
-      : undefined);
-  return {
-    active: normalizeSlots(source, [], { keep: paneIds }),
-    hidden: normalizeSlots(savedHiddenPanes, [], { keep: paneIds }),
-  };
-}
-
-function restoreFolderViews(
-  saved: Readonly<Record<string, SlotViewState>> | undefined,
-  paneIds: readonly string[],
-  projectIds: ReadonlySet<string>,
-  worktreeIds: ReadonlySet<string>,
-): Record<string, SlotViewState> {
-  return Object.fromEntries(
-    Object.entries(pruneFolderViews(saved ?? {}, projectIds, worktreeIds, TOOLS_VIEW_KEY)).map(([key, view]) => [
-      key,
-      normalizeSlots(view, [], { keep: paneIds }),
-    ]),
-  );
-}
+import {
+  folderViewKeyOf,
+  EMPTY_VIEW,
+  emptyShelves,
+  restoreShelves,
+  restoreFolderViews,
+  ACTIVITY_LOG_LIMIT,
+  EMPTY_AVAILABILITY,
+  DEFAULT_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  MAX_SIDEBAR_WIDTH,
+  MIN_WORKSPACE_WIDTH,
+  SIDEBAR_RESIZER_WIDTH,
+  SIDEBAR_RAIL_WIDTH,
+  DEFAULT_RIGHT_SIDEBAR_WIDTH,
+  MIN_RIGHT_SIDEBAR_WIDTH,
+  MAX_RIGHT_SIDEBAR_WIDTH,
+  RIGHT_SIDEBAR_RAIL_WIDTH,
+  COLLAPSED_PROJECTS_KEY,
+  COLLAPSED_WORK_PROJECTS_KEY,
+  persistCollapsed,
+  documentTargetKey,
+  replaceSession,
+  mergeAttachedSession,
+  applyEvent,
+  type ActiveView,
+  type OpenDocument,
+  type ContextMenuState,
+  type RemovalState,
+  type SessionMenuState,
+  type RenameSurface,
+  type WorktreeMenuState,
+  type WorktreeRemovalState,
+  type WorktreeForceState,
+  type DiffViewState,
+} from "./app/app-model";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
-const ACTIVITY_LOG_LIMIT = 20;
-
-const EMPTY_AVAILABILITY: ProviderAvailability = { vscode: false };
-const DEFAULT_SIDEBAR_WIDTH = 264;
-const MIN_SIDEBAR_WIDTH = 200;
-const MAX_SIDEBAR_WIDTH = 420;
-const MIN_WORKSPACE_WIDTH = 480;
-const SIDEBAR_RESIZER_WIDTH = 4;
-const SIDEBAR_RAIL_WIDTH = 52;
-const DEFAULT_RIGHT_SIDEBAR_WIDTH = 280;
-const MIN_RIGHT_SIDEBAR_WIDTH = 220;
-const MAX_RIGHT_SIDEBAR_WIDTH = 480;
-const RIGHT_SIDEBAR_RAIL_WIDTH = 36;
-/**
- * 두 층 모두 무엇이 *접혔는지*를 적는다 — 그래야 나중에 생긴 폴더나 프로젝트가 펼쳐진 채로
- * 시작한다. 폴더 키는 v1.27에서 세션 행이 트리를 떠났을 때 읽기를 멈췄을 뿐 지우지는 않았으므로,
- * 다시 읽는 지금 업그레이드 전의 배치가 그대로 돌아온다. 두 키의 기록자는 `persistCollapsed` 하나다.
- */
-const COLLAPSED_PROJECTS_KEY = "multi-cli-work.projects.v1";
-const COLLAPSED_WORK_PROJECTS_KEY = "multi-cli-work.work-projects.v1";
-
-function persistCollapsed(key: string, collapsed: Set<string>): void {
-  try {
-    localStorage.setItem(key, JSON.stringify({ version: 1, collapsed: [...collapsed] }));
-  } catch { /* unavailable storage */ }
-}
-
-/**
- * A document opened from the right-hand sidebar. It takes a slot exactly like a terminal does, so
- * a diff can sit beside the session that produced it rather than replacing the whole workspace.
- * Files are not here: `openFileTabs` already holds their content, and their pane id points at it.
- */
-type OpenDocument =
-  | { id: string; kind: "diff"; file: GitDiffFile }
-  | { id: string; kind: "graph"; target: FileExplorerTarget; targetLabel: string | null }
-  | { id: string; kind: "pull-request"; projectId: string; remoteName: string; number: number; label: string };
-
-function documentTargetKey(target: FileExplorerTarget): string {
-  return `${target.kind}:${target.id}`;
-}
-
-interface ContextMenuState {
-  project: SharedProject;
-  x: number;
-  y: number;
-}
-
-interface RemovalState {
-  project: SharedProject;
-  sessionCount: number;
-}
-
-interface SessionMenuState {
-  session: TerminalSessionView;
-  label: string;
-  /** Where the right-click happened, so 이름 변경 opens its input on that surface and not the other. */
-  surface: RenameSurface;
-  x: number;
-  y: number;
-}
-
-/**
- * A session now has a row in the sidebar *and* a pane header, and both can rename it. Remembering
- * which one asked keeps a single `SessionNameInput` on screen instead of two sharing one state.
- */
-type RenameSurface = "sidebar" | "pane";
-
-interface WorktreeMenuState {
-  worktree: SharedWorktree;
-  x: number;
-  y: number;
-}
-
-interface WorktreeRemovalState {
-  worktree: SharedWorktree;
-  sessionCount: number;
-}
-
-/** The second, force-only confirmation after git refused because of uncommitted changes. */
-interface WorktreeForceState {
-  worktree: SharedWorktree;
-  message: string;
-}
-
-interface DiffViewState {
-  title: string;
-  result: GitDiffResult;
-}
-
-function replaceSession(sessions: TerminalSessionView[], next: TerminalSessionView): TerminalSessionView[] {
-  const index = sessions.findIndex((session) => session.id === next.id);
-  if (index === -1) return [...sessions, next];
-  return sessions.map((session) => (session.id === next.id ? next : session));
-}
-
-function mergeAttachedSession(sessions: TerminalSessionView[], attached: TerminalSessionView): TerminalSessionView[] {
-  return sessions.map((current) => {
-    if (current.id !== attached.id) return current;
-    const currentFinished = current.status === "exited" || current.status === "error";
-    const attachedFinished = attached.status === "exited" || attached.status === "error";
-    const resumedAfterShutdown = current.interruptedByShutdown
-      && !attachedFinished
-      && !attached.interruptedByShutdown;
-    return currentFinished && !attachedFinished && !resumedAfterShutdown ? current : attached;
-  });
-}
-
-function applyEvent(session: TerminalSessionView, event: TerminalEvent): TerminalSessionView {
-  if (event.type === "status") return { ...session, status: event.status };
-  if (event.type === "title") return { ...session, title: event.title };
-  if (event.type === "exit") {
-    return { ...session, status: "exited", pid: null, exitCode: event.exitCode };
-  }
-  return session;
-}
 
 export function App() {
   const [snapshot, setSnapshot] = useState<ProjectWorkspaceSnapshot | null>(null);
