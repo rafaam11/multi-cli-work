@@ -135,6 +135,8 @@ PTY는 크기가 하나뿐이다.
 
 ## 7. 알림
 
+> **구현(v1.37.0, 셸 0.2.0)은 아래 원안과 다르다.** `mode: "status"`와 `attention` 이벤트를 따로 만들지 않았다. 호스트는 이미 `sessions`·`status`·`title`·`exit`·`created`·`removed`를 인증된 모든 연결에 방송하므로, 셸 서비스(`android/.../notify/`)는 데스크톱의 `HostStatusLink`처럼 `hello{mode:"ui"}`만 하고 attach하지 않는다 — 구버전 호스트에도 붙는다. 알림 판단(상태 전이에서만, 같은 상태 1회, 대기 해제 시 리셋)도 `HostStatusLink`와 같은 규칙을 셸이 한다(`StatusTracker`). `desktopFocused` 대신 `status`에 선택 필드 `presence`(`focused`·`active`·`away`)를 실었다: 앱 창 포커스 **그리고** 최근 2분 입력이 있을 때만 `focused`다 — 창을 켜 둔 채 자리를 비우면 폰 알림이 와야 하기 때문이다. 포그라운드 서비스 타입은 `specialUse`(dataSync의 6시간 제한 회피), 재부팅·셸 업데이트 뒤에는 `BootReceiver`가 다시 띄운다.
+
 - 셸의 **포그라운드 서비스**가 등록된 호스트 전부에 `mode: "status"` WS를 유지한다(상주 알림 아이콘 1개). 터미널 데이터는 받지 않는다.
 - 호스트는 기존 `notification-policy.ts`(`shouldShowTerminalStatusNotification`, `createTerminalNotificationDeduper`)와 `session-attention-controller.ts`의 판단 결과를 `attention` 이벤트로 내보낸다. 폰이 따로 판단하지 않는다.
 - 셸은 `attention`을 받으면 Android 알림을 띄우고, 알림을 탭하면 해당 호스트·세션 화면으로 딥링크한다.
