@@ -5,6 +5,7 @@ import {
   REMOTE_CLOSE,
   REMOTE_MIN_PROTOCOL_VERSION,
   REMOTE_PROTOCOL_VERSION,
+  type DesktopPresence,
   type RemoteCatalog,
   type RemoteClientMessage,
   type RemoteServerMessage,
@@ -29,6 +30,8 @@ export interface RemoteHubGateway {
   stop(sessionId: string): Promise<void>;
   /** 지울 수 없는 세션(진행 중인 PR 리뷰)이면 이유를 담아 거절한다. */
   remove(sessionId: string): Promise<void>;
+  /** 호스트 PC 앞에 사람이 있는지. 상태가 바뀔 때마다 함께 보낸다 — 폰이 알림을 생략할지 정한다. */
+  presence?(): DesktopPresence;
 }
 
 export interface RemoteHubDevices {
@@ -327,9 +330,11 @@ export class RemoteSessionHub {
           client.connection.send({ type: "data", sessionId: event.sessionId, data: event.data, sequence: event.sequence });
         }
         return;
-      case "status":
-        this.broadcast({ type: "status", sessionId: event.sessionId, status: event.status });
+      case "status": {
+        const presence = this.options.gateway.presence?.();
+        this.broadcast({ type: "status", sessionId: event.sessionId, status: event.status, ...(presence ? { presence } : {}) });
         return;
+      }
       case "title":
         this.broadcast({ type: "title", sessionId: event.sessionId, title: event.title });
         return;

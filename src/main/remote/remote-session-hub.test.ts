@@ -213,6 +213,14 @@ describe("RemoteSessionHub", () => {
     ]);
   });
 
+  it("tells clients whether someone is at the host PC along with each status change", async () => {
+    const { gateway, sent, emit, hello } = setup();
+    (gateway as typeof gateway & { presence?: () => string }).presence = vi.fn(() => "focused");
+    await hello();
+    emit({ type: "status", sessionId: "s9", status: "awaiting-input" });
+    expect(sent.at(-1)).toEqual({ type: "status", sessionId: "s9", status: "awaiting-input", presence: "focused" });
+  });
+
   it("disconnectDevice closes that device's connections with 4403", async () => {
     const { hub, close, hello } = setup();
     await hello();

@@ -27,6 +27,12 @@ export const REMOTE_CLOSE = { protocol: 4400, unauthorized: 4401, revoked: 4403,
 export type SizeOwner = string;
 export const DESKTOP_SIZE_OWNER = "desktop";
 
+/**
+ * 호스트 PC 앞에 사람이 있는지(v1.37.0). focused: 앱 창에 포커스가 있고 최근 입력이 있다 · active: PC를
+ * 쓰고 있지만 다른 창이다 · away: 자리를 비웠거나 잠겼다. 폰은 focused일 때 알림을 생략한다.
+ */
+export type DesktopPresence = "focused" | "active" | "away";
+
 /** PC 설치본에 동봉된 셸 APK. 폰은 이 값으로 자기 업데이트 여부를 정한다. */
 export interface ShellRelease {
   versionCode: number;
@@ -87,7 +93,8 @@ export type RemoteServerMessage =
       sizeOwner: SizeOwner;
     }
   | { type: "data"; sessionId: string; data: string; sequence: number }
-  | { type: "status"; sessionId: string; status: TerminalStatus }
+  /** presence는 v1.37.0 호스트부터 싣는다. 없으면 클라이언트는 away로 본다. */
+  | { type: "status"; sessionId: string; status: TerminalStatus; presence?: DesktopPresence }
   | { type: "title"; sessionId: string; title: string }
   | { type: "exit"; sessionId: string; exitCode: number }
   | { type: "created"; session: RemoteSessionSummary }

@@ -7,6 +7,7 @@ import {
   ipcMain,
   nativeImage,
   Notification,
+  powerMonitor,
   safeStorage,
   shell,
   utilityProcess,
@@ -122,6 +123,7 @@ import { readShellArtifact } from "./remote/shell-artifact";
 import { TerminalSizeArbiter } from "./remote/size-arbiter";
 import { tailscaleAddresses } from "./remote/tailscale-address";
 import { buildRemoteCatalog } from "./remote/remote-catalog";
+import { desktopPresence, PRESENCE_IDLE_THRESHOLD_SECONDS } from "./remote/desktop-presence";
 import { assertNotReviewSession } from "./terminal/review-guard";
 import { RemoteHostRegistry } from "./remote-client/host-registry";
 import { pairWithHost } from "./remote-client/pair-host";
@@ -515,6 +517,11 @@ export async function createDesktopRuntime(
         assertNotReviewSession(await github.activeReviews(), sessionId);
         await coordinator.remove(sessionId);
       },
+      presence: () =>
+        desktopPresence(
+          mainWindowState(host.getMainWindow()),
+          powerMonitor.getSystemIdleState(PRESENCE_IDLE_THRESHOLD_SECONDS),
+        ),
     },
     devices: remoteDevices,
     sizes,
