@@ -11,6 +11,7 @@ import { findAgent } from "../session-labels";
 import type { ShelfKind } from "../shelves";
 import { appendSession, placeInSlot } from "../slot-view";
 import { mergeAttachedSession, replaceSession, type ActiveView } from "./app-model";
+import { pendingRunner } from "./pending";
 
 export interface SessionContext {
   agents: readonly AgentView[];
@@ -79,18 +80,7 @@ export function createSessionActions(context: SessionContext) {
     setActiveView,
   } = context;
 
-  /** 한 번에 하나: 진행 중 표시를 켜고, 실패하면 그 이유를 보인다. */
-  const whilePending = async (action: () => Promise<void>) => {
-    setPendingAction(true);
-    setActionError(null);
-    try {
-      await action();
-    } catch (error) {
-      setActionError(errorMessage(error));
-    } finally {
-      setPendingAction(false);
-    }
-  };
+  const whilePending = pendingRunner(setPendingAction, setActionError);
 
   const startSession = async (project: SharedProject, kind: TerminalKind, worktreeId?: string) => {
     if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;

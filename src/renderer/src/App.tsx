@@ -111,6 +111,7 @@ import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-act
 import { createGridActions } from "./app/grid-actions";
 import { buildQuickOpenItems } from "./app/quick-open-items";
 import { createSessionActions } from "./app/session-actions";
+import { createWorktreeActions } from "./app/worktree-actions";
 import { LAST_WORKSPACE_KEY, planRestore } from "./app/restore-plan";
 import { useTerminalEvents } from "./app/use-terminal-events";
 
@@ -1324,82 +1325,30 @@ export function App() {
     }
   };
 
-  const handleWorktreeCreated = (worktree: SharedWorktree) => {
-    setWorktreeCreateProject(null);
-    setWorktrees((current) => [...current, worktree]);
-    selectWorktree(worktree);
-  };
-
-  const showDiff = async (target: { worktree: SharedWorktree } | { project: SharedProject }) => {
-    setActionError(null);
-    try {
-      if ("worktree" in target) {
-        const owner = projects.find((project) => project.id === target.worktree.projectId);
-        setDiffView({
-          title: owner ? `${projectName(owner)} · ${target.worktree.branch}` : target.worktree.branch,
-          result: await window.multiCliWork.worktrees.gitDiff(target.worktree.id),
-        });
-      } else {
-        setDiffView({
-          title: projectName(target.project),
-          result: await window.multiCliWork.projects.gitDiff(target.project.id),
-        });
-      }
-    } catch (error) {
-      setActionError(errorMessage(error));
-    }
-  };
-
-  const requestWorktreeRemoval = (worktree: SharedWorktree) => {
-    const sessionCount = sessions.filter((session) => session.worktreeId === worktree.id).length;
-    if (sessionCount === 0) {
-      void confirmWorktreeRemoval(worktree);
-      return;
-    }
-    setWorktreeRemoval({ worktree, sessionCount });
-  };
-
-  const cleanupRemovedWorktree = (worktree: SharedWorktree) => {
-    setWorktrees((current) => current.filter((candidate) => candidate.id !== worktree.id));
-    setSessions((current) => current.filter((session) => session.worktreeId !== worktree.id));
-    if (selectedWorktreeId === worktree.id) {
-      setSelectedWorktreeId(null);
-      setSelectedSessionId(null);
-      setActiveView("detail");
-      persistSelection(worktree.projectId, null);
-    }
-  };
-
-  /** First attempt never forces: git refusing over uncommitted changes comes back as a `dirty`
-   *  result, which opens the second, explicit discard confirmation instead of silently deleting. */
-  const confirmWorktreeRemoval = async (worktree: SharedWorktree) => {
-    setWorktreeRemoval(null);
-    setPendingAction(true);
-    setActionError(null);
-    try {
-      const result = await window.multiCliWork.worktrees.remove(worktree.id, false);
-      if (result.removed) cleanupRemovedWorktree(worktree);
-      else setWorktreeForce({ worktree, message: result.message });
-    } catch (error) {
-      setActionError(errorMessage(error));
-    } finally {
-      setPendingAction(false);
-    }
-  };
-
-  const forceWorktreeRemoval = async (worktree: SharedWorktree) => {
-    setWorktreeForce(null);
-    setPendingAction(true);
-    setActionError(null);
-    try {
-      const result = await window.multiCliWork.worktrees.remove(worktree.id, true);
-      if (result.removed) cleanupRemovedWorktree(worktree);
-    } catch (error) {
-      setActionError(errorMessage(error));
-    } finally {
-      setPendingAction(false);
-    }
-  };
+  const {
+    handleWorktreeCreated,
+    showDiff,
+    requestWorktreeRemoval,
+    confirmWorktreeRemoval,
+    forceWorktreeRemoval,
+  } = createWorktreeActions({
+    setWorktreeCreateProject,
+    setWorktrees,
+    selectWorktree,
+    setActionError,
+    projects,
+    setDiffView,
+    sessions,
+    setWorktreeRemoval,
+    setSessions,
+    selectedWorktreeId,
+    setSelectedWorktreeId,
+    setSelectedSessionId,
+    setActiveView,
+    persistSelection,
+    setPendingAction,
+    setWorktreeForce,
+  });
 
   const sendFanOut = async (inputs: Array<{ sessionId: string; data: string }>) => {
     setFanOutVisible(false);
