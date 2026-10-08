@@ -113,6 +113,13 @@ import {
 import { useAppSettings } from "./app/use-app-settings";
 import { useAppShortcuts } from "./app/use-app-shortcuts";
 import { useSidebarLayout } from "./app/use-sidebar-layout";
+import {
+  FolderRemovalDialog,
+  RunConfirmDialog,
+  UnsavedFileDialog,
+  WorktreeForceDialog,
+  WorktreeRemovalDialog,
+} from "./app/AppConfirmDialogs";
 import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
@@ -3077,50 +3084,21 @@ export function App() {
       ) : null}
 
       {worktreeRemoval ? (
-        <div className="modal-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="Worktree 제거">
-            <h2>{worktreeRemoval.worktree.branch} worktree를 제거할까요?</h2>
-            <p>
-              이 worktree의 세션 {worktreeRemoval.sessionCount}개가 중지되고 스크롤백이 삭제됩니다. 커밋한 내용은
-              브랜치로 저장소에 남습니다.
-            </p>
-            <footer className="confirm-dialog-actions">
-              <button type="button" onClick={() => setWorktreeRemoval(null)}>
-                취소
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                disabled={pendingAction}
-                onClick={() => void confirmWorktreeRemoval(worktreeRemoval.worktree)}
-              >
-                제거
-              </button>
-            </footer>
-          </div>
-        </div>
+        <WorktreeRemovalDialog
+          removal={worktreeRemoval}
+          busy={pendingAction}
+          onCancel={() => setWorktreeRemoval(null)}
+          onConfirm={() => void confirmWorktreeRemoval(worktreeRemoval.worktree)}
+        />
       ) : null}
 
       {worktreeForce ? (
-        <div className="modal-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="Worktree 강제 제거">
-            <h2>커밋되지 않은 변경이 있습니다</h2>
-            <p>{worktreeForce.message} 강제 제거하면 이 변경은 되돌릴 수 없이 사라집니다.</p>
-            <footer className="confirm-dialog-actions">
-              <button type="button" onClick={() => setWorktreeForce(null)}>
-                취소
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                disabled={pendingAction}
-                onClick={() => void forceWorktreeRemoval(worktreeForce.worktree)}
-              >
-                변경을 버리고 강제 제거
-              </button>
-            </footer>
-          </div>
-        </div>
+        <WorktreeForceDialog
+          force={worktreeForce}
+          busy={pendingAction}
+          onCancel={() => setWorktreeForce(null)}
+          onConfirm={() => void forceWorktreeRemoval(worktreeForce.worktree)}
+        />
       ) : null}
 
       {fanOutVisible && selectedProject ? (
@@ -3152,96 +3130,46 @@ export function App() {
       {diffView ? <DiffView title={diffView.title} result={diffView.result} onClose={() => setDiffView(null)} /> : null}
 
       {fileTabCloseRequest ? (
-        <div className="modal-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="저장하지 않은 변경 사항">
-            <h2>{fileTabCloseRequest.name}에 저장하지 않은 변경 사항이 있습니다</h2>
-            <p>닫으면 이 변경 사항이 되돌릴 수 없이 사라집니다.</p>
-            <footer className="confirm-dialog-actions">
-              <button type="button" onClick={() => setFileTabCloseRequest(null)}>
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const tab = fileTabCloseRequest;
-                  setFileTabCloseRequest(null);
-                  if (await saveFileTab(tab.id)) closeFileTabImmediately(tab.id);
-                }}
-              >
-                저장 후 닫기
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                onClick={() => {
-                  const tab = fileTabCloseRequest;
-                  setFileTabCloseRequest(null);
-                  closeFileTabImmediately(tab.id);
-                }}
-              >
-                변경 사항 버리기
-              </button>
-            </footer>
-          </div>
-        </div>
+        <UnsavedFileDialog
+          tab={fileTabCloseRequest}
+          onCancel={() => setFileTabCloseRequest(null)}
+          onSaveAndClose={async () => {
+            const tab = fileTabCloseRequest;
+            setFileTabCloseRequest(null);
+            if (await saveFileTab(tab.id)) closeFileTabImmediately(tab.id);
+          }}
+          onDiscard={() => {
+            const tab = fileTabCloseRequest;
+            setFileTabCloseRequest(null);
+            closeFileTabImmediately(tab.id);
+          }}
+        />
       ) : null}
 
       {runConfirmRequest ? (
-        <div className="modal-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="실행 확인">
-            <h2>
-              {runConfirmRequest.mode === "run"
-                ? "이 프로그램을 실행할까요?"
-                : "이 파일은 열면 바로 실행됩니다"}
-            </h2>
-            <p>{runConfirmRequest.entry.relativePath}</p>
-            {runConfirmRequest.error ? <p className="file-viewer-error" role="alert">{runConfirmRequest.error}</p> : null}
-            <footer className="confirm-dialog-actions">
-              <button type="button" disabled={runConfirmRequest.running} onClick={() => setRunConfirmRequest(null)}>취소</button>
-              <button
-                type="button"
-                className="danger-button"
-                disabled={runConfirmRequest.running}
-                onClick={() => {
-                  const request = runConfirmRequest;
-                  setRunConfirmRequest({ ...request, running: true, error: null });
-                  void window.multiCliWork.workspaceFiles.openEntry(request.target, request.entry.relativePath, { confirmedRun: true })
-                    .then(() => setRunConfirmRequest(null))
-                    .catch((error) => setRunConfirmRequest((current) => current ? { ...current, running: false, error: errorMessage(error) } : null));
-                }}
-              >
-                {runConfirmRequest.running ? (runConfirmRequest.mode === "run" ? "실행 중" : "여는 중") : (runConfirmRequest.mode === "run" ? "실행" : "실행하고 열기")}
-              </button>
-            </footer>
-          </div>
-        </div>
+        <RunConfirmDialog
+          request={runConfirmRequest}
+          onCancel={() => setRunConfirmRequest(null)}
+          onRun={() => {
+            const request = runConfirmRequest;
+            setRunConfirmRequest({ ...request, running: true, error: null });
+            void window.multiCliWork.workspaceFiles.openEntry(request.target, request.entry.relativePath, { confirmedRun: true })
+              .then(() => setRunConfirmRequest(null))
+              .catch((error) => setRunConfirmRequest((current) => current ? { ...current, running: false, error: errorMessage(error) } : null));
+          }}
+        />
       ) : null}
 
       {confirmDialog}
 
       {removal ? (
-        <div className="modal-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-label="목록에서 폴더 제거">
-            <h2>{projectName(removal.project)}을(를) 목록에서 제거할까요?</h2>
-            <p>
-              이 폴더의 세션 {removal.sessionCount}개가 중지되고 스크롤백이 삭제됩니다. 폴더 자체는 디스크에 그대로
-              남습니다.
-            </p>
-            <footer className="confirm-dialog-actions">
-              <button type="button" onClick={() => setRemoval(null)}>
-                취소
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                onClick={() => void confirmRemoval(removal.project)}
-                disabled={pendingAction}
-              >
-                제거
-              </button>
-            </footer>
-          </div>
-        </div>
+        <FolderRemovalDialog
+          removal={removal}
+          name={projectName(removal.project)}
+          busy={pendingAction}
+          onCancel={() => setRemoval(null)}
+          onConfirm={() => void confirmRemoval(removal.project)}
+        />
       ) : null}
     </div>
     </div>
