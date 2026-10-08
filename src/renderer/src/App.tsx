@@ -38,7 +38,6 @@ import { SessionContextMenu } from "./SessionContextMenu";
 import type { TerminalCommands } from "./TerminalPane";
 import { TitleBar } from "./TitleBar";
 import { buildTitleBarMenus, NEW_SESSION_PREFIX } from "./title-bar-menu";
-import { DEFAULT_SETTINGS, type AppSettings } from "@shared/settings-types";
 import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceGrid } from "./WorkspaceGrid";
@@ -80,10 +79,8 @@ import {
   mergeColumnAt,
   viewPageSize,
 } from "./slot-view";
-import { isTypingTarget, normalizeKeyEvent, resolveKeymap } from "./keymap";
 import { errorMessage } from "./ipc-error";
 import { useConfirmDialog } from "./confirm-dialog";
-import { applyTheme, resolveTheme } from "./theme";
 import {
   folderViewKeyOf,
   EMPTY_VIEW,
@@ -114,6 +111,8 @@ import {
   type WorktreeForceState,
   type DiffViewState,
 } from "./app/app-model";
+import { useAppSettings } from "./app/use-app-settings";
+import { useAppShortcuts } from "./app/use-app-shortcuts";
 import { useSidebarLayout } from "./app/use-sidebar-layout";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
@@ -168,6 +167,8 @@ export function App() {
     beginSidebarResize,
     beginRightSidebarResize,
   } = useSidebarLayout();
+  const { appSettings, setAppSettings, appVersion } = useAppSettings();
+  const { keymap, handleMenuActionRef, keyActionEnabledRef } = useAppShortcuts(appSettings.keybindings);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
   /** Diffs, commit graphs and pull requests on the grid. Files live in `openFileTabs` instead. */
   const [documents, setDocuments] = useState<OpenDocument[]>([]);
@@ -196,7 +197,6 @@ export function App() {
   const [worktreeRemoval, setWorktreeRemoval] = useState<WorktreeRemovalState | null>(null);
   const [worktreeForce, setWorktreeForce] = useState<WorktreeForceState | null>(null);
   const [fanOutVisible, setFanOutVisible] = useState(false);
-  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 설정을 특정 탭으로 열 때만 값이 있다. */
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
@@ -223,7 +223,6 @@ export function App() {
   /** Set once the first load has published its arrangements, so an empty grid is never saved over. */
   const slotViewsRestored = useRef(false);
   const publishedSessionIds = useRef<string | null>(null);
-  const [appVersion, setAppVersion] = useState("");
   /** Which terminal the 편집 menu acts on — a grid has several, and only focus tells them apart. */
   const [lastFocusedTerminalId, setLastFocusedTerminalId] = useState<string | null>(null);
   const terminalCommands = useRef(new Map<string, TerminalCommands>());
@@ -619,38 +618,6 @@ export function App() {
     void loadWorkspace();
   }, [loadWorkspace]);
 
-  // Only the 도움말 menu shows it, and it never changes while the app runs.
-  useEffect(() => {
-    void window.multiCliWork.updates.appVersion().then(setAppVersion).catch(() => undefined);
-  }, []);
-
-  // 기본값 = 현행 동작이므로 로드 전 잠깐 DEFAULT_SETTINGS로 그려도 시각적 차이가 없다.
-  useEffect(() => {
-    let disposed = false;
-    void window.multiCliWork.settings
-      .get()
-      .then((settings) => {
-        if (!disposed) setAppSettings(settings);
-      })
-      .catch(() => undefined);
-    const unsubscribe = window.multiCliWork.settings.onChange(setAppSettings);
-    return () => {
-      disposed = true;
-      unsubscribe();
-    };
-  }, []);
-
-  // 테마: 설정이 "시스템"이면 OS의 밝기 설정을 따라가고, 그것이 바뀔 때도 따라간다.
-  useEffect(() => {
-    const preference = appSettings.appearance.theme;
-    const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-    const apply = () => applyTheme(resolveTheme(preference, media?.matches ?? true));
-    apply();
-    if (preference !== "system" || !media) return;
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
-  }, [appSettings.appearance.theme]);
-
   // 워크스페이스 동기화(설정 창의 루트 추가·다시 읽기, 시작 시 백그라운드 동기화)는 업무 프로젝트와
   // 태그를 main에서 다시 쓴다. 알림이 오면 세 목록을 다시 읽어야 재시작 없이 사이드바가 따라온다.
   useEffect(() => {
@@ -706,32 +673,6 @@ export function App() {
       disposed = true;
       unsubscribe();
     };
-  }, []);
-
-  const keymap = useMemo(() => resolveKeymap(appSettings.keybindings), [appSettings.keybindings]);
-  const keymapRef = useRef(keymap);
-  keymapRef.current = keymap;
-  const handleMenuActionRef = useRef<(id: string) => void>(() => undefined);
-  const keyActionEnabledRef = useRef<(id: string) => boolean>(() => true);
-
-  // 캡처 단계여야 한다: 포커스된 xterm이 keydown을 삼키므로, 그보다 먼저 보는 리스너만이
-  // 앱 전역 단축키가 될 수 있다. (예전의 Ctrl+P·줌·Ctrl+S 리스너 세 개를 키맵 조회 하나로 통합.)
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelector("[data-key-capture]")) return; // 단축키 탭이 키를 녹화하는 중
-      const accelerator = normalizeKeyEvent(event);
-      if (!accelerator) return;
-      const matched = keymapRef.current.get(accelerator);
-      if (!matched) return;
-      if (matched.ignoreWhileTyping && isTypingTarget()) return;
-      if (!matched.terminalSafe && document.activeElement?.closest(".xterm")) return;
-      if (!keyActionEnabledRef.current(matched.id)) return; // preventDefault 없이 흘려보낸다 — 현행과 동일
-      event.preventDefault();
-      event.stopPropagation();
-      handleMenuActionRef.current(matched.id);
-    };
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, []);
 
   useEffect(() => {
