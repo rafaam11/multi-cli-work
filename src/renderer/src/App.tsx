@@ -1,14 +1,9 @@
 import type { AgentView } from "@shared/agent-types";
 import { isWorkingWorktree } from "@shared/working-branches";
 import type { SlotViewState } from "@shared/app-state-types";
-import type {
-  GitChangeEntry,
-  ProjectWorkspaceSnapshot,
-  SessionAttention,
-  TerminalSessionView,
-} from "@shared/api-types";
+import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } from "@shared/api-types";
 import { type FileExplorerTarget } from "@shared/file-explorer-types";
-import type { ActivePullRequestReview, PullRequestListItem } from "@shared/github-types";
+import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
 import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
@@ -83,7 +78,6 @@ import {
   COLLAPSED_PROJECTS_KEY,
   COLLAPSED_WORK_PROJECTS_KEY,
   persistCollapsed,
-  documentTargetKey,
   replaceSession,
   mergeAttachedSession,
   type ActiveView,
@@ -107,6 +101,7 @@ import {
   WorktreeForceDialog,
   WorktreeRemovalDialog,
 } from "./app/AppConfirmDialogs";
+import { createDocumentActions } from "./app/document-actions";
 import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
 import { createGridActions } from "./app/grid-actions";
 import { buildQuickOpenItems } from "./app/quick-open-items";
@@ -1513,86 +1508,33 @@ export function App() {
     const worktree = worktrees.find((candidate) => candidate.id === worktreeId);
     if (worktree) selectWorktree(worktree);
   };
-  /** Opening a document twice moves the focus to the pane already holding it. */
-  const openDocument = (document: OpenDocument) => {
-    setDocuments((current) => (current.some((item) => item.id === document.id) ? current : [...current, document]));
-    openPane(document.id);
-  };
-
-  const closeDocument = (paneId: string) => {
-    setDocuments((current) => current.filter((document) => document.id !== paneId));
-    dropPaneEverywhere(paneId);
-  };
-
-  /**
-   * The ✕ on a sidebar document row. Only files can hold unsaved work, so only they get routed
-   * through the confirmation; the read-only documents just go.
-   */
-  const closePane = (pane: DocumentPane) => {
-    const fileTab = openFileTabs.find((tab) => documentPaneId("file", tab.id) === pane.id);
-    if (fileTab) {
-      requestCloseFileTab(fileTab);
-      return;
-    }
-    closeDocument(pane.id);
-  };
-
-  const openGitDiff = (change: GitChangeEntry) => {
-    if (!fileExplorerTarget) return;
-    openDocument({
-      id: documentPaneId("diff", `${documentTargetKey(fileExplorerTarget)}:${change.path}`),
-      kind: "diff",
-      file: {
-        target: fileExplorerTarget,
-        path: change.path,
-        status: change.status,
-        ...(change.renamedFrom !== undefined ? { renamedFrom: change.renamedFrom } : {}),
-        targetLabel: fileExplorerTargetLabel,
-      },
-    });
-  };
-  const openGitGraph = () => {
-    if (!fileExplorerTarget) return;
-    openDocument({
-      id: documentPaneId("graph", documentTargetKey(fileExplorerTarget)),
-      kind: "graph",
-      target: fileExplorerTarget,
-      targetLabel: fileExplorerTargetLabel,
-    });
-  };
-  const openPullRequest = (remoteName: string, item: PullRequestListItem) => {
-    if (!fileExplorerOwnerProject) return;
-    const owner = fileExplorerOwnerProject;
-    openDocument({
-      id: documentPaneId("pull-request", `${owner.id}:${remoteName}:${item.number}`),
-      kind: "pull-request",
-      projectId: owner.id,
-      remoteName,
-      number: item.number,
-      label: `#${item.number} ${item.title}`,
-    });
-  };
-  const refreshReviewWorkspace = async (sessionId?: string) => {
-    const [nextSessions, nextWorktrees, nextViews, nextReviews] = await Promise.all([
-      window.multiCliWork.terminals.list(), window.multiCliWork.worktrees.list(), window.multiCliWork.worktrees.sync(), window.multiCliWork.github.activeReviews(),
-    ]);
-    setSessions(nextSessions); setWorktrees(nextWorktrees); setWorkspaceViews(nextViews.workspaces); setWorktreeWarnings(nextViews.warnings); setActiveReviews(nextReviews);
-    if (sessionId) { const session = nextSessions.find((item) => item.id === sessionId); if (session) selectSession(session); }
-  };
-  const finishActiveReview = async (review: ActivePullRequestReview, allowUnverifiedReview = false, discardChanges = false): Promise<void> => {
-    try {
-      const result = await window.multiCliWork.github.finishReview(review.id, { allowUnverifiedReview, discardChanges });
-      if (result.state === "review-unverified" || result.state === "verification-unavailable") {
-        if (await confirm({ title: "그래도 정리할까요?", message: result.message, confirmLabel: "정리" })) await finishActiveReview(review, true, discardChanges);
-        return;
-      }
-      if (result.state === "dirty") {
-        if (await confirm({ title: "변경을 버리고 강제 제거할까요?", message: result.message, confirmLabel: "강제 제거", danger: true })) await finishActiveReview(review, true, true);
-        return;
-      }
-      await refreshReviewWorkspace();
-    } catch (error) { setActionError(errorMessage(error)); }
-  };
+  const {
+    openDocument,
+    closeDocument,
+    closePane,
+    openGitDiff,
+    openGitGraph,
+    openPullRequest,
+    refreshReviewWorkspace,
+    finishActiveReview,
+  } = createDocumentActions({
+    setDocuments,
+    openPane,
+    dropPaneEverywhere,
+    openFileTabs,
+    requestCloseFileTab,
+    fileExplorerTarget,
+    fileExplorerTargetLabel,
+    fileExplorerOwnerProject,
+    setSessions,
+    setWorktrees,
+    setWorkspaceViews,
+    setWorktreeWarnings,
+    setActiveReviews,
+    selectSession,
+    confirm,
+    setActionError,
+  });
 
   // Terminals only exist while the terminal view is up, so anything else empties the 편집 menu.
   // Before either pane has been clicked, the primary one is the obvious stand-in for "the terminal".
