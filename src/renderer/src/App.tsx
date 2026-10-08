@@ -100,6 +100,7 @@ import {
 import { createDocumentActions } from "./app/document-actions";
 import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
 import { useFolderTree } from "./app/use-folder-tree";
+import { useRemoteSizeOwners } from "./app/use-remote-size-owners";
 import { createGridActions } from "./app/grid-actions";
 import { buildQuickOpenItems } from "./app/quick-open-items";
 import { createSessionActions } from "./app/session-actions";
@@ -146,6 +147,7 @@ export function App() {
     beginRightSidebarResize,
   } = useSidebarLayout();
   const { appSettings, setAppSettings, appVersion } = useAppSettings();
+  const remoteSizeOwners = useRemoteSizeOwners();
   const { keymap, handleMenuActionRef, keyActionEnabledRef } = useAppShortcuts(appSettings.keybindings);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
   /** Diffs, commit graphs and pull requests on the grid. Files live in `openFileTabs` instead. */
@@ -1992,6 +1994,10 @@ export function App() {
                 onTerminalFocused={setLastFocusedTerminalId}
                 onFocusPane={focusPane}
                 onResumeSession={(session) => void resumeSession(session)}
+                remoteSizeOwners={remoteSizeOwners}
+                onReclaimSize={(sessionId) =>
+                  void window.multiCliWork.terminals.reclaimSize(sessionId).catch((error) => setActionError(errorMessage(error)))
+                }
                 onStopSession={(session) => void stopSession(session)}
                 onClearSlot={clearSlotAt}
                 clearAction={

@@ -6,6 +6,7 @@ import {
   Folder,
   GitBranch,
   RotateCcw,
+  Smartphone,
   Square,
   SquareSplitVertical,
   Trash2,
@@ -112,6 +113,10 @@ interface PaneHeaderProps {
   resumeBlocked: boolean;
   /** This pane's column, and what splitting it would do. */
   columnSplit: ColumnSplitControls;
+  /** 이 세션의 터미널 크기를 가진 원격 기기의 이름. 이 PC가 갖고 있으면 null. */
+  remoteSizeDevice?: string | null;
+  /** 원격 기기가 가진 크기를 이 패인 크기로 되찾는다. */
+  onReclaimSize?(): void;
   onStartRename(): void;
   onRename(name: string | null): void;
   onCancelRename(): void;
@@ -147,6 +152,8 @@ export function PaneHeader({
   pendingAction,
   resumeBlocked,
   columnSplit,
+  remoteSizeDevice = null,
+  onReclaimSize,
   clearAction,
   onStartRename,
   onRename,
@@ -182,6 +189,16 @@ export function PaneHeader({
             {label}
           </span>
         )}
+        {remoteSizeDevice ? (
+          // 원격에서 크기를 맞추는 동안 이 패인의 줄바꿈은 어긋나 보인다 — 왜 그런지와 되돌리는 길을 함께 둔다.
+          <span className="pane-remote-size" role="status" title={`${remoteSizeDevice}의 화면 크기로 그리는 중`}>
+            <Smartphone size={11} aria-hidden="true" />
+            <span className="pane-remote-size-label">{remoteSizeDevice}에서 크기 사용 중</span>
+            <button type="button" className="pane-remote-size-reclaim" onClick={onReclaimSize}>
+              크기 되찾기
+            </button>
+          </span>
+        ) : null}
         <div className="pane-actions">
           <ColumnSplitButton {...columnSplit} />
           {finished ? (

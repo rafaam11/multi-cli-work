@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings } from "../shared/settings-types";
-import type { MultiCliWorkApi, SessionAttention, UpdaterStatus, WindowChromeState } from "../shared/api-types";
+import type {
+  MultiCliWorkApi,
+  SessionAttention,
+  TerminalSizeOwner,
+  UpdaterStatus,
+  WindowChromeState,
+} from "../shared/api-types";
 import type { RemoteHostView } from "../shared/remote-types";
 import type { TerminalEvent } from "../shared/terminal-types";
 
@@ -207,6 +213,13 @@ const api: MultiCliWorkApi = {
       ipcRenderer.on("terminal:event", handler);
       return () => ipcRenderer.removeListener("terminal:event", handler);
     },
+    sizeOwners: () => ipcRenderer.invoke("terminals:size-owners"),
+    onSizeOwner(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, owner: TerminalSizeOwner) => listener(owner);
+      ipcRenderer.on("terminals:size-owner", handler);
+      return () => ipcRenderer.removeListener("terminals:size-owner", handler);
+    },
+    reclaimSize: (sessionId) => ipcRenderer.invoke("terminals:reclaim-size", sessionId),
   },
   notion: {
     status: () => ipcRenderer.invoke("notion:status"),

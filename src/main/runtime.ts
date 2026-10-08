@@ -121,6 +121,7 @@ import { PairingCodes } from "./remote/pairing-codes";
 import { RemoteSessionHub } from "./remote/remote-session-hub";
 import { readShellArtifact } from "./remote/shell-artifact";
 import { TerminalSizeArbiter } from "./remote/size-arbiter";
+import { UNKNOWN_DEVICE_NAME, watchSizeOwners } from "./remote/size-owner-events";
 import { tailscaleAddresses } from "./remote/tailscale-address";
 import { buildRemoteCatalog, existingWorktrees } from "./remote/remote-catalog";
 import { desktopPresence, PRESENCE_IDLE_THRESHOLD_SECONDS } from "./remote/desktop-presence";
@@ -497,6 +498,14 @@ export async function createDesktopRuntime(
   const shellArtifact = await readShellArtifact(shellDir);
   const sizes = new TerminalSizeArbiter((sessionId, cols, rows) => coordinator.resize(sessionId, cols, rows));
   const remoteDevices = new RemoteDeviceStore(path.join(userData, "remote-devices.json"));
+  const remoteDeviceName = async (deviceId: string) =>
+    (await remoteDevices.list()).find((device) => device.deviceId === deviceId)?.name ?? null;
+  // 호스트 PC의 패인 머리줄이 "원격에서 크기 사용 중"을 보이게 한다.
+  watchSizeOwners({
+    sizes,
+    deviceName: remoteDeviceName,
+    send: (owner) => sendToMainWindow(host.getMainWindow(), "terminals:size-owner", owner),
+  });
   const remoteHub = new RemoteSessionHub({
     gateway: {
       list: () => coordinator.list(),
@@ -690,7 +699,17 @@ export async function createDesktopRuntime(
       open: (hostId) => remoteHosts.open(hostId),
       setNotify: (hostId, notify) => remoteHosts.setNotify(hostId, notify),
     },
-    sizes,
+    sizes: {
+      desktopResize: (sessionId, cols, rows) => sizes.desktopResize(sessionId, cols, rows),
+      desktopInput: (sessionId) => sizes.desktopInput(sessionId),
+      deviceOwners: () =>
+        Promise.all(
+          sizes.deviceOwned().map(async ({ sessionId, deviceId }) => ({
+            sessionId,
+            deviceName: (await remoteDeviceName(deviceId)) ?? UNKNOWN_DEVICE_NAME,
+          })),
+        ),
+    },
     settings: {
       get: () => settingsService.current(),
       update: (patch) => updateSettings(patch),

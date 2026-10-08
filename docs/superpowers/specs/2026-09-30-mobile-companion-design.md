@@ -129,7 +129,7 @@ JSON 메시지, 연결 시 첫 메시지는 반드시 `hello`. `protocolVersion`
 PTY는 크기가 하나뿐이다.
 
 - **기본: PC 크기 유지.** 폰 xterm은 `attached`/`size`에 담긴 PC의 cols·rows 그대로 렌더하고, 핀치 줌·가로 스크롤로 본다.
-- **"📱 폰 크기로" 켜기:** 폰 폭에 맞춘 `resize`를 보낸다. 호스트는 세션별 `sizeOwner = deviceId`를 기록한다. 데스크톱 패인의 "폰에서 크기 사용 중" 표시는 P4에서 넣는다.
+- **"📱 폰 크기로" 켜기:** 폰 폭에 맞춘 `resize`를 보낸다. 호스트는 세션별 `sizeOwner = deviceId`를 기록한다. 데스크톱 패인에는 "<기기>에서 크기 사용 중"과 되찾기 버튼이 뜬다(v1.38.0).
 - **PC가 회수하는 경우:** 데스크톱에서 그 세션에 입력하거나 패인 크기가 바뀔 때(`terminals:write`·`terminals:resize`가 `TerminalSizeArbiter`를 거친다), 폰이 `releaseSize`/`detach`를 보낼 때, 폰 WS가 끊길 때. 이때 호스트가 데스크톱의 마지막 크기로 되돌리고 `sizeOwner = "desktop"`으로 바꾼 뒤 `size`를 방송한다.
 - 구현 지점: 데스크톱 렌더러의 resize 경로(→ `TerminalCoordinator.resize`)에 "데스크톱 크기 기억"과 "포커스 시 회수" 훅을 추가한다.
 

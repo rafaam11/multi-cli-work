@@ -15,6 +15,7 @@ import type {
   ResumeTerminalInput,
   SessionAttention,
   SlotViewsInput,
+  TerminalSizeOwner,
   UpdaterStatus,
   WindowChromeState,
   WindowZoomAction,
@@ -136,7 +137,9 @@ export interface RemoteHostsGateway {
 /** 데스크톱 패인의 resize·입력은 크기 중재자를 거친다 — 폰이 크기를 가져간 세션을 되찾는 계기. */
 export interface TerminalSizeGateway {
   desktopResize(sessionId: string, cols: number, rows: number): Promise<void>;
+  /** 원격 기기가 크기를 가졌다면 데스크톱의 마지막 크기로 되찾는다. */
   desktopInput(sessionId: string): Promise<void>;
+  deviceOwners(): Promise<TerminalSizeOwner[]>;
 }
 
 export interface UpdaterGateway {

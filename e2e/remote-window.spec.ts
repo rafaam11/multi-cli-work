@@ -209,6 +209,15 @@ test.describe.serial("Remote PC window", () => {
     await remote.getByRole("button", { name: "다시 맞추기" }).click();
     await expect(remote.getByText("호스트가 크기를 가져갔습니다")).toHaveCount(0);
 
+    // 호스트 패인은 원격이 크기를 쓰는 동안 그렇다고 알리고, 버튼 하나로 되찾는다.
+    const remoteSizeNotice = page.getByRole("status").filter({ hasText: "에서 크기 사용 중" });
+    await expect(remoteSizeNotice).toBeVisible();
+    await remoteSizeNotice.getByRole("button", { name: "크기 되찾기" }).click();
+    await expect(remoteSizeNotice).toHaveCount(0);
+    await expect(remote.getByText("호스트가 크기를 가져갔습니다")).toBeVisible();
+    await remote.getByRole("button", { name: "다시 맞추기" }).click();
+    await expect(remoteSizeNotice).toBeVisible();
+
     // 붙여넣기: 이 PC의 클립보드가 브라우저 paste 이벤트로 xterm에 들어간다.
     await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), echo("MCW_PASTED"));
     await remote.locator(".m-terminal").click();

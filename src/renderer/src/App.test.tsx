@@ -577,6 +577,9 @@ function createApi(options?: {
         listeners.add(listener);
         return () => listeners.delete(listener);
       }),
+      sizeOwners: vi.fn().mockResolvedValue([]),
+      onSizeOwner: vi.fn(() => () => undefined),
+      reclaimSize: vi.fn().mockResolvedValue(undefined),
     },
     settings: {
       get: vi.fn().mockResolvedValue(DEFAULT_SETTINGS),

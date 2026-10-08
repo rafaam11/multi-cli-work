@@ -36,6 +36,15 @@ describe("TerminalSizeArbiter", () => {
     expect(changes.at(-1)).toEqual(["s", { cols: 120, rows: 40, owner: "desktop" }]);
   });
 
+  it("lists the sessions whose size a device holds", async () => {
+    const { sizes } = arbiter();
+    await sizes.desktopResize("a", 120, 40);
+    await sizes.deviceResize("phone", "b", 45, 30);
+    expect(sizes.deviceOwned()).toEqual([{ sessionId: "b", deviceId: "phone" }]);
+    await sizes.desktopInput("b");
+    expect(sizes.deviceOwned()).toEqual([]);
+  });
+
   it("desktop input is free when the desktop already owns the size", async () => {
     const { apply, sizes } = arbiter();
     await sizes.desktopResize("s", 120, 40);

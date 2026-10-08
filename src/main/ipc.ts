@@ -551,6 +551,11 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
       integer(rows, "Terminal rows"),
     ),
   );
+  ipc.handle("terminals:size-owners", () => dependencies.sizes.deviceOwners());
+  // 패인 머리줄의 "크기 되찾기". 입력할 때와 같은 길이다 — 기기가 갖고 있지 않으면 아무 일도 없다.
+  ipc.handle("terminals:reclaim-size", (_event, sessionId: unknown) =>
+    dependencies.sizes.desktopInput(nonEmptyString(sessionId, "Session id")),
+  );
   ipc.handle("terminals:stop", (_event, sessionId: unknown) =>
     dependencies.coordinator.stop(nonEmptyString(sessionId, "Session id")),
   );

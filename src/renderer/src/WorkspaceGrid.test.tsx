@@ -123,6 +123,19 @@ describe("WorkspaceGrid", () => {
     for (const session of sessions) expect(screen.getByTestId(`terminal-${session.id}`)).toBeTruthy();
   });
 
+  it("says when a remote device is sizing a session and takes the size back on request", () => {
+    const onReclaimSize = vi.fn();
+    renderGrid({ remoteSizeOwners: { "session-1": "내 폰" }, onReclaimSize });
+    expect(screen.getByText("내 폰에서 크기 사용 중")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "크기 되찾기" }));
+    expect(onReclaimSize).toHaveBeenCalledWith("session-1");
+  });
+
+  it("shows no remote size notice while the desktop owns the size", () => {
+    renderGrid();
+    expect(screen.queryByRole("button", { name: "크기 되찾기" })).not.toBeInTheDocument();
+  });
+
   it("leaves an open slot as a labelled drop target instead of collapsing the layout", () => {
     const { container } = renderGrid({
       layout: layoutById("cols:1-1")!,

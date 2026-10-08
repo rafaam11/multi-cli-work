@@ -260,6 +260,7 @@ function setup(
   const sizesGateway = {
     desktopResize: vi.fn(async (_id: string, _cols: number, _rows: number) => undefined),
     desktopInput: vi.fn(async (_id: string) => undefined),
+    deviceOwners: vi.fn(async () => [{ sessionId: "s2", deviceName: "내 폰" }]),
   };
   const readRegistry = vi.fn(async () => ({ registry, source: "primary" as const, writable: true }));
   registerMainIpc(ipc, {
@@ -821,6 +822,14 @@ describe("main IPC boundary", () => {
     expect(sizesGateway.desktopResize).toHaveBeenCalledWith("s1", 120, 40);
     await handlers.get("terminals:write")!({}, "s1", "x");
     expect(sizesGateway.desktopInput).toHaveBeenCalledWith("s1");
+  });
+
+  it("tells the desktop which sessions a device sizes and takes one back on request", async () => {
+    const { handlers, sizesGateway } = setup();
+    expect(await handlers.get("terminals:size-owners")!({})).toEqual([{ sessionId: "s2", deviceName: "내 폰" }]);
+    await handlers.get("terminals:reclaim-size")!({}, "s2");
+    expect(sizesGateway.desktopInput).toHaveBeenCalledWith("s2");
+    expect(() => handlers.get("terminals:reclaim-size")!({}, "")).toThrow();
   });
 
   it("exposes remote access status, pairing, and device revocation", async () => {

@@ -31,6 +31,9 @@ interface WorkspaceGridProps {
   refreshRequests: Readonly<Record<string, number>>;
   pendingAction: boolean;
   isProjectMissing(projectId: string | null): boolean;
+  /** 세션 → 그 터미널 크기를 가진 원격 기기 이름. 이 PC가 가진 세션은 없다. */
+  remoteSizeOwners?: Readonly<Record<string, string>>;
+  onReclaimSize?(sessionId: string): void;
   onAttached(session: TerminalSessionView): void;
   onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
@@ -92,6 +95,8 @@ export function WorkspaceGrid({
   refreshRequests,
   pendingAction,
   isProjectMissing,
+  remoteSizeOwners,
+  onReclaimSize,
   onAttached,
   onRefreshComplete,
   onError,
@@ -314,6 +319,8 @@ export function WorkspaceGrid({
               pendingAction={pendingAction}
               resumeBlocked={!session.tool && isProjectMissing(session.projectId)}
               columnSplit={columnSplitFor(index)}
+              remoteSizeDevice={remoteSizeOwners?.[session.id] ?? null}
+              onReclaimSize={() => onReclaimSize?.(session.id)}
               clearAction={clearAction}
               onStartRename={() => onStartRename(session.id)}
               onRename={(name) => onRenameSession(session.id, name)}

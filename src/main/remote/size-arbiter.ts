@@ -30,6 +30,11 @@ export class TerminalSizeArbiter {
     return { cols: size?.cols ?? null, rows: size?.rows ?? null, owner: this.owners.get(sessionId) ?? DESKTOP_SIZE_OWNER };
   }
 
+  /** 기기가 크기를 가진 세션들. 호스트 화면이 처음 그릴 때 "원격에서 크기 사용 중"을 맞춘다. */
+  deviceOwned(): Array<{ sessionId: string; deviceId: string }> {
+    return [...this.owners].map(([sessionId, deviceId]) => ({ sessionId, deviceId }));
+  }
+
   onChange(listener: (sessionId: string, state: SizeState) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

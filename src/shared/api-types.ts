@@ -219,6 +219,12 @@ export interface AgentsSnapshot {
   warning?: string;
 }
 
+/** 원격 기기가 이 PC 세션의 터미널 크기를 가졌는지. deviceName이 null이면 이 PC가 갖고 있다. */
+export interface TerminalSizeOwner {
+  sessionId: string;
+  deviceName: string | null;
+}
+
 export interface TerminalSessionView extends PersistedTerminalSession {
   status: TerminalStatus;
   pid: number | null;
@@ -527,6 +533,12 @@ export interface MultiCliWorkApi {
     /** The saved arrangements — each folder's grid and the curated workspaces. */
     setSlotViews(input: SlotViewsInput): Promise<AppStateSnapshot>;
     onEvent(listener: (event: TerminalEvent) => void): () => void;
+    /** 지금 원격 기기가 크기를 가진 세션들. */
+    sizeOwners(): Promise<TerminalSizeOwner[]>;
+    /** 크기 주인이 바뀌었다. */
+    onSizeOwner(listener: (owner: TerminalSizeOwner) => void): () => void;
+    /** 원격 기기가 가진 크기를 이 PC 패인 크기로 되찾는다. */
+    reclaimSize(sessionId: string): Promise<void>;
   };
   notion: {
     status(): Promise<NotionTokenStatus>;

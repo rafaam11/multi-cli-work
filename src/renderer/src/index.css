@@ -3311,6 +3311,35 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
+.pane-remote-size {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--warning-text);
+  font: var(--type-caption);
+  white-space: nowrap;
+}
+
+.pane-remote-size-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-remote-size-reclaim {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  font: var(--type-caption-semibold);
+  cursor: pointer;
+}
+
 .pane-actions {
   display: flex;
   align-items: center;
