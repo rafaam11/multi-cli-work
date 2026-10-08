@@ -4,7 +4,7 @@ import path from "node:path";
 import type { UpdaterStatus } from "../shared/api-types";
 import { sendToMainWindow, type MainWindowLike } from "./main-window";
 import { createUpdaterLogger } from "./updater-log";
-import { quitAndInstallArguments } from "./updater-platform";
+import { configureAutoUpdater, quitAndInstallArguments } from "./updater-platform";
 
 // electron-updater ships CommonJS; a named import is undefined once the main process is bundled.
 const { autoUpdater } = electronUpdater;
@@ -35,8 +35,7 @@ export function initUpdater(options: { autoCheck?: boolean; getWindow?: () => Ma
   // Before anything else: a silent install has no window to report from, so this file is the
   // only place a stalled or refused install ever says so.
   autoUpdater.logger = createUpdaterLogger(path.join(app.getPath("userData"), "logs", "updater.log"));
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  configureAutoUpdater(autoUpdater);
   autoUpdater.on("checking-for-update", () => publish({ state: "checking" }));
   autoUpdater.on("update-available", (info: UpdateInfo) => publish({ state: "available", version: info.version }));
   autoUpdater.on("update-not-available", () => publish({ state: "idle" }));
