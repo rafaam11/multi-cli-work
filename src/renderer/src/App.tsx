@@ -17,17 +17,7 @@ import { pathStyleFor, resolveShellRefForPath, shellLinkKey } from "@shared/work
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import { DEFAULT_TERMINAL_SIZE, type TerminalKind, type ToolCommand } from "@shared/terminal-types";
 import { FolderX, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
 import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
@@ -102,15 +92,9 @@ import {
   restoreFolderViews,
   ACTIVITY_LOG_LIMIT,
   EMPTY_AVAILABILITY,
-  DEFAULT_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
-  MAX_SIDEBAR_WIDTH,
-  MIN_WORKSPACE_WIDTH,
-  SIDEBAR_RESIZER_WIDTH,
   SIDEBAR_RAIL_WIDTH,
-  DEFAULT_RIGHT_SIDEBAR_WIDTH,
   MIN_RIGHT_SIDEBAR_WIDTH,
-  MAX_RIGHT_SIDEBAR_WIDTH,
   RIGHT_SIDEBAR_RAIL_WIDTH,
   COLLAPSED_PROJECTS_KEY,
   COLLAPSED_WORK_PROJECTS_KEY,
@@ -130,6 +114,7 @@ import {
   type WorktreeForceState,
   type DiffViewState,
 } from "./app/app-model";
+import { useSidebarLayout } from "./app/use-sidebar-layout";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
@@ -171,10 +156,18 @@ export function App() {
   const [pendingAction, setPendingAction] = useState(false);
   const [refreshRequests, setRefreshRequests] = useState<Record<string, number>>({});
   const [refreshingSessionIds, setRefreshingSessionIds] = useState<Set<string>>(new Set());
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH);
-  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const {
+    sidebarWidth,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    rightSidebarWidth,
+    rightSidebarCollapsed,
+    setRightSidebarCollapsed,
+    maximumSidebarWidth,
+    maximumRightSidebarWidth,
+    beginSidebarResize,
+    beginRightSidebarResize,
+  } = useSidebarLayout();
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
   /** Diffs, commit graphs and pull requests on the grid. Files live in `openFileTabs` instead. */
   const [documents, setDocuments] = useState<OpenDocument[]>([]);
@@ -464,44 +457,6 @@ export function App() {
     [resolvedView],
   );
 
-  const rightSidebarSpace = rightSidebarCollapsed ? RIGHT_SIDEBAR_RAIL_WIDTH : rightSidebarWidth;
-
-  const maximumSidebarWidth = useCallback(
-    () =>
-      Math.max(
-        MIN_SIDEBAR_WIDTH,
-        Math.min(
-          MAX_SIDEBAR_WIDTH,
-          window.innerWidth - MIN_WORKSPACE_WIDTH - SIDEBAR_RESIZER_WIDTH - rightSidebarSpace - SIDEBAR_RESIZER_WIDTH,
-        ),
-      ),
-    [rightSidebarSpace],
-  );
-
-  const clampSidebarWidth = useCallback(
-    (width: number) => Math.min(maximumSidebarWidth(), Math.max(MIN_SIDEBAR_WIDTH, width)),
-    [maximumSidebarWidth],
-  );
-
-  const leftSidebarSpace = sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth;
-
-  const maximumRightSidebarWidth = useCallback(
-    () =>
-      Math.max(
-        MIN_RIGHT_SIDEBAR_WIDTH,
-        Math.min(
-          MAX_RIGHT_SIDEBAR_WIDTH,
-          window.innerWidth - MIN_WORKSPACE_WIDTH - SIDEBAR_RESIZER_WIDTH - leftSidebarSpace - SIDEBAR_RESIZER_WIDTH,
-        ),
-      ),
-    [leftSidebarSpace],
-  );
-
-  const clampRightSidebarWidth = useCallback(
-    (width: number) => Math.min(maximumRightSidebarWidth(), Math.max(MIN_RIGHT_SIDEBAR_WIDTH, width)),
-    [maximumRightSidebarWidth],
-  );
-
   const refreshAgents = useCallback(async () => {
     const snapshot = await window.multiCliWork.agents.list();
     setAgents(snapshot.agents);
@@ -723,15 +678,6 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    const handleWindowResize = () => {
-      setSidebarWidth((current) => clampSidebarWidth(current));
-      setRightSidebarWidth((current) => clampRightSidebarWidth(current));
-    };
-    window.addEventListener("resize", handleWindowResize);
-    return () => window.removeEventListener("resize", handleWindowResize);
-  }, [clampSidebarWidth, clampRightSidebarWidth]);
-
   // Editing `agents.json` happens in someone else's editor, so there is no save to listen for.
   // Coming back to the window is the one moment we know to look again.
   useEffect(() => {
@@ -801,41 +747,6 @@ export function App() {
     });
     return () => cancelAnimationFrame(frame);
   }, [pendingFileAnchor, selectedFileTab]);
-
-  const beginSidebarResize = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      document.body.classList.add("sidebar-resizing");
-      const handleMouseMove = (moveEvent: MouseEvent) => setSidebarWidth(clampSidebarWidth(moveEvent.clientX));
-      const handleMouseUp = () => {
-        document.body.classList.remove("sidebar-resizing");
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
-      };
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    },
-    [clampSidebarWidth],
-  );
-
-  const beginRightSidebarResize = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      document.body.classList.add("sidebar-resizing");
-      // The right sidebar is anchored to the window's right edge, so its width is the distance
-      // from the pointer to that edge — the mirror image of the left sidebar's clientX tracking.
-      const handleMouseMove = (moveEvent: MouseEvent) =>
-        setRightSidebarWidth(clampRightSidebarWidth(window.innerWidth - moveEvent.clientX));
-      const handleMouseUp = () => {
-        document.body.classList.remove("sidebar-resizing");
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
-      };
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    },
-    [clampRightSidebarWidth],
-  );
 
   useEffect(() => {
     sessionsRef.current = sessions;
