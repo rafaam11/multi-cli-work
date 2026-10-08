@@ -2,8 +2,8 @@ package com.rafaam11.multicliwork.mobile.data
 
 import android.content.Context
 
-class PrefsStore(context: Context) : KeyValueStore {
-    private val prefs = context.applicationContext.getSharedPreferences("mcw-hosts", Context.MODE_PRIVATE)
+class PrefsStore(context: Context, name: String = "mcw-hosts") : KeyValueStore {
+    private val prefs = context.applicationContext.getSharedPreferences(name, Context.MODE_PRIVATE)
 
     override fun get(key: String): String? = prefs.getString(key, null)
 

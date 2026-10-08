@@ -16,6 +16,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rafaam11.multicliwork.mobile.core.ShellRelease
 import com.rafaam11.multicliwork.mobile.data.Host
+import com.rafaam11.multicliwork.mobile.data.NotifySettings
 
 data class UpdateBanner(val release: ShellRelease, val busy: Boolean, val message: String?)
 
@@ -41,6 +43,10 @@ fun HostListScreen(
     onScan: () -> Unit,
     onPaste: (String) -> Unit,
     onUpdate: () -> Unit,
+    notify: NotifyState,
+    onNotifyChange: (NotifySettings) -> Unit,
+    onFixNotifyPermission: () -> Unit,
+    onBatterySettings: () -> Unit,
 ) {
     var pasting by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<Host?>(null) }
@@ -55,7 +61,7 @@ fun HostListScreen(
                 }
             }
         }
-        if (hosts.isEmpty()) Text("등록된 PC가 없습니다. PC의 설정 ▸ 모바일 ▸ 기기 추가 QR을 찍으세요.")
+        if (hosts.isEmpty()) Text("등록된 PC가 없습니다. PC의 설정 ▸ 원격 ▸ 기기 추가 QR을 찍으세요.")
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(hosts, key = { it.hostId }) { host ->
                 Card(Modifier.fillMaxWidth().clickable { onOpen(host) }) {
@@ -64,11 +70,22 @@ fun HostListScreen(
                             Text(host.name, style = MaterialTheme.typography.titleMedium)
                             Text(host.address, style = MaterialTheme.typography.bodySmall)
                         }
+                        if (notify.settings.enabled) {
+                            val muted = host.hostId in notify.settings.mutedHosts
+                            Switch(
+                                checked = !muted,
+                                onCheckedChange = { on ->
+                                    val hosts = notify.settings.mutedHosts
+                                    onNotifyChange(notify.settings.copy(mutedHosts = if (on) hosts - host.hostId else hosts + host.hostId))
+                                },
+                            )
+                        }
                         TextButton(onClick = { removing = host }) { Text("삭제") }
                     }
                 }
             }
         }
+        if (hosts.isNotEmpty()) NotifyCard(notify, onNotifyChange, onFixNotifyPermission, onBatterySettings)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onScan) { Text("QR로 PC 추가") }
             OutlinedButton(onClick = { pasting = true }) { Text("주소 붙여넣기") }

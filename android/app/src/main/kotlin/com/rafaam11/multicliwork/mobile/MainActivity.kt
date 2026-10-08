@@ -1,9 +1,11 @@
 package com.rafaam11.multicliwork.mobile
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -21,7 +23,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.rafaam11.multicliwork.mobile.data.Host
+import com.rafaam11.multicliwork.mobile.data.NotifySettings
+import com.rafaam11.multicliwork.mobile.notify.Notifications
+import com.rafaam11.multicliwork.mobile.notify.StatusService
 import com.rafaam11.multicliwork.mobile.ui.HostListScreen
+import com.rafaam11.multicliwork.mobile.ui.NotifyState
 import com.rafaam11.multicliwork.mobile.ui.PairDialog
 import com.rafaam11.multicliwork.mobile.ui.UpdateBanner
 import com.rafaam11.multicliwork.mobile.update.ApkInstaller
@@ -40,6 +46,9 @@ class MainActivity : ComponentActivity() {
     internal var update by mutableStateOf<UpdateBanner?>(null)
     private var candidate: Candidate? = null
     private var updating = false
+    private var notify by mutableStateOf(NotifyState(NotifySettings(), blocked = false, batteryRestricted = false))
+    /** 알림 권한은 앱을 띄울 때 한 번만 묻는다. 거절하면 카드의 "알림 허용"으로 다시 묻는다. */
+    private var askedForNotifications = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +66,7 @@ class MainActivity : ComponentActivity() {
                     if (hostId != null) {
                         pairing.consumeCompleted()
                         reload()
+                        StatusService.refresh(this@MainActivity)
                         startActivity(SessionActivity.intent(this@MainActivity, hostId))
                     }
                 }
@@ -69,10 +79,14 @@ class MainActivity : ComponentActivity() {
                     hosts = hosts,
                     update = update,
                     onOpen = { startActivity(SessionActivity.intent(this, it.hostId)) },
-                    onRemove = { ShellGraph.hosts(this).remove(it.hostId); reload() },
+                    onRemove = { ShellGraph.hosts(this).remove(it.hostId); reload(); StatusService.refresh(this) },
                     onScan = ::scan,
                     onPaste = ::acceptPairText,
                     onUpdate = ::runUpdate,
+                    notify = notify,
+                    onNotifyChange = ::changeNotify,
+                    onFixNotifyPermission = ::fixNotifyPermission,
+                    onBatterySettings = { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) },
                 )
                 pairing.pending?.let { request ->
                     PairDialog(
@@ -96,7 +110,48 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         reload()
+        refreshNotify()
+        // 페어링·삭제·설정 변경 말고도, 끊겼던 서비스를 앱을 열 때 다시 띄운다.
+        StatusService.refresh(this)
         checkForUpdate()
+        if (!askedForNotifications && notify.settings.enabled && hosts.isNotEmpty() && notify.blocked) {
+            askedForNotifications = true
+            requestNotificationPermission()
+        }
+    }
+
+    private fun refreshNotify() {
+        val power = getSystemService(PowerManager::class.java)
+        notify = NotifyState(
+            settings = ShellGraph.notifyPrefs(this).load(),
+            blocked = Notifications.blocked(this),
+            batteryRestricted = !power.isIgnoringBatteryOptimizations(packageName),
+        )
+    }
+
+    private fun changeNotify(next: NotifySettings) {
+        ShellGraph.notifyPrefs(this).save(next)
+        refreshNotify()
+        StatusService.refresh(this)
+        if (next.enabled && notify.blocked) requestNotificationPermission()
+    }
+
+    private fun fixNotifyPermission() {
+        // 두 번 거절하면 시스템이 더 묻지 않는다 — 그때는 앱 알림 설정을 연다.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+        ) {
+            requestNotificationPermission()
+            return
+        }
+        startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+    }
+
+    /** 결과는 따로 받지 않는다 — 권한 창이 닫히면 onResume이 상태를 다시 읽는다. */
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -189,5 +244,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val STATE_PENDING_PAIR = "pendingPair"
+        const val REQUEST_NOTIFICATIONS = 1
     }
 }

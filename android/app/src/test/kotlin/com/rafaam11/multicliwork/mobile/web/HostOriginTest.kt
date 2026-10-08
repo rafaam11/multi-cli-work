@@ -17,4 +17,12 @@ class HostOriginTest {
         assertFalse(HostOrigin.isInside(address, "https://github.com/"))
         assertFalse(HostOrigin.isInside(address, "javascript:alert(1)"))
     }
+
+    @Test
+    fun linksToOneSessionSoATappedNotificationOpensIt() {
+        assertEquals(
+            "http://100.64.0.1:47821/mobile/#session=s%201&n=7",
+            HostOrigin.sessionUrl("100.64.0.1:47821", "s 1", 7),
+        )
+    }
 }

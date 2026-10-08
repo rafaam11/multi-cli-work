@@ -6,7 +6,7 @@ import java.net.URLDecoder
 data class PairRequest(val address: String, val hostName: String, val code: String, val hostId: String)
 
 /**
- * 데스크톱 설정 ▸ 모바일 ▸ 기기 추가의 QR(`mcw://pair?host=&name=&code=&fp=`). 셸이 받는 주소는
+ * 데스크톱 설정 ▸ 원격 ▸ 기기 추가의 QR(`mcw://pair?host=&name=&code=&fp=`). 셸이 받는 주소는
  * Tailscale 대역(100.64.0.0/10)뿐이다 — 다른 QR로 엉뚱한 서버에 토큰을 받으러 가지 않게.
  */
 object PairUri {
