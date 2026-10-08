@@ -84,8 +84,6 @@ import {
   folderViewKeyOf,
   EMPTY_VIEW,
   emptyShelves,
-  restoreShelves,
-  restoreFolderViews,
   ACTIVITY_LOG_LIMIT,
   EMPTY_AVAILABILITY,
   MIN_SIDEBAR_WIDTH,
@@ -121,6 +119,7 @@ import {
   WorktreeRemovalDialog,
 } from "./app/AppConfirmDialogs";
 import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
+import { LAST_WORKSPACE_KEY, planRestore } from "./app/restore-plan";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
@@ -522,96 +521,28 @@ export function App() {
         setAgents(agentsSnapshot.agents);
         agentsRef.current = agentsSnapshot.agents;
         setAgentWarning(agentsSnapshot.warning ?? null);
-        const visibleProjects = Object.values(registrySnapshot.registry.projects).sort(
-          (left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER),
-        );
         let savedWorkspaceKey: string | null = null;
-        try { savedWorkspaceKey = localStorage.getItem("multi-cli-work.last-workspace.v1"); } catch { /* unavailable storage */ }
-        const savedWorktree = !preservedSelection && savedWorkspaceKey?.startsWith("worktree:")
-          ? worktreeList.find((worktree) => worktree.id === savedWorkspaceKey.slice("worktree:".length)) ?? null
-          : null;
-        const preferredProjectId = preservedSelection ? preservedSelection.projectId : savedWorktree?.projectId ?? appState.state.selectedProjectId;
-        const preferredSessionId = preservedSelection ? preservedSelection.sessionId : appState.state.selectedSessionId;
-        const restoredSession = terminalSessions.find((session) => session.id === preferredSessionId) ?? null;
-        const paneIds = terminalSessions.map((session) => session.id);
-        // A folder's grid catches up on the sessions it does not list yet, most recently active
-        // first — the arrangement the user saved, plus whatever was started since.
-        const recentIds = (matches: (session: TerminalSessionView) => boolean) =>
-          terminalSessions
-            .filter(matches)
-            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-            .map((session) => session.id);
-        const restoreViews = (key: string, sessionIds: string[]) => {
-          const restored = restoreFolderViews(
-            appState.state.folderViews,
-            paneIds,
-            new Set(Object.keys(registrySnapshot.registry.projects)),
-            new Set(worktreeList.map((worktree) => worktree.id)),
-          );
-          restored[key] = normalizeSlots(restored[key], sessionIds, { autoAppend: true, keep: paneIds });
-          setFolderViews(restored);
-          setShelves(
-            restoreShelves(
-              appState.state.workspace,
-              appState.state.hiddenPanes,
-              appState.state.visibleSessionIds,
-              paneIds,
-            ),
-          );
-          setShelfKind(null);
-          setPage(0);
-          slotViewsRestored.current = true;
-        };
-
-        // A maintenance session belongs to no folder, so restoring it must not fall back to the
-        // first folder in the list the way a plain "nothing selected" state does.
-        if (restoredSession?.projectId === null) {
-          setSnapshot(registrySnapshot);
-          setSessions(terminalSessions);
-          setAvailability(providers);
-          setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
-          setSelectedProjectId(null);
-          setSelectedSessionId(restoredSession.id);
-          setSelectedWorktreeId(null);
-          setFocusedPaneId(restoredSession.id);
-          restoreViews(folderViewKeyOf(null, null), recentIds((session) => session.projectId === null));
-          setActiveView(forceHome ? "home" : "terminal");
-          return;
-        }
-
-        const restoredProject = visibleProjects.find((project) => project.id === preferredProjectId) ?? null;
-        const initialProject = restoredProject ?? visibleProjects[0] ?? null;
-        const initialSession = restoredProject
-          ? restoredSession?.projectId === restoredProject.id
-            ? restoredSession
-            : null
-          : initialProject
-            ? (terminalSessions
-                .filter((session) => session.projectId === initialProject.id)
-                .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null)
-            : null;
-
-        const initialWorktreeId =
-          initialSession?.worktreeId ??
-          (savedWorktree && savedWorktree.projectId === initialProject?.id ? savedWorktree.id : null);
-
-        setSnapshot(registrySnapshot);
-        setSessions(terminalSessions);
-        setAvailability(providers);
-        setExpandedProjects(new Set(visibleProjects.filter((project) => !collapsedProjectIds.has(project.id)).map((project) => project.id)));
-        setSelectedProjectId(initialProject?.id ?? null);
-        setSelectedSessionId(initialSession?.id ?? null);
-        setSelectedWorktreeId(initialWorktreeId);
-        setFocusedPaneId(initialSession?.id ?? null);
-        restoreViews(
-          folderViewKeyOf(initialProject?.id ?? null, initialWorktreeId),
-          initialWorktreeId
-            ? recentIds((session) => session.worktreeId === initialWorktreeId)
-            : initialProject
-              ? recentIds((session) => session.projectId === initialProject.id)
-              : recentIds((session) => session.projectId === null),
-        );
-        setActiveView(forceHome ? "home" : initialSession ? "terminal" : initialProject ? "detail" : "home");
+        try { savedWorkspaceKey = localStorage.getItem(LAST_WORKSPACE_KEY); } catch { /* unavailable storage */ }
+        const plan = planRestore({
+          projects: registrySnapshot.registry.projects,
+          sessions: terminalSessions,
+          worktrees: worktreeList,
+          state: appState.state,
+          preservedSelection,
+          savedWorkspaceKey,
+          collapsedProjectIds,
+        });
+        setExpandedProjects(plan.expandedProjects);
+        setSelectedProjectId(plan.selectedProjectId);
+        setSelectedSessionId(plan.selectedSessionId);
+        setSelectedWorktreeId(plan.selectedWorktreeId);
+        setFocusedPaneId(plan.focusedPaneId);
+        setFolderViews(plan.folderViews);
+        setShelves(plan.shelves);
+        setShelfKind(null);
+        setPage(0);
+        slotViewsRestored.current = true;
+        setActiveView(plan.activeView);
       } catch (error) {
         setLoadError(errorMessage(error));
       } finally {
@@ -931,7 +862,7 @@ export function App() {
   // Opening a folder means opening its work: the grid fills with that folder's sessions, and the
   // 상세 page is a click away in the header rather than a stop on the way.
   const selectProject = (projectId: string) => {
-    try { localStorage.setItem("multi-cli-work.last-workspace.v1", `main:${projectId}`); } catch { /* unavailable storage */ }
+    try { localStorage.setItem(LAST_WORKSPACE_KEY, `main:${projectId}`); } catch { /* unavailable storage */ }
     const view = catchUpFolder(
       folderViewKeyOf(projectId, null),
       folderSessionIds((session) => session.projectId === projectId),
@@ -1188,7 +1119,7 @@ export function App() {
 
   /** A worktree behaves like a sub-folder: selecting it fills the grid with its own sessions. */
   const selectWorktree = (worktree: SharedWorktree) => {
-    try { localStorage.setItem("multi-cli-work.last-workspace.v1", `worktree:${worktree.id}`); } catch { /* unavailable storage */ }
+    try { localStorage.setItem(LAST_WORKSPACE_KEY, `worktree:${worktree.id}`); } catch { /* unavailable storage */ }
     const view = catchUpFolder(
       folderViewKeyOf(worktree.projectId, worktree.id),
       folderSessionIds((session) => session.worktreeId === worktree.id),
