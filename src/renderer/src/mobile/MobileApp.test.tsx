@@ -5,9 +5,20 @@ import { MobileApp } from "./MobileApp";
 
 // 터미널(xterm)은 jsdom에서 그려지지 않는다 — 어떤 세션이 어떤 모드로 열렸는지만 본다.
 vi.mock("./SessionScreen", () => ({
-  SessionScreen: ({ session, wide }: { session: RemoteSessionSummary; wide?: boolean }) => (
+  SessionScreen: ({
+    session,
+    wide,
+    onMeasured,
+  }: {
+    session: RemoteSessionSummary;
+    wide?: boolean;
+    onMeasured?(size: { cols: number; rows: number }): void;
+  }) => (
     <div data-testid="screen" data-wide={String(Boolean(wide))}>
       {session.label}
+      <button type="button" onClick={() => onMeasured?.({ cols: 150, rows: 40 })}>
+        재기
+      </button>
     </div>
   ),
 }));
@@ -119,8 +130,27 @@ describe("MobileApp", () => {
       });
     });
     fireEvent.click(screen.getByRole("button", { name: "시작" }));
-    expect(FakeSocket.last!.sent).toContainEqual({ type: "create", projectId: "p1", kind: "claude" });
+    // 아직 연 세션이 없어 잰 크기가 없다 — 창 크기로 어림한다(jsdom 1024×768).
+    expect(FakeSocket.last!.sent).toContainEqual({ type: "create", projectId: "p1", kind: "claude", cols: 102, rows: 45 });
     expect(screen.queryByRole("button", { name: "시작" })).not.toBeInTheDocument();
+  });
+
+  it("starts a session at the size the open session screen measured", () => {
+    useScreen(true);
+    window.location.hash = "#session=s2";
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "재기" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
+    act(() => {
+      FakeSocket.last!.receive({
+        type: "catalog",
+        projects: [{ id: "p1", name: "multi-cli-work" }],
+        agents: [{ id: "claude", label: "Claude" }],
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    expect(FakeSocket.last!.sent).toContainEqual({ type: "create", projectId: "p1", kind: "claude", cols: 150, rows: 40 });
   });
 
   it("opens the session the host says was started", () => {

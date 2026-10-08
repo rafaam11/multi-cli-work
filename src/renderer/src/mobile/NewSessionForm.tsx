@@ -9,8 +9,8 @@ interface NewSessionFormProps {
 }
 
 /**
- * 호스트 PC에 새 세션을 띄우는 폼. 어디서(폴더) 무엇을(에이전트) 돌릴지만 고른다 — 터미널 크기는
- * 호스트가 정하고, 열린 뒤에 다른 세션과 같은 규칙으로 맞춘다.
+ * 호스트 PC에 새 세션을 띄우는 폼. 어디서(폴더) 무엇을(에이전트) 돌릴지만 고른다 — 시작 크기는
+ * MobileApp이 이 화면에 맞게 어림해 싣고, 열린 뒤에는 다른 세션과 같은 규칙으로 맞춘다.
  */
 export function NewSessionForm({ catalog, onStart, onCancel }: NewSessionFormProps) {
   const [projectId, setProjectId] = useState("");

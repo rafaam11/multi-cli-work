@@ -304,6 +304,20 @@ describe("RemoteSessionHub session management", () => {
     expect(resize).not.toHaveBeenCalled();
   });
 
+  it("starts a session at the size the requesting screen asked for, within bounds", async () => {
+    const { handle, hello, gateway, sizes } = setup();
+    await hello();
+
+    handle.receive('{"type":"create","projectId":"p1","kind":"codex","cols":56,"rows":48}');
+    await flush();
+    expect(gateway.create).toHaveBeenLastCalledWith({ projectId: "p1", kind: "codex", cols: 56, rows: 48 });
+    expect(sizes.current("s-new")).toEqual({ cols: 56, rows: 48, owner: "desktop" });
+
+    handle.receive('{"type":"create","projectId":"p1","kind":"codex","cols":5,"rows":900}');
+    await flush();
+    expect(gateway.create).toHaveBeenLastCalledWith({ projectId: "p1", kind: "codex", cols: 20, rows: 200 });
+  });
+
   it("stops a running session", async () => {
     const { handle, hello, gateway } = setup();
     await hello();

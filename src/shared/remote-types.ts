@@ -52,9 +52,9 @@ export type RemoteClientMessage =
   | { type: "write"; sessionId: string; data: string }
   | { type: "resize"; sessionId: string; cols: number; rows: number }
   | { type: "releaseSize"; sessionId: string }
-  // 세션 관리. 크기는 보내지 않는다 — 만드는 시점에는 클라이언트에 터미널이 없고, 호스트가 정한다.
+  // 세션 관리. 새 세션의 크기는 만드는 화면이 어림해 보낸다. 없으면 호스트 기본 크기로 띄운다.
   | { type: "catalog" }
-  | { type: "create"; projectId: string; kind: TerminalKind }
+  | { type: "create"; projectId: string; kind: TerminalKind; cols?: number; rows?: number }
   | { type: "stop"; sessionId: string }
   | { type: "resume"; sessionId: string }
   | { type: "remove"; sessionId: string };
@@ -135,9 +135,10 @@ export function parseRemoteClientMessage(raw: string): RemoteClientMessage | nul
     case "catalog":
       return { type: "catalog" };
     case "create":
-      return text(value.projectId) && typeof value.kind === "string" && AGENT_ID_PATTERN.test(value.kind)
-        ? { type: "create", projectId: value.projectId, kind: value.kind }
-        : null;
+      if (!text(value.projectId) || typeof value.kind !== "string" || !AGENT_ID_PATTERN.test(value.kind)) return null;
+      return dimension(value.cols) && dimension(value.rows)
+        ? { type: "create", projectId: value.projectId, kind: value.kind, cols: value.cols, rows: value.rows }
+        : { type: "create", projectId: value.projectId, kind: value.kind };
     case "stop":
       return text(value.sessionId) ? { type: "stop", sessionId: value.sessionId } : null;
     case "resume":

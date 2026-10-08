@@ -45,6 +45,13 @@ export interface RemoteConnection {
 
 /** 폰이 이만큼 못 받고 밀리면 끊는다 — 다시 붙으면 replay가 화면을 되살린다. */
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+/** 원격에서 만드는 세션의 시작 크기 범위. 화면 어림이 엉뚱해도 쓸 수 있는 터미널이 되게 자른다. */
+const CREATE_COLS = { min: 20, max: 400 };
+const CREATE_ROWS = { min: 5, max: 200 };
+
+function clamp(value: number, range: { min: number; max: number }): number {
+  return Math.min(range.max, Math.max(range.min, value));
+}
 
 export interface RemoteClientHandle {
   receive(raw: string): void;
@@ -207,9 +214,10 @@ export class RemoteSessionHub {
         client.connection.send({ type: "catalog", ...(await this.options.gateway.catalog()) });
         return;
       case "create": {
-        // 만드는 쪽에는 아직 터미널이 없어 크기를 잴 수 없다. 호스트의 기본 크기로 시작하고, 크기는
-        // 호스트 것으로 적어 둔다 — 붙은 뒤의 맞춤은 다른 세션과 같은 규칙을 따른다.
-        const { cols, rows } = DEFAULT_TERMINAL_SIZE;
+        // 만드는 화면이 어림한 크기로 시작한다(없으면 호스트 기본 크기). 크기는 호스트 것으로 적어
+        // 둔다 — 붙은 뒤의 맞춤은 다른 세션과 같은 규칙을 따른다.
+        const cols = clamp(message.cols ?? DEFAULT_TERMINAL_SIZE.cols, CREATE_COLS);
+        const rows = clamp(message.rows ?? DEFAULT_TERMINAL_SIZE.rows, CREATE_ROWS);
         const session = await this.options.gateway.create({ projectId: message.projectId, kind: message.kind, cols, rows });
         this.options.sizes.hostStarted(session.id, cols, rows);
         client.connection.send({ type: "started", sessionId: session.id });

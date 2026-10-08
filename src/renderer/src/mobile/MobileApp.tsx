@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RemoteCatalog, RemoteSessionSummary } from "@shared/remote-types";
+import { startSize, type MeasuredSize } from "./initial-size";
 import { NewSessionForm } from "./NewSessionForm";
 import { PairScreen } from "./PairScreen";
 import {
@@ -38,6 +39,8 @@ export function MobileApp() {
   const [catalog, setCatalog] = useState<RemoteCatalog | null>(null);
   /** 호스트가 거절한 이유 — 이미 끝난 세션, 지울 수 없는 세션 같은 것. */
   const [refusal, setRefusal] = useState<string | null>(null);
+  /** 세션 화면이 마지막으로 잰 터미널 크기. 새 세션을 이 화면에 맞는 크기로 띄우는 데 쓴다. */
+  const measuredRef = useRef<MeasuredSize | null>(null);
 
   // 셸이 열려 있는 창에 다른 세션을 가리키는 링크를 다시 로드하면 해시만 바뀐다.
   useEffect(() => {
@@ -133,7 +136,12 @@ export function MobileApp() {
         <NewSessionForm
           catalog={catalog}
           onStart={(projectId, kind) => {
-            client.send({ type: "create", projectId, kind });
+            const size = startSize({
+              measured: measuredRef.current,
+              wide,
+              viewport: { width: window.innerWidth, height: window.innerHeight },
+            });
+            client.send({ type: "create", projectId, kind, ...size });
             setNewSessionOpen(false);
           }}
           onCancel={() => setNewSessionOpen(false)}
@@ -157,6 +165,9 @@ export function MobileApp() {
       deviceId={pairing.deviceId}
       wide={wide}
       onBack={() => setOpenSessionId(null)}
+      onMeasured={(size) => {
+        measuredRef.current = { ...size, wide };
+      }}
     />
   ) : null;
 

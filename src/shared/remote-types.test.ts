@@ -48,11 +48,26 @@ describe("parseRemoteClientMessage", () => {
 
   it("accepts the session management messages", () => {
     expect(parseRemoteClientMessage('{"type":"catalog"}')).toEqual({ type: "catalog" });
-    expect(parseRemoteClientMessage('{"type":"create","projectId":"p1","kind":"claude","cols":200}')).toEqual({
+    expect(parseRemoteClientMessage('{"type":"create","projectId":"p1","kind":"claude"}')).toEqual({
       type: "create",
       projectId: "p1",
       kind: "claude",
     });
+    expect(parseRemoteClientMessage('{"type":"create","projectId":"p1","kind":"claude","cols":120,"rows":40}')).toEqual({
+      type: "create",
+      projectId: "p1",
+      kind: "claude",
+      cols: 120,
+      rows: 40,
+    });
+    // 크기는 둘 다 맞을 때만 싣는다. 한쪽만 오거나 정수가 아니면 크기 없이 받는다 — 호스트 기본 크기로.
+    for (const raw of [
+      '{"type":"create","projectId":"p1","kind":"claude","cols":200}',
+      '{"type":"create","projectId":"p1","kind":"claude","cols":0,"rows":40}',
+      '{"type":"create","projectId":"p1","kind":"claude","cols":80.5,"rows":40}',
+    ]) {
+      expect(parseRemoteClientMessage(raw), raw).toEqual({ type: "create", projectId: "p1", kind: "claude" });
+    }
     expect(parseRemoteClientMessage('{"type":"stop","sessionId":"s"}')).toEqual({ type: "stop", sessionId: "s" });
     expect(parseRemoteClientMessage('{"type":"resume","sessionId":"s","rows":9}')).toEqual({ type: "resume", sessionId: "s" });
     expect(parseRemoteClientMessage('{"type":"remove","sessionId":"s"}')).toEqual({ type: "remove", sessionId: "s" });

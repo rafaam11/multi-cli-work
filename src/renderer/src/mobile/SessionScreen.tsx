@@ -4,6 +4,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import type { RemoteSessionSummary } from "@shared/remote-types";
 import { createAutoFit, type AutoFit, type AutoFitState } from "./auto-fit";
+import { TERMINAL_FONT_INDEX, TERMINAL_FONT_SIZES, type TerminalSize } from "./initial-size";
 import type { RemoteClient } from "./remote-client";
 import { STATUS_LABEL } from "./SessionList";
 import { clipboardKeyAction, createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
@@ -16,9 +17,11 @@ interface SessionScreenProps {
   onBack(): void;
   /** 넓은 화면(PC): 목록이 옆에 있고, 터미널을 이 창 크기에 맞추며, 키보드로 바로 입력한다. */
   wide?: boolean;
+  /** 이 화면에 들어가는 터미널 크기를 잴 때마다 알린다 — 새 세션을 그 크기로 띄우려고. */
+  onMeasured?(size: TerminalSize): void;
 }
 
-const FONT_SIZES = [9, 10, 11, 12, 13, 14, 16] as const;
+const FONT_SIZES = TERMINAL_FONT_SIZES;
 const AUTO_FIT_DEBOUNCE_MS = 150;
 
 /**
@@ -26,7 +29,7 @@ const AUTO_FIT_DEBOUNCE_MS = 150;
  * 켜면 이 화면 폭으로 PTY를 줄인다. 넓은 화면(PC)은 반대로 이 창 크기에 맞추는 것이 기본이다. 어느
  * 쪽이든 호스트가 크기를 되찾으면(입력·패인 크기 변경) 맞춤이 꺼지거나 멈춘다.
  */
-export function SessionScreen({ client, session, deviceId, onBack, wide = false }: SessionScreenProps) {
+export function SessionScreen({ client, session, deviceId, onBack, wide = false, onMeasured }: SessionScreenProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -36,7 +39,9 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
   const [fitState, setFitState] = useState<AutoFitState>("fitting");
   // 넓은 화면은 키보드가 있다 — 빠른 키 바와 입력창은 접어 둔다.
   const [toolsOpen, setToolsOpen] = useState(!wide);
-  const [fontIndex, setFontIndex] = useState(3);
+  const [fontIndex, setFontIndex] = useState(TERMINAL_FONT_INDEX);
+  const onMeasuredRef = useRef(onMeasured);
+  onMeasuredRef.current = onMeasured;
   const [draft, setDraft] = useState("");
   /** 삭제는 되돌릴 수 없어서 두 번 묻는다. window.confirm은 Android WebView가 조용히 거절한다. */
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -56,7 +61,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
     const host = hostRef.current;
     if (!host) return;
     const terminal = new Terminal({
-      fontSize: FONT_SIZES[3],
+      fontSize: FONT_SIZES[TERMINAL_FONT_INDEX],
       fontFamily: 'ui-monospace, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace',
       scrollback: 5_000,
       cursorBlink: false,
@@ -67,6 +72,11 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
     terminal.open(host);
     terminalRef.current = terminal;
     fitRef.current = fit;
+    const reportSize = () => {
+      const dims = fit.proposeDimensions();
+      if (dims && dims.cols >= 2 && dims.rows >= 1) onMeasuredRef.current?.({ cols: dims.cols, rows: dims.rows });
+    };
+    reportSize();
 
     // 키보드로 쓰는 넓은 화면에서만 복사·붙여넣기 키를 가로챈다. 폰 화면의 키 처리는 전과 같다.
     if (wide) {
@@ -159,10 +169,11 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
     const onWindowResize = () => {
       windowResized = true;
       scheduleFit();
+      reportSize();
     };
     const observer = autoFit && typeof ResizeObserver === "function" ? new ResizeObserver(scheduleFit) : null;
     observer?.observe(host);
-    if (autoFit) window.addEventListener("resize", onWindowResize);
+    window.addEventListener("resize", onWindowResize);
 
     // xterm은 손가락 드래그를 스크롤백 이동으로 바꾸지 않는다. 세로 드래그는 여기서 받아, 넘친 틀
     // (PC 크기로 그릴 때)과 스크롤백 사이에 나눠 쓴다. 가로 드래그는 틀의 기본 스크롤에 맡긴다.
@@ -268,6 +279,8 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false 
     if (terminal) terminal.options.fontSize = FONT_SIZES[fontIndex];
     // 글자 크기가 바뀌면 같은 창에 들어가는 열·행 수가 달라진다.
     autoFitRef.current?.areaChanged();
+    const dims = fitRef.current?.proposeDimensions();
+    if (dims && dims.cols >= 2 && dims.rows >= 1) onMeasuredRef.current?.({ cols: dims.cols, rows: dims.rows });
   }, [fontIndex]);
 
   const togglePhoneSize = () => {
