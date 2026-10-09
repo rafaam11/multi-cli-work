@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { controlPipeNameFor, ensureControlCli } from "./control-cli-installer";
+import { controlPipeNameFor, ensureControlCli, resolveControlPipeName } from "./control-cli-installer";
 
 const roots: string[] = [];
 
@@ -88,5 +88,22 @@ describe("controlPipeNameFor", () => {
     expect(dev).not.toBe(installed);
     // Windows paths compare case-insensitively, so the same folder spelled differently is one pipe.
     expect(controlPipeNameFor("c:\\users\\me\\appdata\\roaming\\multi-cli-work", "win32")).toBe(installed);
+  });
+});
+
+describe("resolveControlPipeName", () => {
+  const userData = "C:\\temp\\mcw-dev\\user-data";
+
+  it("honours an explicit JK_CODING_CLI_PIPE", () => {
+    expect(resolveControlPipeName({ JK_CODING_CLI_PIPE: "custom-pipe" }, userData, "win32")).toBe("custom-pipe");
+  });
+
+  it("ignores the pipe of the app session it was launched from — a dev build started in an app terminal", () => {
+    const inherited = { JK_CODING_CLI_PIPE: "jk-coding-cli-parent", JK_CODING_CLI_TOKEN: "parent-token" };
+    expect(resolveControlPipeName(inherited, userData, "win32")).toBe(controlPipeNameFor(userData, "win32"));
+  });
+
+  it("falls back to the userData pipe", () => {
+    expect(resolveControlPipeName({}, userData, "win32")).toBe(controlPipeNameFor(userData, "win32"));
   });
 });

@@ -167,6 +167,26 @@ describe("HomeDashboard", () => {
     ]);
   });
 
+  it("carries a session's chips and progress into its monitor row", () => {
+    installUpdatesApi();
+    const working = makeSession({ id: "s-working", status: "working", name: "Builder" });
+    const busy = makeSession({ id: "s-busy", status: "working", name: "Busy one" });
+    render(
+      <HomeDashboard
+        {...baseProps()}
+        sessions={[working, busy]}
+        sessionIndicators={{
+          "s-working": { progress: { state: "normal", value: 40 }, chips: [{ key: "tests", text: "12/40", color: "blue" }] },
+          "s-busy": { progress: { state: "indeterminate", value: null }, chips: [] },
+        }}
+      />,
+    );
+    const row = screen.getByRole("button", { name: "Builder 세션으로 이동" });
+    expect(row).toHaveTextContent("12/40");
+    expect(row).toHaveTextContent("작업 중 · 40%");
+    expect(screen.getByRole("button", { name: "Busy one 세션으로 이동" })).toHaveTextContent("진행 중");
+  });
+
   it("selects the session behind a clicked monitor row", () => {
     installUpdatesApi();
     const session = makeSession({ id: "s-1", name: "My session" });

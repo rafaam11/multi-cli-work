@@ -23,6 +23,22 @@ export function controlPipeNameFor(userDataPath: string, platform: NodeJS.Platfo
   return `${CONTROL_PIPE_NAME}-${crypto.createHash("sha1").update(key).digest("hex").slice(0, 8)}`;
 }
 export const CONTROL_PIPE_ENV = "JK_CODING_CLI_PIPE";
+
+/**
+ * The pipe this instance listens on. `JK_CODING_CLI_PIPE` overrides it — unless it came with a
+ * session token, which means the app was started from a terminal of another instance (a dev build
+ * run in the app it is building). That pipe is the parent's: taking it would leave this instance
+ * without a server and point its sessions' `jk` at the parent, which refuses their token.
+ */
+export function resolveControlPipeName(
+  env: NodeJS.ProcessEnv,
+  userDataPath: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const explicit = env[CONTROL_PIPE_ENV];
+  if (explicit && !env[CONTROL_TOKEN_ENV]) return explicit;
+  return controlPipeNameFor(userDataPath, platform);
+}
 /** Platform-independent pipe:// or tcp:// endpoint for clients introduced in v1.5. */
 export const CONTROL_ENDPOINT_ENV = "JK_CODING_CLI_ENDPOINT";
 /** Rotated on every app start and handed only to app-spawned sessions. */
@@ -58,6 +74,11 @@ jk-coding-cli - 멀티 터미널 작업기 제어 CLI (별칭: jk)
       상태: starting working awaiting-input awaiting-approval idle exited error
   spawn --project <id> [--worktree <id>] --agent <kind> [--json]
       새 세션을 시작합니다. kind 예: powershell, claude, codex
+  status set <key> <텍스트...> [--color green|amber|red|blue|gray] [--session <id>]
+  status clear [key] [--session <id>]
+      패인 머리줄에 상태 칩을 붙이거나 뗍니다. 기본 대상은 지금 세션입니다.
+  progress <0-100|busy|clear> [--state normal|error|warning] [--session <id>]
+      패인 머리줄 밑 진행선을 채웁니다. busy는 진행률 없이 돌고 있다는 표시입니다.
 "@
 
 if ($args.Count -lt 1) { Fail $HELP }
@@ -106,6 +127,32 @@ switch ($command) {
     $requestArgs.sessionId = $positional[0]
     if ($flags.ContainsKey("status")) { $requestArgs.status = $flags["status"] }
     if ($flags.ContainsKey("timeout")) { $requestArgs.timeoutSeconds = [int]$flags["timeout"] }
+    break
+  }
+  "status" {
+    if ($positional.Count -lt 1) { Fail "status: set 또는 clear가 필요합니다." }
+    $requestArgs.action = $positional[0]
+    if ($flags.ContainsKey("session")) { $requestArgs.sessionId = $flags["session"] }
+    if ($positional[0] -eq "set") {
+      if ($positional.Count -lt 3) { Fail "status set: <key> <텍스트>가 필요합니다." }
+      $requestArgs.key = $positional[1]
+      $requestArgs.text = (@($positional) | Select-Object -Skip 2) -join " "
+      if ($flags.ContainsKey("color")) { $requestArgs.color = $flags["color"] }
+    } elseif ($positional.Count -ge 2) { $requestArgs.key = $positional[1] }
+    break
+  }
+  "progress" {
+    if ($positional.Count -lt 1) { Fail "progress: 0-100, busy, clear 중 하나가 필요합니다." }
+    if ($flags.ContainsKey("session")) { $requestArgs.sessionId = $flags["session"] }
+    $value = [string]$positional[0]
+    if ($value -eq "clear") { $requestArgs.clear = $true }
+    elseif ($value -eq "busy") { $requestArgs.state = "indeterminate" }
+    else {
+      $number = 0
+      if (-not [int]::TryParse($value, [ref]$number)) { Fail "progress: 0-100 사이의 정수가 필요합니다." }
+      $requestArgs.value = $number
+      if ($flags.ContainsKey("state")) { $requestArgs.state = $flags["state"] }
+    }
     break
   }
   "spawn" {
@@ -166,6 +213,8 @@ switch ($command) {
   "read" { if ($null -ne $result.text) { Write-Output $result.text }; break }
   "wait" { Write-Output ($result.sessionId + ": " + $result.status); break }
   "spawn" { Write-Output $result.sessionId; break }
+  "status" { Write-Output ("상태 칩 -> " + $result.sessionId); break }
+  "progress" { Write-Output ("진행률 -> " + $result.sessionId); break }
 }
 exit 0
 `;
@@ -198,7 +247,7 @@ def fail(message):
 
 def parse(argv):
     if not argv or argv[0] in ("help", "--help", "-h"):
-        print("jk-coding-cli: list|send|read|wait|spawn [options]")
+        print("jk-coding-cli: list|send|read|wait|spawn|status|progress [options]")
         raise SystemExit(0)
     command, rest, flags, positional = argv[0], argv[1:], {}, []
     i = 0
@@ -227,6 +276,24 @@ def parse(argv):
         if "lines" in flags: args["lines"] = int(flags["lines"])
         if "status" in flags: args["status"] = flags["status"]
         if "timeout" in flags: args["timeoutSeconds"] = int(flags["timeout"])
+    elif command == "status":
+        if not positional: fail("status: set 또는 clear가 필요합니다.")
+        args["action"] = positional[0]
+        if "session" in flags: args["sessionId"] = flags["session"]
+        if positional[0] == "set":
+            if len(positional) < 3: fail("status set: <key> <텍스트>가 필요합니다.")
+            args["key"], args["text"] = positional[1], " ".join(positional[2:])
+            if "color" in flags: args["color"] = flags["color"]
+        elif len(positional) >= 2: args["key"] = positional[1]
+    elif command == "progress":
+        if not positional: fail("progress: 0-100, busy, clear 중 하나가 필요합니다.")
+        if "session" in flags: args["sessionId"] = flags["session"]
+        if positional[0] == "clear": args["clear"] = True
+        elif positional[0] == "busy": args["state"] = "indeterminate"
+        else:
+            try: args["value"] = int(positional[0])
+            except ValueError: fail("progress: 0-100 사이의 정수가 필요합니다.")
+            if "state" in flags: args["state"] = flags["state"]
     elif command == "spawn":
         if "project" not in flags or "agent" not in flags: fail("spawn: --project와 --agent가 필요합니다.")
         args.update(projectId=flags["project"], kind=flags["agent"])
@@ -259,6 +326,8 @@ elif command == "send": print("전송됨 -> " + result["sessionId"])
 elif command == "read": print(result.get("text", ""))
 elif command == "wait": print(result["sessionId"] + ": " + result["status"])
 elif command == "spawn": print(result["sessionId"])
+elif command == "status": print("상태 칩 -> " + result["sessionId"])
+elif command == "progress": print("진행률 -> " + result["sessionId"])
 `;
 
 async function replaceFile(filePath: string, content: string): Promise<void> {

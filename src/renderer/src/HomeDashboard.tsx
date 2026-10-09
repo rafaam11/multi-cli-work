@@ -2,11 +2,12 @@ import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView, UpdaterStatus } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { ProjectCategorySetting } from "@shared/settings-types";
-import type { TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
+import type { SessionIndicators, SessionProgress, TerminalKind, TerminalStatus, ToolCommand } from "@shared/terminal-types";
 import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import { Briefcase, Clock, Info, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, agentAccentClass } from "./brand-icons";
+import { SessionChips } from "./SessionChips";
 import { recentProjects } from "./recent-folders";
 import { TagChips } from "./TagChips";
 import {
@@ -58,6 +59,13 @@ const ACTIVE_SESSION_STATUSES = new Set<TerminalStatus>([
   "idle",
 ]);
 
+/** " · 40%" for a reported value, " · 진행 중" for a busy bar, nothing otherwise. */
+function progressText(progress: SessionProgress | null): string {
+  if (!progress) return "";
+  if (progress.value !== null && progress.state !== "indeterminate") return ` · ${progress.value}%`;
+  return progress.state === "indeterminate" ? " · 진행 중" : "";
+}
+
 interface HomeDashboardProps {
   projects: SharedProject[];
   workProjects: WorkProject[];
@@ -73,6 +81,8 @@ interface HomeDashboardProps {
    * 렌더는 그냥 칩 없는 카드를 그린다.
    */
   tagsByWorkProject?: Record<string, readonly string[]>;
+  /** 세션 → 진행률·상태 칩. 모니터 행이 패인 머리줄과 같은 칩과 퍼센트를 보인다. */
+  sessionIndicators?: Readonly<Record<string, SessionIndicators>>;
   /** 이 폴더에서 아무것도 시작할 수 없는 이유(사라진 폴더 등). 없으면 null — 빈 슬롯 메뉴와 같은 판정이다. */
   disabledReasonFor?(projectId: string): string | null;
   onSelectSession(session: TerminalSessionView): void;
@@ -91,6 +101,7 @@ export function HomeDashboard({
   pendingAction,
   categories,
   tagsByWorkProject = {},
+  sessionIndicators,
   disabledReasonFor = () => null,
   onSelectSession,
   onSelectWorkProject,
@@ -188,7 +199,11 @@ export function HomeDashboard({
                         <span className="monitor-name">{label}</span>
                         <span className="monitor-project">{project ? projectName(project) : "도구"}</span>
                       </span>
-                      <span className="monitor-status">{statusLabels[session.status]}</span>
+                      <SessionChips chips={sessionIndicators?.[session.id]?.chips ?? []} />
+                      <span className="monitor-status">
+                        {statusLabels[session.status]}
+                        {progressText(sessionIndicators?.[session.id]?.progress ?? null)}
+                      </span>
                     </button>
                   </li>
                 );

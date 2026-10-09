@@ -29,7 +29,7 @@ import { createNotionTokenStore } from "./notion/notion-token-store";
 import {
   CONTROL_ENDPOINT_ENV,
   CONTROL_PIPE_ENV,
-  controlPipeNameFor,
+  resolveControlPipeName,
   CONTROL_TOKEN_ENV,
   ensureControlCli,
 } from "./control/control-cli-installer";
@@ -208,7 +208,7 @@ export async function createDesktopRuntime(
   // token rotates per app run, and the pipe name can be overridden so a dev build next to an
   // installed one gets its own pipe instead of silently losing the CLI.
   const controlCli = await ensureControlCli(userData);
-  const controlPipeName = process.env[CONTROL_PIPE_ENV] ?? controlPipeNameFor(userData);
+  const controlPipeName = resolveControlPipeName(process.env, userData);
   const controlToken = crypto.randomUUID();
   const providerEnvironment = await discoverSessionEnvironment(stringEnvironment());
   const projectService = new ProjectService({ registryPath });
@@ -406,6 +406,10 @@ export async function createDesktopRuntime(
     create: (input) => coordinator.create(input, { updateSelection: false }),
     onEvent: (listener) => coordinator.onEvent(listener),
     projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
+    indicators: (sessionId) => indicators.get(sessionId),
+    setChip: (sessionId, chip) => indicators.setChip(sessionId, chip),
+    clearChips: (sessionId, key) => indicators.clearChips(sessionId, key),
+    setProgress: (sessionId, progress) => indicators.setProgress(sessionId, progress),
   };
   const controlServer = await startControlServer({
     pipeName: controlPipeName,

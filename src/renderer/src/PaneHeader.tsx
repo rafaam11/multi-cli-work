@@ -20,6 +20,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { MAX_LAYOUT_SLOTS } from "./grid-layouts";
 import type { PaneContext } from "./pane-context";
+import { SessionChips } from "./SessionChips";
 import { SessionNameInput } from "./SessionNameInput";
 import { startSessionDrag } from "./session-drag";
 import { findAgent, statusLabels } from "./session-labels";
@@ -200,20 +201,7 @@ export function PaneHeader({
             {label}
           </span>
         )}
-        {indicators && indicators.chips.length > 0 ? (
-          <span className="pane-chips">
-            {indicators.chips.map((chip) => (
-              <span
-                key={chip.key}
-                data-testid="pane-chip"
-                className={`pane-chip pane-chip-${chip.color}`}
-                title={`${chip.key}: ${chip.text}`}
-              >
-                {chip.text}
-              </span>
-            ))}
-          </span>
-        ) : null}
+        {indicators ? <SessionChips chips={indicators.chips} /> : null}
         {remoteSizeDevice ? (
           // 원격에서 크기를 맞추는 동안 이 패인의 줄바꿈은 어긋나 보인다 — 왜 그런지와 되돌리는 길을 함께 둔다.
           <span className="pane-remote-size" role="status" title={`${remoteSizeDevice}의 화면 크기로 그리는 중`}>

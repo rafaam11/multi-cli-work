@@ -3552,6 +3552,24 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   --chip-color: var(--muted);
 }
 
+.pane-chip {
+  animation: pane-chip-pulse 700ms ease-out;
+}
+
+@keyframes pane-chip-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chip-color) 60%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+.monitor-row .pane-chips {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
 .pane-chip-green {
   --chip-color: var(--green);
 }

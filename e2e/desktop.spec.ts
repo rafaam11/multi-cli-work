@@ -1495,6 +1495,31 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await fs.rm(changed, { force: true });
   });
 
+  test("pins status chips and a progress to a pane from jk inside its session", async () => {
+    await openFolder();
+    const before = await page.locator(".grid-pane").count();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
+    const shellLabel = (await page.locator(".grid-pane").last().getAttribute("aria-label"))!;
+    const header = pane(shellLabel).locator(".pane-header");
+    await pane(shellLabel).getByRole("region", { name: `${SHELL_ID} 터미널` }).click();
+
+    await page.keyboard.type(
+      shellCommand("jk status set build BUILDING --color amber; jk progress 30", "jk status set build BUILDING --color amber && jk progress 30"),
+    );
+    await page.keyboard.press("Enter");
+    await expect(header.getByTestId("pane-chip")).toHaveText("BUILDING");
+    await expect(header.getByTestId("pane-chip")).toHaveClass(/pane-chip-amber/);
+    // Set from jk, the progress outlives the command that set it — it is not the session's own report.
+    await expect(header.getByRole("progressbar", { name: "진행률" })).toHaveAttribute("aria-valuenow", "30");
+    await attachScreenshot("jk-status-chips");
+
+    await page.keyboard.type(shellCommand("jk progress clear; jk status clear", "jk progress clear && jk status clear"));
+    await page.keyboard.press("Enter");
+    await expect(header.getByTestId("pane-chip")).toHaveCount(0);
+    await expect(header.getByRole("progressbar", { name: "진행률" })).toHaveCount(0);
+  });
+
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
     const projectRoot = path.join(tempRoot, "sample-project");
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });

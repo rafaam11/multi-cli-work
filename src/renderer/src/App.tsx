@@ -2307,6 +2307,7 @@ export function App() {
               workProjects={workProjects}
               projectMembership={projectMembership}
               tagsByWorkProject={tagsByWorkProjectId}
+              sessionIndicators={sessionIndicators}
               categories={projectCategories}
               sessions={sessions}
               agents={agents}

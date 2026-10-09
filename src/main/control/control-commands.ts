@@ -1,6 +1,13 @@
 import type { CreateTerminalInput, TerminalSessionView } from "../../shared/api-types";
 import { promptAsTerminalInput } from "../../shared/fan-out";
-import type { TerminalEvent, TerminalStatus } from "../../shared/terminal-types";
+import type {
+  SessionIndicators,
+  SessionProgress,
+  StatusChip,
+  StatusChipColor,
+  TerminalEvent,
+  TerminalStatus,
+} from "../../shared/terminal-types";
 
 /**
  * The five jk-coding-cli commands, expressed against a narrow gateway so they can be tested without
@@ -44,6 +51,11 @@ export interface ControlCommandContext {
   create(input: CreateTerminalInput): Promise<TerminalSessionView>;
   onEvent(listener: (event: TerminalEvent) => void): () => void;
   projectName(projectId: string): Promise<string | null>;
+  /** The pane header's progress and chips — what `status` and `progress` change. */
+  indicators(sessionId: string): SessionIndicators;
+  setChip(sessionId: string, chip: StatusChip): void;
+  clearChips(sessionId: string, key?: string): void;
+  setProgress(sessionId: string, progress: SessionProgress | null): void;
 }
 
 class ControlCommandError extends Error {}
@@ -176,6 +188,72 @@ async function spawn(args: Record<string, unknown>, context: ControlCommandConte
   return { sessionId: session.id, projectId: session.projectId, kind: session.kind };
 }
 
+const MAX_CHIPS = 8;
+const MAX_CHIP_TEXT = 40;
+const CHIP_KEY = /^[A-Za-z0-9._-]{1,24}$/;
+const CHIP_COLORS: readonly StatusChipColor[] = ["green", "amber", "red", "blue", "gray"];
+const PROGRESS_STATES: readonly SessionProgress["state"][] = ["normal", "indeterminate", "error", "warning"];
+
+/** `--session`, or the session the command runs in; it must still be running. */
+function indicatorTarget(args: Record<string, unknown>, caller: string | null, context: ControlCommandContext): string {
+  const sessionId = args.sessionId === undefined ? caller : requireString(args.sessionId, "sessionId");
+  if (!sessionId) throw new ControlCommandError("앱 세션 밖에서는 --session <id>로 대상을 지정하세요.");
+  const session = requireSession(context, sessionId);
+  if (!canReadInput(session)) throw new ControlCommandError(`세션이 실행 중이 아닙니다: ${session.id} (${session.status})`);
+  return session.id;
+}
+
+function status(args: Record<string, unknown>, caller: string | null, context: ControlCommandContext) {
+  const sessionId = indicatorTarget(args, caller, context);
+  if (args.action === "clear") {
+    const key = args.key === undefined ? undefined : requireString(args.key, "key");
+    context.clearChips(sessionId, key);
+    return { sessionId };
+  }
+  if (args.action !== "set") throw new ControlCommandError("status: set 또는 clear를 지정하세요.");
+  const key = requireString(args.key, "key");
+  if (!CHIP_KEY.test(key)) throw new ControlCommandError("key는 영문·숫자·._- 로 24자까지입니다.");
+  // Control characters would let a chip smuggle escape sequences into the header's text.
+  const clean = requireString(args.text, "텍스트").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!clean) throw new ControlCommandError("텍스트가 비어 있습니다.");
+  const text = clean.length > MAX_CHIP_TEXT ? `${clean.slice(0, MAX_CHIP_TEXT - 1)}…` : clean;
+  const color = args.color === undefined ? "blue" : args.color;
+  if (!CHIP_COLORS.includes(color as StatusChipColor)) {
+    throw new ControlCommandError(`색은 ${CHIP_COLORS.join(", ")} 중 하나입니다.`);
+  }
+  const chips = context.indicators(sessionId).chips;
+  if (chips.length >= MAX_CHIPS && !chips.some((chip) => chip.key === key)) {
+    throw new ControlCommandError(`칩은 세션마다 ${MAX_CHIPS}개까지입니다. jk status clear로 정리하세요.`);
+  }
+  context.setChip(sessionId, { key, text, color: color as StatusChipColor });
+  return { sessionId };
+}
+
+function progress(args: Record<string, unknown>, caller: string | null, context: ControlCommandContext) {
+  const sessionId = indicatorTarget(args, caller, context);
+  if (args.clear === true) {
+    context.setProgress(sessionId, null);
+    return { sessionId };
+  }
+  const state = args.state === undefined ? "normal" : args.state;
+  if (!PROGRESS_STATES.includes(state as SessionProgress["state"])) {
+    throw new ControlCommandError(`상태는 ${PROGRESS_STATES.join(", ")} 중 하나입니다.`);
+  }
+  let value: number | null = null;
+  if (args.value !== undefined && args.value !== null) {
+    if (typeof args.value !== "number" || !Number.isInteger(args.value) || args.value < 0 || args.value > 100) {
+      throw new ControlCommandError("진행률은 0~100 사이의 정수입니다.");
+    }
+    value = args.value;
+  }
+  if (state === "normal" && value === null) throw new ControlCommandError("진행률 값(0~100)이 필요합니다.");
+  context.setProgress(sessionId, {
+    state: state as SessionProgress["state"],
+    value: state === "indeterminate" ? null : value,
+  });
+  return { sessionId };
+}
+
 export async function handleControlCommand(
   request: ControlRequest,
   context: ControlCommandContext,
@@ -195,6 +273,10 @@ export async function handleControlCommand(
         return { ok: true, result: await wait(args, context) };
       case "spawn":
         return { ok: true, result: await spawn(args, context) };
+      case "status":
+        return { ok: true, result: status(args, caller, context) };
+      case "progress":
+        return { ok: true, result: progress(args, caller, context) };
       default:
         throw new ControlCommandError(`알 수 없는 명령: ${command || "(비어 있음)"}`);
     }

@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { TerminalSessionView } from "../../shared/api-types";
-import type { TerminalEvent } from "../../shared/terminal-types";
+import type { SessionIndicators, StatusChip, TerminalEvent } from "../../shared/terminal-types";
 import { handleControlCommand, type ControlCommandContext } from "./control-commands";
 
 function session(overrides: Partial<TerminalSessionView>): TerminalSessionView {
@@ -37,6 +37,10 @@ function makeContext(overrides: Partial<ControlCommandContext> = {}) {
       return () => listeners.delete(listener);
     },
     projectName: vi.fn(async (projectId: string) => (projectId === "project-1" ? "Atlas" : null)),
+    indicators: vi.fn((): SessionIndicators => ({ progress: null, chips: [] })),
+    setChip: vi.fn(),
+    clearChips: vi.fn(),
+    setProgress: vi.fn(),
     ...overrides,
   };
   return {
@@ -250,5 +254,85 @@ describe("dispatch", () => {
     const { context } = makeContext();
     const response = await handleControlCommand({ ...TOKEN, command: "stop" }, context);
     expect(response).toMatchObject({ ok: false, error: expect.stringContaining("알 수 없는 명령") });
+  });
+});
+
+describe("status", () => {
+  it("pins a chip on the calling session, trimmed and stripped of control characters", async () => {
+    const { context } = makeContext();
+    const response = await handleControlCommand(
+      { ...TOKEN, callerSessionId: "session-1", command: "status", args: { action: "set", key: "build", text: "  빌드\u001b[31m 중  ", color: "amber" } },
+      context,
+    );
+    expect(response).toEqual({ ok: true, result: { sessionId: "session-1" } });
+    expect(context.setChip).toHaveBeenCalledWith("session-1", { key: "build", text: "빌드[31m 중", color: "amber" });
+  });
+
+  it("targets another session with sessionId, defaults the colour, and shortens long text", async () => {
+    const { context } = makeContext({ sessions: () => [session({}), session({ id: "session-2" })] });
+    await handleControlCommand(
+      { ...TOKEN, callerSessionId: "session-1", command: "status", args: { action: "set", sessionId: "session-2", key: "t", text: "x".repeat(60) } },
+      context,
+    );
+    expect(context.setChip).toHaveBeenCalledWith("session-2", { key: "t", text: `${"x".repeat(39)}…`, color: "blue" });
+  });
+
+  it("rejects a bad key or colour, a ninth chip, and a session that has ended", async () => {
+    const full: StatusChip[] = Array.from({ length: 8 }, (_, index) => ({ key: `k${index}`, text: "x", color: "gray" }));
+    const { context } = makeContext({
+      sessions: () => [session({}), session({ id: "dead", status: "exited", pid: null })],
+      indicators: () => ({ progress: null, chips: full }),
+    });
+    const set = (args: Record<string, unknown>) =>
+      handleControlCommand({ ...TOKEN, callerSessionId: "session-1", command: "status", args: { action: "set", text: "x", ...args } }, context);
+    expect(await set({ key: "with space" })).toMatchObject({ ok: false, error: expect.stringContaining("key") });
+    expect(await set({ key: "ok", color: "pink" })).toMatchObject({ ok: false, error: expect.stringContaining("색") });
+    expect(await set({ key: "new" })).toMatchObject({ ok: false, error: expect.stringContaining("8개") });
+    expect(await set({ key: "k1" })).toEqual({ ok: true, result: { sessionId: "session-1" } });
+    expect(await set({ key: "x", sessionId: "dead" })).toMatchObject({ ok: false });
+  });
+
+  it("clears one chip by key or all of them", async () => {
+    const { context } = makeContext();
+    await handleControlCommand({ ...TOKEN, callerSessionId: "session-1", command: "status", args: { action: "clear", key: "build" } }, context);
+    await handleControlCommand({ ...TOKEN, callerSessionId: "session-1", command: "status", args: { action: "clear" } }, context);
+    expect(context.clearChips).toHaveBeenNthCalledWith(1, "session-1", "build");
+    expect(context.clearChips).toHaveBeenNthCalledWith(2, "session-1", undefined);
+  });
+
+  it("needs a session to act on when called from outside one", async () => {
+    const { context } = makeContext();
+    expect(await handleControlCommand({ ...TOKEN, command: "status", args: { action: "clear" } }, context)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("--session"),
+    });
+  });
+});
+
+describe("progress", () => {
+  it("sets a value, a busy bar, a state, and clears", async () => {
+    const { context } = makeContext();
+    const run = (args: Record<string, unknown>) =>
+      handleControlCommand({ ...TOKEN, callerSessionId: "session-1", command: "progress", args }, context);
+    await run({ value: 40 });
+    await run({ value: 70, state: "error" });
+    await run({ state: "indeterminate" });
+    await run({ clear: true });
+    expect(vi.mocked(context.setProgress).mock.calls).toEqual([
+      ["session-1", { state: "normal", value: 40 }],
+      ["session-1", { state: "error", value: 70 }],
+      ["session-1", { state: "indeterminate", value: null }],
+      ["session-1", null],
+    ]);
+  });
+
+  it("rejects a value outside 0 to 100 and an unknown state", async () => {
+    const { context } = makeContext();
+    const run = (args: Record<string, unknown>) =>
+      handleControlCommand({ ...TOKEN, callerSessionId: "session-1", command: "progress", args }, context);
+    expect(await run({ value: 101 })).toMatchObject({ ok: false });
+    expect(await run({ value: 1.5 })).toMatchObject({ ok: false });
+    expect(await run({ value: 5, state: "done" })).toMatchObject({ ok: false });
+    expect(context.setProgress).not.toHaveBeenCalled();
   });
 });
