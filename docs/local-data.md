@@ -16,6 +16,7 @@
 | `project-tags.json` | 업무 프로젝트에 붙인 자유 태그. 사이드바 "묶기"의 후보 |
 | `worktrees.json` | 앱이 만든 worktree의 원본 저장소·브랜치·경로 |
 | `pr-reviews.json` | PR 리뷰 세션의 진행 상태와 비공개 line note |
+| `worktree-scripts.json` | 폴더별 워크트리 준비·정리 스크립트(v1.40.0). 레포에는 쓰지 않는다 |
 
 ## 실행 상태 — Electron `userData`
 
@@ -42,6 +43,8 @@
 | `provider-status/` | 훅이 남기는 세션별 상태 파일. 임시 파일에서 원자적으로 교체된다 |
 | `claude-settings.json` | 위 훅만 얹은 Claude 설정 오버레이 |
 | `bin/` | jk-coding-cli 클라이언트와 명령 shim. 앱이 띄운 세션의 PATH 앞에 붙는다 |
+| `worktree-scripts/` | 워크트리 스크립트를 실행할 때 쓴 스크립트 파일(worktree id별) |
+| `usage-snapshot.json` | 마지막으로 읽은 Claude·Codex 구독 사용량(퍼센트·초기화 시각·플랜). 토큰은 담지 않는다 |
 
 ## 외부 설정에 남기는 것
 
