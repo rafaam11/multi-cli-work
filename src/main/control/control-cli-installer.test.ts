@@ -35,9 +35,13 @@ describe("ensureControlCli", () => {
     expect(script).toContain("JK_CODING_CLI_TOKEN");
     expect(script).toContain("MULTI_CLI_WORK_SESSION_ID");
     expect(script).toContain('"jk-coding-cli"');
-    for (const command of ["list", "send", "read", "wait", "spawn"]) {
+    for (const command of ["list", "send", "read", "wait", "spawn", "status", "progress"]) {
       expect(script).toContain(`"${command}"`);
     }
+    // jk runs the script in Windows PowerShell 5.1, which reads a BOM-less file in the ANSI code
+    // page: on an English Windows the Korean text turned into parse errors and jk did nothing.
+    const bytes = await fs.readFile(path.join(binDir, "jk-coding-cli.ps1"));
+    expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   });
 
   it("adds POSIX shims so Git Bash (Claude Code's Bash tool on Windows) finds jk too", async () => {

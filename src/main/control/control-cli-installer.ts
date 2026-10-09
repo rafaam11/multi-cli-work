@@ -347,7 +347,9 @@ export async function ensureControlCli(
   const binDir = path.join(userDataPath, "bin");
   await fs.mkdir(binDir, { recursive: true });
   if (platform === "win32") {
-    await replaceFile(path.join(binDir, "jk-coding-cli.ps1"), CONTROL_CLI_SCRIPT);
+    // With a BOM: the shims run Windows PowerShell 5.1, which reads a BOM-less script in the ANSI
+    // code page and turns its Korean text into parse errors on any non-UTF-8 Windows.
+    await replaceFile(path.join(binDir, "jk-coding-cli.ps1"), `﻿${CONTROL_CLI_SCRIPT}`);
     await replaceFile(path.join(binDir, "jk-coding-cli.cmd"), CONTROL_CLI_CMD);
     await replaceFile(path.join(binDir, "jk.cmd"), CONTROL_CLI_CMD);
     await replaceFile(path.join(binDir, "jk-coding-cli"), CONTROL_CLI_SH);
