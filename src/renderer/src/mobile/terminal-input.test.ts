@@ -15,8 +15,23 @@ describe("encodeComposerInput", () => {
 
 describe("QUICK_KEYS", () => {
   it("covers the approval keys", () => {
-    expect(QUICK_KEYS.map((key) => key.label)).toEqual(["Esc", "Tab", "↑", "↓", "Enter", "^C", "1", "2", "3", "/"]);
+    expect(QUICK_KEYS.map((key) => key.label)).toEqual([
+      "Esc",
+      "Tab",
+      "←",
+      "→",
+      "↑",
+      "↓",
+      "Enter",
+      "^C",
+      "1",
+      "2",
+      "3",
+      "/",
+    ]);
     expect(QUICK_KEYS.find((key) => key.label === "^C")!.data).toBe("\x03");
+    expect(QUICK_KEYS.find((key) => key.label === "←")!.data).toBe("\x1b[D");
+    expect(QUICK_KEYS.find((key) => key.label === "→")!.data).toBe("\x1b[C");
   });
 });
 

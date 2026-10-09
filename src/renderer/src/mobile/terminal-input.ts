@@ -2,6 +2,8 @@
 export const QUICK_KEYS: ReadonlyArray<{ label: string; ariaLabel: string; data: string }> = [
   { label: "Esc", ariaLabel: "Esc", data: "\x1b" },
   { label: "Tab", ariaLabel: "Tab", data: "\t" },
+  { label: "←", ariaLabel: "왼쪽 화살표", data: "\x1b[D" },
+  { label: "→", ariaLabel: "오른쪽 화살표", data: "\x1b[C" },
   { label: "↑", ariaLabel: "위 화살표", data: "\x1b[A" },
   { label: "↓", ariaLabel: "아래 화살표", data: "\x1b[B" },
   { label: "Enter", ariaLabel: "Enter", data: "\r" },
