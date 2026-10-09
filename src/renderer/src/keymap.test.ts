@@ -122,4 +122,19 @@ describe("isTypingTarget", () => {
     expect(isTypingTarget()).toBe(true);
     backdrop.remove();
   });
+
+  it("터미널이 키보드를 받는 xterm 숨은 textarea는 입력 필드로 보지 않는다", () => {
+    const helper = document.createElement("textarea");
+    helper.className = "xterm-helper-textarea";
+    document.body.appendChild(helper);
+    helper.focus();
+    expect(isTypingTarget()).toBe(false);
+    helper.remove();
+
+    const field = document.createElement("textarea");
+    document.body.appendChild(field);
+    field.focus();
+    expect(isTypingTarget()).toBe(true);
+    field.remove();
+  });
 });

@@ -942,6 +942,13 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // Pressing a pane is what moves the focus the header reports.
     await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Echo Agent");
 
+    // Session cycling and slot focus keys work while a terminal holds the keyboard — xterm takes
+    // input through a hidden textarea, which is not something the user is typing a field into.
+    await page.keyboard.press("Control+Tab");
+    await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", SHELL_LABEL);
+    await page.keyboard.press("Control+Shift+Tab");
+    await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Echo Agent");
+
     // Every pane opens with the folder it runs in, whatever its session came to be called.
     await expect(pane("Echo Agent").locator(".pane-context")).toHaveText("Sample Project");
     await expect(pane(SHELL_LABEL).locator(".pane-context")).toHaveText("Sample Project");

@@ -121,11 +121,15 @@ export function isBindableAccelerator(accelerator: string): boolean {
   return modifiers.has("Ctrl") || modifiers.has("Alt");
 }
 
-/** 슬롯 포커스류가 삼켜야 할 상황인지: 모달이 떠 있거나 텍스트 입력이 포커스를 쥐고 있다. */
+/**
+ * 슬롯 포커스류가 삼켜야 할 상황인지: 모달이 떠 있거나 텍스트 입력이 포커스를 쥐고 있다. 터미널은
+ * xterm의 숨은 textarea로 키를 받지만 입력 필드가 아니다 — 세션 순환·슬롯 포커스는 거기서 동작해야 한다.
+ */
 export function isTypingTarget(): boolean {
   if (document.querySelector(".modal-backdrop")) return true;
   const active = document.activeElement;
   if (!(active instanceof HTMLElement)) return false;
+  if (active.classList.contains("xterm-helper-textarea")) return false;
   if (active.isContentEditable) return true;
   return active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT";
 }
