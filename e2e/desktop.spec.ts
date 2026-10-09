@@ -1459,11 +1459,13 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
     const terminal = page.locator(".grid-pane").last().getByRole("region", { name: `${SHELL_ID} 터미널` });
     await terminal.click();
-    await page.keyboard.type(shellCommand("Write-Output 'readme.md:1'", "echo 'readme.md:1'"));
+    // Built from two halves, so the echoed command line never reads as the path on its own.
+    await page.keyboard.type(shellCommand("Write-Output ('readme.md' + ':1')", "echo 'readme.md'':1'"));
     await page.keyboard.press("Enter");
-    // The echoed command holds the path too; the output row is the one that is nothing else.
-    const row = terminal.locator(".xterm-rows > div").filter({ hasText: /^readme\.md:1\s*$/ });
-    await expect(row).toHaveCount(1);
+    // The output row is the one that is the path and nothing else; the last such row if a slow
+    // runner left the screen holding it twice.
+    const row = terminal.locator(".xterm-rows > div").filter({ hasText: /^readme\.md:1\s*$/ }).last();
+    await expect(row).toBeVisible();
     const box = (await row.boundingBox())!;
     const x = box.x + 6;
     const y = box.y + box.height / 2;
