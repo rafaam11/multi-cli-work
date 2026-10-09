@@ -137,6 +137,8 @@ import { HostStatusLinks } from "./remote-client/host-status-links";
 import { createStatusSocket } from "./remote-client/status-socket";
 import { trayIconDataUrl } from "./tray-icon";
 import { SessionIndicatorTracker } from "./terminal/session-indicators";
+import { WorktreeScriptRunner } from "./projects/worktree-script-runner";
+import { readWorktreeScripts, removeWorktreeScripts, setWorktreeScripts } from "./projects/worktree-scripts";
 import { aggregateTaskbarProgress, type TaskbarProgress } from "./window-progress";
 
 function stringEnvironment(): Record<string, string> {
@@ -286,6 +288,7 @@ export async function createDesktopRuntime(
     stopWorktreeSessions: (worktreeId) => coordinator.stopWorktreeSessions(worktreeId),
     removeWorktreeSessions: (worktreeId) => coordinator.removeWorktreeSessions(worktreeId),
     hasWorktreeSessions: (worktreeId) => coordinator.list().some((session) => session.worktreeId === worktreeId),
+    runTeardown: (worktree, project) => worktreeScriptRunner.runTeardown(worktree, project),
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
   });
@@ -501,6 +504,16 @@ export async function createDesktopRuntime(
     (app.isPackaged ? path.join(process.resourcesPath, "mobile") : path.join(app.getAppPath(), "build", "mobile"));
   const shellArtifact = await readShellArtifact(shellDir);
   const sizes = new TerminalSizeArbiter((sessionId, cols, rows) => coordinator.resize(sessionId, cols, rows));
+  const worktreeScriptsOptions = process.env.MULTI_CLI_WORK_WORKTREE_SCRIPTS_PATH
+    ? { registryPath: process.env.MULTI_CLI_WORK_WORKTREE_SCRIPTS_PATH }
+    : {};
+  const worktreeScriptRunner = new WorktreeScriptRunner({
+    platform: process.platform,
+    scriptsDir: path.join(userData, "worktree-scripts"),
+    readScripts: (projectId) => readWorktreeScripts(projectId, worktreeScriptsOptions),
+    coordinator,
+    shellExecutable: async () => (await getExecutables()).agents[process.platform === "win32" ? "powershell" : "bash"] ?? null,
+  });
   // 패인 머리줄의 진행률·상태 칩. 터미널 출력(OSC 9;4)과 jk에서 오고, 세션과 함께 사라진다.
   const indicators = new SessionIndicatorTracker();
   let appliedTaskbarProgress = "";
@@ -723,6 +736,11 @@ export async function createDesktopRuntime(
       setNotify: (hostId, notify) => remoteHosts.setNotify(hostId, notify),
     },
     indicators: { snapshot: () => indicators.snapshot() },
+    worktreeScripts: {
+      get: (projectId) => readWorktreeScripts(projectId, worktreeScriptsOptions),
+      set: (projectId, scripts) => setWorktreeScripts(projectId, scripts, worktreeScriptsOptions),
+      forget: (projectId) => removeWorktreeScripts(projectId, worktreeScriptsOptions),
+    },
     sizes: {
       desktopResize: (sessionId, cols, rows) => sizes.desktopResize(sessionId, cols, rows),
       desktopInput: (sessionId) => sizes.desktopInput(sessionId),
@@ -744,11 +762,22 @@ export async function createDesktopRuntime(
       get: (worktreeId) => worktrees.get(worktreeId),
       creationOptions: (projectId) => worktrees.creationOptions(projectId),
       previewPath: (projectId, branch) => worktrees.previewPath(projectId, branch),
-      create: (projectId, request) => worktrees.create(projectId, request),
+      create: async (projectId, request) => {
+        const worktree = await worktrees.create(projectId, request);
+        const project = await getProject(projectId);
+        // The worktree exists whatever happens here: a setup script that cannot start is reported,
+        // not allowed to undo the creation.
+        try {
+          const setupSessionId = project ? await worktreeScriptRunner.runSetup(worktree, project) : null;
+          return { worktree, setupSessionId, setupError: null };
+        } catch (error) {
+          return { worktree, setupSessionId: null, setupError: error instanceof Error ? error.message : String(error) };
+        }
+      },
       unlock: (worktreeId) => worktrees.unlock(worktreeId),
       cleanupStale: (projectId) => worktrees.cleanupStale(projectId),
       ownerForPath: (rootPath, projects) => worktrees.ownerForPath(rootPath, projects),
-      remove: (worktreeId, force) => worktrees.remove(worktreeId, force),
+      remove: (worktreeId, force, options) => worktrees.remove(worktreeId, force, options),
     },
     updater: {
       status: updaterStatus,

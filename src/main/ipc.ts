@@ -20,6 +20,7 @@ import {
   validateWorktreeCreateRequest,
   relativePathString,
   terminalPathString,
+  validateWorktreeRemoveOptions,
   validateEditorPosition,
   validateOpenEntryOptions,
   validateViewBounds,
@@ -39,6 +40,7 @@ import {
   projectForPath,
 } from "./ipc-validation";
 import { assertNotReviewSession } from "./terminal/review-guard";
+import { normalizeWorktreeScripts } from "./projects/worktree-scripts";
 
 export type { IpcRegistrar } from "./ipc-gateways";
 
@@ -96,6 +98,9 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     // Work projects last: a dangling member is harmless (ignored on read) while a half-removed
     // project is not, so the ordering favors the registry that owns the folder.
     await dependencies.workProjectService.removeProjectReferences(id);
+    // Its worktree scripts go with it; a leftover entry would only be dead weight, so a failure here
+    // is not worth failing the removal over.
+    await dependencies.worktreeScripts.forget(id).catch((error) => console.error("Failed to drop worktree scripts", error));
     return workspaceSnapshot();
   });
   ipc.handle("projects:restore-backup", async () => {
@@ -272,14 +277,20 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   ipc.handle("worktrees:cleanup-stale", (_event, projectId: unknown) =>
     dependencies.worktrees.cleanupStale(nonEmptyString(projectId, "Project id")),
   );
-  ipc.handle("worktrees:remove", async (_event, worktreeId: unknown, force: unknown) => {
+  ipc.handle("worktrees:remove", async (_event, worktreeId: unknown, force: unknown, options: unknown) => {
     if (typeof force !== "boolean") throw new Error("Worktree remove force flag must be a boolean");
     const id = nonEmptyString(worktreeId, "Worktree id");
     if ((await dependencies.github.activeReviews()).some((review) => review.worktreeId === id)) {
       throw new Error("진행 중인 PR 리뷰 worktree는 '리뷰 완료' 흐름에서 정리하세요.");
     }
-    return dependencies.worktrees.remove(id, force);
+    return dependencies.worktrees.remove(id, force, validateWorktreeRemoveOptions(options));
   });
+  ipc.handle("worktree-scripts:get", async (_event, projectId: unknown) =>
+    dependencies.worktreeScripts.get(nonEmptyString(projectId, "Project id")),
+  );
+  ipc.handle("worktree-scripts:set", async (_event, projectId: unknown, scripts: unknown) =>
+    dependencies.worktreeScripts.set(nonEmptyString(projectId, "Project id"), normalizeWorktreeScripts(scripts)),
+  );
   ipc.handle("worktrees:reveal", async (_event, worktreeId: unknown) =>
     dependencies.projectActions.reveal(await worktreePath(worktreeId)),
   );

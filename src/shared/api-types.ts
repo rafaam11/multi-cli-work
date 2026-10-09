@@ -26,6 +26,8 @@ import type {
   SharedWorktree,
   WorktreeCreateOptions,
   WorktreeCreateRequest,
+  WorktreeCreateResult,
+  WorktreeScripts,
   WorktreeRemovalResult,
   WorktreeWorkspaceSnapshot,
 } from "./worktree-types";
@@ -293,6 +295,11 @@ export type UpdaterStatus =
   | { state: "error"; message: string };
 
 export interface MultiCliWorkApi {
+  /** 폴더별 워크트리 준비·정리 스크립트(앱 설정에만 있고 레포는 건드리지 않는다). */
+  worktreeScripts: {
+    get(projectId: string): Promise<WorktreeScripts | null>;
+    set(projectId: string, scripts: WorktreeScripts): Promise<void>;
+  };
   platform: NodeJS.Platform;
   clipboard: {
     readText(): Promise<string>;
@@ -371,11 +378,13 @@ export interface MultiCliWorkApi {
     sync(): Promise<WorktreeWorkspaceSnapshot>;
     creationOptions(projectId: string): Promise<WorktreeCreateOptions>;
     previewPath(projectId: string, branch: string): Promise<string>;
-    create(projectId: string, request: WorktreeCreateRequest): Promise<SharedWorktree>;
+    /** Makes the worktree, then starts the folder's setup script in a session of its own (if any). */
+    create(projectId: string, request: WorktreeCreateRequest): Promise<WorktreeCreateResult>;
     unlock(worktreeId: string): Promise<void>;
     cleanupStale(projectId: string): Promise<WorktreeWorkspaceSnapshot>;
     /** `force` discards uncommitted changes; the renderer must have shown the second confirmation. */
-    remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult>;
+    /** `skipTeardown` removes without running the folder's teardown script — after it has failed. */
+    remove(worktreeId: string, force: boolean, options?: { skipTeardown?: boolean }): Promise<WorktreeRemovalResult>;
     reveal(worktreeId: string): Promise<void>;
     openInEditor(worktreeId: string): Promise<void>;
     gitStatus(worktreeId: string): Promise<GitStatusResult>;

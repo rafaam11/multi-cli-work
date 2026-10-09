@@ -33,6 +33,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
       MULTI_CLI_WORK_AGENTS_PATH: path.join(tempRoot, "registry", "agents.json"),
       MULTI_CLI_WORK_WORK_PROJECTS_PATH: path.join(tempRoot, "registry", "work-projects.json"),
       MULTI_CLI_WORK_WORKTREES_PATH: path.join(tempRoot, "registry", "worktrees.json"),
+      MULTI_CLI_WORK_WORKTREE_SCRIPTS_PATH: path.join(tempRoot, "registry", "worktree-scripts.json"),
       MULTI_CLI_WORK_PR_REVIEWS_PATH: path.join(tempRoot, "registry", "pr-reviews.json"),
       // The workspace-root test registers a root: it must never reach the real ~/.multi-cli-work.
       MULTI_CLI_WORK_WORKSPACE_PATH: path.join(tempRoot, "registry", "workspace.json"),
@@ -905,6 +906,49 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       const { state } = await window.multiCliWork.terminals.state();
       return Object.values(state.sessions).filter(session => session.worktreeId !== undefined).length;
     })).toBe(0);
+  });
+
+  test("runs the folder's setup script in a new worktree and stops on a failing teardown script", async () => {
+    await openFolder();
+    await page.getByRole("button", { name: "폴더 상세" }).click();
+    const scripts = page.getByRole("region", { name: "워크트리 스크립트" });
+    await scripts
+      .getByRole("textbox", { name: "준비 스크립트" })
+      .fill(shellCommand('Write-Output ("MCW_SETUP_" + $env:MCW_BRANCH)', 'echo "MCW_SETUP_$MCW_BRANCH"'));
+    await scripts.getByRole("textbox", { name: "정리 스크립트" }).fill(shellCommand("Write-Output MCW_BYE; exit 3", "echo MCW_BYE; exit 3"));
+    await scripts.getByRole("button", { name: "스크립트 저장" }).click();
+    await expect(scripts.getByText("저장했습니다")).toBeVisible();
+
+    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
+    await page.getByRole("menu", { name: "Sample Project 작업" }).getByRole("menuitem", { name: "Worktree 만들기" }).click();
+    const createDialog = page.getByRole("dialog", { name: "Worktree 만들기" });
+    await createDialog.getByRole("textbox", { name: "브랜치 이름" }).fill("feature/scripts");
+    await createDialog.getByRole("button", { name: "만들기" }).click();
+
+    // The setup script runs where it can be watched: its own shell session in the new worktree.
+    const setup = pane("셋업 · feature/scripts");
+    await expect(setup.locator(".xterm-rows")).toContainText("MCW_SETUP_feature/scripts");
+    await attachScreenshot("worktree-setup-script");
+
+    // A failing teardown stops the removal and shows why; removing without it is a separate choice.
+    await openFolder();
+    await page.getByRole("button", { name: "폴더 상세" }).click();
+    const row = page.getByRole("region", { name: "워크트리" }).getByRole("button", { name: /^feature\/scripts/ });
+    await row.click({ button: "right" });
+    await page.getByRole("menu", { name: "feature/scripts worktree 작업" }).getByRole("menuitem", { name: "Worktree 제거" }).click();
+    await page.getByRole("dialog", { name: "Worktree 제거" }).getByRole("button", { name: "제거" }).click();
+    const failed = page.getByRole("dialog", { name: "Worktree 정리 스크립트 실패" });
+    await expect(failed).toContainText("코드 3");
+    await expect(failed.getByLabel("정리 스크립트 출력")).toContainText("MCW_BYE");
+    await failed.getByRole("button", { name: "스크립트 없이 제거" }).click();
+    await expect(row).toBeHidden();
+    expect(await fs.stat(path.join(tempRoot, "sample-project-wt", "feature-scripts")).then(() => true, () => false)).toBe(false);
+
+    // Leave the folder without scripts for the tests after this one.
+    await scripts.getByRole("textbox", { name: "준비 스크립트" }).fill("");
+    await scripts.getByRole("textbox", { name: "정리 스크립트" }).fill("");
+    await scripts.getByRole("button", { name: "스크립트 저장" }).click();
+    await expect(scripts.getByText("저장했습니다")).toBeVisible();
   });
 
   test("@smoke hides to the tray and restores saved tabs after a relaunch", async () => {

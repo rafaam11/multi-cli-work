@@ -73,7 +73,7 @@ const api: MultiCliWorkApi = {
     create: (projectId, request) => ipcRenderer.invoke("worktrees:create", projectId, request),
     unlock: (worktreeId) => ipcRenderer.invoke("worktrees:unlock", worktreeId),
     cleanupStale: (projectId) => ipcRenderer.invoke("worktrees:cleanup-stale", projectId),
-    remove: (worktreeId, force) => ipcRenderer.invoke("worktrees:remove", worktreeId, force),
+    remove: (worktreeId, force, options) => ipcRenderer.invoke("worktrees:remove", worktreeId, force, options),
     reveal: (worktreeId) => ipcRenderer.invoke("worktrees:reveal", worktreeId),
     openInEditor: (worktreeId) => ipcRenderer.invoke("worktrees:open-editor", worktreeId),
     gitStatus: (worktreeId) => ipcRenderer.invoke("worktrees:git-status", worktreeId),
@@ -228,6 +228,10 @@ const api: MultiCliWorkApi = {
       ipcRenderer.on("terminals:indicators", handler);
       return () => ipcRenderer.removeListener("terminals:indicators", handler);
     },
+  },
+  worktreeScripts: {
+    get: (projectId) => ipcRenderer.invoke("worktree-scripts:get", projectId),
+    set: (projectId, scripts) => ipcRenderer.invoke("worktree-scripts:set", projectId, scripts),
   },
   notion: {
     status: () => ipcRenderer.invoke("notion:status"),

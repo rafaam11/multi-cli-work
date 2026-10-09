@@ -409,6 +409,10 @@ function createApi(options?: {
       setNotify: vi.fn().mockResolvedValue(undefined),
       onChanged: vi.fn(() => () => undefined),
     },
+    worktreeScripts: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+    },
     worktrees: {
       list: vi.fn().mockResolvedValue(options?.worktrees ?? []),
       sync: vi.fn().mockResolvedValue({
@@ -2997,6 +3001,38 @@ describe("worktrees", () => {
       expect(within(card).queryByRole("button", { name: "feature-x 워크트리 열기" })).not.toBeInTheDocument(),
     );
     expect(within(card).getByText("아직 워크트리가 없습니다")).toBeInTheDocument();
+  });
+
+  it("shows a failed teardown script's output and removes without it only when asked", async () => {
+    const harness = createApi({
+      sessions: [worktreeSession],
+      worktrees: [atlasWorktree],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    vi.mocked(harness.api.worktrees.remove).mockResolvedValueOnce({
+      removed: false,
+      reason: "teardown-failed",
+      message: "정리 스크립트가 코드 1로 끝났습니다.",
+      output: "docker: not found",
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    fireEvent.click(await screen.findByRole("button", { name: "폴더 상세" }));
+    const card = await screen.findByRole("region", { name: "워크트리" });
+    fireEvent.contextMenu(within(card).getByRole("button", { name: "feature-x 워크트리 열기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Worktree 제거" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Worktree 제거" })).getByRole("button", { name: "제거" }));
+
+    const failed = await screen.findByRole("dialog", { name: "Worktree 정리 스크립트 실패" });
+    expect(failed).toHaveTextContent("코드 1");
+    expect(within(failed).getByLabelText("정리 스크립트 출력")).toHaveTextContent("docker: not found");
+    fireEvent.click(within(failed).getByRole("button", { name: "스크립트 없이 제거" }));
+    await waitFor(() =>
+      expect(harness.api.worktrees.remove).toHaveBeenLastCalledWith(atlasWorktree.id, false, { skipTeardown: true }),
+    );
+    await waitFor(() => expect(within(card).getByText("아직 워크트리가 없습니다")).toBeInTheDocument());
   });
 
   it("nests worktree sessions under a third tree level and scopes the grid and detail page to it", async () => {

@@ -222,6 +222,16 @@ export function terminalPathString(value: unknown): string {
   return value;
 }
 
+/** `skipTeardown` is only ever sent after the user chose to remove despite a failed teardown script. */
+export function validateWorktreeRemoveOptions(value: unknown): { skipTeardown?: boolean } {
+  if (value === undefined || value === null) return {};
+  const input = exactObject(value, ["skipTeardown"], "Worktree remove options");
+  if (input.skipTeardown !== undefined && typeof input.skipTeardown !== "boolean") {
+    throw new Error("skipTeardown must be a boolean");
+  }
+  return input.skipTeardown === undefined ? {} : { skipTeardown: input.skipTeardown };
+}
+
 /** Where VS Code should put the cursor; absent opens the file at the top. */
 export function validateEditorPosition(value: unknown): { line: number; column: number } | undefined {
   if (value === undefined || value === null) return undefined;

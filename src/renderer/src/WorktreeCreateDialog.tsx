@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SharedProject } from "@shared/project-types";
-import type { SharedWorktree, WorktreeCreateOptions, WorktreeCreateRequest } from "@shared/worktree-types";
+import type { WorktreeCreateOptions, WorktreeCreateRequest, WorktreeCreateResult } from "@shared/worktree-types";
 import { projectName } from "./session-labels";
 
 interface WorktreeCreateDialogProps {
   project: SharedProject;
-  onCreated(worktree: SharedWorktree): void;
+  onCreated(result: WorktreeCreateResult): void;
   onClose(): void;
 }
 

@@ -46,6 +46,8 @@ import type {
   SharedWorktree,
   WorktreeCreateOptions,
   WorktreeCreateRequest,
+  WorktreeCreateResult,
+  WorktreeScripts,
   WorktreeRemovalResult,
   WorktreeWorkspaceSnapshot,
 } from "../shared/worktree-types";
@@ -171,11 +173,18 @@ export interface WorktreeGateway {
   get(worktreeId: string): Promise<SharedWorktree | null>;
   creationOptions(projectId: string): Promise<WorktreeCreateOptions>;
   previewPath(projectId: string, branch: string): Promise<string>;
-  create(projectId: string, request: WorktreeCreateRequest): Promise<SharedWorktree>;
+  create(projectId: string, request: WorktreeCreateRequest): Promise<WorktreeCreateResult>;
   unlock(worktreeId: string): Promise<void>;
   cleanupStale(projectId: string): Promise<WorktreeWorkspaceSnapshot>;
   ownerForPath(rootPath: string, projects: SharedProject[]): Promise<{ projectId: string; worktreeId: string | null } | null>;
-  remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult>;
+  remove(worktreeId: string, force: boolean, options?: { skipTeardown?: boolean }): Promise<WorktreeRemovalResult>;
+}
+
+export interface WorktreeScriptsGateway {
+  get(projectId: string): Promise<WorktreeScripts | null>;
+  set(projectId: string, scripts: WorktreeScripts): Promise<void>;
+  /** Drops a removed folder's entry. */
+  forget(projectId: string): Promise<void>;
 }
 
 export interface WorkspaceFilesGateway {
@@ -301,6 +310,7 @@ export interface MainIpcDependencies {
   remoteHosts: RemoteHostsGateway;
   sizes: TerminalSizeGateway;
   indicators: SessionIndicatorsGateway;
+  worktreeScripts: WorktreeScriptsGateway;
   windowControls: WindowControlsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;

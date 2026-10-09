@@ -60,7 +60,7 @@ process.stdin.on('data', () => process.exit(0));
       ...inherited, Path: `${bin};${process.env.Path ?? process.env.PATH}`, CODEX_HOME: path.join(root, "codex-home"),
       MULTI_CLI_WORK_USER_DATA: userData, MULTI_CLI_WORK_REGISTRY_PATH: path.join(root, "projects.json"),
       MULTI_CLI_WORK_AGENTS_PATH: path.join(root, "agents.json"), MULTI_CLI_WORK_WORK_PROJECTS_PATH: path.join(root, "work-projects.json"),
-      MULTI_CLI_WORK_WORKTREES_PATH: path.join(root, "worktrees.json"), MULTI_CLI_WORK_PR_REVIEWS_PATH: path.join(root, "reviews.json"),
+      MULTI_CLI_WORK_WORKTREES_PATH: path.join(root, "worktrees.json"), MULTI_CLI_WORK_WORKTREE_SCRIPTS_PATH: path.join(root, "worktree-scripts.json"), MULTI_CLI_WORK_PR_REVIEWS_PATH: path.join(root, "reviews.json"),
     } });
     try {
       const page = await app.firstWindow();

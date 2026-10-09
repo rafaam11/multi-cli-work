@@ -130,7 +130,7 @@ function setup(
       defaultStartPoint: "main",
     })),
     previewPath: vi.fn(async () => "C:\\Work-wt\\feature"),
-    create: vi.fn(async () => worktree),
+    create: vi.fn(async () => ({ worktree, setupSessionId: null, setupError: null })),
     unlock: vi.fn(async () => undefined),
     cleanupStale: vi.fn(async () => ({ workspaces: [], warnings: {} })),
     ownerForPath: vi.fn(async () => null),
@@ -299,6 +299,7 @@ function setup(
     remoteHosts: remoteHostsGateway as never,
     sizes: sizesGateway,
     indicators: { snapshot: () => [] },
+    worktreeScripts: { get: vi.fn(async () => null), set: vi.fn(async () => undefined), forget: vi.fn(async () => undefined) },
   });
   return {
     handlers,

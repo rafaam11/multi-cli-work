@@ -157,10 +157,14 @@ export interface WorktreeRemovalState {
 }
 
 /** The second, force-only confirmation after git refused because of uncommitted changes. */
-export interface WorktreeForceState {
-  worktree: SharedWorktree;
-  message: string;
-}
+/**
+ * The second removal step: uncommitted changes (`dirty`, asks to discard them) or a teardown script
+ * that failed (`teardown-failed`, asks to remove without it — `force` carries whether discarding
+ * changes was already confirmed).
+ */
+export type WorktreeForceState =
+  | { worktree: SharedWorktree; reason: "dirty"; message: string }
+  | { worktree: SharedWorktree; reason: "teardown-failed"; message: string; output: string; force: boolean };
 
 export interface DiffViewState {
   title: string;

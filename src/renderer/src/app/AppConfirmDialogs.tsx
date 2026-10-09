@@ -56,6 +56,28 @@ export function WorktreeForceDialog({
   onCancel(): void;
   onConfirm(): void;
 }) {
+  if (force.reason === "teardown-failed") {
+    return (
+      <ConfirmFrame label="Worktree 정리 스크립트 실패" title="정리 스크립트가 실패했습니다">
+        <p>
+          {force.message} worktree는 그대로 있습니다(세션은 이미 중지됨). 스크립트 없이 제거할 수 있습니다.
+        </p>
+        {force.output ? (
+          <pre className="confirm-dialog-output" aria-label="정리 스크립트 출력">
+            {force.output}
+          </pre>
+        ) : null}
+        <footer className="confirm-dialog-actions">
+          <button type="button" onClick={onCancel}>
+            취소
+          </button>
+          <button type="button" className="danger-button" disabled={busy} onClick={onConfirm}>
+            스크립트 없이 제거
+          </button>
+        </footer>
+      </ConfirmFrame>
+    );
+  }
   return (
     <ConfirmFrame label="Worktree 강제 제거" title="커밋되지 않은 변경이 있습니다">
       <p>{force.message} 강제 제거하면 이 변경은 되돌릴 수 없이 사라집니다.</p>

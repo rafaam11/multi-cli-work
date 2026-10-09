@@ -77,6 +77,7 @@ function installApi(options?: { gitStatus?: GitStatusResult; update?: ReturnType
     projects: { gitStatus, update },
     // Worktree-scoped renders read git state through the worktree channel instead.
     worktrees: { gitStatus },
+    worktreeScripts: { get: vi.fn().mockResolvedValue(null), set: vi.fn().mockResolvedValue(undefined) },
   } as unknown as MultiCliWorkApi;
   window.multiCliWork = api;
   return { gitStatus, update };

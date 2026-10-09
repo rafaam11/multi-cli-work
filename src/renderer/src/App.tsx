@@ -163,6 +163,8 @@ export function App() {
   const pendingFileWriteCountsRef = useRef<Map<string, number>>(new Map());
   const [pendingFileAnchor, setPendingFileAnchor] = useState<{ tabId: string; anchor: string } | null>(null);
   const [pendingFileReveal, setPendingFileReveal] = useState<PendingFileReveal | null>(null);
+  // 새 워크트리의 셋업 세션: main이 띄웠으니 `created` 이벤트로 목록에 들어온 뒤에 화면에 올린다.
+  const [pendingRevealSessionId, setPendingRevealSessionId] = useState<string | null>(null);
   // Shared by the exe row-click ("run") and the "연결 프로그램으로 열기" menu item ("open") — both end up
   // calling the same confirmed openEntry, just with different modal wording for what is about to happen.
   const [runConfirmRequest, setRunConfirmRequest] = useState<RunConfirmRequest | null>(null);
@@ -1261,6 +1263,7 @@ export function App() {
     persistSelection,
     setPendingAction,
     setWorktreeForce,
+    revealSetupSession: setPendingRevealSessionId,
   });
 
   const sendFanOut = async (inputs: Array<{ sessionId: string; data: string }>) => {
@@ -1743,6 +1746,15 @@ export function App() {
     revealSession(session);
     requestAnimationFrame(() => terminalCommands.current.get(session.id)?.focus());
   };
+
+  useEffect(() => {
+    if (!pendingRevealSessionId) return;
+    const session = sessions.find((candidate) => candidate.id === pendingRevealSessionId);
+    if (!session) return;
+    setPendingRevealSessionId(null);
+    revealSession(session);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRevealSessionId, sessions]);
 
   const titleBarAttention: SessionAttention | null = useMemo(() => {
     const waits = Object.values(unread);
@@ -2458,7 +2470,7 @@ export function App() {
           force={worktreeForce}
           busy={pendingAction}
           onCancel={() => setWorktreeForce(null)}
-          onConfirm={() => void forceWorktreeRemoval(worktreeForce.worktree)}
+          onConfirm={() => void forceWorktreeRemoval(worktreeForce)}
         />
       ) : null}
 

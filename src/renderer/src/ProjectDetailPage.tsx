@@ -9,6 +9,7 @@ import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, us
 import { AgentIcon, GitHubIcon, VSCodeIcon, agentAccentClass } from "./brand-icons";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 import { errorMessage } from "./ipc-error";
+import { WorktreeScriptsCard } from "./WorktreeScriptsCard";
 
 function toggleTrackItem(tracks: ProjectTrack[], trackId: string, itemId: string): ProjectTrack[] {
   return tracks.map((track) =>
@@ -385,6 +386,9 @@ export function ProjectDetailPage({
             </ul>
           )}
         </section>
+
+        {/* Worktree scripts belong to the folder, like the memo below: shown at the project root only. */}
+        {worktree ? null : <WorktreeScriptsCard projectId={project.id} />}
 
         {/* Memo and checklists are project metadata; editing them from a worktree page would
             silently write to the whole project, so the card only shows at the project root. */}

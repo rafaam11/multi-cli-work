@@ -10,7 +10,7 @@ import type { SharedProject } from "../../shared/project-types";
 import { readGitDiff } from "./git-diff";
 import { defaultWorktreePath, normalizeWorkspacePath } from "./git-worktree";
 import { parseWorktreeRegistry, readWorktreeRegistry } from "./worktree-registry";
-import { WorktreeService } from "./worktree-service";
+import { WorktreeService, type WorktreeServiceOptions } from "./worktree-service";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,6 +48,7 @@ function service(
   removeWorktreeSessions = vi.fn(async () => undefined),
   hasWorktreeSessions?: (id: string) => boolean | Promise<boolean>,
   stopWorktreeSessions = vi.fn(async () => undefined),
+  runTeardown?: WorktreeServiceOptions["runTeardown"],
 ) {
   let nextId = 0;
   return {
@@ -59,6 +60,7 @@ function service(
       removeWorktreeSessions,
       stopWorktreeSessions,
       ...(hasWorktreeSessions ? { hasWorktreeSessions } : {}),
+      ...(runTeardown ? { runTeardown } : {}),
       idFactory: () => `worktree-${++nextId}`,
       now: () => "2026-07-13T01:00:00.000Z",
     }),
@@ -219,6 +221,42 @@ describe("worktree service against a real repo", () => {
     expect(removeWorktreeSessions).toHaveBeenCalledWith(created.id);
     await expect(fs.stat(created.path)).rejects.toThrow();
     expect((await readWorktreeRegistry({ registryPath })).worktrees).toEqual({});
+  });
+
+  it("runs the teardown script after the sessions stop and before git deletes the worktree", async () => {
+    let createdPath = "";
+    const stopWorktreeSessions = vi.fn(async () => undefined);
+    const runTeardown = vi.fn(async () => {
+      expect(stopWorktreeSessions).toHaveBeenCalled();
+      await fs.stat(createdPath);
+      return { ok: true as const };
+    });
+    const { service: worktrees } = service(undefined, undefined, stopWorktreeSessions, runTeardown);
+    const created = await worktrees.create("project-1", "feature-teardown");
+    createdPath = created.path;
+
+    expect(await worktrees.remove(created.id, false)).toEqual({ removed: true });
+    expect(runTeardown).toHaveBeenCalledWith(expect.objectContaining({ id: created.id }), expect.objectContaining({ id: "project-1" }));
+    await expect(fs.stat(created.path)).rejects.toThrow();
+  });
+
+  it("keeps the worktree when its teardown fails, and removes it when told to skip the script", async () => {
+    const runTeardown = vi.fn(async () => ({ ok: false as const, message: "정리 실패", output: "boom" }));
+    const { service: worktrees, removeWorktreeSessions } = service(undefined, undefined, undefined, runTeardown);
+    const created = await worktrees.create("project-1", "feature-teardown-fails");
+
+    expect(await worktrees.remove(created.id, false)).toEqual({
+      removed: false,
+      reason: "teardown-failed",
+      message: "정리 실패",
+      output: "boom",
+    });
+    await fs.stat(created.path);
+    expect(removeWorktreeSessions).not.toHaveBeenCalled();
+    expect((await readWorktreeRegistry({ registryPath })).worktrees[created.id]).toBeDefined();
+
+    expect(await worktrees.remove(created.id, false, { skipTeardown: true })).toEqual({ removed: true });
+    expect(runTeardown).toHaveBeenCalledOnce();
   });
 
   it("keeps sessions and the registry when git removal fails after processes stop", async () => {

@@ -1,6 +1,6 @@
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
-import type { SharedWorktree } from "@shared/worktree-types";
+import type { SharedWorktree, WorktreeCreateResult, WorktreeRemovalResult } from "@shared/worktree-types";
 import type { Dispatch, SetStateAction } from "react";
 import { errorMessage } from "../ipc-error";
 import { projectName } from "../session-labels";
@@ -24,6 +24,8 @@ export interface WorktreeContext {
   persistSelection: (projectId: string | null, sessionId: string | null) => void;
   setPendingAction: Dispatch<SetStateAction<boolean>>;
   setWorktreeForce: Dispatch<SetStateAction<WorktreeForceState | null>>;
+  /** Brings the session a new worktree's setup script runs in onto the screen. */
+  revealSetupSession(sessionId: string): void;
 }
 
 /** 워크트리를 만든 뒤 열고, diff를 보이고, 제거하는(필요하면 강제로) 동작들. */
@@ -45,13 +47,22 @@ export function createWorktreeActions(context: WorktreeContext) {
     persistSelection,
     setPendingAction,
     setWorktreeForce,
+    revealSetupSession,
   } = context;
   const whilePending = pendingRunner(setPendingAction, setActionError);
 
-  const handleWorktreeCreated = (worktree: SharedWorktree) => {
+  const handleWorktreeCreated = ({ worktree, setupSessionId, setupError }: WorktreeCreateResult) => {
     setWorktreeCreateProject(null);
     setWorktrees((current) => [...current, worktree]);
     selectWorktree(worktree);
+    if (setupSessionId) revealSetupSession(setupSessionId);
+    if (setupError) setActionError(`워크트리는 만들었지만 셋업 스크립트를 시작하지 못했습니다: ${setupError}`);
+  };
+
+  /** A removal that did not happen asks its follow-up question: discard changes, or skip teardown. */
+  const askAfterRefusal = (worktree: SharedWorktree, result: Exclude<WorktreeRemovalResult, { removed: true }>, force: boolean) => {
+    if (result.reason === "dirty") setWorktreeForce({ worktree, reason: "dirty", message: result.message });
+    else setWorktreeForce({ worktree, reason: "teardown-failed", message: result.message, output: result.output, force });
   };
 
   const showDiff = async (target: { worktree: SharedWorktree } | { project: SharedProject }) => {
@@ -101,15 +112,21 @@ export function createWorktreeActions(context: WorktreeContext) {
     await whilePending(async () => {
       const result = await window.multiCliWork.worktrees.remove(worktree.id, false);
       if (result.removed) cleanupRemovedWorktree(worktree);
-      else setWorktreeForce({ worktree, message: result.message });
+      else askAfterRefusal(worktree, result, false);
     });
   };
 
-  const forceWorktreeRemoval = async (worktree: SharedWorktree) => {
+  /** The answer to that question: discard the changes, or remove without the teardown script. */
+  const forceWorktreeRemoval = async (state: WorktreeForceState) => {
     setWorktreeForce(null);
     await whilePending(async () => {
-      const result = await window.multiCliWork.worktrees.remove(worktree.id, true);
-      if (result.removed) cleanupRemovedWorktree(worktree);
+      const force = state.reason === "dirty" ? true : state.force;
+      const result =
+        state.reason === "teardown-failed"
+          ? await window.multiCliWork.worktrees.remove(state.worktree.id, force, { skipTeardown: true })
+          : await window.multiCliWork.worktrees.remove(state.worktree.id, force);
+      if (result.removed) cleanupRemovedWorktree(state.worktree);
+      else askAfterRefusal(state.worktree, result, force);
     });
   };
 

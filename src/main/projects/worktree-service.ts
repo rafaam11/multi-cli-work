@@ -37,6 +37,14 @@ export interface WorktreeServiceOptions {
   /** Removes stopped session records and logs after Git has deleted the worktree. */
   removeWorktreeSessions(worktreeId: string): Promise<void>;
   hasWorktreeSessions?(worktreeId: string): boolean | Promise<boolean>;
+  /**
+   * The folder's teardown script, run after the sessions stop and before git deletes the
+   * directory. A failure stops the removal with nothing deleted.
+   */
+  runTeardown?(
+    worktree: SharedWorktree,
+    project: SharedProject,
+  ): Promise<{ ok: true } | { ok: false; message: string; output: string }>;
   idFactory(): string;
   now(): string;
 }
@@ -349,7 +357,11 @@ export class WorktreeService {
    * Removal is staged so nothing is lost silently: uncommitted changes stop the flow before any
    * session is touched, and only after the caller re-confirms with `force` does git discard them.
    */
-  async remove(worktreeId: string, force: boolean): Promise<WorktreeRemovalResult> {
+  async remove(
+    worktreeId: string,
+    force: boolean,
+    options: { skipTeardown?: boolean } = {},
+  ): Promise<WorktreeRemovalResult> {
     const worktree = await this.get(worktreeId);
     if (!worktree) throw new Error(`Unknown worktree: ${worktreeId}`);
     const project = await this.options.getProject(worktree.projectId);
@@ -371,6 +383,10 @@ export class WorktreeService {
       // Sessions must stop before git tries to delete the directory: on Windows a live process
       // whose cwd is inside the worktree keeps the directory undeletable.
       await this.options.stopWorktreeSessions(worktreeId);
+      if (this.options.runTeardown && !options.skipTeardown) {
+        const teardown = await this.options.runTeardown(worktree, project);
+        if (!teardown.ok) return { removed: false, reason: "teardown-failed", message: teardown.message, output: teardown.output };
+      }
       await removeGitWorktree(project.rootPath, worktree.path, force);
     }
     // If Git no longer lists the path, a prior attempt already crossed the irreversible boundary

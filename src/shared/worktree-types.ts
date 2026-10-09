@@ -24,7 +24,26 @@ export interface WorktreeRegistryV1 {
  * Removing a dirty worktree is refused rather than thrown: the renderer turns the refusal into a
  * second, explicit "discard and force" confirmation instead of parsing error messages.
  */
-export type WorktreeRemovalResult = { removed: true } | { removed: false; reason: "dirty"; message: string };
+export type WorktreeRemovalResult =
+  | { removed: true }
+  | { removed: false; reason: "dirty"; message: string }
+  // The folder's teardown script failed or timed out; nothing was removed. `output` is its tail.
+  | { removed: false; reason: "teardown-failed"; message: string; output: string };
+
+/** What making a worktree did: the worktree, and the session its setup script runs in, if any. */
+export interface WorktreeCreateResult {
+  worktree: SharedWorktree;
+  setupSessionId: string | null;
+  /** The setup script could not be started; the worktree itself was made. */
+  setupError: string | null;
+}
+
+/** A folder's worktree scripts: run in each new worktree, and before one is removed. */
+export interface WorktreeScripts {
+  setup: string;
+  teardown: string;
+  teardownTimeoutSec: number;
+}
 
 export type WorktreeAvailability = "available" | "missing";
 
