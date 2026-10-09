@@ -52,6 +52,7 @@ export const KEYMAP_ACTIONS: readonly KeymapAction[] = [
   action("session.refresh", "세션 새로고침", "세션", "F5"),
   action("session.next", "다음 세션", "세션", "Ctrl+Tab", { ignoreWhileTyping: true }),
   action("session.prev", "이전 세션", "세션", "Ctrl+Shift+Tab", { ignoreWhileTyping: true }),
+  action("session.next-waiting", "다음 대기 세션", "세션", "Ctrl+Shift+U", { ignoreWhileTyping: true }),
   ...Array.from({ length: 9 }, (_, index) =>
     action(`workspace.focus-slot-${index + 1}`, `슬롯 ${index + 1} 포커스`, "세션", `Ctrl+${index + 1}`, {
       ignoreWhileTyping: true,

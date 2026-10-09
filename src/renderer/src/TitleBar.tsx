@@ -13,6 +13,8 @@ interface TitleBarProps {
   /** What the off-screen sessions are waiting for, or null when none of them are. */
   attention: SessionAttention | null;
   onQuickOpen(): void;
+  /** 기다리는 세션으로 간다 — 주의 표시를 누를 때. */
+  onJumpToWaiting?(): void;
 }
 
 const ATTENTION_MARK: Record<SessionAttention, { mark: string; label: string }> = {
@@ -20,7 +22,15 @@ const ATTENTION_MARK: Record<SessionAttention, { mark: string; label: string }> 
   input: { mark: "●", label: "입력을 기다리는 세션이 있습니다" },
 };
 
-export function TitleBar({ menus, onAction, workProjectName, folderName, attention, onQuickOpen }: TitleBarProps) {
+export function TitleBar({
+  menus,
+  onAction,
+  workProjectName,
+  folderName,
+  attention,
+  onQuickOpen,
+  onJumpToWaiting,
+}: TitleBarProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const [maximized, setMaximized] = useState(false);
@@ -230,9 +240,15 @@ export function TitleBar({ menus, onAction, workProjectName, folderName, attenti
         {/* The window title carries the same mark for the taskbar; this one is for the eye already
             on the app but looking at a different session. */}
         {attentionMark ? (
-          <span className={`command-centre-attention attention-${attention}`} role="status" aria-label={attentionMark.label}>
+          <button
+            type="button"
+            className={`command-centre-attention attention-${attention}`}
+            aria-label={attentionMark.label}
+            title={`${attentionMark.label} — 눌러서 다음 대기 세션으로`}
+            onClick={onJumpToWaiting}
+          >
             {attentionMark.mark}
-          </span>
+          </button>
         ) : null}
       </div>
 

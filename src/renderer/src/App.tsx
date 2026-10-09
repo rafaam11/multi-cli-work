@@ -104,6 +104,7 @@ import { useFolderTree } from "./app/use-folder-tree";
 import { useRemoteSizeOwners } from "./app/use-remote-size-owners";
 import { useSessionIndicators } from "./app/use-session-indicators";
 import { usePaneZoom } from "./app/use-pane-zoom";
+import { nextWaitingSession, trackWaitingSince } from "./app/waiting-sessions";
 import { createGridActions } from "./app/grid-actions";
 import { buildQuickOpenItems } from "./app/quick-open-items";
 import { createSessionActions } from "./app/session-actions";
@@ -1709,6 +1710,22 @@ export function App() {
   );
 
   // Same rule the window frame and the taskbar badge use: an approval outranks a plain input wait.
+  // 대기에 들어간 시각. 세션의 updatedAt은 제목·이름에도 움직이니 처음 본 값을 대기가 풀릴 때까지 붙든다.
+  const waitingSinceRef = useRef<ReadonlyMap<string, number>>(new Map());
+  const waitingSince = useMemo(() => {
+    waitingSinceRef.current = trackWaitingSince(waitingSinceRef.current, sessions, Date.now());
+    return waitingSinceRef.current;
+  }, [sessions]);
+
+  /** Ctrl+Shift+U·주의 표시: 기다리는 세션으로 — 승인 먼저, 안 본 것 먼저, 오래 기다린 것 먼저. */
+  const jumpToNextWaiting = () => {
+    const id = nextWaitingSession(sessions, waitingSince, unread, focusedPaneId);
+    const session = id ? sessions.find((candidate) => candidate.id === id) : undefined;
+    if (!session) return;
+    revealSession(session);
+    requestAnimationFrame(() => terminalCommands.current.get(session.id)?.focus());
+  };
+
   const titleBarAttention: SessionAttention | null = useMemo(() => {
     const waits = Object.values(unread);
     return waits.includes("approval") ? "approval" : waits.length > 0 ? "input" : null;
@@ -1768,6 +1785,9 @@ export function App() {
       case "session.prev":
         cycleVisibleSession(-1);
         break;
+      case "session.next-waiting":
+        jumpToNextWaiting();
+        break;
       case "session.stop": void stopSession(); break;
       case "session.remove":
         if (selectedSession) void removeSessionById(selectedSession);
@@ -1811,6 +1831,7 @@ export function App() {
         folderName={activeView === "work-project" ? null : headerProject ? projectName(headerProject) : null}
         attention={titleBarAttention}
         onQuickOpen={() => setQuickOpenVisible((visible) => !visible)}
+        onJumpToWaiting={jumpToNextWaiting}
       />
     <div
       className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${rightSidebarCollapsed ? "right-sidebar-collapsed" : ""}`}

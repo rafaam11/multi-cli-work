@@ -155,11 +155,15 @@ describe("title bar", () => {
     expect(onQuickOpen).toHaveBeenCalledOnce();
   });
 
-  it("marks approval as more urgent than plain input next to the command centre", () => {
+  it("marks approval as more urgent than plain input next to the command centre, and jumps there on click", () => {
     createWindowApi();
-    renderTitleBar({ attention: "approval" });
+    const onJumpToWaiting = vi.fn();
+    renderTitleBar({ attention: "approval", onJumpToWaiting });
 
-    expect(screen.getByRole("status", { name: "승인을 기다리는 세션이 있습니다" })).toHaveTextContent("!");
+    const mark = screen.getByRole("button", { name: "승인을 기다리는 세션이 있습니다" });
+    expect(mark).toHaveTextContent("!");
+    fireEvent.click(mark);
+    expect(onJumpToWaiting).toHaveBeenCalledOnce();
   });
 
   it("drives the native window and follows a maximize the app did not ask for", async () => {

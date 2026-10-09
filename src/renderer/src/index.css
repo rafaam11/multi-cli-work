@@ -410,7 +410,13 @@ button:focus-visible {
    looking at the app, but at a different session. */
 .command-centre-attention {
   flex: 0 0 auto;
-  min-width: 14px;
+  min-width: 18px;
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
   font-size: var(--type-secondary-size);
   font-weight: 700;
   line-height: 1;
@@ -423,6 +429,10 @@ button:focus-visible {
 
 .command-centre-attention.attention-input {
   color: var(--amber);
+}
+
+.command-centre-attention:hover {
+  background: var(--wash);
 }
 
 .window-controls {

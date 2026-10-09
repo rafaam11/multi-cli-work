@@ -2733,6 +2733,27 @@ describe("notification navigation", () => {
     await waitFor(() => expect(harness.api.terminals.select).toHaveBeenLastCalledWith(atlas.id, claudeSession.id));
     expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code");
   });
+
+  it("jumps to the waiting session with Ctrl+Shift+U and with the title bar mark", async () => {
+    const harness = createApi({ sessions: [powershellSession, { ...claudeSession, status: "working", pid: 4200 }] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "PowerShell" });
+
+    act(() => harness.emit({ type: "status", sessionId: claudeSession.id, status: "awaiting-approval" }));
+    fireEvent.keyDown(window, { key: "U", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(harness.api.terminals.select).toHaveBeenLastCalledWith(atlas.id, claudeSession.id));
+    expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code");
+
+    fireEvent.click(screen.getByRole("button", { name: "PowerShell 세션 열기" }));
+    await act(async () => {
+      harness.emitAttention({ [claudeSession.id]: "approval" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "승인을 기다리는 세션이 있습니다" }));
+    await waitFor(() =>
+      expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code"),
+    );
+  });
 });
 
 const atlasWorktree: SharedWorktree = {
@@ -4048,7 +4069,7 @@ describe("title bar", () => {
     await act(async () => {
       harness.emitAttention({ [claudeSession.id]: "approval" });
     });
-    expect(screen.getByRole("status", { name: "승인을 기다리는 세션이 있습니다" })).toHaveTextContent("!");
+    expect(screen.getByRole("button", { name: "승인을 기다리는 세션이 있습니다" })).toHaveTextContent("!");
   });
 
   it("keeps the accelerators the native menu used to own", async () => {
