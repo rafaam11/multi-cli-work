@@ -1519,6 +1519,8 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   });
 
   test("pins status chips and a progress to a pane from jk inside its session", async () => {
+    // Four jk calls, each a fresh PowerShell on Windows: the waits below need room the default lacks.
+    test.setTimeout(120_000);
     await openFolder();
     const before = await page.locator(".grid-pane").count();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
@@ -1531,6 +1533,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       shellCommand("jk status set build BUILDING --color amber; jk progress 30", "jk status set build BUILDING --color amber && jk progress 30"),
     );
     await page.keyboard.press("Enter");
+    // Each jk call starts a PowerShell of its own, which a cold CI runner takes its time over. Wait
+    // for jk's own answer first: if it fails, what it printed is in the assertion's message.
+    const terminalRows = pane(shellLabel).locator(".xterm-rows");
+    await expect(terminalRows).toContainText("진행률 ->", { timeout: 45_000 });
     await expect(header.getByTestId("pane-chip")).toHaveText("BUILDING");
     await expect(header.getByTestId("pane-chip")).toHaveClass(/pane-chip-amber/);
     // Set from jk, the progress outlives the command that set it — it is not the session's own report.
@@ -1539,7 +1545,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     await page.keyboard.type(shellCommand("jk progress clear; jk status clear", "jk progress clear && jk status clear"));
     await page.keyboard.press("Enter");
-    await expect(header.getByTestId("pane-chip")).toHaveCount(0);
+    await expect(header.getByTestId("pane-chip")).toHaveCount(0, { timeout: 45_000 });
     await expect(header.getByRole("progressbar", { name: "진행률" })).toHaveCount(0);
   });
 
