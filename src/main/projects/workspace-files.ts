@@ -251,6 +251,32 @@ export async function resolveWorkspaceEntryPath(rootPath: string, relativePath: 
   return target;
 }
 
+/**
+ * A path a session printed (`src/a.ts`, `..\b.md`, an absolute one) as a root-relative file path,
+ * or null when it is outside the root, not a file, or not there. Resolved against the session's
+ * working directory, then through the same root guard as every read, so a link can never open
+ * something the file explorer could not.
+ */
+export async function resolveTerminalPath(
+  rootPath: string,
+  cwd: string,
+  raw: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | null> {
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const root = pathApi.resolve(rootPath);
+  const absolute = pathApi.resolve(root, cwd, raw);
+  if (!withinRoot(normalizeForCompare(root, platform), normalizeForCompare(absolute, platform), platform)) return null;
+  const relativePath = pathApi.relative(root, absolute).split(pathApi.sep).join("/");
+  if (!relativePath) return null;
+  try {
+    const stat = await fs.stat(await resolveWithinRoot(rootPath, relativePath));
+    return stat.isFile() ? relativePath : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Creates an empty file or folder under `parentRelativePath`, returning its relative path. */
 export async function createWorkspaceEntry(
   rootPath: string,

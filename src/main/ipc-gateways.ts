@@ -22,7 +22,8 @@ import type {
 } from "../shared/api-types";
 import type { SessionIndicatorsUpdate } from "../shared/terminal-types";
 import { type AppSettings, type AppSettingsPatch } from "../shared/settings-types";
-import type { FileTreeEntry, WorkspaceChangedPaths, WorkspaceFileContent } from "../shared/file-explorer-types";
+import type { FileExplorerTarget, FileTreeEntry, WorkspaceChangedPaths, WorkspaceFileContent } from "../shared/file-explorer-types";
+import type { EditorPosition } from "./providers/provider-launch";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
   PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
@@ -185,7 +186,9 @@ export interface WorkspaceFilesGateway {
   openEntry(rootPath: string, relativePath: string, options: { confirmedRun: boolean }): Promise<void>;
   absolutePath(rootPath: string, relativePath: string): Promise<string>;
   reveal(rootPath: string, relativePath: string): Promise<void>;
-  openInEditor(rootPath: string, relativePath: string): Promise<void>;
+  openInEditor(rootPath: string, relativePath: string, position?: EditorPosition): Promise<void>;
+  /** A path a session printed, as a file under that session's own folder or worktree; null if not one. */
+  resolveTerminalPath(sessionId: string, raw: string): Promise<{ target: FileExplorerTarget; relativePath: string } | null>;
   create(rootPath: string, parentRelativePath: string, name: string, kind: "file" | "directory"): Promise<string>;
   rename(rootPath: string, relativePath: string, name: string): Promise<string>;
   duplicate(rootPath: string, relativePath: string): Promise<string>;

@@ -88,6 +88,7 @@ import {
   openWorkspaceEntry,
   readWorkspaceFile,
   renameWorkspaceEntry,
+  resolveTerminalPath,
   resolveWorkspaceEntryPath,
   resolveWorkspaceFilePath,
   trashWorkspaceEntry,
@@ -100,6 +101,7 @@ import { ensureCodexIntegration } from "./providers/codex-integration";
 import { ensurePowerShellIntegration } from "./providers/powershell-integration";
 import { SessionWorkspaceReader } from "./providers/session-workspace";
 import { detectProviderExecutables, type ProviderExecutables } from "./providers/provider-launch";
+import type { FileExplorerTarget } from "../shared/file-explorer-types";
 import { startProviderStatusWatcher } from "./providers/provider-status";
 import { SessionTitleReader } from "./providers/session-title";
 import { AgentEditReader } from "./providers/agent-edits";
@@ -782,8 +784,21 @@ export async function createDesktopRuntime(
         // showItemInFolder selects the entry rather than opening it, which is what the menu says.
         shell.showItemInFolder(await resolveWorkspaceEntryPath(rootPath, relativePath));
       },
-      openInEditor: async (rootPath, relativePath) =>
-        projectActions.openInEditor(await resolveWorkspaceEntryPath(rootPath, relativePath)),
+      openInEditor: async (rootPath, relativePath, position) =>
+        projectActions.openInEditor(await resolveWorkspaceEntryPath(rootPath, relativePath), position),
+      resolveTerminalPath: async (sessionId, raw) => {
+        const view = coordinator.list().find((session) => session.id === sessionId);
+        if (!view?.projectId) return null;
+        const target: FileExplorerTarget = view.worktreeId
+          ? { kind: "worktree", id: view.worktreeId }
+          : { kind: "project", id: view.projectId };
+        const rootPath = view.worktreeId
+          ? (await worktrees.get(view.worktreeId))?.path
+          : (await getProject(view.projectId))?.rootPath;
+        if (!rootPath) return null;
+        const relativePath = await resolveTerminalPath(rootPath, view.cwd, raw);
+        return relativePath ? { target, relativePath } : null;
+      },
       create: createWorkspaceEntry,
       rename: (rootPath, relativePath, name) => renameWorkspaceEntry(rootPath, relativePath, name),
       duplicate: duplicateWorkspaceEntry,

@@ -100,7 +100,9 @@ const api: MultiCliWorkApi = {
       ipcRenderer.invoke("workspace-files:open-entry", target, relativePath, options),
     absolutePath: (target, relativePath) => ipcRenderer.invoke("workspace-files:absolute-path", target, relativePath),
     reveal: (target, relativePath) => ipcRenderer.invoke("workspace-files:reveal", target, relativePath),
-    openInEditor: (target, relativePath) => ipcRenderer.invoke("workspace-files:open-in-editor", target, relativePath),
+    openInEditor: (target, relativePath, position) =>
+      ipcRenderer.invoke("workspace-files:open-in-editor", target, relativePath, position),
+    resolveTerminalPath: (sessionId, raw) => ipcRenderer.invoke("workspace-files:resolve-terminal-path", sessionId, raw),
     create: (target, parentRelativePath, name, kind) =>
       ipcRenderer.invoke("workspace-files:create", target, parentRelativePath, name, kind),
     rename: (target, relativePath, name) => ipcRenderer.invoke("workspace-files:rename", target, relativePath, name),

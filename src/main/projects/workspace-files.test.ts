@@ -14,6 +14,7 @@ import {
   openWorkspaceEntry,
   readWorkspaceFile,
   renameWorkspaceEntry,
+  resolveTerminalPath,
   resolveWorkspaceEntryPath,
   trashWorkspaceEntry,
   workspaceEntryName,
@@ -339,5 +340,24 @@ describe("changedPathsForRoot", () => {
 
   it("passes baselineMs through unchanged for the renderer's mtime comparison", () => {
     expect(changedPathsForRoot(projectRoot, new Map(), 123456, "win32").baselineMs).toBe(123456);
+  });
+});
+
+describe("resolveTerminalPath", () => {
+  it("resolves a path printed in a session against its working directory, relative to the root", async () => {
+    const cwd = path.join(projectRoot, "src");
+    expect(await resolveTerminalPath(projectRoot, cwd, "index.ts")).toBe("src/index.ts");
+    expect(await resolveTerminalPath(projectRoot, cwd, "../readme.md")).toBe("readme.md");
+    expect(await resolveTerminalPath(projectRoot, projectRoot, "./src/index.ts")).toBe("src/index.ts");
+    expect(await resolveTerminalPath(projectRoot, projectRoot, path.join(projectRoot, "src", "index.ts"))).toBe(
+      "src/index.ts",
+    );
+  });
+
+  it("returns null for a path outside the root, a folder, or one that is not there", async () => {
+    expect(await resolveTerminalPath(projectRoot, projectRoot, "../secret.txt")).toBeNull();
+    expect(await resolveTerminalPath(projectRoot, projectRoot, path.join(tempRoot, "secret.txt"))).toBeNull();
+    expect(await resolveTerminalPath(projectRoot, projectRoot, "src")).toBeNull();
+    expect(await resolveTerminalPath(projectRoot, projectRoot, "missing.ts")).toBeNull();
   });
 });

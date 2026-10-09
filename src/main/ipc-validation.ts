@@ -214,6 +214,23 @@ export function relativePathString(value: unknown): string {
   return value;
 }
 
+/** A path as a session printed it — never trusted, only resolved under the session's own root. */
+export function terminalPathString(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 1_024 || value.includes("\0")) {
+    throw new Error("Terminal path must be a non-empty string of at most 1024 characters");
+  }
+  return value;
+}
+
+/** Where VS Code should put the cursor; absent opens the file at the top. */
+export function validateEditorPosition(value: unknown): { line: number; column: number } | undefined {
+  if (value === undefined || value === null) return undefined;
+  const input = exactObject(value, ["line", "column"], "Editor position");
+  const valid = (n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 10_000_000;
+  if (!valid(input.line) || !valid(input.column)) throw new Error("Editor position must be 1-based integers");
+  return { line: input.line as number, column: input.column as number };
+}
+
 /** The renderer only ever raises this flag after its own confirmation modal was accepted. */
 export function validateOpenEntryOptions(value: unknown): { confirmedRun: boolean } {
   const input = exactObject(value, ["confirmedRun"], "Open entry options");

@@ -150,6 +150,7 @@ function setup(
     trash: vi.fn(async () => undefined),
     changedPaths: vi.fn(async () => ({ agentPaths: [], baselineMs: 0 })),
     clearChanges: vi.fn(async () => undefined),
+    resolveTerminalPath: vi.fn(async () => null),
   };
   const shellGateway = {
     openExternal: vi.fn(async () => undefined),
@@ -1037,6 +1038,23 @@ describe("main IPC boundary", () => {
     expect(workspaceFiles.openEntry).toHaveBeenCalledWith(project.rootPath, "tool.exe", { confirmedRun: true });
     expect(workspaceFiles.changedPaths).toHaveBeenCalledWith(project.rootPath);
     expect(workspaceFiles.clearChanges).toHaveBeenCalledWith(project.rootPath);
+  });
+
+  it("opens a file in the editor at a validated position, and resolves terminal paths by session", async () => {
+    const { handlers, workspaceFiles, project } = setup();
+    const target = { kind: "project", id: project.id };
+
+    await handlers.get("workspace-files:open-in-editor")!({}, target, "src/a.ts", { line: 4, column: 2 });
+    await handlers.get("workspace-files:open-in-editor")!({}, target, "src/a.ts");
+    expect(workspaceFiles.openInEditor).toHaveBeenCalledWith(project.rootPath, "src/a.ts", { line: 4, column: 2 });
+    expect(workspaceFiles.openInEditor).toHaveBeenLastCalledWith(project.rootPath, "src/a.ts", undefined);
+    await expect(handlers.get("workspace-files:open-in-editor")!({}, target, "a.ts", { line: 0, column: 1 })).rejects.toThrow(
+      /1-based/,
+    );
+
+    await handlers.get("workspace-files:resolve-terminal-path")!({}, "session-1", "src/a.ts:12");
+    expect(workspaceFiles.resolveTerminalPath).toHaveBeenCalledWith("session-1", "src/a.ts:12");
+    await expect(handlers.get("workspace-files:resolve-terminal-path")!({}, "session-1", "")).rejects.toThrow(/non-empty/);
   });
 
   it("resolves a worktree file explorer target to its path", async () => {

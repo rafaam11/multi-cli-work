@@ -406,7 +406,10 @@ export interface MultiCliWorkApi {
     absolutePath(target: FileExplorerTarget, relativePath: string): Promise<string>;
     /** Shows the entry selected in the OS file manager. */
     reveal(target: FileExplorerTarget, relativePath: string): Promise<void>;
-    openInEditor(target: FileExplorerTarget, relativePath: string): Promise<void>;
+    /** Opens in VS Code, at a line and column when given (both 1-based). */
+    openInEditor(target: FileExplorerTarget, relativePath: string, position?: { line: number; column: number }): Promise<void>;
+    /** A path a session printed, as a file under its own folder or worktree — null when it is not one. */
+    resolveTerminalPath(sessionId: string, raw: string): Promise<{ target: FileExplorerTarget; relativePath: string } | null>;
     /** Creates an empty file or folder, resolving to the new entry's relative path. */
     create(
       target: FileExplorerTarget,

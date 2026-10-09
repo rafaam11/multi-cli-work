@@ -3,7 +3,12 @@ import fs from "node:fs/promises";
 import { shell } from "electron";
 import type { GitDiffResult, GitStatusResult } from "../../shared/api-types";
 import { readGitHubUrl } from "../providers/git-remote";
-import { buildEditorSpawn, vsCodeExecutableCandidate, type ProviderExecutables } from "../providers/provider-launch";
+import {
+  buildEditorSpawn,
+  vsCodeExecutableCandidate,
+  type EditorPosition,
+  type ProviderExecutables,
+} from "../providers/provider-launch";
 import { readGitDiff } from "./git-diff";
 import { readGitStatus } from "./git-status";
 
@@ -13,7 +18,7 @@ export interface ProjectActionsOptions {
 
 export interface ProjectActions {
   reveal(rootPath: string): Promise<void>;
-  openInEditor(rootPath: string): Promise<void>;
+  openInEditor(rootPath: string, position?: EditorPosition): Promise<void>;
   openOnGitHub(rootPath: string): Promise<void>;
   gitStatus(rootPath: string): Promise<GitStatusResult>;
   gitDiff(rootPath: string): Promise<GitDiffResult>;
@@ -37,12 +42,12 @@ export function createProjectActions(options: ProjectActionsOptions): ProjectAct
       if (failure) throw new Error(failure);
     },
 
-    async openInEditor(rootPath) {
+    async openInEditor(rootPath, position) {
       const { vscode } = await options.getExecutables();
       if (!vscode) throw new Error("VS Code was not found on PATH");
       const candidate = vsCodeExecutableCandidate(vscode);
       const resolved = candidate && (await fileExists(candidate)) ? candidate : null;
-      const editor = buildEditorSpawn(vscode, rootPath, resolved);
+      const editor = buildEditorSpawn(vscode, rootPath, resolved, position);
       // spawn reports failure through an `error` event, not a throw. Without this the editor
       // failing to start is completely silent.
       await new Promise<void>((resolve, reject) => {

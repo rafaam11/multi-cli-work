@@ -103,4 +103,18 @@ describe("VS Code launch", () => {
       windowsHide: false,
     });
   });
+
+  it("opens a file at a line and column with --goto, quoted for the cmd shim too", () => {
+    const file = "C:\\Work Space\\Example\\src\\a.ts";
+    expect(
+      buildEditorSpawn(base.executables.vscode, file, "C:\\Programs\\VS Code\\Code.exe", { line: 42, column: 7 }).args,
+    ).toEqual([
+      "--goto",
+      `${file}:42:7`,
+    ]);
+    expect(buildEditorSpawn(base.executables.vscode, file, null, { line: 3, column: 1 }).args).toEqual([
+      "--goto",
+      `"${file}:3:1"`,
+    ]);
+  });
 });

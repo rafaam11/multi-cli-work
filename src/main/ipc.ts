@@ -19,6 +19,8 @@ import {
   validateFileExplorerTarget,
   validateWorktreeCreateRequest,
   relativePathString,
+  terminalPathString,
+  validateEditorPosition,
   validateOpenEntryOptions,
   validateViewBounds,
   validateGitGraphPageOptions,
@@ -327,11 +329,17 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
       relativePathString(relativePath),
     ),
   );
-  ipc.handle("workspace-files:open-in-editor", async (_event, target: unknown, relativePath: unknown) =>
+  ipc.handle("workspace-files:open-in-editor", async (_event, target: unknown, relativePath: unknown, position: unknown) =>
     dependencies.workspaceFiles.openInEditor(
       await rootPathForTarget(validateFileExplorerTarget(target)),
       relativePathString(relativePath),
+      validateEditorPosition(position),
     ),
+  );
+  // A path a terminal printed. Resolved in main against the session's own root, so the renderer
+  // only ever sees a root-relative path — or nothing, for one outside it.
+  ipc.handle("workspace-files:resolve-terminal-path", async (_event, sessionId: unknown, raw: unknown) =>
+    dependencies.workspaceFiles.resolveTerminalPath(nonEmptyString(sessionId, "Session id"), terminalPathString(raw)),
   );
   ipc.handle(
     "workspace-files:create",

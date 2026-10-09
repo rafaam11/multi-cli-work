@@ -79,14 +79,29 @@ export interface EditorSpawnCommand {
   windowsHide: boolean;
 }
 
-export function buildEditorSpawn(cliPath: string, rootPath: string, resolvedExecutable: string | null): EditorSpawnCommand {
-  if (resolvedExecutable) return { command: resolvedExecutable, args: [rootPath], shell: false, windowsHide: false };
+/** Where in a file the editor should put the cursor; both 1-based. */
+export interface EditorPosition {
+  line: number;
+  column: number;
+}
+
+export function buildEditorSpawn(
+  cliPath: string,
+  rootPath: string,
+  resolvedExecutable: string | null,
+  position?: EditorPosition,
+): EditorSpawnCommand {
+  // `--goto path:line:col` is how VS Code opens a file at a place; without a position the path
+  // alone opens a folder or a file at the top.
+  const target = position ? `${rootPath}:${position.line}:${position.column}` : rootPath;
+  const flags = position ? ["--goto"] : [];
+  if (resolvedExecutable) return { command: resolvedExecutable, args: [...flags, target], shell: false, windowsHide: false };
   // Node does not escape arguments when `shell` is set, so quote them here. Windows paths cannot
   // contain a double quote, and `&`/`^` are inert inside a quoted cmd.exe token.
   if (/\.(cmd|bat)$/i.test(cliPath)) {
-    return { command: `"${cliPath}"`, args: [`"${rootPath}"`], shell: true, windowsHide: true };
+    return { command: `"${cliPath}"`, args: [...flags, `"${target}"`], shell: true, windowsHide: true };
   }
-  return { command: cliPath, args: [rootPath], shell: false, windowsHide: false };
+  return { command: cliPath, args: [...flags, target], shell: false, windowsHide: false };
 }
 
 export function pickWindowsExecutable(candidates: string[]): string | null {
