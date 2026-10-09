@@ -21,6 +21,26 @@ export interface SessionProgress {
   value: number | null;
 }
 
+export type StatusChipColor = "green" | "amber" | "red" | "blue" | "gray";
+
+/** A short label a script or agent pins to its pane header with `jk status set`. */
+export interface StatusChip {
+  key: string;
+  text: string;
+  color: StatusChipColor;
+}
+
+/** What a pane shows beside its status: a progress report and the chips pinned to it. Not persisted. */
+export interface SessionIndicators {
+  progress: SessionProgress | null;
+  chips: StatusChip[];
+}
+
+export interface SessionIndicatorsUpdate {
+  sessionId: string;
+  indicators: SessionIndicators;
+}
+
 export type TerminalStatus =
   | "starting"
   | "working"

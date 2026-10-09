@@ -20,6 +20,7 @@ import type {
   WindowChromeState,
   WindowZoomAction,
 } from "../shared/api-types";
+import type { SessionIndicatorsUpdate } from "../shared/terminal-types";
 import { type AppSettings, type AppSettingsPatch } from "../shared/settings-types";
 import type { FileTreeEntry, WorkspaceChangedPaths, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type {
@@ -135,6 +136,11 @@ export interface RemoteHostsGateway {
 }
 
 /** 데스크톱 패인의 resize·입력은 크기 중재자를 거친다 — 폰이 크기를 가져간 세션을 되찾는 계기. */
+export interface SessionIndicatorsGateway {
+  /** 지금 진행률이나 칩을 보이는 세션들. */
+  snapshot(): SessionIndicatorsUpdate[];
+}
+
 export interface TerminalSizeGateway {
   desktopResize(sessionId: string, cols: number, rows: number): Promise<void>;
   /** 원격 기기가 크기를 가졌다면 데스크톱의 마지막 크기로 되찾는다. */
@@ -291,6 +297,7 @@ export interface MainIpcDependencies {
   remote: RemoteGateway;
   remoteHosts: RemoteHostsGateway;
   sizes: TerminalSizeGateway;
+  indicators: SessionIndicatorsGateway;
   windowControls: WindowControlsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;

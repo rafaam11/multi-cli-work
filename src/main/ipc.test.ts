@@ -297,6 +297,7 @@ function setup(
     remote: remoteGateway,
     remoteHosts: remoteHostsGateway as never,
     sizes: sizesGateway,
+    indicators: { snapshot: () => [] },
   });
   return {
     handlers,

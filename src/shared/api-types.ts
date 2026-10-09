@@ -14,7 +14,7 @@ import type {
 } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { ProjectTagsV1 } from "./project-tags-types";
-import type { TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
+import type { SessionIndicatorsUpdate, TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
 import type {
   WorkProjectLocalFolder,
   WorkProjectNotionLink,
@@ -539,6 +539,10 @@ export interface MultiCliWorkApi {
     onSizeOwner(listener: (owner: TerminalSizeOwner) => void): () => void;
     /** 원격 기기가 가진 크기를 이 PC 패인 크기로 되찾는다. */
     reclaimSize(sessionId: string): Promise<void>;
+    /** 지금 진행률이나 상태 칩을 보이는 세션들. */
+    indicators(): Promise<SessionIndicatorsUpdate[]>;
+    /** 한 세션의 진행률·칩이 바뀌었다. */
+    onIndicators(listener: (update: SessionIndicatorsUpdate) => void): () => void;
   };
   notion: {
     status(): Promise<NotionTokenStatus>;

@@ -8,7 +8,7 @@ import type {
   WindowChromeState,
 } from "../shared/api-types";
 import type { RemoteHostView } from "../shared/remote-types";
-import type { TerminalEvent } from "../shared/terminal-types";
+import type { SessionIndicatorsUpdate, TerminalEvent } from "../shared/terminal-types";
 
 const api: MultiCliWorkApi = {
   platform: process.platform,
@@ -220,6 +220,12 @@ const api: MultiCliWorkApi = {
       return () => ipcRenderer.removeListener("terminals:size-owner", handler);
     },
     reclaimSize: (sessionId) => ipcRenderer.invoke("terminals:reclaim-size", sessionId),
+    indicators: () => ipcRenderer.invoke("terminals:indicators"),
+    onIndicators(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, update: SessionIndicatorsUpdate) => listener(update);
+      ipcRenderer.on("terminals:indicators", handler);
+      return () => ipcRenderer.removeListener("terminals:indicators", handler);
+    },
   },
   notion: {
     status: () => ipcRenderer.invoke("notion:status"),

@@ -2,6 +2,7 @@ import type { AgentView } from "@shared/agent-types";
 import { SHIFT_ENTER_BYTES } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { TerminalSettings } from "@shared/settings-types";
+import type { SessionIndicators } from "@shared/terminal-types";
 import { Plus, X } from "lucide-react";
 import { useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { canSplitColumn, columnOfSlot, type GridLayout } from "./grid-layouts";
@@ -34,6 +35,8 @@ interface WorkspaceGridProps {
   /** 세션 → 그 터미널 크기를 가진 원격 기기 이름. 이 PC가 가진 세션은 없다. */
   remoteSizeOwners?: Readonly<Record<string, string>>;
   onReclaimSize?(sessionId: string): void;
+  /** 세션 → 진행률·상태 칩. 아무것도 보이지 않는 세션은 없다. */
+  sessionIndicators?: Readonly<Record<string, SessionIndicators>>;
   onAttached(session: TerminalSessionView): void;
   onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
@@ -97,6 +100,7 @@ export function WorkspaceGrid({
   isProjectMissing,
   remoteSizeOwners,
   onReclaimSize,
+  sessionIndicators,
   onAttached,
   onRefreshComplete,
   onError,
@@ -321,6 +325,7 @@ export function WorkspaceGrid({
               columnSplit={columnSplitFor(index)}
               remoteSizeDevice={remoteSizeOwners?.[session.id] ?? null}
               onReclaimSize={() => onReclaimSize?.(session.id)}
+              indicators={sessionIndicators?.[session.id]}
               clearAction={clearAction}
               onStartRename={() => onStartRename(session.id)}
               onRename={(name) => onRenameSession(session.id, name)}

@@ -1,5 +1,6 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
+import type { SessionIndicators, SessionProgress, TerminalStatus } from "@shared/terminal-types";
 import {
   Briefcase,
   CircleStop,
@@ -117,6 +118,8 @@ interface PaneHeaderProps {
   remoteSizeDevice?: string | null;
   /** 원격 기기가 가진 크기를 이 패인 크기로 되찾는다. */
   onReclaimSize?(): void;
+  /** 세션이 보고한 진행률과 jk로 붙인 상태 칩. */
+  indicators?: SessionIndicators;
   onStartRename(): void;
   onRename(name: string | null): void;
   onCancelRename(): void;
@@ -154,6 +157,7 @@ export function PaneHeader({
   columnSplit,
   remoteSizeDevice = null,
   onReclaimSize,
+  indicators,
   clearAction,
   onStartRename,
   onRename,
@@ -189,6 +193,20 @@ export function PaneHeader({
             {label}
           </span>
         )}
+        {indicators && indicators.chips.length > 0 ? (
+          <span className="pane-chips">
+            {indicators.chips.map((chip) => (
+              <span
+                key={chip.key}
+                data-testid="pane-chip"
+                className={`pane-chip pane-chip-${chip.color}`}
+                title={`${chip.key}: ${chip.text}`}
+              >
+                {chip.text}
+              </span>
+            ))}
+          </span>
+        ) : null}
         {remoteSizeDevice ? (
           // 원격에서 크기를 맞추는 동안 이 패인의 줄바꿈은 어긋나 보인다 — 왜 그런지와 되돌리는 길을 함께 둔다.
           <span className="pane-remote-size" role="status" title={`${remoteSizeDevice}의 화면 크기로 그리는 중`}>
@@ -248,6 +266,36 @@ export function PaneHeader({
           </button>
         </div>
       </div>
+      <PaneProgress status={session.status} progress={indicators?.progress ?? null} />
     </header>
+  );
+}
+
+/**
+ * A 2px line along the bottom of the header. A reported progress fills it to its value (or runs
+ * indeterminate); with none reported, a working session gets a faint shimmer so a glance across the
+ * grid tells busy panes from waiting ones.
+ */
+function PaneProgress({ status, progress }: { status: TerminalStatus; progress: SessionProgress | null }) {
+  if (progress) {
+    const determinate = progress.value !== null && progress.state !== "indeterminate";
+    return (
+      <div
+        className={`pane-progress pane-progress-${progress.state}`}
+        role="progressbar"
+        aria-label="진행률"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={determinate ? (progress.value ?? undefined) : undefined}
+      >
+        <div className="pane-progress-fill" style={determinate ? { width: `${progress.value}%` } : undefined} />
+      </div>
+    );
+  }
+  if (status !== "working") return null;
+  return (
+    <div className="pane-progress pane-progress-working" aria-hidden="true">
+      <div className="pane-progress-fill" />
+    </div>
   );
 }

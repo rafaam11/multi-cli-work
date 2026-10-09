@@ -701,6 +701,12 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
                 settings.general.autoCheckUpdates,
                 (next) => ({ general: { autoCheckUpdates: next } }),
               )}
+              {checkboxRow(
+                "작업표시줄 아이콘에 세션 진행률 표시",
+                "settings-taskbar-progress",
+                settings.general.taskbarProgress,
+                (next) => ({ general: { taskbarProgress: next } }),
+              )}
               <div className="settings-row">
                 <span>창 불러오기 단축키</span>
                 <span className="settings-key-controls">

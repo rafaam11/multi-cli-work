@@ -3219,6 +3219,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
  * header on the page starts its text at the same x.
  */
 .pane-header {
+  position: relative;
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--line);
@@ -3309,6 +3310,115 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font: var(--type-ui-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * The progress line rides the header's bottom border: a reported progress fills it, a working
+ * session with nothing to report gets a faint sweep, so busy panes stand out across a full grid.
+ */
+.pane-progress {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  --progress-color: var(--teal);
+}
+
+.pane-progress-fill {
+  height: 100%;
+  background: var(--progress-color);
+  transition: width 240ms ease-out;
+}
+
+.pane-progress-error {
+  --progress-color: var(--red);
+}
+
+.pane-progress-warning {
+  --progress-color: var(--amber);
+}
+
+.pane-progress-error .pane-progress-fill:not([style]),
+.pane-progress-warning .pane-progress-fill:not([style]) {
+  width: 100%;
+}
+
+.pane-progress-indeterminate .pane-progress-fill,
+.pane-progress-working .pane-progress-fill {
+  width: 35%;
+  animation: pane-progress-sweep 1.6s ease-in-out infinite;
+}
+
+.pane-progress-indeterminate .pane-progress-fill {
+  background: linear-gradient(90deg, transparent, var(--progress-color) 30%, var(--progress-color) 70%, transparent);
+}
+
+.pane-progress-working .pane-progress-fill {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--teal) 70%, transparent), transparent);
+  animation-duration: 2.4s;
+}
+
+@keyframes pane-progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* The global rule only freezes an animation on its last frame — off screen, here. Show a still bar. */
+@media (prefers-reduced-motion: reduce) {
+  .pane-progress-indeterminate .pane-progress-fill,
+  .pane-progress-working .pane-progress-fill {
+    width: 100%;
+    animation: none;
+    transform: none;
+    opacity: 0.45;
+  }
+}
+
+.pane-chips {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pane-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 14em;
+  padding: 0 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--chip-color) 45%, transparent);
+  border-radius: 8px;
+  color: var(--chip-color);
+  background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+  font: var(--type-caption-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  --chip-color: var(--muted);
+}
+
+.pane-chip-green {
+  --chip-color: var(--green);
+}
+
+.pane-chip-amber {
+  --chip-color: var(--amber);
+}
+
+.pane-chip-red {
+  --chip-color: var(--red);
+}
+
+.pane-chip-blue {
+  --chip-color: var(--blue);
 }
 
 .pane-remote-size {

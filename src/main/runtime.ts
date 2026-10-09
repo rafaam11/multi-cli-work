@@ -134,6 +134,8 @@ import { HostStatusLink } from "./remote-client/host-status-link";
 import { HostStatusLinks } from "./remote-client/host-status-links";
 import { createStatusSocket } from "./remote-client/status-socket";
 import { trayIconDataUrl } from "./tray-icon";
+import { SessionIndicatorTracker } from "./terminal/session-indicators";
+import { aggregateTaskbarProgress, type TaskbarProgress } from "./window-progress";
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -497,6 +499,24 @@ export async function createDesktopRuntime(
     (app.isPackaged ? path.join(process.resourcesPath, "mobile") : path.join(app.getAppPath(), "build", "mobile"));
   const shellArtifact = await readShellArtifact(shellDir);
   const sizes = new TerminalSizeArbiter((sessionId, cols, rows) => coordinator.resize(sessionId, cols, rows));
+  // 패인 머리줄의 진행률·상태 칩. 터미널 출력(OSC 9;4)과 jk에서 오고, 세션과 함께 사라진다.
+  const indicators = new SessionIndicatorTracker();
+  let appliedTaskbarProgress = "";
+  const applyTaskbarProgress = () => {
+    const window = host.getMainWindow();
+    if (!window || window.isDestroyed()) return;
+    const progress: TaskbarProgress = settingsService.current().general.taskbarProgress
+      ? aggregateTaskbarProgress(indicators.snapshot().flatMap(({ indicators: shown }) => (shown.progress ? [shown.progress] : [])))
+      : { value: -1, mode: "none" };
+    const key = `${progress.mode}:${progress.value}`;
+    if (key === appliedTaskbarProgress) return;
+    appliedTaskbarProgress = key;
+    window.setProgressBar(progress.value, { mode: progress.mode });
+  };
+  indicators.onChange((update) => {
+    sendToMainWindow(host.getMainWindow(), "terminals:indicators", update);
+    applyTaskbarProgress();
+  });
   const remoteDevices = new RemoteDeviceStore(path.join(userData, "remote-devices.json"));
   const remoteDeviceName = async (deviceId: string) =>
     (await remoteDevices.list()).find((device) => device.deviceId === deviceId)?.name ?? null;
@@ -630,6 +650,7 @@ export async function createDesktopRuntime(
       throw error;
     }
     if (patch.remote) await remoteAccess.apply(next.remote);
+    if (patch.general?.taskbarProgress !== undefined) applyTaskbarProgress();
     sendToMainWindow(host.getMainWindow(), "settings:changed", next);
     return next;
   };
@@ -699,6 +720,7 @@ export async function createDesktopRuntime(
       open: (hostId) => remoteHosts.open(hostId),
       setNotify: (hostId, notify) => remoteHosts.setNotify(hostId, notify),
     },
+    indicators: { snapshot: () => indicators.snapshot() },
     sizes: {
       desktopResize: (sessionId, cols, rows) => sizes.desktopResize(sessionId, cols, rows),
       desktopInput: (sessionId) => sizes.desktopInput(sessionId),
@@ -896,6 +918,7 @@ export async function createDesktopRuntime(
 
   coordinator.onEvent((event: TerminalEvent) => {
     sendToMainWindow(host.getMainWindow(), "terminal:event", event);
+    indicators.handle(event);
     if (event.type === "exit" || event.type === "removed") attention.clear(event.sessionId);
     if (event.type !== "status") return;
     void attention.handleStatus(event.sessionId, event.status).catch((error) =>

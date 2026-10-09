@@ -580,6 +580,8 @@ function createApi(options?: {
       sizeOwners: vi.fn().mockResolvedValue([]),
       onSizeOwner: vi.fn(() => () => undefined),
       reclaimSize: vi.fn().mockResolvedValue(undefined),
+      indicators: vi.fn().mockResolvedValue([]),
+      onIndicators: vi.fn(() => () => undefined),
     },
     settings: {
       get: vi.fn().mockResolvedValue(DEFAULT_SETTINGS),

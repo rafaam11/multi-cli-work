@@ -19,6 +19,8 @@ export interface GeneralSettings {
   autoCheckUpdates: boolean;
   /** 트레이에 있을 때도 창을 불러오는 시스템 전역 단축키(예: "Ctrl+Alt+M"). null이면 없다. */
   summonShortcut: string | null;
+  /** 세션이 보고하는 진행률(OSC 9;4, jk progress)을 작업표시줄 아이콘에도 띄운다. */
+  taskbarProgress: boolean;
 }
 
 export interface TerminalSettings {
@@ -155,7 +157,7 @@ const MAX_FILE_OPEN_WITH_ENTRIES = 200;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "ko",
-  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null },
+  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null, taskbarProgress: true },
   terminal: {
     fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -318,6 +320,7 @@ export function parseSettings(value: unknown): AppSettings {
       closeToTray: readBoolean(general.closeToTray, defaults.general.closeToTray),
       autoResumeSessions: readBoolean(general.autoResumeSessions, defaults.general.autoResumeSessions),
       autoCheckUpdates: readBoolean(general.autoCheckUpdates, defaults.general.autoCheckUpdates),
+      taskbarProgress: readBoolean(general.taskbarProgress, defaults.general.taskbarProgress),
       summonShortcut:
         typeof general.summonShortcut === "string" &&
         general.summonShortcut.length > 0 &&

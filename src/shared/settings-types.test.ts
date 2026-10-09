@@ -30,6 +30,7 @@ describe("parseSettings", () => {
       autoResumeSessions: true,
       autoCheckUpdates: true,
       summonShortcut: null,
+      taskbarProgress: true,
     });
     expect(DEFAULT_SETTINGS.notifications).toEqual({
       desktop: true,

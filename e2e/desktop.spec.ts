@@ -344,6 +344,20 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.type(shellCommand("Write-Output MCW_PTY_READY", "echo MCW_PTY_READY"));
     await page.keyboard.press("Enter");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_PTY_READY");
+
+    // A progress report (ConEmu OSC 9;4) from the session fills the line under its pane header, and
+    // the line goes when the session clears it.
+    await page.keyboard.type(
+      shellCommand(
+        'Write-Host -NoNewline "$([char]27)]9;4;1;40$([char]7)"; Start-Sleep -Seconds 4; ' +
+          'Write-Host -NoNewline "$([char]27)]9;4;0$([char]7)"',
+        "printf '\\033]9;4;1;40\\007'; sleep 4; printf '\\033]9;4;0\\007'",
+      ),
+    );
+    await page.keyboard.press("Enter");
+    const progress = page.locator(".pane-header").getByRole("progressbar", { name: "진행률" });
+    await expect(progress).toHaveAttribute("aria-valuenow", "40");
+    await expect(progress).toHaveCount(0, { timeout: 15_000 });
     await attachScreenshot("desktop-1280x820");
 
     await page.setViewportSize({ width: 900, height: 600 });
