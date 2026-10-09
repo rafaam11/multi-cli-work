@@ -1306,6 +1306,130 @@ body.sidebar-resizing {
   min-height: 0;
 }
 
+/* Line notes: a dot in the glyph margin and a faint band on the noted line. */
+.git-diff-editor .diff-note-glyph {
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--amber);
+  transform: scale(0.45);
+}
+
+.git-diff-editor .diff-note-line {
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+}
+
+.git-diff-editor .margin-view-overlays .line-numbers {
+  cursor: pointer;
+}
+
+.diff-note-editor,
+.diff-notes {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.diff-note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff-note-editor-place {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--amber);
+  font: var(--type-caption-semibold);
+}
+
+.diff-note-editor-place code {
+  overflow: hidden;
+  color: var(--muted);
+  font: 400 var(--type-caption-size) var(--font-family-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-note-editor textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: var(--type-ui);
+  resize: vertical;
+}
+
+.diff-note-editor-actions,
+.diff-notes-send {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.diff-notes-list {
+  display: flex;
+  max-height: 140px;
+  margin: 0 0 8px;
+  padding: 0;
+  overflow: auto;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+}
+
+.diff-note {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font: var(--type-secondary);
+}
+
+.diff-note-place {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: var(--quiet);
+  background: transparent;
+  font: var(--type-caption);
+  cursor: pointer;
+}
+
+.diff-note.current-file .diff-note-place {
+  color: var(--amber);
+}
+
+.diff-note-place:disabled {
+  cursor: default;
+}
+
+.diff-note-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-notes-send button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.diff-notes-empty {
+  margin-right: auto;
+  color: var(--quiet);
+  font: var(--type-caption);
+}
+
 .git-graph-embed {
   position: relative;
   display: grid;

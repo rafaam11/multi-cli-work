@@ -12,6 +12,22 @@ export function fanOutTargets(sessions: readonly TerminalSessionView[], projectI
 }
 
 /**
+ * Sessions that can take a diff's line notes: alive, and working in that exact checkout — the
+ * folder itself (not one of its worktrees) or the one worktree.
+ */
+export function noteTargets(
+  sessions: readonly TerminalSessionView[],
+  target: { kind: "project" | "worktree"; id: string },
+): TerminalSessionView[] {
+  return sessions.filter(
+    (session) =>
+      session.status !== "exited" &&
+      session.status !== "error" &&
+      (target.kind === "worktree" ? session.worktreeId === target.id : session.projectId === target.id && !session.worktreeId),
+  );
+}
+
+/**
  * A multiline prompt travels as one bracketed paste, so its inner newlines insert instead of firing
  * the prompt early; the trailing carriage return submits. Claude, Codex and PSReadLine all speak
  * bracketed paste. A single line needs none of that.

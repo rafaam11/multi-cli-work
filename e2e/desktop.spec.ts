@@ -1464,6 +1464,37 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     );
   });
 
+  test("sends a line note left on the local diff to a session of the same folder", async () => {
+    const changed = path.join(tempRoot, "sample-project", "note-target.txt");
+    await fs.writeFile(changed, "first line\nsecond line\n", "utf8");
+    await openFolder();
+    const before = await page.locator(".grid-pane").count();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
+    // Pinned by name: the diff opens as a pane of its own and becomes the last one.
+    const shellLabel = (await page.locator(".grid-pane").last().getAttribute("aria-label"))!;
+    const terminal = pane(shellLabel).getByRole("region", { name: `${SHELL_ID} 터미널` });
+    await terminal.click();
+
+    await page.getByRole("tab", { name: "Git" }).click();
+    await page.getByRole("button", { name: /note-target\.txt/ }).click();
+    const diff = page.getByRole("region", { name: "Git 변경 비교" });
+    const lineNumber = diff.locator(".editor.modified .line-numbers").first();
+    await expect(lineNumber).toBeVisible();
+    await lineNumber.click();
+    const editor = diff.getByRole("group", { name: "줄 메모 편집" });
+    await editor.getByRole("textbox", { name: "줄 메모" }).fill("MCW_NOTE_ASK");
+    await editor.getByRole("button", { name: "메모 남기기" }).click();
+    const notes = diff.getByRole("region", { name: "줄 메모 목록" });
+    await expect(notes).toContainText("MCW_NOTE_ASK");
+    await attachScreenshot("diff-line-notes");
+
+    await notes.getByRole("button", { name: /메모 1개 보내기/ }).click();
+    await expect(notes).toBeHidden();
+    await expect(terminal.locator(".xterm-rows")).toContainText("MCW_NOTE_ASK");
+    await fs.rm(changed, { force: true });
+  });
+
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
     const projectRoot = path.join(tempRoot, "sample-project");
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });

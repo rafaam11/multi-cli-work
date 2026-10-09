@@ -14,6 +14,7 @@ import { defaultWorktreePath } from "../projects/git-worktree";
 import { addWorktreeEntry, readWorktreeRegistry, removeWorktreeEntry } from "../projects/worktree-registry";
 import { GitHubClient } from "./github-client";
 import { listGitHubRemotes } from "./github-remote";
+import { formatLineNotes } from "../../shared/line-notes";
 import {
   annotationSetKey, readReviewRegistry, removeReview, updateReviewRegistry, upsertReview,
   type ReviewRegistryOptions,
@@ -48,11 +49,7 @@ export function pullRequestAnnotationsPrompt(
   headSha: string,
   annotations: readonly PullRequestReviewAnnotation[],
 ): string {
-  const notes = annotations.map((annotation, index) => [
-    `## Note ${index + 1} · ${annotation.path} · ${annotation.side}:${annotation.line}`,
-    `코드: ${annotation.lineText || "(빈 줄)"}`,
-    `요청: ${annotation.body}`,
-  ].join("\n")).join("\n\n");
+  const notes = formatLineNotes(annotations);
   return `다음은 Multi CLI Work에서 작성한 로컬 비공개 PR line notes입니다.
 
 대상: ${remote.host}/${remote.owner}/${remote.repository} PR #${prNumber}

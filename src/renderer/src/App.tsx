@@ -38,7 +38,8 @@ import { WorkspaceGrid } from "./WorkspaceGrid";
 import { FolderStartPage } from "./FolderStartPage";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
-import { fanOutTargets } from "@shared/fan-out";
+import { fanOutTargets, noteTargets, promptAsTerminalInput } from "@shared/fan-out";
+import { localDiffNotesPrompt } from "@shared/line-notes";
 import type { QuickOpenItem } from "./quick-open";
 import { projectName, sessionLabel } from "./session-labels";
 import { neighbourSlot, resolveLayout, type FocusDirection } from "./grid-layouts";
@@ -104,6 +105,8 @@ import { useFolderTree } from "./app/use-folder-tree";
 import { useRemoteSizeOwners } from "./app/use-remote-size-owners";
 import { useSessionIndicators } from "./app/use-session-indicators";
 import { usePaneZoom } from "./app/use-pane-zoom";
+import { useDiffNotes } from "./app/use-diff-notes";
+import type { LocalDiffNote } from "./app/diff-notes";
 import { nextWaitingSession, trackWaitingSince } from "./app/waiting-sessions";
 import { createGridActions } from "./app/grid-actions";
 import { buildQuickOpenItems } from "./app/quick-open-items";
@@ -1403,6 +1406,53 @@ export function App() {
         : selectedProject
           ? { kind: "project", id: selectedProject.id }
           : null;
+  // 변경 비교 화면의 줄 메모. 사라진 폴더·워크트리의 메모는 목록이 다 읽힌 뒤에 정리된다.
+  const diffNoteTargets = useMemo(
+    () =>
+      loading
+        ? null
+        : new Set([
+            ...projects.map((project) => `project:${project.id}`),
+            ...worktrees.map((worktree) => `worktree:${worktree.id}`),
+          ]),
+    [loading, projects, worktrees],
+  );
+  const diffNotes = useDiffNotes(diffNoteTargets);
+
+  /** 메모를 그 체크아웃의 세션 하나에 한 번에 보내고, 그 세션으로 간다. */
+  const sendDiffNotes = async (sessionId: string, targetLabel: string, sent: LocalDiffNote[]) => {
+    setActionError(null);
+    try {
+      await window.multiCliWork.terminals.write(sessionId, promptAsTerminalInput(localDiffNotesPrompt(targetLabel, sent)));
+      diffNotes.markSent(sent.map((note) => note.id));
+      const session = sessions.find((candidate) => candidate.id === sessionId);
+      if (session) {
+        revealSession(session);
+        requestAnimationFrame(() => terminalCommands.current.get(sessionId)?.focus());
+      }
+    } catch (error) {
+      setActionError(errorMessage(error));
+    }
+  };
+
+  const diffNotesFor = (target: FileExplorerTarget, targetLabel: string | null) => {
+    const key = `${target.kind}:${target.id}`;
+    return {
+      notes: diffNotes.notes.filter((note) => note.targetKey === key),
+      onAdd: (note: Omit<LocalDiffNote, "id" | "status" | "createdAt" | "sentAt" | "targetKey">) =>
+        diffNotes.add({ ...note, targetKey: key }),
+      onUpdate: diffNotes.update,
+      onDelete: diffNotes.remove,
+      targets: noteTargets(sessions, target).map((session) => ({
+        id: session.id,
+        label: sessionLabel(session, sessions.filter((peer) => peer.projectId === session.projectId), agents),
+      })),
+      defaultTarget: lastFocusedTerminalId,
+      onSend: (sessionId: string, sent: LocalDiffNote[]) =>
+        void sendDiffNotes(sessionId, targetLabel ?? fileTargetLabel(target), sent),
+    };
+  };
+
   /** 터미널 링크로 여는 파일 탭의 머리말 — 탐색기가 붙이는 것과 같은 "폴더 · 브랜치". */
   const fileTargetLabel = (target: FileExplorerTarget): string => {
     if (target.kind === "project") {
@@ -1598,7 +1648,11 @@ export function App() {
         document: pane,
         content: (
           <Suspense fallback={<div className="git-diff-state">불러오는 중</div>}>
-            <GitDiffPane file={document.file} onClose={() => closeDocument(paneId)} />
+            <GitDiffPane
+              file={document.file}
+              onClose={() => closeDocument(paneId)}
+              notes={diffNotesFor(document.file.target, document.file.targetLabel)}
+            />
           </Suspense>
         ),
       };
