@@ -99,7 +99,7 @@ import {
   WorktreeRemovalDialog,
 } from "./app/AppConfirmDialogs";
 import { createDocumentActions } from "./app/document-actions";
-import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-actions";
+import { createFileTabActions, type PendingFileReveal, type RunConfirmRequest } from "./app/file-tab-actions";
 import { useFolderTree } from "./app/use-folder-tree";
 import { useRemoteSizeOwners } from "./app/use-remote-size-owners";
 import { useSessionIndicators } from "./app/use-session-indicators";
@@ -162,6 +162,7 @@ export function App() {
   const fileWriteQueuesRef = useRef<Map<string, Promise<boolean>>>(new Map());
   const pendingFileWriteCountsRef = useRef<Map<string, number>>(new Map());
   const [pendingFileAnchor, setPendingFileAnchor] = useState<{ tabId: string; anchor: string } | null>(null);
+  const [pendingFileReveal, setPendingFileReveal] = useState<PendingFileReveal | null>(null);
   // Shared by the exe row-click ("run") and the "연결 프로그램으로 열기" menu item ("open") — both end up
   // calling the same confirmed openEntry, just with different modal wording for what is about to happen.
   const [runConfirmRequest, setRunConfirmRequest] = useState<RunConfirmRequest | null>(null);
@@ -1101,6 +1102,7 @@ export function App() {
     openFile,
     openWithOs,
     openRelativeFile,
+    openFileAt,
     forceOpenFileTab,
     updateFileTabContent,
     saveFileTab,
@@ -1116,6 +1118,7 @@ export function App() {
     dropPaneEverywhere,
     setRunConfirmRequest,
     setPendingFileAnchor,
+    setPendingFileReveal,
     setFileTabCloseRequest,
     setActionError,
     setFolderViews,
@@ -1397,6 +1400,17 @@ export function App() {
         : selectedProject
           ? { kind: "project", id: selectedProject.id }
           : null;
+  /** 터미널 링크로 여는 파일 탭의 머리말 — 탐색기가 붙이는 것과 같은 "폴더 · 브랜치". */
+  const fileTargetLabel = (target: FileExplorerTarget): string => {
+    if (target.kind === "project") {
+      const project = projects.find((candidate) => candidate.id === target.id);
+      return project ? projectName(project) : "";
+    }
+    const worktree = worktrees.find((candidate) => candidate.id === target.id);
+    const owner = worktree ? projects.find((candidate) => candidate.id === worktree.projectId) : undefined;
+    return `${owner ? projectName(owner) : "worktree"} · ${worktree?.branch ?? ""}`;
+  };
+
   const fileExplorerTargetLabel = selectedWorktree
     ? `${fileExplorerOwnerProject ? projectName(fileExplorerOwnerProject) : "worktree"} · ${selectedWorktree.branch}`
     : fileExplorerOwnerProject
@@ -1565,6 +1579,10 @@ export function App() {
               onClose={() => requestCloseFileTab(fileTab)}
               onForceOpen={() => forceOpenFileTab(fileTab.id)}
               onOpenRelativePath={(relativePath, anchor) => openRelativeFile(fileTab, relativePath, anchor)}
+              reveal={pendingFileReveal?.tabId === fileTab.id ? pendingFileReveal : null}
+              onRevealed={() =>
+                setPendingFileReveal((current) => (current?.tabId === fileTab.id ? null : current))
+              }
             />
           ),
       };
@@ -2051,6 +2069,9 @@ export function App() {
                 remoteSizeOwners={remoteSizeOwners}
                 sessionIndicators={sessionIndicators}
                 zoomedPaneId={zoomedPaneId}
+                onOpenFileLink={(_sessionId, link, position) =>
+                  openFileAt(link.target, fileTargetLabel(link.target), link.relativePath, position)
+                }
                 onToggleZoom={(paneId) => {
                   focusPane(paneId);
                   toggleZoom(paneId);

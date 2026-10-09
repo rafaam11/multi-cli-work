@@ -13,6 +13,7 @@ import { TerminalPane, type TerminalCommands } from "./TerminalPane";
 import { isSessionDrag, readSessionDrag, startSessionDrag } from "./session-drag";
 import { sessionLabel } from "./session-labels";
 import { resolveSnapZone, type SnapZone } from "./snap-zones";
+import type { FileLinkPosition, ResolvedFileLink } from "./terminal-link-provider";
 
 interface WorkspaceGridProps {
   /** The arrangement to draw. It alone decides how many cells exist. */
@@ -49,6 +50,8 @@ interface WorkspaceGridProps {
   onRegisterCommands(sessionId: string, commands: TerminalCommands | null): void;
   /** A terminal took the keyboard — the 편집 menu's target, not a selection change. */
   onTerminalFocused(sessionId: string): void;
+  /** A Ctrl+clicked file path in a session's output. */
+  onOpenFileLink?(sessionId: string, link: ResolvedFileLink, position: FileLinkPosition | null): void;
   /** The user pressed inside this pane, which is what moves the focused-pane selection. */
   onFocusPane(paneId: string): void;
   onResumeSession(session: TerminalSessionView): void;
@@ -114,6 +117,7 @@ export function WorkspaceGrid({
   onError,
   onRegisterCommands,
   onTerminalFocused,
+  onOpenFileLink,
   onFocusPane,
   onResumeSession,
   onStopSession,
@@ -370,6 +374,7 @@ export function WorkspaceGrid({
               onError={onError}
               onRegisterCommands={onRegisterCommands}
               onTerminalFocused={onTerminalFocused}
+              onOpenFileLink={(link, position) => onOpenFileLink?.(session.id, link, position)}
             />
           </section>
         );

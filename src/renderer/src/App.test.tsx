@@ -65,6 +65,10 @@ vi.mock("@xterm/xterm", () => ({
       this.keyHandler = handler;
     }
 
+    registerLinkProvider() {
+      return { dispose: () => undefined };
+    }
+
     getSelection() {
       return this.selection;
     }

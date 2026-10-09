@@ -6,6 +6,7 @@ import type { TerminalSettings } from "@shared/settings-types";
 import { useEffect, useRef, useState } from "react";
 import { droppedPathsAsPromptText } from "./drop-paths";
 import { createTerminalOutputFilter } from "./terminal-output-filter";
+import { createFileLinkProvider, type FileLinkPosition, type ResolvedFileLink } from "./terminal-link-provider";
 import { TerminalSearchBar } from "./TerminalSearchBar";
 import "@xterm/xterm/css/xterm.css";
 import { terminalTheme } from "./terminal-themes";
@@ -43,6 +44,8 @@ interface TerminalPaneProps {
   onRegisterCommands?(sessionId: string, commands: TerminalCommands | null): void;
   /** In a grid there is no "active pane" — the last terminal to take the keyboard is the target. */
   onTerminalFocused?(sessionId: string): void;
+  /** A Ctrl+clicked file path this session printed, already resolved to a file under its root. */
+  onOpenFileLink?(link: ResolvedFileLink, position: FileLinkPosition | null): void;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -64,6 +67,7 @@ export function TerminalPane({
   onError,
   onRegisterCommands,
   onTerminalFocused,
+  onOpenFileLink,
 }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -75,6 +79,7 @@ export function TerminalPane({
   const onErrorRef = useRef(onError);
   const onRegisterCommandsRef = useRef(onRegisterCommands);
   const onTerminalFocusedRef = useRef(onTerminalFocused);
+  const onOpenFileLinkRef = useRef(onOpenFileLink);
   const autoFocusRef = useRef(autoFocus);
   const lastRefreshRequestRef = useRef(refreshRequest);
   const scheduleResizeRef = useRef<() => void>(() => undefined);
@@ -95,6 +100,7 @@ export function TerminalPane({
   onErrorRef.current = onError;
   onRegisterCommandsRef.current = onRegisterCommands;
   onTerminalFocusedRef.current = onTerminalFocused;
+  onOpenFileLinkRef.current = onOpenFileLink;
   autoFocusRef.current = autoFocus;
 
   useEffect(() => {
@@ -140,6 +146,16 @@ export function TerminalPane({
     // box, so the parent has to be exactly the area xterm is allowed to paint. The host stays
     // full-bleed and keeps owning the drag-and-drop and focus listeners below.
     terminal.open(frame);
+    // Paths the session prints become Ctrl+click links — but only ones main confirms are files under
+    // this session's own folder or worktree. A session with no folder (a tool run) has nothing to resolve.
+    const fileLinks = session.projectId
+      ? terminal.registerLinkProvider(
+          createFileLinkProvider(terminal, {
+            resolve: (raw) => window.multiCliWork.workspaceFiles.resolveTerminalPath(session.id, raw),
+            open: (link, position) => onOpenFileLinkRef.current?.(link, position),
+          }),
+        )
+      : null;
 
     const writeOutput = (data: string) => {
       const filtered = outputFilter.write(data);
@@ -343,6 +359,7 @@ export function TerminalPane({
       unsubscribe();
       inputDisposable.dispose();
       fitAddon.dispose();
+      fileLinks?.dispose();
       terminal.dispose();
       scheduleResizeRef.current = () => undefined;
       terminalInstanceRef.current = null;

@@ -1,9 +1,10 @@
 import { Eye, Pencil, RefreshCw, Save, TriangleAlert, X } from "lucide-react";
-import { useMemo, useState, type ElementType } from "react";
+import { useEffect, useMemo, useRef, useState, type ElementType, type RefObject } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { OpenFileTab } from "./file-tabs";
 import { analyzeMarkdown, resolveMarkdownLink, toggleMarkdownTask } from "./markdown-document";
+import { lineSelection } from "./text-position";
 
 interface FileViewerPaneProps {
   tab: OpenFileTab;
@@ -13,6 +14,10 @@ interface FileViewerPaneProps {
   onClose(): void;
   onForceOpen(): void;
   onOpenRelativePath(relativePath: string, anchor: string | null): void;
+  /** A line to show — a terminal link's `file:line:col`. A new nonce shows it again. */
+  reveal?: { line: number; column: number; nonce: number } | null;
+  /** The line is on screen (or cannot be shown); the caller drops the request. */
+  onRevealed?(): void;
 }
 
 function imageMimeSubtype(extension: string | null): string {
@@ -28,9 +33,11 @@ function FileViewerContent({
   onAutoSaveContent,
   onOpenRelativePath,
   onMarkdownError,
+  textareaRef,
 }: {
   tab: OpenFileTab;
   markdownMode: "preview" | "edit";
+  textareaRef: RefObject<HTMLTextAreaElement>;
   onChangeContent(content: string): void;
   onAutoSaveContent(content: string): void;
   onOpenRelativePath(relativePath: string, anchor: string | null): void;
@@ -43,6 +50,7 @@ function FileViewerContent({
     if (markdownMode === "edit") {
       return (
         <textarea
+          ref={textareaRef}
           className="file-editor-textarea"
           spellCheck={false}
           value={tab.content ?? ""}
@@ -151,6 +159,7 @@ function FileViewerContent({
   if (tab.category === "text") {
     return (
       <textarea
+        ref={textareaRef}
         className="file-editor-textarea"
         spellCheck={false}
         value={tab.content ?? ""}
@@ -179,11 +188,38 @@ export function FileViewerPane({
   onClose,
   onForceOpen,
   onOpenRelativePath,
+  reveal = null,
+  onRevealed,
 }: FileViewerPaneProps) {
   const [markdownMode, setMarkdownMode] = useState<"preview" | "edit">("preview");
   const [markdownError, setMarkdownError] = useState<string | null>(null);
   const isMarkdown = tab.category === "markdown";
   const editable = (isMarkdown || tab.category === "text") && tab.encoding === "utf8" && !tab.truncated;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const onRevealedRef = useRef(onRevealed);
+  onRevealedRef.current = onRevealed;
+  const loaded = !tab.loading && tab.content !== null;
+
+  // A line is shown in the editor: a Markdown file leaves its preview for it.
+  useEffect(() => {
+    if (reveal && isMarkdown && editable) setMarkdownMode("edit");
+  }, [reveal?.nonce, isMarkdown, editable]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!reveal || !loaded) return;
+    const editor = textareaRef.current;
+    if (!editor) {
+      // Nothing to put a cursor in (an image, a truncated file): the request is spent all the same.
+      if (!(isMarkdown && editable)) onRevealedRef.current?.();
+      return;
+    }
+    const { start, end } = lineSelection(editor.value, reveal.line, reveal.column);
+    editor.focus();
+    editor.setSelectionRange(start, end);
+    const lineHeight = Number.parseFloat(getComputedStyle(editor).lineHeight) || 18;
+    editor.scrollTop = Math.max(0, (reveal.line - 1) * lineHeight - editor.clientHeight / 3);
+    onRevealedRef.current?.();
+  }, [reveal?.nonce, reveal?.line, reveal?.column, loaded, markdownMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <section className="file-viewer-pane" aria-label={`${tab.name} 파일 보기`}>
@@ -263,6 +299,7 @@ export function FileViewerPane({
               </div>
             ) : (
               <FileViewerContent
+                textareaRef={textareaRef}
                 tab={tab}
                 markdownMode={markdownMode}
                 onChangeContent={onChangeContent}

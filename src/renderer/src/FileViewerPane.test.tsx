@@ -111,3 +111,43 @@ describe("FileViewerPane Markdown preview", () => {
     expect(screen.queryByRole("button", { name: "편집" })).not.toBeInTheDocument();
   });
 });
+
+describe("FileViewerPane line reveal", () => {
+  afterEach(cleanup);
+
+  it("selects the revealed line in a text file and says it is done", () => {
+    const onRevealed = vi.fn();
+    render(
+      <FileViewerPane
+        {...props({
+          tab: tab({ category: "text", name: "a.ts", extension: "ts", content: "one\ntwo words\nthree" }),
+          reveal: { line: 2, column: 5, nonce: 1 },
+          onRevealed,
+        })}
+      />,
+    );
+    const editor = screen.getByRole("textbox", { name: "a.ts 편집" }) as HTMLTextAreaElement;
+    expect([editor.selectionStart, editor.selectionEnd]).toEqual([8, 13]);
+    expect(document.activeElement).toBe(editor);
+    expect(onRevealed).toHaveBeenCalledOnce();
+  });
+
+  it("switches a Markdown file to its editor to show the line", () => {
+    render(<FileViewerPane {...props({ reveal: { line: 4, column: 1, nonce: 1 }, onRevealed: vi.fn() })} />);
+    const editor = screen.getByRole("textbox", { name: "readme.md 편집" }) as HTMLTextAreaElement;
+    expect(editor.value.slice(editor.selectionStart, editor.selectionEnd)).toBe("1. [ ] first");
+  });
+
+  it("waits for the file to load before revealing", () => {
+    const onRevealed = vi.fn();
+    const loading = tab({ category: "text", name: "a.ts", content: null, loading: true });
+    const view = render(<FileViewerPane {...props({ tab: loading, reveal: { line: 1, column: 1, nonce: 1 }, onRevealed })} />);
+    expect(onRevealed).not.toHaveBeenCalled();
+    view.rerender(
+      <FileViewerPane
+        {...props({ tab: { ...loading, content: "x", loading: false }, reveal: { line: 1, column: 1, nonce: 1 }, onRevealed })}
+      />,
+    );
+    expect(onRevealed).toHaveBeenCalledOnce();
+  });
+});

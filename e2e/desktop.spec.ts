@@ -1387,6 +1387,39 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(search).toBeHidden();
   });
 
+  test("opens a file path the session printed on Ctrl+click, at its line", async () => {
+    await openFolder();
+    const before = await page.locator(".grid-pane").count();
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
+    const terminal = page.locator(".grid-pane").last().getByRole("region", { name: `${SHELL_ID} 터미널` });
+    await terminal.click();
+    await page.keyboard.type(shellCommand("Write-Output 'readme.md:1'", "echo 'readme.md:1'"));
+    await page.keyboard.press("Enter");
+    // The echoed command holds the path too; the output row is the one that is nothing else.
+    const row = terminal.locator(".xterm-rows > div").filter({ hasText: /^readme\.md:1\s*$/ });
+    await expect(row).toHaveCount(1);
+    const box = (await row.boundingBox())!;
+    const x = box.x + 6;
+    const y = box.y + box.height / 2;
+    // Hovering is what asks main whether the path is a file; only then is it a link.
+    await page.mouse.move(x, y);
+    await expect(terminal.locator(".xterm-cursor-pointer")).toHaveCount(1);
+    // A plain click is a text click, not an open.
+    await page.mouse.click(x, y);
+    await expect(page.getByRole("region", { name: "readme.md 파일 보기" })).toHaveCount(0);
+    await page.keyboard.down("Control");
+    await page.mouse.click(x, y);
+    await page.keyboard.up("Control");
+    const editor = page.getByRole("textbox", { name: "readme.md 편집" });
+    await expect(editor).toBeFocused();
+    // An earlier test may have rewritten the file; line 1 is whatever is on disk now.
+    const firstLine = (await fs.readFile(path.join(tempRoot, "sample-project", "readme.md"), "utf8")).split(/\r?\n/)[0];
+    expect(await editor.evaluate((field: HTMLTextAreaElement) => field.value.slice(field.selectionStart, field.selectionEnd))).toBe(
+      firstLine,
+    );
+  });
+
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {
     const projectRoot = path.join(tempRoot, "sample-project");
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });

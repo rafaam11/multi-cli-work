@@ -17,6 +17,13 @@ export interface RunConfirmRequest {
   running: boolean;
 }
 
+export interface PendingFileReveal {
+  tabId: string;
+  line: number;
+  column: number;
+  nonce: number;
+}
+
 export interface FileTabContext {
   openFileTabs: OpenFileTab[];
   setOpenFileTabs: Dispatch<SetStateAction<OpenFileTab[]>>;
@@ -27,6 +34,8 @@ export interface FileTabContext {
   dropPaneEverywhere(paneId: string): void;
   setRunConfirmRequest: Dispatch<SetStateAction<RunConfirmRequest | null>>;
   setPendingFileAnchor: Dispatch<SetStateAction<{ tabId: string; anchor: string } | null>>;
+  /** 터미널 링크로 연 파일 탭이 보여 줄 줄. nonce는 같은 줄을 다시 눌러도 다시 보이게 한다. */
+  setPendingFileReveal: Dispatch<SetStateAction<PendingFileReveal | null>>;
   setFileTabCloseRequest: Dispatch<SetStateAction<OpenFileTab | null>>;
   setActionError: Dispatch<SetStateAction<string | null>>;
   setFolderViews: Dispatch<SetStateAction<Record<string, SlotViewState>>>;
@@ -49,6 +58,7 @@ export function createFileTabActions(context: FileTabContext) {
     dropPaneEverywhere,
     setRunConfirmRequest,
     setPendingFileAnchor,
+    setPendingFileReveal,
     setFileTabCloseRequest,
     setActionError,
     setFolderViews,
@@ -160,6 +170,37 @@ export function createFileTabActions(context: FileTabContext) {
       mtimeMs: 0,
     });
     if (anchor) setPendingFileAnchor({ tabId, anchor });
+  };
+
+  /**
+   * A file path Ctrl+clicked in a terminal, already resolved by main to a file under the session's
+   * root. It opens the way the explorer would for that extension; VS Code and the in-app viewer both
+   * land on the printed line.
+   */
+  const openFileAt = (
+    target: FileExplorerTarget,
+    targetLabel: string,
+    relativePath: string,
+    position: { line: number; column: number } | null,
+  ) => {
+    const name = relativePath.split("/").at(-1) ?? relativePath;
+    const extension = fileExtensionOf(name);
+    if (appSettings.files.openWith[extension ?? ""] === "vscode") {
+      void window.multiCliWork.workspaceFiles
+        .openInEditor(target, relativePath, position ?? undefined)
+        .catch((error) => setActionError(errorMessage(error)));
+      return;
+    }
+    const tabId = openFile(target, targetLabel, {
+      name,
+      relativePath,
+      kind: "file",
+      extension,
+      // A printed path may open a file, but it can never execute one.
+      executable: false,
+      mtimeMs: 0,
+    });
+    if (position) setPendingFileReveal({ tabId, ...position, nonce: Date.now() });
   };
 
   const forceOpenFileTab = (tabId: string) => {
@@ -323,6 +364,7 @@ export function createFileTabActions(context: FileTabContext) {
     openFile,
     openWithOs,
     openRelativeFile,
+    openFileAt,
     forceOpenFileTab,
     updateFileTabContent,
     saveFileTab,
