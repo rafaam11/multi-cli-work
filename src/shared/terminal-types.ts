@@ -12,6 +12,15 @@ export const DEFAULT_TERMINAL_SIZE = { cols: 80, rows: 24 } as const;
 export type TerminalKind = AgentId;
 /** Maintenance commands that run in a session which belongs to no folder. */
 export type ToolCommand = "claude-update" | "codex-update";
+/**
+ * A progress report from the session (ConEmu `OSC 9;4`, also emitted by Windows Terminal-aware
+ * tools and Claude Code) or from `jk progress`. `value` is 0–100, or null when there is none.
+ */
+export interface SessionProgress {
+  state: "normal" | "indeterminate" | "error" | "warning";
+  value: number | null;
+}
+
 export type TerminalStatus =
   | "starting"
   | "working"
