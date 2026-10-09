@@ -236,6 +236,9 @@ export function TerminalPane({
 
     const resize = () => {
       if (disposed) return;
+      // A pane parked behind a zoomed one is display:none: fitting it would shrink the PTY to xterm's
+      // two-column minimum. It keeps its size, and the ResizeObserver refits it once it is shown.
+      if (host.closest(".grid-pane-parked")) return;
       try {
         fitAddon.fit();
         if (!isReadOnly(sessionRef.current) && terminal.cols > 0 && terminal.rows > 0) {

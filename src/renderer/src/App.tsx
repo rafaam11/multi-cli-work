@@ -41,13 +41,14 @@ import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
 import { fanOutTargets } from "@shared/fan-out";
 import type { QuickOpenItem } from "./quick-open";
 import { projectName, sessionLabel } from "./session-labels";
-import { resolveLayout } from "./grid-layouts";
+import { neighbourSlot, resolveLayout, type FocusDirection } from "./grid-layouts";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
 import { recentProjects } from "./recent-folders";
 import { buildSessionPanelItems, type SessionScopeTarget } from "./session-panel";
 import {
   documentPaneId,
   isDocumentPaneId,
+  paneContentId,
   type DocumentKind,
   type DocumentPane,
   type PaneContent,
@@ -102,6 +103,7 @@ import { createFileTabActions, type RunConfirmRequest } from "./app/file-tab-act
 import { useFolderTree } from "./app/use-folder-tree";
 import { useRemoteSizeOwners } from "./app/use-remote-size-owners";
 import { useSessionIndicators } from "./app/use-session-indicators";
+import { usePaneZoom } from "./app/use-pane-zoom";
 import { createGridActions } from "./app/grid-actions";
 import { buildQuickOpenItems } from "./app/quick-open-items";
 import { createSessionActions } from "./app/session-actions";
@@ -1624,6 +1626,28 @@ export function App() {
     terminalCommands.current.get(content.session.id)?.focus();
   };
 
+  const visiblePaneIds = gridSlots.flatMap((slot) => (slot ? [paneContentId(slot)] : []));
+  const { zoomedPaneId, toggleZoom, clearZoom } = usePaneZoom(
+    visiblePaneIds,
+    focusedPaneId,
+    `${activeView}|${selectedProjectId ?? ""}|${resolvedView.layout.id}`,
+  );
+
+  /** Ctrl+Alt+방향키: 그리드에서 이웃 패인으로. 빈 슬롯은 건너뛰고, 확대 중이면 먼저 푼다. */
+  const moveFocus = (direction: FocusDirection) => {
+    if (!showsGrid) return;
+    const from = gridSlots.findIndex((slot) => slot !== null && paneContentId(slot) === focusedPaneId);
+    let target = neighbourSlot(resolvedView.layout.columnRows, Math.max(from, 0), direction);
+    while (target !== null && gridSlots[target] === null) {
+      target = neighbourSlot(resolvedView.layout.columnRows, target, direction);
+    }
+    const content = target === null ? null : gridSlots[target];
+    if (!content) return;
+    clearZoom();
+    focusPane(paneContentId(content));
+    if (content.kind === "session") terminalCommands.current.get(content.session.id)?.focus();
+  };
+
   const cycleVisibleSession = (step: number) => {
     if (!showsGrid) return;
     const visible = gridSlots.flatMap((slot) => (slot?.kind === "session" ? [slot.session.id] : []));
@@ -1729,6 +1753,13 @@ export function App() {
       case "view.full-screen": void window.multiCliWork.window.toggleFullScreen(); break;
       case "view.reload": void window.multiCliWork.window.reload(); break;
       case "view.dev-tools": void window.multiCliWork.window.toggleDevTools(); break;
+      case "view.zoom-pane":
+        if (showsGrid && focusedPaneId && visiblePaneIds.includes(focusedPaneId)) toggleZoom(focusedPaneId);
+        break;
+      case "workspace.focus-left": moveFocus("left"); break;
+      case "workspace.focus-right": moveFocus("right"); break;
+      case "workspace.focus-up": moveFocus("up"); break;
+      case "workspace.focus-down": moveFocus("down"); break;
       case "session.resume": void resumeSession(); break;
       case "session.refresh": if (headerSession) void refreshSession(headerSession.id); break;
       case "session.next":
@@ -1998,6 +2029,11 @@ export function App() {
                 onResumeSession={(session) => void resumeSession(session)}
                 remoteSizeOwners={remoteSizeOwners}
                 sessionIndicators={sessionIndicators}
+                zoomedPaneId={zoomedPaneId}
+                onToggleZoom={(paneId) => {
+                  focusPane(paneId);
+                  toggleZoom(paneId);
+                }}
                 onReclaimSize={(sessionId) =>
                   void window.multiCliWork.terminals.reclaimSize(sessionId).catch((error) => setActionError(errorMessage(error)))
                 }

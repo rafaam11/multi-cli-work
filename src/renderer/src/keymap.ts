@@ -48,6 +48,7 @@ export const KEYMAP_ACTIONS: readonly KeymapAction[] = [
   action("view.dev-tools", "개발자 도구", "보기", "F12"),
   // Ctrl+R 기본값은 의도적으로 없다 — 오타 한 번의 리로드가 세션 화면을 날린다.
   action("view.reload", "다시 로드", "보기", null),
+  action("view.zoom-pane", "패인 확대/해제", "보기", "Ctrl+Shift+Enter", { ignoreWhileTyping: true }),
   action("session.refresh", "세션 새로고침", "세션", "F5"),
   action("session.next", "다음 세션", "세션", "Ctrl+Tab", { ignoreWhileTyping: true }),
   action("session.prev", "이전 세션", "세션", "Ctrl+Shift+Tab", { ignoreWhileTyping: true }),
@@ -56,6 +57,10 @@ export const KEYMAP_ACTIONS: readonly KeymapAction[] = [
       ignoreWhileTyping: true,
     }),
   ),
+  action("workspace.focus-left", "왼쪽 패인으로", "세션", "Ctrl+Alt+ArrowLeft", { ignoreWhileTyping: true }),
+  action("workspace.focus-right", "오른쪽 패인으로", "세션", "Ctrl+Alt+ArrowRight", { ignoreWhileTyping: true }),
+  action("workspace.focus-up", "위 패인으로", "세션", "Ctrl+Alt+ArrowUp", { ignoreWhileTyping: true }),
+  action("workspace.focus-down", "아래 패인으로", "세션", "Ctrl+Alt+ArrowDown", { ignoreWhileTyping: true }),
   action("edit.copy", "복사", "편집", "Ctrl+Shift+C", { fixed: true }),
   action("edit.paste", "붙여넣기", "편집", "Ctrl+V", { fixed: true }),
   action("edit.select-all", "모두 선택", "편집", "Ctrl+A", { fixed: true }),

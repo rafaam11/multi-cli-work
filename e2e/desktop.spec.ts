@@ -963,6 +963,23 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.press("Control+Shift+Tab");
     await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Echo Agent");
 
+    // Zoom fills the grid with the focused pane; the other stays mounted (its terminal attached) out
+    // of sight, the zoom follows Ctrl+Tab, and a direction key lets go of it and moves next door.
+    const grid = page.locator(".workspace-grid");
+    await page.keyboard.press("Control+Shift+Enter");
+    await expect(grid).toHaveAttribute("data-zoomed", "true");
+    await expect(pane(SHELL_LABEL)).toBeHidden();
+    await expect(page.locator(".workspace-grid .xterm")).toHaveCount(2);
+    await page.keyboard.press("Control+Tab");
+    await expect(pane(SHELL_LABEL)).toBeVisible();
+    await expect(pane("Echo Agent")).toBeHidden();
+    const shellSlot = Number(await pane(SHELL_LABEL).getAttribute("data-slot"));
+    const echoSlot = Number(await pane("Echo Agent").getAttribute("data-slot"));
+    await page.keyboard.press(echoSlot < shellSlot ? "Control+Alt+ArrowLeft" : "Control+Alt+ArrowRight");
+    await expect(grid).not.toHaveAttribute("data-zoomed", "true");
+    await expect(page.locator(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Echo Agent");
+    await expect(pane(SHELL_LABEL).locator(".xterm-rows")).toContainText("MCW_PANE_SHELL");
+
     // Every pane opens with the folder it runs in, whatever its session came to be called.
     await expect(pane("Echo Agent").locator(".pane-context")).toHaveText("Sample Project");
     await expect(pane(SHELL_LABEL).locator(".pane-context")).toHaveText("Sample Project");

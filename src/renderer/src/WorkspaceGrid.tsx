@@ -37,6 +37,12 @@ interface WorkspaceGridProps {
   onReclaimSize?(sessionId: string): void;
   /** 세션 → 진행률·상태 칩. 아무것도 보이지 않는 세션은 없다. */
   sessionIndicators?: Readonly<Record<string, SessionIndicators>>;
+  /**
+   * The pane filling the whole grid for now, or null. The others are parked (display:none) rather
+   * than unmounted, so their terminals stay attached and come back exactly as they were.
+   */
+  zoomedPaneId?: string | null;
+  onToggleZoom?(paneId: string): void;
   onAttached(session: TerminalSessionView): void;
   onRefreshComplete(sessionId: string): void;
   onError(message: string): void;
@@ -101,6 +107,8 @@ export function WorkspaceGrid({
   remoteSizeOwners,
   onReclaimSize,
   sessionIndicators,
+  zoomedPaneId = null,
+  onToggleZoom,
   onAttached,
   onRefreshComplete,
   onError,
@@ -123,6 +131,10 @@ export function WorkspaceGrid({
   onCancelRename,
 }: WorkspaceGridProps) {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const zoomedIndex =
+    zoomedPaneId === null ? -1 : slots.findIndex((item) => item !== null && paneContentId(item) === zoomedPaneId);
+  const zoomed = zoomedIndex !== -1;
+  const parked = (index: number) => zoomed && index !== zoomedIndex;
   const [snapZone, setSnapZone] = useState<SnapZone | null>(null);
   const shiftEnterBytes = (pane: TerminalSessionView): string | null =>
     SHIFT_ENTER_BYTES[agents.find((agent) => agent.id === pane.kind)?.shiftEnter ?? "enter"];
@@ -131,7 +143,7 @@ export function WorkspaceGrid({
 
   const slotProps = (index: number) => ({
     "data-slot": index,
-    style: { gridArea: `s${index + 1}` },
+    style: { gridArea: zoomed ? (index === zoomedIndex ? "z" : undefined) : `s${index + 1}` },
     onDragOver: (event: ReactDragEvent) => {
       if (!isSessionDrag(event)) return;
       event.preventDefault();
@@ -191,7 +203,13 @@ export function WorkspaceGrid({
   });
 
   const paneClass = (paneId: string, index: number, extra?: string): string =>
-    ["grid-pane", extra ?? "", paneId === focusedPaneId ? "pane-focused" : "", dropIndex === index ? "drop-target" : ""]
+    [
+      "grid-pane",
+      extra ?? "",
+      paneId === focusedPaneId ? "pane-focused" : "",
+      dropIndex === index ? "drop-target" : "",
+      parked(index) ? "grid-pane-parked" : "",
+    ]
       .filter(Boolean)
       .join(" ");
 
@@ -200,11 +218,12 @@ export function WorkspaceGrid({
       className="workspace-grid"
       data-layout={layout.id}
       data-slots={layout.slots}
-      style={{
-        gridTemplateColumns: layout.columns,
-        gridTemplateRows: layout.rows,
-        gridTemplateAreas: layout.areas,
-      }}
+      data-zoomed={zoomed ? "true" : undefined}
+      style={
+        zoomed
+          ? { gridTemplateColumns: "1fr", gridTemplateRows: "1fr", gridTemplateAreas: '"z"' }
+          : { gridTemplateColumns: layout.columns, gridTemplateRows: layout.rows, gridTemplateAreas: layout.areas }
+      }
       onDragOver={trackSnapZone}
       onDragLeave={(event) => {
         // The grid is one drop surface: crossing between its own slots is not leaving it.
@@ -236,7 +255,9 @@ export function WorkspaceGrid({
             <div
               key={`slot-${index}`}
               {...slotProps(index)}
-              className={`grid-slot empty ${dropIndex === index ? "drop-target" : ""}`.trim()}
+              className={["grid-slot empty", dropIndex === index ? "drop-target" : "", parked(index) ? "grid-pane-parked" : ""]
+                .filter(Boolean)
+                .join(" ")}
               aria-label={`빈 슬롯 ${index + 1} — 세션을 시작하거나 끌어다 놓기`}
             >
               <span className="grid-slot-number">{index + 1}</span>
@@ -326,6 +347,8 @@ export function WorkspaceGrid({
               remoteSizeDevice={remoteSizeOwners?.[session.id] ?? null}
               onReclaimSize={() => onReclaimSize?.(session.id)}
               indicators={sessionIndicators?.[session.id]}
+              zoomed={index === zoomedIndex}
+              onToggleZoom={onToggleZoom ? () => onToggleZoom(paneId) : undefined}
               clearAction={clearAction}
               onStartRename={() => onStartRename(session.id)}
               onRename={(name) => onRenameSession(session.id, name)}

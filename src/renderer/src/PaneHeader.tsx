@@ -6,6 +6,8 @@ import {
   CircleStop,
   Folder,
   GitBranch,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   Smartphone,
   Square,
@@ -120,6 +122,9 @@ interface PaneHeaderProps {
   onReclaimSize?(): void;
   /** 세션이 보고한 진행률과 jk로 붙인 상태 칩. */
   indicators?: SessionIndicators;
+  /** 이 패인이 그리드 전체를 차지하고 있다. */
+  zoomed?: boolean;
+  onToggleZoom?(): void;
   onStartRename(): void;
   onRename(name: string | null): void;
   onCancelRename(): void;
@@ -158,6 +163,8 @@ export function PaneHeader({
   remoteSizeDevice = null,
   onReclaimSize,
   indicators,
+  zoomed = false,
+  onToggleZoom,
   clearAction,
   onStartRename,
   onRename,
@@ -218,7 +225,19 @@ export function PaneHeader({
           </span>
         ) : null}
         <div className="pane-actions">
-          <ColumnSplitButton {...columnSplit} />
+          {onToggleZoom ? (
+            <button
+              className={`icon-button ${zoomed ? "active" : ""}`.trim()}
+              type="button"
+              onClick={onToggleZoom}
+              aria-label={zoomed ? "확대 해제" : "패인 확대"}
+              aria-pressed={zoomed}
+              title={zoomed ? "확대 해제 — 다른 패인 다시 보기" : "패인 확대 — 그리드 전체로 잠시 키우기"}
+            >
+              {zoomed ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
+          ) : null}
+          {zoomed ? null : <ColumnSplitButton {...columnSplit} />}
           {finished ? (
             <button
               className="icon-button"

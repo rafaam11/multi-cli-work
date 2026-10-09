@@ -141,7 +141,7 @@ const range: IBufferRange = { start: { x: 1, y: 1 }, end: { x: 20, y: 1 } };
 
 function renderPane(overrides: Partial<Parameters<typeof TerminalPane>[0]> = {}) {
   const onError = overrides.onError ?? vi.fn();
-  render(
+  const rendered = render(
     <TerminalPane
       session={session}
       settings={DEFAULT_SETTINGS.terminal}
@@ -153,7 +153,7 @@ function renderPane(overrides: Partial<Parameters<typeof TerminalPane>[0]> = {})
       onError={onError}
     />,
   );
-  return { onError };
+  return { onError, container: rendered.container };
 }
 
 function linkHandler(): ILinkHandler {
@@ -290,6 +290,24 @@ describe("TerminalPane replay sizing", () => {
     expect(terminalHarness.events.indexOf("resize:200x50")).toBeLessThan(
       terminalHarness.events.indexOf("attach"),
     );
+    expect(window.multiCliWork.terminals.resize).toHaveBeenCalledWith(session.id, 200, 50);
+  });
+
+  it("leaves the PTY alone while its pane is parked behind a zoomed one, and refits when it returns", async () => {
+    const { container } = renderPane();
+    await waitFor(() => expect(window.multiCliWork.terminals.attach).toHaveBeenCalled());
+    vi.mocked(window.multiCliWork.terminals.resize).mockClear();
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
+
+    // A parked pane is display:none — fitting it would shrink the PTY to xterm's two-column minimum.
+    container.classList.add("grid-pane-parked");
+    terminalHarness.resizeObservers.forEach((listener) => listener([], {} as ResizeObserver));
+    await settle();
+    expect(window.multiCliWork.terminals.resize).not.toHaveBeenCalled();
+
+    container.classList.remove("grid-pane-parked");
+    terminalHarness.resizeObservers.forEach((listener) => listener([], {} as ResizeObserver));
+    await settle();
     expect(window.multiCliWork.terminals.resize).toHaveBeenCalledWith(session.id, 200, 50);
   });
 

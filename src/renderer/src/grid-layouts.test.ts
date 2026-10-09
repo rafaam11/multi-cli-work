@@ -10,6 +10,7 @@ import {
   autoLayoutFor,
   buildLayout,
   canSplitColumn,
+  neighbourSlot,
   columnOfSlot,
   defaultLayoutFor,
   isAutoLayout,
@@ -309,5 +310,31 @@ describe("canSplitColumn", () => {
     const full = buildLayout(Array.from({ length: MAX_COLUMNS }, () => MAX_ROWS_PER_COLUMN));
     expect(full.slots).toBe(MAX_LAYOUT_SLOTS);
     for (let slot = 0; slot < full.slots; slot += 1) expect(canSplitColumn(full, slot)).toBe(false);
+  });
+});
+
+describe("neighbourSlot", () => {
+  // Columns: [s0 | s1/s2 | s3], the middle one split in two rows.
+  const columnRows = [1, 2, 1];
+
+  it("moves up and down only inside a split column", () => {
+    expect(neighbourSlot(columnRows, 1, "down")).toBe(2);
+    expect(neighbourSlot(columnRows, 2, "up")).toBe(1);
+    expect(neighbourSlot(columnRows, 1, "up")).toBeNull();
+    expect(neighbourSlot(columnRows, 0, "down")).toBeNull();
+  });
+
+  it("moves sideways keeping the row, landing on the top row from an unsplit column", () => {
+    expect(neighbourSlot(columnRows, 0, "right")).toBe(1);
+    expect(neighbourSlot(columnRows, 2, "right")).toBe(3);
+    expect(neighbourSlot(columnRows, 2, "left")).toBe(0);
+    expect(neighbourSlot([2, 2], 3, "left")).toBe(1);
+    expect(neighbourSlot([2, 2], 0, "right")).toBe(2);
+  });
+
+  it("stops at the grid's edges and rejects a slot outside the layout", () => {
+    expect(neighbourSlot(columnRows, 0, "left")).toBeNull();
+    expect(neighbourSlot(columnRows, 3, "right")).toBeNull();
+    expect(neighbourSlot(columnRows, 9, "left")).toBeNull();
   });
 });

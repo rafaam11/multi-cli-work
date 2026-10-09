@@ -194,3 +194,22 @@ export function canSplitColumn(layout: GridLayout, slotIndex: number): boolean {
   const found = columnOfSlot(layout.columnRows, slotIndex);
   return found !== null && found.rows < MAX_ROWS_PER_COLUMN && layout.slots < MAX_LAYOUT_SLOTS;
 }
+
+export type FocusDirection = "left" | "right" | "up" | "down";
+
+/**
+ * The slot next to `slotIndex` in a direction, or null at the grid's edge. Up and down stay inside a
+ * split column; sideways keeps the row, so a move out of a split column's lower pane lands on the
+ * neighbouring split column's lower pane, and on the top one when coming from an unsplit column.
+ */
+export function neighbourSlot(columnRows: readonly number[], slotIndex: number, direction: FocusDirection): number | null {
+  const from = columnOfSlot(columnRows, slotIndex);
+  if (!from) return null;
+  const row = slotIndex - from.start;
+  if (direction === "up") return row > 0 ? slotIndex - 1 : null;
+  if (direction === "down") return row < from.rows - 1 ? slotIndex + 1 : null;
+  const column = from.column + (direction === "left" ? -1 : 1);
+  if (column < 0 || column >= columnRows.length) return null;
+  const start = columnRows.slice(0, column).reduce((sum, rows) => sum + rows, 0);
+  return start + Math.min(row, columnRows[column] - 1);
+}

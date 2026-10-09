@@ -3016,6 +3016,19 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--line);
 }
 
+/* Zoomed: one pane holds the grid. The rest stay mounted — their terminals stay attached — but out of sight. */
+.workspace-grid .grid-pane-parked {
+  display: none;
+}
+
+.workspace-grid[data-zoomed="true"] .grid-pane.pane-focused {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--teal) 55%, transparent);
+}
+
+.pane-header .icon-button.active {
+  color: var(--teal);
+}
+
 .grid-pane {
   position: relative;
   display: flex;

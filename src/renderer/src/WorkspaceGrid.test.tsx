@@ -511,3 +511,42 @@ describe("WorkspaceGrid", () => {
     expect(container.querySelector(".pane-detail")).toBeNull();
   });
 });
+
+describe("WorkspaceGrid zoom", () => {
+  it("fills the grid with the zoomed pane and parks the others without unmounting them", () => {
+    const slots = [sessionSlot(makeSession("session-1")), sessionSlot(makeSession("session-2")), null];
+    const { container } = renderGrid({
+      layout: layoutById("cols:1-2")!,
+      slots,
+      zoomedPaneId: paneContentId(slots[1]!),
+    });
+    const grid = container.querySelector(".workspace-grid") as HTMLElement;
+    expect(grid.dataset.zoomed).toBe("true");
+    expect(grid.style.gridTemplateAreas).toBe('"z"');
+
+    const zoomed = container.querySelector('[data-slot="1"]') as HTMLElement;
+    expect(zoomed.style.gridArea).toBe("z");
+    expect(zoomed.className).not.toContain("grid-pane-parked");
+    expect(container.querySelector('[data-slot="0"]')!.className).toContain("grid-pane-parked");
+    expect(container.querySelector('[data-slot="2"]')!.className).toContain("grid-pane-parked");
+    // Parked, not torn down: both terminals keep their xterm and their PTY attach.
+    expect(screen.getByTestId("terminal-session-1")).toBeTruthy();
+    expect(screen.getByTestId("terminal-session-2")).toBeTruthy();
+  });
+
+  it("draws the normal layout when the zoomed pane is not on this page", () => {
+    const slots = [sessionSlot(makeSession("session-1"))];
+    const { container } = renderGrid({ slots, zoomedPaneId: "elsewhere" });
+    const grid = container.querySelector(".workspace-grid") as HTMLElement;
+    expect(grid.dataset.zoomed).toBeUndefined();
+    expect(container.querySelector(".grid-pane-parked")).toBeNull();
+  });
+
+  it("toggles zoom from the pane header button", () => {
+    const slots = [sessionSlot(makeSession("session-1"))];
+    const onToggleZoom = vi.fn();
+    renderGrid({ slots, onToggleZoom });
+    fireEvent.click(screen.getByRole("button", { name: "패인 확대" }));
+    expect(onToggleZoom).toHaveBeenCalledWith(paneContentId(slots[0]!));
+  });
+});
