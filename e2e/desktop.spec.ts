@@ -34,6 +34,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page }> {
       MULTI_CLI_WORK_WORK_PROJECTS_PATH: path.join(tempRoot, "registry", "work-projects.json"),
       MULTI_CLI_WORK_WORKTREES_PATH: path.join(tempRoot, "registry", "worktrees.json"),
       MULTI_CLI_WORK_WORKTREE_SCRIPTS_PATH: path.join(tempRoot, "registry", "worktree-scripts.json"),
+      MULTI_CLI_WORK_CLAUDE_CONFIG_DIR: path.join(tempRoot, "claude-config"),
       MULTI_CLI_WORK_PR_REVIEWS_PATH: path.join(tempRoot, "registry", "pr-reviews.json"),
       // The workspace-root test registers a root: it must never reach the real ~/.multi-cli-work.
       MULTI_CLI_WORK_WORKSPACE_PATH: path.join(tempRoot, "registry", "workspace.json"),
@@ -170,6 +171,26 @@ test.describe.serial("Multi CLI Work desktop", () => {
       fs.mkdir(path.join(tempRoot, "registry"), { recursive: true }),
       fs.mkdir(path.join(tempRoot, "codex-sessions"), { recursive: true }),
     ]);
+    // A Codex session log with a rate-limit reading, for the title bar's usage gauge.
+    const codexDay = path.join(tempRoot, "codex-sessions", "2026", "10", "09");
+    await fs.mkdir(codexDay, { recursive: true });
+    await fs.writeFile(
+      path.join(codexDay, "rollout-e2e.jsonl"),
+      `${JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {},
+          rate_limits: {
+            primary: { used_percent: 91, window_minutes: 300, resets_at: Math.floor(Date.now() / 1000) + 3_600 },
+            secondary: { used_percent: 40, window_minutes: 10080, resets_at: Math.floor(Date.now() / 1000) + 86_400 },
+            plan_type: "pro",
+          },
+        },
+      })}\n`,
+      "utf8",
+    );
     // A real repo with one commit, so the worktree flow runs against actual git.
     await execFileAsync("git", ["init", "-b", "main"], { cwd: projectRoot });
     await fs.writeFile(path.join(projectRoot, "readme.md"), "sample\n", "utf8");
@@ -1518,6 +1539,22 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.keyboard.press("Enter");
     await expect(header.getByTestId("pane-chip")).toHaveCount(0);
     await expect(header.getByRole("progressbar", { name: "진행률" })).toHaveCount(0);
+  });
+
+  test("shows Codex subscription usage in the title bar from its session log", async () => {
+    // No Claude login in this sandbox, so only Codex has figures — 91% of five hours, 40% of the week.
+    const gauge = page.getByRole("button", { name: /^구독 사용량: Codex 5시간 91% · 주간 40%$/ });
+    await expect(gauge).toBeVisible();
+    await expect(gauge.locator(".usage-ring")).toHaveCount(2);
+    await expect(gauge.locator(".usage-ring").first()).toHaveAttribute("data-level", "high");
+    await gauge.click();
+    const popover = page.getByRole("dialog", { name: "구독 사용량" });
+    const codex = popover.getByRole("region", { name: "Codex 사용량" });
+    await expect(codex).toContainText("pro");
+    await expect(codex).toContainText(/(59분|1시간) 후 초기화/);
+    await attachScreenshot("usage-gauge");
+    await page.keyboard.press("Escape");
+    await expect(popover).toBeHidden();
   });
 
   test("removes a folder from the list through the context menu without deleting it from disk", async () => {

@@ -100,6 +100,13 @@ export interface RemoteSettings {
 export const DEFAULT_REMOTE_PORT = 47821;
 export const REMOTE_PORT_RANGE = { min: 1024, max: 65535 } as const;
 
+/** Claude·Codex 구독 사용량 게이지(타이틀바). */
+export interface UsageSettings {
+  enabled: boolean;
+  /** 5시간·주간 한도가 90%를 넘으면 한 번 알린다. */
+  notifyAt90: boolean;
+}
+
 export interface AppSettings {
   /** 지금은 선택 저장만 한다 — i18n 도입은 별도 작업. */
   language: "ko" | "en";
@@ -114,6 +121,7 @@ export interface AppSettings {
   fanOut: FanOutSettings;
   appearance: AppearanceSettings;
   remote: RemoteSettings;
+  usage: UsageSettings;
 }
 
 export interface AppSettingsPatch {
@@ -136,6 +144,7 @@ export interface AppSettingsPatch {
   fanOut?: { templates?: FanOutTemplate[] };
   appearance?: Partial<AppearanceSettings>;
   remote?: Partial<RemoteSettings>;
+  usage?: Partial<UsageSettings>;
 }
 
 export const TERMINAL_FONT_SIZE_RANGE = { min: 8, max: 32 } as const;
@@ -178,6 +187,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fanOut: { templates: [] },
   appearance: { theme: "dark" },
   remote: { enabled: false, port: DEFAULT_REMOTE_PORT },
+  usage: { enabled: true, notifyAt90: true },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -288,6 +298,7 @@ export function parseSettings(value: unknown): AppSettings {
   const notifications = isRecord(raw.notifications) ? raw.notifications : {};
   const statuses = isRecord(notifications.statuses) ? notifications.statuses : {};
   const quietHours = isRecord(notifications.quietHours) ? notifications.quietHours : {};
+  const usage = isRecord(raw.usage) ? raw.usage : {};
 
   const keybindings: Record<string, string | null> = {};
   if (isRecord(raw.keybindings)) {
@@ -400,6 +411,10 @@ export function parseSettings(value: unknown): AppSettings {
           ? remote.port
           : defaults.remote.port,
     },
+    usage: {
+      enabled: readBoolean(usage.enabled, defaults.usage.enabled),
+      notifyAt90: readBoolean(usage.notifyAt90, defaults.usage.notifyAt90),
+    },
   };
 }
 
@@ -433,5 +448,6 @@ export function mergeSettingsPatch(current: AppSettings, patch: AppSettingsPatch
     fanOut: { templates: patch.fanOut?.templates ?? current.fanOut.templates },
     appearance: { ...current.appearance, ...patch.appearance },
     remote: { ...current.remote, ...patch.remote },
+    usage: { ...current.usage, ...patch.usage },
   };
 }

@@ -3,6 +3,8 @@ import { ChevronRight, Copy, Minus, MonitorDot, Search, Square, X } from "lucide
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { TitleBarEntry, TitleBarMenu } from "./title-bar-menu";
 import { useDismissable } from "./use-dismissable";
+import type { UsageSnapshot } from "@shared/usage-types";
+import { UsageGauge } from "./UsageGauge";
 
 interface TitleBarProps {
   menus: TitleBarMenu[];
@@ -15,6 +17,9 @@ interface TitleBarProps {
   onQuickOpen(): void;
   /** 기다리는 세션으로 간다 — 주의 표시를 누를 때. */
   onJumpToWaiting?(): void;
+  /** 구독 사용량 게이지. 없으면(설정에서 끔) 그리지 않는다. */
+  usage?: UsageSnapshot | null;
+  onRefreshUsage?(): void;
 }
 
 const ATTENTION_MARK: Record<SessionAttention, { mark: string; label: string }> = {
@@ -30,6 +35,8 @@ export function TitleBar({
   attention,
   onQuickOpen,
   onJumpToWaiting,
+  usage = null,
+  onRefreshUsage,
 }: TitleBarProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
@@ -250,6 +257,7 @@ export function TitleBar({
             {attentionMark.mark}
           </button>
         ) : null}
+        {usage ? <UsageGauge usage={usage} onOpen={() => onRefreshUsage?.()} /> : null}
       </div>
 
       <div className="window-controls">

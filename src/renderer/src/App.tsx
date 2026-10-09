@@ -104,6 +104,7 @@ import { createFileTabActions, type PendingFileReveal, type RunConfirmRequest } 
 import { useFolderTree } from "./app/use-folder-tree";
 import { useRemoteSizeOwners } from "./app/use-remote-size-owners";
 import { useSessionIndicators } from "./app/use-session-indicators";
+import { useUsage } from "./app/use-usage";
 import { usePaneZoom } from "./app/use-pane-zoom";
 import { useDiffNotes } from "./app/use-diff-notes";
 import type { LocalDiffNote } from "./app/diff-notes";
@@ -156,6 +157,7 @@ export function App() {
   const { appSettings, setAppSettings, appVersion } = useAppSettings();
   const remoteSizeOwners = useRemoteSizeOwners();
   const sessionIndicators = useSessionIndicators();
+  const { usage, refresh: refreshUsage } = useUsage();
   const { keymap, handleMenuActionRef, keyActionEnabledRef } = useAppShortcuts(appSettings.keybindings);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
   /** Diffs, commit graphs and pull requests on the grid. Files live in `openFileTabs` instead. */
@@ -1916,6 +1918,8 @@ export function App() {
         attention={titleBarAttention}
         onQuickOpen={() => setQuickOpenVisible((visible) => !visible)}
         onJumpToWaiting={jumpToNextWaiting}
+        usage={appSettings.usage.enabled ? usage : null}
+        onRefreshUsage={refreshUsage}
       />
     <div
       className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${rightSidebarCollapsed ? "right-sidebar-collapsed" : ""}`}

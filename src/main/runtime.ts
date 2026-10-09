@@ -6,6 +6,7 @@ import {
   dialog,
   ipcMain,
   nativeImage,
+  net,
   Notification,
   powerMonitor,
   safeStorage,
@@ -138,6 +139,9 @@ import { createStatusSocket } from "./remote-client/status-socket";
 import { trayIconDataUrl } from "./tray-icon";
 import { SessionIndicatorTracker } from "./terminal/session-indicators";
 import { WorktreeScriptRunner } from "./projects/worktree-script-runner";
+import { claudeUsageAllowed, fetchClaudeUsage, parseClaudeUsage, readClaudeCredentials } from "./usage/claude-usage";
+import { readCodexUsage } from "./usage/codex-usage";
+import { parseUsageSnapshot, UsageService, type ClaudeReading } from "./usage/usage-service";
 import { readWorktreeScripts, removeWorktreeScripts, setWorktreeScripts } from "./projects/worktree-scripts";
 import { aggregateTaskbarProgress, type TaskbarProgress } from "./window-progress";
 
@@ -670,6 +674,7 @@ export async function createDesktopRuntime(
     }
     if (patch.remote) await remoteAccess.apply(next.remote);
     if (patch.general?.taskbarProgress !== undefined) applyTaskbarProgress();
+    if (patch.usage?.enabled === true) void usageService.refresh(true);
     sendToMainWindow(host.getMainWindow(), "settings:changed", next);
     return next;
   };
@@ -740,6 +745,7 @@ export async function createDesktopRuntime(
       setNotify: (hostId, notify) => remoteHosts.setNotify(hostId, notify),
     },
     indicators: { snapshot: () => indicators.snapshot() },
+    usage: { state: () => usageService.snapshot(), refresh: () => usageService.refresh() },
     worktreeScripts: {
       get: (projectId) => readWorktreeScripts(projectId, worktreeScriptsOptions),
       set: (projectId, scripts) => setWorktreeScripts(projectId, scripts, worktreeScriptsOptions),
@@ -964,6 +970,47 @@ export async function createDesktopRuntime(
     announceWorkspaceChange();
   })().catch((error) => console.error("Failed to sync work projects from the workspace", error));
 
+  // 타이틀바의 구독 사용량. Claude는 로그인 토큰으로 사용량 API를, Codex는 자기 세션 기록을 읽는다.
+  const usageSnapshotPath = path.join(userData, "usage-snapshot.json");
+  const usageService = new UsageService({
+    claude: async (): Promise<ClaudeReading> => {
+      if (!claudeUsageAllowed(process.env)) return { kind: "unavailable" };
+      const configDir = process.env.MULTI_CLI_WORK_CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR;
+      const credentials = await readClaudeCredentials(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}, os.homedir());
+      if (!credentials) return { kind: "unavailable" };
+      // An expired token is Claude Code's to refresh; asking with it would only earn a 401.
+      if (credentials.expiresAt !== null && credentials.expiresAt <= Date.now()) return { kind: "retry", afterMs: 5 * 60_000 };
+      const response = await fetchClaudeUsage((url, init) => net.fetch(url, init), credentials.accessToken);
+      if (response.status === 429) return { kind: "retry", afterMs: (response.retryAfterSec ?? 60) * 1_000 };
+      if (response.status === 401 || response.status === 403) return { kind: "retry", afterMs: 5 * 60_000 };
+      if (response.status !== 200) return { kind: "retry" };
+      const usage = parseClaudeUsage(response.json, credentials.subscriptionType, new Date());
+      return usage ? { kind: "ok", usage } : { kind: "unavailable" };
+    },
+    codex: () =>
+      readCodexUsage(
+        codexSessionsDirectory ?? path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "sessions"),
+        new Date(),
+      ),
+    hasLiveClaudeSession: () =>
+      coordinator.list().some((session) => session.kind === "claude" && session.pid !== null && session.status !== "exited"),
+    enabled: () => settingsService.current().usage.enabled,
+    notifyEnabled: () => settingsService.current().usage.notifyAt90,
+    notify: (provider, window) => {
+      if (!Notification.isSupported()) return;
+      const name = provider === "claude" ? "Claude" : "Codex";
+      const span = window.kind === "5h" ? "5시간" : window.kind === "weekly" ? "주간" : "사용량";
+      const reset = window.resetsAt ? ` · ${new Date(window.resetsAt).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })} 초기화` : "";
+      new Notification({ title: `${name} ${span} 한도 ${Math.round(window.usedPercent)}%`, body: `한도에 가까워졌습니다${reset}` }).show();
+    },
+    store: {
+      read: async () => parseUsageSnapshot(await fs.readFile(usageSnapshotPath, "utf8")),
+      write: (snapshot) => fs.writeFile(usageSnapshotPath, JSON.stringify(snapshot), "utf8"),
+    },
+  });
+  usageService.onChange((snapshot) => sendToMainWindow(host.getMainWindow(), "usage:changed", snapshot));
+  void usageService.start().catch((error) => console.error("Failed to start usage tracking", error));
+
   coordinator.onEvent((event: TerminalEvent) => {
     sendToMainWindow(host.getMainWindow(), "terminal:event", event);
     indicators.handle(event);
@@ -982,6 +1029,7 @@ export async function createDesktopRuntime(
     () => remoteWindows.closeAll(),
     () => remoteAccess.dispose(),
     () => statusWatcher.close(),
+    () => usageService.stop(),
     () => coordinator.shutdown(),
     () => worker.dispose(),
   ]);

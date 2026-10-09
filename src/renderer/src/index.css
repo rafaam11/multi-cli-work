@@ -435,6 +435,168 @@ button:focus-visible {
   background: var(--wash);
 }
 
+/* Subscription usage: a ring per limit window, filling green → amber → red. */
+.usage-gauges {
+  position: relative;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+
+.usage-gauge-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.usage-gauge-button:hover,
+.usage-gauge-button[aria-expanded="true"] {
+  border-color: var(--line);
+  background: var(--wash);
+}
+
+.usage-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.usage-ring {
+  --usage-color: var(--green);
+  overflow: visible;
+}
+
+.usage-ring[data-level="warn"],
+.usage-bar[data-level="warn"] {
+  --usage-color: var(--amber);
+}
+
+.usage-ring[data-level="high"],
+.usage-bar[data-level="high"] {
+  --usage-color: var(--red);
+}
+
+.usage-ring-track {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 4;
+}
+
+.usage-ring-value {
+  fill: none;
+  stroke: var(--usage-color);
+  stroke-linecap: round;
+  stroke-width: 4;
+  transition: stroke-dasharray 600ms ease-out, stroke 300ms;
+}
+
+/* Nearly spent: the ring breathes, so a full limit is noticed before the next prompt bounces off it. */
+.usage-ring[data-level="high"] .usage-ring-value {
+  animation: usage-ring-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes usage-ring-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.usage-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  display: flex;
+  width: 300px;
+  padding: 10px;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 40%);
+  font: var(--type-secondary);
+}
+
+.usage-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usage-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.usage-plan {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--wash);
+  font: var(--type-caption);
+}
+
+.usage-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 36px;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.usage-row-label {
+  color: var(--muted);
+}
+
+.usage-bar {
+  --usage-color: var(--green);
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.usage-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--usage-color) 60%, transparent), var(--usage-color));
+  transition: width 600ms ease-out;
+}
+
+.usage-row-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-row-reset {
+  grid-column: 2 / 4;
+  color: var(--quiet);
+  font: var(--type-caption);
+}
+
+.usage-section-footer {
+  color: var(--quiet);
+  font: var(--type-caption);
+}
+
+.usage-refresh {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-end;
+  gap: 4px;
+  font: var(--type-caption);
+}
+
 .window-controls {
   display: flex;
   height: 100%;

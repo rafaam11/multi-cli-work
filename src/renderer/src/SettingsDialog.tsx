@@ -856,6 +856,17 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
                   </div>
                 );
               })()}
+              <h3>구독 사용량</h3>
+              <p className="settings-hint">
+                타이틀바에 Claude·Codex의 5시간·주간 한도를 링으로 보입니다. Claude는 로그인 토큰으로 Anthropic 사용량
+                API를(Claude 세션이 있는 동안 5분마다), Codex는 이 PC의 세션 기록을 읽습니다.
+              </p>
+              {checkboxRow("타이틀바에 사용량 게이지 표시", "settings-usage-enabled", settings.usage.enabled, (next) => ({
+                usage: { enabled: next },
+              }))}
+              {checkboxRow("한도 90%를 넘으면 알림", "settings-usage-notify", settings.usage.notifyAt90, (next) => ({
+                usage: { notifyAt90: next },
+              }))}
             </>
           ) : null}
           {tab === "projects" ? (

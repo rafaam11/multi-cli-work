@@ -21,6 +21,7 @@ import type {
   WindowZoomAction,
 } from "../shared/api-types";
 import type { SessionIndicatorsUpdate } from "../shared/terminal-types";
+import type { UsageSnapshot } from "../shared/usage-types";
 import { type AppSettings, type AppSettingsPatch } from "../shared/settings-types";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceChangedPaths, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type { EditorPosition } from "./providers/provider-launch";
@@ -180,6 +181,12 @@ export interface WorktreeGateway {
   remove(worktreeId: string, force: boolean, options?: { skipTeardown?: boolean }): Promise<WorktreeRemovalResult>;
 }
 
+export interface UsageGateway {
+  state(): UsageSnapshot;
+  /** Reads again now — held to once a minute. */
+  refresh(): Promise<UsageSnapshot>;
+}
+
 export interface WorktreeScriptsGateway {
   get(projectId: string): Promise<WorktreeScripts | null>;
   set(projectId: string, scripts: WorktreeScripts): Promise<void>;
@@ -311,6 +318,7 @@ export interface MainIpcDependencies {
   sizes: TerminalSizeGateway;
   indicators: SessionIndicatorsGateway;
   worktreeScripts: WorktreeScriptsGateway;
+  usage: UsageGateway;
   windowControls: WindowControlsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;

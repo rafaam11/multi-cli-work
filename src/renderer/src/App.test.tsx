@@ -409,6 +409,11 @@ function createApi(options?: {
       setNotify: vi.fn().mockResolvedValue(undefined),
       onChanged: vi.fn(() => () => undefined),
     },
+    usage: {
+      state: vi.fn().mockResolvedValue({ claude: null, codex: null }),
+      refresh: vi.fn().mockResolvedValue({ claude: null, codex: null }),
+      onChange: vi.fn(() => () => undefined),
+    },
     worktreeScripts: {
       get: vi.fn().mockResolvedValue(null),
       set: vi.fn().mockResolvedValue(undefined),

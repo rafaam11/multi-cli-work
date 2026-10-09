@@ -15,6 +15,7 @@ import type {
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { ProjectTagsV1 } from "./project-tags-types";
 import type { SessionIndicatorsUpdate, TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
+import type { UsageSnapshot } from "./usage-types";
 import type {
   WorkProjectLocalFolder,
   WorkProjectNotionLink,
@@ -295,6 +296,13 @@ export type UpdaterStatus =
   | { state: "error"; message: string };
 
 export interface MultiCliWorkApi {
+  /** Claude·Codex 구독 사용량(타이틀바 게이지). */
+  usage: {
+    state(): Promise<UsageSnapshot>;
+    /** 지금 다시 읽는다 — 1분에 한 번까지. */
+    refresh(): Promise<UsageSnapshot>;
+    onChange(listener: (snapshot: UsageSnapshot) => void): () => void;
+  };
   /** 폴더별 워크트리 준비·정리 스크립트(앱 설정에만 있고 레포는 건드리지 않는다). */
   worktreeScripts: {
     get(projectId: string): Promise<WorktreeScripts | null>;

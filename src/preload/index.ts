@@ -9,6 +9,7 @@ import type {
 } from "../shared/api-types";
 import type { RemoteHostView } from "../shared/remote-types";
 import type { SessionIndicatorsUpdate, TerminalEvent } from "../shared/terminal-types";
+import type { UsageSnapshot } from "../shared/usage-types";
 
 const api: MultiCliWorkApi = {
   platform: process.platform,
@@ -227,6 +228,15 @@ const api: MultiCliWorkApi = {
       const handler = (_event: Electron.IpcRendererEvent, update: SessionIndicatorsUpdate) => listener(update);
       ipcRenderer.on("terminals:indicators", handler);
       return () => ipcRenderer.removeListener("terminals:indicators", handler);
+    },
+  },
+  usage: {
+    state: () => ipcRenderer.invoke("usage:state"),
+    refresh: () => ipcRenderer.invoke("usage:refresh"),
+    onChange(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, snapshot: UsageSnapshot) => listener(snapshot);
+      ipcRenderer.on("usage:changed", handler);
+      return () => ipcRenderer.removeListener("usage:changed", handler);
     },
   },
   worktreeScripts: {
