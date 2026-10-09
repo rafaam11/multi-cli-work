@@ -8,6 +8,9 @@ import type {
 } from "../../shared/terminal-types";
 import { tailOnUtf8Boundary } from "../utf8";
 
+/** ConEmu's numbered OSC 9 commands: `4;3;` (progress), `9;C:\dev` (cwd), a bare `5`… */
+const CONEMU_OSC9_COMMAND = /^\d+(;|$)/;
+
 export interface ManagedPty {
   readonly pid: number;
   write(data: string): void;
@@ -191,6 +194,8 @@ export class TerminalSessionManager {
   /**
    * OSC 9 is a desktop-notification escape sequence. Codex is configured to emit one when a turn
    * ends or an approval is wanted; any agent whose CLI emits them can opt in the same way.
+   * ConEmu reuses OSC 9 for numbered commands (`9;4;…` progress, `9;9;…` cwd); those carry a bare
+   * number before the first `;` and are not notifications.
    */
   private applyOsc9Notifications(record: SessionRecord, data: string): void {
     record.controlBuffer = `${record.controlBuffer}${data}`.slice(-2_048);
@@ -200,6 +205,7 @@ export class TerminalSessionManager {
     while ((match = notificationPattern.exec(record.controlBuffer)) !== null) {
       consumed = notificationPattern.lastIndex;
       const message = match[1].trim().toLocaleLowerCase("en-US");
+      if (CONEMU_OSC9_COMMAND.test(message)) continue;
       if (message.includes("approval-requested") || message.includes("approval requested")) {
         this.setStatus(record, "awaiting-approval");
       } else if (message) {

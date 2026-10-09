@@ -220,6 +220,22 @@ describe("TerminalSessionManager", () => {
     expect(events).toHaveBeenLastCalledWith({ type: "status", sessionId: "session-1", status: "awaiting-input" });
   });
 
+  it("does not read ConEmu OSC 9;N sequences such as progress as a Codex notification", () => {
+    const pty = new FakePty();
+    const events = vi.fn();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, events);
+    manager.create({ ...launchSpec(), kind: "codex", statusAdapter: "osc9" });
+
+    manager.write("session-1", "continue\r");
+    pty.emitData("\u001b]9;4;3;\u0007");
+    pty.emitData("\u001b]9;4;1;40\u001b\\");
+    pty.emitData("\u001b]9;9;C:\\dev\u0007");
+    pty.emitData("\u001b]9;4;0\u0007");
+
+    const statuses = events.mock.calls.flatMap(([event]) => (event.type === "status" ? [event.status] : []));
+    expect(statuses).toEqual(["starting", "working"]);
+  });
+
   it("allows an exited tab to be relaunched with the same app session id", () => {
     const first = new FakePty();
     const second = new FakePty();
