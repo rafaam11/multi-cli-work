@@ -1126,7 +1126,7 @@ describe("folder workspace", () => {
     expect(await screen.findByRole("region", { name: "PowerShell 7" })).toBeInTheDocument();
     expect(screen.getByLabelText("2페이지 중 2페이지")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "이전 페이지" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^1페이지/ }));
     await waitFor(() => expect(document.querySelector(".workspace-grid")).toHaveAttribute("data-slots", "6"));
     expect(screen.getByRole("region", { name: "PowerShell 1" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "PowerShell 6" })).toBeInTheDocument();
@@ -3721,7 +3721,7 @@ describe("새 세션 from an empty slot", () => {
     const { container } = render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
-    fireEvent.click(screen.getByRole("button", { name: "다음 페이지" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^2페이지/ }));
     await screen.findByLabelText("2페이지 중 2페이지");
 
     fireEvent.click(within(screen.getByLabelText(EMPTY_SLOT_2)).getByRole("button", { name: "새 세션" }));
@@ -3734,12 +3734,60 @@ describe("새 세션 from an empty slot", () => {
     expect(screen.getByLabelText("2페이지 중 2페이지")).toBeInTheDocument();
 
     // Page 1 kept the two panes it had, in the order it had them.
-    fireEvent.click(screen.getByRole("button", { name: "이전 페이지" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^1페이지/ }));
     await screen.findByLabelText("2페이지 중 1페이지");
     expect([...container.querySelectorAll(".grid-pane")].map((pane) => pane.getAttribute("aria-label"))).toEqual([
       "PowerShell",
       "Claude Code",
     ]);
+  });
+
+  it("names each page's panes on its tab, marks the page someone is waiting on, and turns by keyboard", async () => {
+    const harness = createApi({
+      projects: [atlas, dashboard],
+      sessions: [powershellSession, claudeSession, codexSession],
+      savedViews: {
+        folderViews: {
+          [atlas.id]: {
+            layoutId: "cols:1-1",
+            slots: [powershellSession.id, claudeSession.id, codexSession.id],
+          },
+        },
+      },
+    });
+    window.multiCliWork = harness.api;
+    const { container } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
+    const first = await screen.findByRole("tab", { name: "1페이지: PowerShell, Claude Code" });
+    const second = screen.getByRole("tab", { name: "2페이지: Codex" });
+    expect(first).toHaveAttribute("aria-selected", "true");
+    expect(second).toHaveAttribute("aria-selected", "false");
+
+    // The page out of sight is the one that has to say someone is waiting there.
+    act(() => harness.emitAttention({ [codexSession.id]: "approval" }));
+    await waitFor(() => expect(second.querySelector(".unread-dot.unread-approval")).not.toBeNull());
+    expect(first.querySelector(".unread-dot")).toBeNull();
+
+    fireEvent.keyDown(window, { key: "PageDown", ctrlKey: true });
+    await screen.findByLabelText("2페이지 중 2페이지");
+    await waitFor(() => expect(container.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Codex"));
+
+    // Past the last page there is nowhere to go; the key stays put rather than wrapping.
+    fireEvent.keyDown(window, { key: "PageDown", ctrlKey: true });
+    expect(screen.getByLabelText("2페이지 중 2페이지")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "PageUp", ctrlKey: true });
+    await screen.findByLabelText("2페이지 중 1페이지");
+
+    // Ctrl+Tab no longer stops at the edge of the page: from the last pane here it turns the page.
+    fireEvent.mouseDown(screen.getByRole("region", { name: "Claude Code" }));
+    await waitFor(() =>
+      expect(container.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code"),
+    );
+    fireEvent.keyDown(window, { key: "Tab", ctrlKey: true });
+    await screen.findByLabelText("2페이지 중 2페이지");
+    await waitFor(() => expect(container.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Codex"));
   });
 
   it("refuses to start in a folder whose root is gone, and says why on every one of its buttons", async () => {

@@ -324,6 +324,13 @@ export function visibleSessionsOf(
   return pageSlots(slots, pageSize, page).filter((id): id is string => id !== null);
 }
 
+/** Every page's panes in slot order, holes left out — what the header's page tabs name. */
+export function pagePaneIds(slots: readonly (string | null)[], pageSize: number): string[][] {
+  return Array.from({ length: pageCount(slots, pageSize) }, (_, page) =>
+    visibleSessionsOf(slots, pageSize, page),
+  );
+}
+
 export interface ResolvedView {
   /** The grid to draw: the chosen preset, or 자동's pick for this page's session count. */
   layout: GridLayout;

@@ -3478,19 +3478,61 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 /*
  * Panes past the layout's capacity paginate instead of disappearing, so this row rides beside the
- * picker that decides the capacity — it is the only way back to the ones that did not fit.
+ * picker that decides the capacity. Each page is a tab that names what it holds — a page the user
+ * cannot see is otherwise a page they forget. The strip may shrink, never wrap: a tab gives up its
+ * names before its number, so even a crowded header keeps every page one click away.
  */
-.workspace-page-nav {
+/* The outsized shrink factor makes the tabs give up width before the launchers beside them do —
+   a tab without its names is still a tab, a launcher scrolled out of view is gone. */
+.workspace-page-tabs {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1000 auto;
+  min-width: 0;
   align-items: center;
-  gap: 2px;
-  color: var(--muted);
-  font-size: var(--type-caption-size);
+  gap: 3px;
+  margin-right: 6px;
 }
 
-.workspace-page-count {
+.workspace-page-tab {
+  display: inline-flex;
+  min-width: 30px;
+  max-width: 180px;
+  height: 28px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: var(--type-secondary-size);
+  white-space: nowrap;
+}
+
+.workspace-page-tab:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.workspace-page-tab.current {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.workspace-page-number {
+  flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.workspace-page-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .grid-pane .terminal-surface {
@@ -6909,6 +6951,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 @container (max-width: 620px) {
   .workspace-header .active-status,
   .workspace-header .workspace-path {
+    display: none;
+  }
+
+  /* Names are why the tabs exist, so they go last: above this they shrink to an ellipsis instead.
+     A tab keeps its number and waiting dot; the names live on in its tooltip. */
+  .workspace-header .workspace-page-names {
     display: none;
   }
 }

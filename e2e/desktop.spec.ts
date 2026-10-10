@@ -1108,7 +1108,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(paneRow(SHELL_LABEL)).toBeVisible();
     await expect(page.getByLabel("2페이지 중 1페이지")).toBeVisible();
 
-    await page.getByRole("button", { name: "다음 페이지" }).click();
+    await page.getByRole("tab", { name: /^2페이지: Echo Agent/ }).click();
     await expect(page.getByLabel("2페이지 중 2페이지")).toBeVisible();
     await expect(pane("Echo Agent")).toBeVisible();
     await expect(pane(SHELL_LABEL)).toBeHidden();

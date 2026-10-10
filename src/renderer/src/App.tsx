@@ -61,6 +61,7 @@ import {
   clampPage,
   normalizeSlots,
   pageOfSession,
+  pagePaneIds,
   removeSession,
   resolveView,
   viewPageSize,
@@ -1726,18 +1727,62 @@ export function App() {
     if (content.kind === "session") terminalCommands.current.get(content.session.id)?.focus();
   };
 
+  /** Puts the keyboard in a session that may sit on another page: turn there first, focus once it is drawn. */
+  const focusSessionAcrossPages = (sessionId: string) => {
+    const target = pageOfSession(currentView.slots, viewPageSize(currentView), sessionId);
+    if (target !== null && target !== resolvedView.page) setPage(target);
+    focusPane(sessionId);
+    requestAnimationFrame(() => terminalCommands.current.get(sessionId)?.focus());
+  };
+
+  /**
+   * Ctrl+Tab: 이 뷰의 모든 세션을 슬롯 순서대로 돈다. 현재 페이지의 끝에서 멈추지 않고 다음 페이지로
+   * 넘어가므로, 페이지가 나뉘어 있어도 키보드만으로 전부 닿는다.
+   */
   const cycleVisibleSession = (step: number) => {
     if (!showsGrid) return;
-    const visible = gridSlots.flatMap((slot) => (slot?.kind === "session" ? [slot.session.id] : []));
-    if (visible.length === 0) return;
-    const index = visible.indexOf(focusedPaneId ?? "");
-    const nextIndex = index === -1 ? (step > 0 ? 0 : visible.length - 1) : (index + step + visible.length) % visible.length;
-    const next = visible[nextIndex];
-    if (next) {
-      focusPane(next);
-      terminalCommands.current.get(next)?.focus();
+    const all = currentView.slots.filter(
+      (id): id is string => id !== null && !isDocumentPaneId(id) && sessions.some((session) => session.id === id),
+    );
+    if (all.length === 0) return;
+    const index = all.indexOf(focusedPaneId ?? "");
+    const nextIndex = index === -1 ? (step > 0 ? 0 : all.length - 1) : (index + step + all.length) % all.length;
+    const next = all[nextIndex];
+    if (next) focusSessionAcrossPages(next);
+  };
+
+  /** Ctrl+PageUp/PageDown: 이웃 페이지로. 끝에서는 멈추고, 넘어간 페이지의 첫 세션이 키보드를 받는다. */
+  const turnPage = (step: number) => {
+    if (!showsGrid) return;
+    const target = clampPage(resolvedView.page + step, resolvedView.pages);
+    if (target === resolvedView.page) return;
+    setPage(target);
+    const first = pageTabs[target]?.find((id) => !isDocumentPaneId(id));
+    if (first) {
+      focusPane(first);
+      requestAnimationFrame(() => terminalCommands.current.get(first)?.focus());
     }
   };
+
+  /** 페이지 탭에 적힐 패인 이름 — 패인 헤더와 같은 규칙. 사라진 패인이면 null(뷰가 따라잡기 전의 잔재). */
+  const pageTabLabelOf = (paneId: string): string | null => {
+    if (isDocumentPaneId(paneId)) return documentPanes.find((pane) => pane.id === paneId)?.label ?? null;
+    const session = sessions.find((candidate) => candidate.id === paneId);
+    return session
+      ? sessionLabel(session, sessions.filter((peer) => peer.projectId === session.projectId), agents)
+      : null;
+  };
+  const pageTabs = pagePaneIds(currentView.slots, viewPageSize(currentView)).map((ids) =>
+    ids.filter((id) => pageTabLabelOf(id) !== null),
+  );
+  /** 승인 대기가 입력 대기보다 앞선다 — 사이드바·작업 표시줄과 같은 규칙. */
+  const pageTabItems = pageTabs.map((ids) => {
+    const attentions = ids.flatMap((id) => (unread[id] ? [unread[id]] : []));
+    return {
+      labels: ids.map((id) => pageTabLabelOf(id) ?? id),
+      attention: attentions.includes("approval") ? ("approval" as const) : (attentions[0] ?? null),
+    };
+  });
   /**
    * The picker rides above every terminal surface, grid or no grid — it deliberately does not follow
    * `showsGrid`. A folder with nothing open yet still carries a `layoutId` of its own, so choosing an
@@ -1874,6 +1919,8 @@ export function App() {
       case "session.next-waiting":
         jumpToNextWaiting();
         break;
+      case "workspace.page-prev": turnPage(-1); break;
+      case "workspace.page-next": turnPage(1); break;
       case "session.stop": void stopSession(); break;
       case "session.remove":
         if (selectedSession) void removeSessionById(selectedSession);
@@ -1903,6 +1950,11 @@ export function App() {
             !selectedFileTab.truncated &&
             selectedFileTab.encoding === "utf8",
         );
+      // 넘길 페이지가 없으면 키를 삼키지 않는다 — 터미널 안 프로그램이 Ctrl+PageUp/Down을 받는다.
+      case "workspace.page-prev":
+        return showsGrid && resolvedView.page > 0;
+      case "workspace.page-next":
+        return showsGrid && resolvedView.page < resolvedView.pages - 1;
       default:
         return true;
     }
@@ -2040,7 +2092,7 @@ export function App() {
               : null
           }
           pages={
-            showsLayoutPicker ? { page: resolvedView.page, count: resolvedView.pages, onChange: setPage } : null
+            showsLayoutPicker ? { page: resolvedView.page, items: pageTabItems, onChange: setPage } : null
           }
           refreshAll={
             showsLayoutPicker

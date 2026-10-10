@@ -62,6 +62,8 @@ export const KEYMAP_ACTIONS: readonly KeymapAction[] = [
   action("workspace.focus-right", "오른쪽 패인으로", "세션", "Ctrl+Alt+ArrowRight", { ignoreWhileTyping: true }),
   action("workspace.focus-up", "위 패인으로", "세션", "Ctrl+Alt+ArrowUp", { ignoreWhileTyping: true }),
   action("workspace.focus-down", "아래 패인으로", "세션", "Ctrl+Alt+ArrowDown", { ignoreWhileTyping: true }),
+  action("workspace.page-prev", "이전 페이지", "세션", "Ctrl+PageUp", { ignoreWhileTyping: true }),
+  action("workspace.page-next", "다음 페이지", "세션", "Ctrl+PageDown", { ignoreWhileTyping: true }),
   action("edit.copy", "복사", "편집", "Ctrl+Shift+C", { fixed: true }),
   action("edit.paste", "붙여넣기", "편집", "Ctrl+V", { fixed: true }),
   action("edit.select-all", "모두 선택", "편집", "Ctrl+A", { fixed: true }),

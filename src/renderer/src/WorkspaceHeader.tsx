@@ -1,10 +1,8 @@
 import type { AgentView } from "@shared/agent-types";
-import type { TerminalSessionView } from "@shared/api-types";
+import type { SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
 import {
-  ChevronLeft,
-  ChevronRight,
   EyeOff,
   FolderOpen,
   LayoutGrid,
@@ -30,10 +28,15 @@ interface WorkspaceHeaderProps {
   layout: { layoutId: string; paneCount: number; onSelect(layoutId: string): void } | null;
   /**
    * Which page of the arrangement is showing. Panes that do not fit the layout paginate rather than
-   * disappear, so this row is the only way back to them — it rides beside the picker that decides
-   * how many fit in the first place.
+   * disappear, so this row is the way back to them — it rides beside the picker that decides how
+   * many fit in the first place. Each page is a tab naming the panes it holds, with the sidebar's
+   * waiting dot when one of them wants the user, so the page worth turning to says so itself.
    */
-  pages: { page: number; count: number; onChange(page: number): void } | null;
+  pages: {
+    page: number;
+    items: { labels: string[]; attention: SessionAttention | null }[];
+    onChange(page: number): void;
+  } | null;
   /**
    * Redrawing every pane on screen, or null on a surface with no panes to redraw. Refreshing is a
    * property of the window rather than of a session — every pane rebuilds its terminal against the
@@ -161,31 +164,36 @@ export function WorkspaceHeader({
         {layout ? (
           <LayoutPicker layoutId={layout.layoutId} paneCount={layout.paneCount} onSelect={layout.onSelect} />
         ) : null}
-        {pages && pages.count > 1 ? (
-          <div className="workspace-page-nav">
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => pages.onChange(pages.page - 1)}
-              disabled={pages.page <= 0}
-              aria-label="이전 페이지"
-              title="이전 페이지"
-            >
-              <ChevronLeft size={13} />
-            </button>
-            <span className="workspace-page-count" aria-label={`${pages.count}페이지 중 ${pages.page + 1}페이지`}>
-              {pages.page + 1}/{pages.count}
-            </span>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => pages.onChange(pages.page + 1)}
-              disabled={pages.page >= pages.count - 1}
-              aria-label="다음 페이지"
-              title="다음 페이지"
-            >
-              <ChevronRight size={13} />
-            </button>
+        {pages && pages.items.length > 1 ? (
+          <div
+            className="workspace-page-tabs"
+            role="tablist"
+            aria-label={`${pages.items.length}페이지 중 ${pages.page + 1}페이지`}
+          >
+            {pages.items.map((item, index) => {
+              const names = item.labels.join(", ");
+              const current = index === pages.page;
+              return (
+                <button
+                  key={index}
+                  className={`workspace-page-tab${current ? " current" : ""}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={current}
+                  aria-label={`${index + 1}페이지: ${names || "빈 페이지"}`}
+                  title={`${index + 1}페이지 — ${names || "빈 페이지"}`}
+                  onClick={() => pages.onChange(index)}
+                >
+                  <span className="workspace-page-number">{index + 1}</span>
+                  {item.labels.length > 0 ? (
+                    <span className="workspace-page-names">{item.labels.join(" · ")}</span>
+                  ) : null}
+                  {item.attention ? (
+                    <span className={`unread-dot unread-${item.attention}`} aria-hidden="true" />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         ) : null}
         {refreshAll ? (

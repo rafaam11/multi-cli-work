@@ -9,6 +9,7 @@ import {
   normalizeSlots,
   pageCount,
   pageOfSession,
+  pagePaneIds,
   pageSlots,
   placeInSlot,
   placePaneRelative,
@@ -415,6 +416,15 @@ describe("pagination", () => {
     const slots = ["a", null, "c", "d"];
     expect(visibleSessionsOf(slots, 3, 0)).toEqual(["a", "c"]);
     expect(visibleSessionsOf(slots, 3, 1)).toEqual(["d"]);
+  });
+
+  it("lists every page's panes for the page tabs, holes left out", () => {
+    expect(pagePaneIds(["a", null, "c", "d", "e"], 2)).toEqual([["a"], ["c", "d"], ["e"]]);
+    expect(pagePaneIds(["a", "b"], 2)).toEqual([["a", "b"]]);
+  });
+
+  it("still names one empty page when the view holds nothing", () => {
+    expect(pagePaneIds([], 3)).toEqual([[]]);
   });
 });
 
