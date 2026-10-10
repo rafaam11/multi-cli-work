@@ -3483,24 +3483,30 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
  * names before its number, so even a crowded header keeps every page one click away.
  */
 /* The outsized shrink factor makes the tabs give up width before the launchers beside them do —
-   a tab without its names is still a tab, a launcher scrolled out of view is gone. */
+   a tab without its names is still a tab, a launcher scrolled out of view is gone. The floor is
+   every tab at its number alone: without it the strip shrank to nothing on a narrow header and
+   took every page with it. */
 .workspace-page-tabs {
+  --page-tab-min: 36px;
+
   display: flex;
   flex: 0 1000 auto;
-  min-width: 0;
+  min-width: calc(var(--page-tab-count) * var(--page-tab-min) + (var(--page-tab-count) - 1) * 3px);
   align-items: center;
   gap: 3px;
   margin-right: 6px;
 }
 
 .workspace-page-tab {
+  position: relative;
   display: inline-flex;
-  min-width: 30px;
+  min-width: var(--page-tab-min);
   max-width: 180px;
   height: 28px;
   flex: 0 1 auto;
   align-items: center;
   gap: 6px;
+  overflow: hidden;
   padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -3533,6 +3539,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A corner badge rather than an inline dot, so a tab squeezed down to its number still shows it. */
+.workspace-page-tab .unread-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
 }
 
 .grid-pane .terminal-surface {

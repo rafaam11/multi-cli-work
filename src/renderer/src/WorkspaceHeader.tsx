@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { isAutoLayout } from "./grid-layouts";
 import { LayoutPicker } from "./LayoutPicker";
@@ -169,6 +170,7 @@ export function WorkspaceHeader({
             className="workspace-page-tabs"
             role="tablist"
             aria-label={`${pages.items.length}페이지 중 ${pages.page + 1}페이지`}
+            style={{ "--page-tab-count": pages.items.length } as CSSProperties}
           >
             {pages.items.map((item, index) => {
               const names = item.labels.join(", ");
