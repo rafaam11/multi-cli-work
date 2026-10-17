@@ -74,6 +74,10 @@ jk-coding-cli - 멀티 터미널 작업기 제어 CLI (별칭: jk)
       범위 안의 모든 세션(나 제외)에 보냅니다. 범위를 안 주면 지금 세션의 폴더입니다.
   held [--session <id>] [--drop <messageId>]
       보류 중인 메시지를 보거나 취소합니다.
+  post <텍스트...> [--to <sessionId>[,<sessionId>...]] [--stdin] [--project <id>]
+      폴더의 팀 보드에 글을 올립니다. --to로 지목한 세션에는 프롬프트로도 넣습니다.
+  board [--limit N] [--since <messageId>] [--project <id>] [--json]
+      팀 보드의 최근 글을 읽습니다(기본 20개). 다른 세션끼리 주고받은 send도 보입니다.
   read <sessionId> [--lines N] [--json]
       세션 화면의 마지막 출력을 읽습니다.
   wait <sessionId> [--status <status>] [--timeout <초>] [--json]
@@ -141,6 +145,20 @@ switch ($command) {
   "held" {
     if ($flags.ContainsKey("session")) { $requestArgs.sessionId = $flags["session"] }
     if ($flags.ContainsKey("drop")) { $requestArgs.drop = $flags["drop"] }
+    break
+  }
+  "post" {
+    if ($flags.ContainsKey("stdin")) { $requestArgs.text = [Console]::In.ReadToEnd() }
+    else { $requestArgs.text = @($positional) -join " " }
+    if ([string]::IsNullOrWhiteSpace([string]$requestArgs.text)) { Fail "post: 올릴 텍스트가 비어 있습니다." }
+    if ($flags.ContainsKey("to")) { $requestArgs.to = $flags["to"] }
+    if ($flags.ContainsKey("project")) { $requestArgs.projectId = $flags["project"] }
+    break
+  }
+  "board" {
+    if ($flags.ContainsKey("limit")) { $requestArgs.limit = [int]$flags["limit"] }
+    if ($flags.ContainsKey("since")) { $requestArgs.sinceId = $flags["since"] }
+    if ($flags.ContainsKey("project")) { $requestArgs.projectId = $flags["project"] }
     break
   }
   "read" {
@@ -272,6 +290,18 @@ switch ($command) {
     }
     break
   }
+  "post" { Write-Output ("보드에 올림 -> " + $result.id); break }
+  "board" {
+    if (-not $result.messages -or @($result.messages).Count -eq 0) { Write-Output "(보드에 글 없음)"; break }
+    foreach ($message in $result.messages) {
+      $who = if ($message.from -is [string]) { if ($message.from -eq "user") { "나" } else { "앱" } } else { $message.from.name }
+      $targets = @($message.to | ForEach-Object { $_.name })
+      $arrow = if ($targets.Count -gt 0) { " -> " + ($targets -join ", ") } else { "" }
+      Write-Output ("[{0}] {1}{2}  ({3})" -f $message.createdAt, $who, $arrow, $message.id)
+      Write-Output ("  " + (([string]$message.text) -replace "\r?\n", ([Environment]::NewLine + "  ")))
+    }
+    break
+  }
   "read" { if ($null -ne $result.text) { Write-Output $result.text }; break }
   "wait" { Write-Output ($result.sessionId + ": " + $result.status); break }
   "spawn" { Write-Output $result.sessionId; break }
@@ -309,7 +339,7 @@ def fail(message):
 
 def parse(argv):
     if not argv or argv[0] in ("help", "--help", "-h"):
-        print("jk-coding-cli: list|send|broadcast|held|read|wait|spawn|status|progress [options]")
+        print("jk-coding-cli: list|send|broadcast|held|post|board|read|wait|spawn|status|progress [options]")
         raise SystemExit(0)
     command, rest, flags, positional = argv[0], argv[1:], {}, []
     i = 0
@@ -345,6 +375,15 @@ def parse(argv):
     elif command == "held":
         if "session" in flags: args["sessionId"] = flags["session"]
         if "drop" in flags: args["drop"] = flags["drop"]
+    elif command == "post":
+        args["text"] = sys.stdin.read() if flags.get("stdin") else " ".join(positional)
+        if not args["text"].strip(): fail("post: 올릴 텍스트가 비어 있습니다.")
+        if "to" in flags: args["to"] = flags["to"]
+        if "project" in flags: args["projectId"] = flags["project"]
+    elif command == "board":
+        if "limit" in flags: args["limit"] = int(flags["limit"])
+        if "since" in flags: args["sinceId"] = flags["since"]
+        if "project" in flags: args["projectId"] = flags["project"]
     elif command in ("read", "wait"):
         if not positional: fail(command + ": sessionId가 필요합니다.")
         args["sessionId"] = positional[0]
@@ -413,6 +452,14 @@ elif command == "held":
     elif not result.get("messages"): print("(보류 중인 메시지 없음)")
     else:
         for item in result["messages"]: print("%s  -> %s  [%s]  %s" % (item["id"], item["sessionId"], item.get("reason"), " ".join(item["text"].split())[:50]))
+elif command == "post": print("보드에 올림 -> " + result["id"])
+elif command == "board":
+    if not result.get("messages"): print("(보드에 글 없음)")
+    for item in result.get("messages", []):
+        who = item["from"]["name"] if isinstance(item["from"], dict) else ("나" if item["from"] == "user" else "앱")
+        targets = ", ".join(target["name"] for target in item.get("to", []))
+        print("[%s] %s%s  (%s)" % (item["createdAt"], who, " -> " + targets if targets else "", item["id"]))
+        print("  " + item["text"].replace("\n", "\n  "))
 elif command == "read": print(result.get("text", ""))
 elif command == "wait": print(result["sessionId"] + ": " + result["status"])
 elif command == "spawn": print(result["sessionId"])

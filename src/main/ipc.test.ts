@@ -311,6 +311,7 @@ function setup(
     remoteHosts: remoteHostsGateway as never,
     sizes: sizesGateway,
     humanInput,
+    board: { list: vi.fn(async () => []), post: vi.fn(async () => { throw new Error("unused"); }) },
     indicators: { snapshot: () => [] },
     worktreeScripts: { get: vi.fn(async () => null), set: vi.fn(async () => undefined), forget: vi.fn(async () => undefined) },
     usage: { state: () => ({ claude: null, codex: null }), refresh: async () => ({ claude: null, codex: null }) },

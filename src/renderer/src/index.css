@@ -7842,3 +7842,580 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
 }
+
+/*
+ * Team board (right sidebar). Quiet everywhere but the wire: a session-to-session send draws a line
+ * from sender to recipient whose look is the message's delivery state — a pulse travelling a dashed
+ * amber line while it waits, a closed green line once it went in, a broken red one when it could not.
+ */
+.right-sidebar-body > .team-board {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.team-board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.team-board[hidden] {
+  display: none;
+}
+
+.right-sidebar-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  color: var(--bg);
+  background: var(--teal);
+  font: var(--type-caption-semibold);
+  line-height: 16px;
+  text-align: center;
+}
+
+.right-sidebar-rail-tab {
+  position: relative;
+}
+
+.right-sidebar-rail-tab .right-sidebar-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.board-roster {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.board-roster-empty {
+  color: var(--quiet);
+  font: var(--type-secondary);
+}
+
+.board-roster-member {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  max-width: 140px;
+  padding: 3px 9px 3px 3px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font: var(--type-secondary-semibold);
+  cursor: pointer;
+}
+
+.board-roster-member > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-roster-member:hover,
+.board-roster-member:focus-visible {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+/* Avatars: the agent's mark on a disc, ringed in the session's live status colour. */
+.board-avatar {
+  --ring: var(--quiet);
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1.5px var(--ring);
+}
+
+.board-avatar.status-starting { --ring: var(--blue); }
+.board-avatar.status-working { --ring: var(--teal); }
+.board-avatar.status-awaiting-input { --ring: var(--violet); }
+.board-avatar.status-awaiting-approval { --ring: var(--amber); }
+.board-avatar.status-idle { --ring: var(--green); }
+.board-avatar.status-exited,
+.board-avatar.status-error { --ring: var(--line-strong); }
+
+.board-avatar.status-working::after {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--ring);
+  content: "";
+  animation: board-ring var(--session-activity-cycle) var(--ease-out) infinite;
+}
+
+@keyframes board-ring {
+  from { opacity: 0.8; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.45); }
+}
+
+.board-avatar-user {
+  --ring: var(--teal);
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 16%, var(--surface));
+  font: var(--type-caption-semibold);
+}
+
+.board-avatar-system {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.board-feed {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px 12px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.board-empty {
+  margin: auto 0;
+  padding: 0 8px;
+  color: var(--muted);
+  font: var(--type-secondary);
+  text-align: center;
+}
+
+.board-empty p {
+  margin: 0 0 6px;
+}
+
+.board-empty p:first-child {
+  color: var(--text);
+  font: var(--type-ui-semibold);
+}
+
+.board-empty code,
+.board-text code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--wash);
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+}
+
+.board-post {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  column-gap: 9px;
+}
+
+.board-post.continues {
+  margin-top: -8px;
+}
+
+.board-post-meta,
+.board-wire-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.board-post-author {
+  overflow: hidden;
+  color: var(--text);
+  font: var(--type-ui-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-post.author-user .board-post-author {
+  color: var(--teal);
+}
+
+.board-post-meta time,
+.board-wire-meta time,
+.board-event time {
+  flex: 0 0 auto;
+  color: var(--quiet);
+  font: var(--type-caption);
+}
+
+.board-text {
+  min-width: 0;
+  color: var(--text);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.board-text p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+
+.board-text pre {
+  margin: 6px 0 0;
+  padding: 7px 9px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font: 400 11.5px/16px var(--font-family-mono, ui-monospace, monospace);
+}
+
+.board-text pre code {
+  padding: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.board-mentions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-mention {
+  --dot: var(--quiet);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font: var(--type-caption-semibold);
+  cursor: pointer;
+}
+
+.board-mention:hover,
+.board-mention:focus-visible {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.board-mention.delivery-held { --dot: var(--amber); }
+.board-mention.delivery-delivered { --dot: var(--green); }
+.board-mention.delivery-failed,
+.board-mention.delivery-dropped { --dot: var(--red); }
+
+.board-mention-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dot);
+}
+
+.board-mention.delivery-held .board-mention-dot {
+  animation: board-blink var(--session-activity-cycle) var(--ease-in-out) infinite;
+}
+
+@keyframes board-blink {
+  50% { opacity: 0.25; }
+}
+
+/* The wire. */
+.board-wire {
+  --wire: var(--amber);
+  padding: 10px 11px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-accent-soft);
+}
+
+.board-wire.delivery-delivered { --wire: var(--green); }
+.board-wire.delivery-failed,
+.board-wire.delivery-dropped { --wire: var(--red); }
+
+.board-wire-ends {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.board-wire-end {
+  display: inline-grid;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.board-wire-end:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.board-wire-line {
+  position: relative;
+  flex: 1 1 auto;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--wire);
+  transition: background-color var(--motion-duration-slow) var(--ease-standard);
+}
+
+.board-wire.delivery-held .board-wire-line {
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--wire) 70%, transparent) 0 5px,
+    transparent 5px 9px
+  );
+}
+
+/* A break in the middle: the message never reached the other end. */
+.board-wire.delivery-failed .board-wire-line,
+.board-wire.delivery-dropped .board-wire-line {
+  background: linear-gradient(90deg, var(--wire) 0 42%, transparent 42% 58%, var(--wire) 58% 100%);
+}
+
+.board-wire-line > i {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--wire);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wire) 25%, transparent);
+  opacity: 0;
+}
+
+.board-wire.delivery-held .board-wire-line > i {
+  opacity: 1;
+  animation: board-pulse-travel 1.8s var(--ease-in-out) infinite;
+}
+
+/* Delivered: the pulse makes its last trip and rests against the recipient. */
+.board-wire.delivery-delivered .board-wire-line > i {
+  left: calc(100% - 8px);
+  opacity: 1;
+  animation: board-pulse-arrive var(--motion-duration-slow) var(--ease-out);
+}
+
+@keyframes board-pulse-travel {
+  from { left: 0; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  to { left: calc(100% - 8px); opacity: 0; }
+}
+
+@keyframes board-pulse-arrive {
+  from { left: 0; }
+  to { left: calc(100% - 8px); }
+}
+
+.board-wire-names {
+  overflow: hidden;
+  color: var(--text);
+  font: var(--type-secondary-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-wire-names > span {
+  color: var(--quiet);
+}
+
+.board-wire .board-text {
+  margin-top: 3px;
+}
+
+.board-wire-state {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 7px 0 0;
+  color: var(--wire);
+  font: var(--type-caption-semibold);
+}
+
+.board-wire.delivery-held .board-wire-state {
+  color: var(--warning-text);
+}
+
+.board-event {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font: var(--type-caption);
+}
+
+.board-event::before,
+.board-event::after {
+  flex: 1 1 12px;
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.board-event > span {
+  max-width: 75%;
+  text-align: center;
+}
+
+.board-composer {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.board-composer textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  max-height: 160px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  font: var(--type-ui);
+  resize: vertical;
+}
+
+.board-composer textarea::placeholder {
+  color: var(--quiet);
+}
+
+.board-composer textarea:focus {
+  border-color: var(--teal);
+  outline: none;
+}
+
+.board-composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.board-composer-hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--quiet);
+  font: var(--type-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-composer-error {
+  color: var(--danger-text);
+}
+
+.board-send {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--bg);
+  background: var(--teal);
+  font: var(--type-secondary-semibold);
+  cursor: pointer;
+}
+
+.board-send:disabled {
+  color: var(--quiet);
+  background: var(--surface-hover);
+  cursor: default;
+}
+
+.board-send:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.board-mention-picker {
+  position: absolute;
+  right: 10px;
+  bottom: calc(100% - 4px);
+  left: 10px;
+  z-index: 5;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+  list-style: none;
+}
+
+.board-mention-picker button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  background: transparent;
+  font: var(--type-secondary-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-mention-picker button > span:not(.board-avatar) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-mention-picker small {
+  color: var(--quiet);
+  font: var(--type-caption);
+}
+
+.board-mention-picker button.active,
+.board-mention-picker button:hover {
+  background: var(--surface-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-avatar.status-working::after,
+  .board-wire.delivery-held .board-wire-line > i,
+  .board-mention.delivery-held .board-mention-dot {
+    animation: none;
+  }
+}
+
+:root[data-reduce-motion] .board-avatar.status-working::after,
+:root[data-reduce-motion] .board-wire.delivery-held .board-wire-line > i,
+:root[data-reduce-motion] .board-mention.delivery-held .board-mention-dot {
+  animation: none;
+}

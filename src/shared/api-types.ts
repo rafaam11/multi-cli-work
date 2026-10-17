@@ -1,4 +1,5 @@
 import type { AgentView } from "./agent-types";
+import type { BoardMessage, BoardPostInput } from "./board-types";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
   PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
@@ -307,6 +308,13 @@ export interface MultiCliWorkApi {
     /** 지금 다시 읽는다 — 1분에 한 번까지. */
     refresh(): Promise<UsageSnapshot>;
     onChange(listener: (snapshot: UsageSnapshot) => void): () => void;
+  };
+  /** 폴더별 팀 보드 — 세션과 사용자의 공개 게시판, 세션 간 send 기록. */
+  board: {
+    list(projectId: string): Promise<BoardMessage[]>;
+    post(input: BoardPostInput): Promise<BoardMessage>;
+    /** A new message, or one whose deliveries moved on — replace it by id. */
+    onChange(listener: (message: BoardMessage) => void): () => void;
   };
   /** 폴더별 워크트리 준비·정리 스크립트(앱 설정에만 있고 레포는 건드리지 않는다). */
   worktreeScripts: {

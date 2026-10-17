@@ -97,14 +97,14 @@ describe("DeliveryQueue", () => {
     const h = harness();
     const result = await h.queue.enqueue({ to: "target", text: "리뷰해 줘", from: "sender" });
     expect(result).toMatchObject({ state: "delivered", to: "target", text: "리뷰해 줘" });
-    expect(h.write).toHaveBeenCalledWith("target", "[from 빌더 · claude] 리뷰해 줘\r");
+    expect(h.write).toHaveBeenCalledWith("target", "[from 빌더 (claude)] 리뷰해 줘\r");
     expect(h.clearChips).toHaveBeenCalledWith("target", HELD_CHIP_KEY);
   });
 
   it("uses a label or no prefix when asked, and wraps multiline text in one paste", async () => {
     const h = harness();
-    await h.queue.enqueue({ to: "target", text: "a", label: "board · 나" });
-    expect(h.write).toHaveBeenLastCalledWith("target", "[board · 나] a\r");
+    await h.queue.enqueue({ to: "target", text: "a", label: "board: 나" });
+    expect(h.write).toHaveBeenLastCalledWith("target", "[board: 나] a\r");
     h.advance(5000);
     await h.queue.enqueue({ to: "target", text: "첫 줄\n둘째 줄", from: "sender", raw: true });
     expect(h.write).toHaveBeenLastCalledWith("target", "\u001b[200~첫 줄\n둘째 줄\u001b[201~\r");

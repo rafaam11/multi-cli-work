@@ -36,6 +36,8 @@ import {
 } from "./control/control-cli-installer";
 import { handleControlCommand, type ControlCommandContext } from "./control/control-commands";
 import { DeliveryQueue } from "./control/delivery-queue";
+import { BoardService } from "./board/board-service";
+import { BoardStore } from "./board/board-store";
 import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
 import { GitHubService } from "./github/github-service";
@@ -435,9 +437,18 @@ export async function createDesktopRuntime(
     clearChips: (sessionId, key) => indicators.clearChips(sessionId, key),
     idFactory: () => crypto.randomUUID(),
   });
+  const board = new BoardService({
+    store: new BoardStore(path.join(userData, "board")),
+    delivery,
+    sessions: () => coordinator.list(),
+    idFactory: () => crypto.randomUUID(),
+    now: () => new Date().toISOString(),
+    publish: (message) => sendToMainWindow(host.getMainWindow(), "board:changed", message),
+  });
   const controlContext: ControlCommandContext = {
     sessions: () => coordinator.list(),
     delivery,
+    board,
     readReplay: async (sessionId) => (await coordinator.attach(sessionId)).replay,
     create: (input) => coordinator.create(input, { updateSelection: false }),
     onEvent: (listener) => coordinator.onEvent(listener),
@@ -781,6 +792,10 @@ export async function createDesktopRuntime(
     },
     indicators: { snapshot: () => indicators.snapshot() },
     humanInput: { note: (sessionId, data) => humanInput.note(sessionId, data) },
+    board: {
+      list: (projectId) => board.list(projectId),
+      post: (input) => board.post({ ...input, from: null }),
+    },
     usage: { state: () => usageService.snapshot(), refresh: () => usageService.refresh() },
     worktreeScripts: {
       get: (projectId) => readWorktreeScripts(projectId, worktreeScriptsOptions),

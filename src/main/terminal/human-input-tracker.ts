@@ -5,8 +5,9 @@
  * control CLI's own writes never pass through here.
  *
  * It is a heuristic and errs toward "still typing": a draft cleared with the mouse or an editor
- * shortcut stays counted until Enter, Ctrl+C or Ctrl+U — a held message waits a little longer, it is
- * never typed into the middle of someone's sentence.
+ * shortcut stays counted until Enter or Ctrl+C — a held message waits a little longer, it is never
+ * typed into the middle of someone's sentence. Ctrl+U is deliberately not a reset: Claude Code and
+ * Codex clear the line with it, but PowerShell's PSReadLine leaves the draft where it was.
  */
 
 const ESC = 0x1b;
@@ -33,7 +34,7 @@ export class HumanInputTracker {
         index = skipEscapeSequence(data, index);
         continue;
       }
-      if (code === 0x0d || code === 0x03 || code === 0x15) length = 0;
+      if (code === 0x0d || code === 0x03) length = 0;
       else if (code === 0x7f || code === 0x08) length = Math.max(0, length - 1);
       else if (code >= 0x20 || code === 0x0a || code === 0x09) length += 1;
     }

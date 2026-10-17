@@ -33,7 +33,7 @@ export interface DeliveryRequest {
   to: string;
   text: string;
   from?: string | null;
-  /** A prefix to use instead of the sending session's name, e.g. "board · 빌더". */
+  /** A prefix to use instead of the sending session's name, e.g. "board: 빌더". */
   label?: string;
   /** No prefix at all. */
   raw?: boolean;
@@ -268,7 +268,8 @@ export class DeliveryQueue {
     if (request.label) return `[${request.label}] `;
     if (!request.from) return "";
     const sender = this.options.sessions().find((session) => session.id === request.from);
-    return sender ? `[from ${sessionLabel(sender)} · ${sender.kind}] ` : "";
+    // ASCII around the name: a PowerShell target renders a middle dot as a blank.
+    return sender ? `[from ${sessionLabel(sender)} (${sender.kind})] ` : "";
   }
 
   private settle(record: DeliveryRecord, state: Exclude<DeliveryState, "held">, reason: string | null): void {

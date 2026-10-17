@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { HumanInputTracker } from "./human-input-tracker";
 
 describe("HumanInputTracker", () => {
-  it("counts typed characters and backspaces, and resets on Enter, Ctrl+C and Ctrl+U", () => {
+  it("counts typed characters and backspaces, and resets on Enter and Ctrl+C only", () => {
     let now = 1;
     const tracker = new HumanInputTracker(() => now);
     tracker.note("s", "hello");
@@ -16,8 +16,9 @@ describe("HumanInputTracker", () => {
     expect(tracker.draft("s").length).toBe(0);
     tracker.note("s", "ab\u0003");
     expect(tracker.draft("s").length).toBe(0);
+    // PowerShell keeps its line on Ctrl+U, so the draft must keep counting.
     tracker.note("s", "ab\u0015");
-    expect(tracker.draft("s").length).toBe(0);
+    expect(tracker.draft("s").length).toBe(2);
   });
 
   it("ignores cursor keys and counts a bracketed paste's text", () => {

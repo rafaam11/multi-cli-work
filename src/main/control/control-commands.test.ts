@@ -54,6 +54,19 @@ function makeContext(overrides: Partial<ControlCommandContext> = {}) {
   const context: ControlCommandContext = {
     sessions: () => [session({})],
     delivery: makeDelivery(),
+    board: {
+      recordDirect: vi.fn(async () => undefined),
+      post: vi.fn(async (request) => ({
+        id: "post-1",
+        projectId: request.projectId,
+        author: { kind: "user" as const },
+        kind: "post" as const,
+        text: request.text,
+        to: request.mentions.map((sessionId: string) => ({ sessionId, name: sessionId, agent: "claude" })),
+        createdAt: "2026-10-18T00:00:00.000Z",
+      })),
+      list: vi.fn(async () => []),
+    },
     readReplay: vi.fn(async () => "line1\nline2\nline3"),
     create: vi.fn(async () => session({ id: "session-spawned", status: "starting" })),
     onEvent: (listener) => {
@@ -212,6 +225,61 @@ describe("broadcast", () => {
     const { context } = makeContext({ sessions: () => sessions });
     const response = await handleControlCommand({ ...TOKEN, command: "broadcast", args: { text: "x" } }, context);
     expect(response).toMatchObject({ ok: false, error: expect.stringContaining("--all") });
+  });
+});
+
+describe("board", () => {
+  it("records every send on the board, and spawn's first prompt with a note", async () => {
+    const { context } = makeContext();
+    await handleControlCommand({ ...TOKEN, command: "send", args: { sessionId: "session-1", text: "x" } }, context);
+    expect(context.board.recordDirect).toHaveBeenCalledWith(expect.objectContaining({ to: "session-1" }), undefined);
+    await handleControlCommand({ ...TOKEN, command: "spawn", args: { projectId: "project-1", kind: "codex", prompt: "p" } }, context);
+    expect(context.board.recordDirect).toHaveBeenLastCalledWith(expect.objectContaining({ to: "session-spawned" }), "첫 프롬프트");
+  });
+
+  it("never fails a send because the board could not be written", async () => {
+    const { context } = makeContext();
+    vi.mocked(context.board.recordDirect).mockRejectedValueOnce(new Error("disk full"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await handleControlCommand({ ...TOKEN, command: "send", args: { sessionId: "session-1", text: "x" } }, context)).toMatchObject({
+      ok: true,
+    });
+    error.mockRestore();
+  });
+
+  it("posts to the caller's folder with comma-separated mentions", async () => {
+    const { context } = makeContext();
+    const response = await handleControlCommand(
+      { ...TOKEN, callerSessionId: "session-1", command: "post", args: { text: "공지", to: "a, b" } },
+      context,
+    );
+    expect(context.board.post).toHaveBeenCalledWith({ projectId: "project-1", text: "공지", mentions: ["a", "b"], from: "session-1" });
+    expect(response).toMatchObject({ ok: true, result: { id: "post-1", projectId: "project-1", to: ["a", "b"] } });
+  });
+
+  it("reads the board, needing a folder from outside a session", async () => {
+    const { context } = makeContext();
+    vi.mocked(context.board.list).mockResolvedValueOnce([
+      {
+        id: "m1",
+        projectId: "project-1",
+        author: { kind: "session", sessionId: "s", name: "빌더", agent: "claude" },
+        kind: "direct",
+        text: "hi",
+        to: [{ sessionId: "r", name: "리뷰어", agent: "codex", delivery: "held" }],
+        createdAt: "2026-10-18T00:00:00.000Z",
+      },
+    ]);
+    const response = await handleControlCommand(
+      { ...TOKEN, callerSessionId: "session-1", command: "board", args: { limit: 500 } },
+      context,
+    );
+    expect(context.board.list).toHaveBeenCalledWith("project-1", { sinceId: undefined, limit: 200 });
+    expect(response).toMatchObject({
+      ok: true,
+      result: { messages: [{ id: "m1", from: { name: "빌더" }, to: [{ name: "리뷰어", delivery: "held" }], text: "hi" }] },
+    });
+    expect(await handleControlCommand({ ...TOKEN, command: "board" }, context)).toMatchObject({ ok: false, error: expect.stringContaining("--project") });
   });
 });
 

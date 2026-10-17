@@ -38,6 +38,7 @@ import type { WorkProjectRole } from "../shared/work-project-types";
 import type { WorktreeCreateRequest } from "../shared/worktree-types";
 import type { ToolCommand } from "../shared/terminal-types";
 import { AGENT_ID_PATTERN } from "../shared/agent-types";
+import { BOARD_MESSAGE_MAX, type BoardPostInput } from "../shared/board-types";
 import type { WorkProjectMetadataUpdate } from "./projects/work-project-service";
 
 /**
@@ -133,6 +134,17 @@ export function validateCreateInput(value: unknown): CreateTerminalInput {
     rows: integer(input.rows, "Terminal rows"),
     ...(input.background !== undefined ? { background: input.background } : {}),
     ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+  };
+}
+
+export function validateBoardPostInput(value: unknown): BoardPostInput {
+  const input = exactObject(value, ["projectId", "text", "mentions"], "Board post");
+  if (typeof input.text !== "string" || input.text.length > BOARD_MESSAGE_MAX) throw new Error("Board post text is invalid");
+  if (!Array.isArray(input.mentions) || input.mentions.length > 32) throw new Error("Board mentions are invalid");
+  return {
+    projectId: nonEmptyString(input.projectId, "Project id"),
+    text: input.text,
+    mentions: input.mentions.map((mention) => nonEmptyString(mention, "Mentioned session id")),
   };
 }
 

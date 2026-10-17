@@ -10,6 +10,7 @@ import type {
 import type { RemoteHostView } from "../shared/remote-types";
 import type { SessionIndicatorsUpdate, TerminalEvent } from "../shared/terminal-types";
 import type { UsageSnapshot } from "../shared/usage-types";
+import type { BoardMessage } from "../shared/board-types";
 
 const api: MultiCliWorkApi = {
   platform: process.platform,
@@ -258,6 +259,15 @@ const api: MultiCliWorkApi = {
       const handler = (_event: Electron.IpcRendererEvent, snapshot: UsageSnapshot) => listener(snapshot);
       ipcRenderer.on("usage:changed", handler);
       return () => ipcRenderer.removeListener("usage:changed", handler);
+    },
+  },
+  board: {
+    list: (projectId) => ipcRenderer.invoke("board:list", projectId),
+    post: (input) => ipcRenderer.invoke("board:post", input),
+    onChange(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, message: BoardMessage) => listener(message);
+      ipcRenderer.on("board:changed", handler);
+      return () => ipcRenderer.removeListener("board:changed", handler);
     },
   },
   worktreeScripts: {

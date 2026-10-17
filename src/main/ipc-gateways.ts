@@ -20,6 +20,7 @@ import type {
   WindowChromeState,
   WindowZoomAction,
 } from "../shared/api-types";
+import type { BoardMessage, BoardPostInput } from "../shared/board-types";
 import type { SessionIndicatorsUpdate } from "../shared/terminal-types";
 import type { UsageSnapshot } from "../shared/usage-types";
 import { type AppSettings, type AppSettingsPatch } from "../shared/settings-types";
@@ -152,6 +153,12 @@ export interface TerminalSizeGateway {
   /** 원격 기기가 크기를 가졌다면 데스크톱의 마지막 크기로 되찾는다. */
   desktopInput(sessionId: string): Promise<void>;
   deviceOwners(): Promise<TerminalSizeOwner[]>;
+}
+
+/** The folder's team board, as the user sees and posts to it. */
+export interface BoardGateway {
+  list(projectId: string): Promise<BoardMessage[]>;
+  post(input: BoardPostInput): Promise<BoardMessage>;
 }
 
 /** Keystrokes from the desktop — what the delivery queue reads to stay out of a person's way. */
@@ -324,6 +331,7 @@ export interface MainIpcDependencies {
   remoteHosts: RemoteHostsGateway;
   sizes: TerminalSizeGateway;
   humanInput: HumanInputGateway;
+  board: BoardGateway;
   indicators: SessionIndicatorsGateway;
   worktreeScripts: WorktreeScriptsGateway;
   usage: UsageGateway;

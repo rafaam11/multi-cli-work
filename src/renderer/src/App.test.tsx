@@ -443,6 +443,11 @@ function createApi(options?: {
       refresh: vi.fn().mockResolvedValue({ claude: null, codex: null }),
       onChange: vi.fn(() => () => undefined),
     },
+    board: {
+      list: vi.fn().mockResolvedValue([]),
+      post: vi.fn(),
+      onChange: vi.fn(() => () => undefined),
+    },
     worktreeScripts: {
       get: vi.fn().mockResolvedValue(null),
       set: vi.fn().mockResolvedValue(undefined),

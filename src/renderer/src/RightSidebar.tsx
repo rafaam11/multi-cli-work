@@ -1,12 +1,15 @@
 import type { GitChangeEntry } from "@shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
 import type { PullRequestListItem } from "@shared/github-types";
-import { Files, GitBranch, PanelRightClose, PanelRightOpen } from "lucide-react";
-import type { ReactElement } from "react";
+import type { AgentView } from "@shared/agent-types";
+import type { TerminalSessionView } from "@shared/api-types";
+import { Files, GitBranch, MessagesSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { useState, type ReactElement } from "react";
 import { FileExplorer } from "./FileExplorer";
 import { GitPanel, type GitWorktreeOption } from "./GitPanel";
+import { TeamBoard } from "./TeamBoard";
 
-export type RightSidebarTab = "files" | "git";
+export type RightSidebarTab = "files" | "git" | "board";
 
 export interface RightSidebarProps {
   collapsed: boolean;
@@ -31,9 +34,15 @@ export interface RightSidebarProps {
   projectId: string | null;
   selectedPullRequest?: { projectId: string; remoteName: string; prNumber: number } | null;
   onOpenPullRequest(remoteName: string, item: PullRequestListItem): void;
+  /** The folder whose team board the board tab shows — the selected folder, not a worktree. */
+  boardProjectId: string | null;
+  boardProjectLabel: string | null;
+  sessions: TerminalSessionView[];
+  agents: AgentView[];
+  onFocusSession(session: TerminalSessionView): void;
 }
 
-const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git" };
+const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git", board: "팀 보드" };
 
 export function RightSidebar({
   collapsed,
@@ -57,7 +66,20 @@ export function RightSidebar({
   projectId,
   selectedPullRequest,
   onOpenPullRequest,
+  boardProjectId,
+  boardProjectLabel,
+  sessions,
+  agents,
+  onFocusSession,
 }: RightSidebarProps) {
+  const [boardUnread, setBoardUnread] = useState(0);
+  const badge = (tab: RightSidebarTab) =>
+    tab === "board" && boardUnread > 0 ? (
+      <span className="right-sidebar-badge" aria-label={`새 글 ${boardUnread}개`}>
+        {boardUnread > 99 ? "99+" : boardUnread}
+      </span>
+    ) : null;
+
   const railTab = (tab: RightSidebarTab, icon: ReactElement) => (
     <button
       type="button"
@@ -70,6 +92,7 @@ export function RightSidebar({
       title={TAB_TITLES[tab]}
     >
       {icon}
+      {badge(tab)}
     </button>
   );
 
@@ -84,6 +107,7 @@ export function RightSidebar({
     >
       {icon}
       <span>{label}</span>
+      {badge(tab)}
     </button>
   );
 
@@ -94,6 +118,7 @@ export function RightSidebar({
           <div className="right-sidebar-tabs" role="tablist" aria-label="우측 사이드바 탭">
             {headerTab("files", <Files size={14} />, "파일")}
             {headerTab("git", <GitBranch size={14} />, "Git")}
+            {headerTab("board", <MessagesSquare size={14} />, "보드")}
           </div>
         )}
         <button
@@ -112,6 +137,7 @@ export function RightSidebar({
           <div className="right-sidebar-rail">
             {railTab("files", <Files size={16} />)}
             {railTab("git", <GitBranch size={16} />)}
+            {railTab("board", <MessagesSquare size={16} />)}
           </div>
         ) : null}
         {/* Both panels stay mounted while hidden so the file tree's expansion state and the git
@@ -140,6 +166,15 @@ export function RightSidebar({
           projectId={projectId}
           selectedPullRequest={selectedPullRequest}
           onOpenPullRequest={onOpenPullRequest}
+        />
+        <TeamBoard
+          hidden={collapsed || activeTab !== "board"}
+          projectId={boardProjectId}
+          projectLabel={boardProjectLabel}
+          sessions={sessions}
+          agents={agents}
+          onFocusSession={onFocusSession}
+          onUnreadChange={setBoardUnread}
         />
       </div>
     </aside>

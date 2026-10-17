@@ -7,6 +7,7 @@ import type {
   TerminalEvent,
   TerminalStatus,
 } from "../../shared/terminal-types";
+import type { BoardService } from "../board/board-service";
 import type { DeliveryQueue, DeliveryRecord } from "./delivery-queue";
 
 /**
@@ -47,6 +48,8 @@ export interface ControlCommandContext {
   sessions(): TerminalSessionView[];
   /** Where every `send` goes: it waits for the target to be free before typing anything. */
   delivery: Pick<DeliveryQueue, "enqueue" | "held" | "drop" | "waitFor">;
+  /** The folder's team board — every send is written there as well. */
+  board: Pick<BoardService, "recordDirect" | "post" | "list">;
   /** The session's current scrollback — the coordinator's side-effect-free attach replay. */
   readReplay(sessionId: string): Promise<string>;
   /** Must not steal the user's selection: the runtime passes updateSelection false through. */
@@ -117,6 +120,19 @@ function deliveryResult(record: DeliveryRecord) {
   return { sessionId: record.to, id: record.id, outcome: record.state, reason: record.reason };
 }
 
+/** The board is a record of the send, not part of it: a failed board write never fails the send. */
+async function onBoard(context: ControlCommandContext, record: DeliveryRecord, note?: string): Promise<void> {
+  await context.board.recordDirect(record, note).catch((error) => console.error("Failed to put a send on the board", error));
+}
+
+/** The folder a board command means: the one named, or the caller's own. */
+function boardProject(args: Record<string, unknown>, callerSessionId: string | null, context: ControlCommandContext): string {
+  if (args.projectId !== undefined) return requireString(args.projectId, "projectId");
+  const caller = callerSessionId === null ? undefined : context.sessions().find((session) => session.id === callerSessionId);
+  if (!caller?.projectId) throw new ControlCommandError("앱 세션 밖에서는 --project <id>로 보드를 지정하세요.");
+  return caller.projectId;
+}
+
 async function send(args: Record<string, unknown>, callerSessionId: string | null, context: ControlCommandContext) {
   const sessionId = requireString(args.sessionId, "sessionId");
   const text = requireString(args.text, "text");
@@ -141,6 +157,7 @@ async function send(args: Record<string, unknown>, callerSessionId: string | nul
     raw: optionalFlag(args.raw, "raw"),
     urgent: optionalFlag(args.now, "now"),
   });
+  await onBoard(context, record);
   if (record.state === "held" && waitSeconds > 0) record = await context.delivery.waitFor(record.id, waitSeconds * 1000);
   return deliveryResult(record);
 }
@@ -170,9 +187,50 @@ async function broadcast(args: Record<string, unknown>, callerSessionId: string 
   const urgent = optionalFlag(args.now, "now");
   const messages = [];
   for (const target of targets) {
-    messages.push(deliveryResult(await context.delivery.enqueue({ to: target.id, text, from: callerSessionId, raw, urgent })));
+    const record = await context.delivery.enqueue({ to: target.id, text, from: callerSessionId, raw, urgent });
+    await onBoard(context, record);
+    messages.push(deliveryResult(record));
   }
   return { messages };
+}
+
+const DEFAULT_BOARD_LIMIT = 20;
+const MAX_BOARD_LIMIT = 200;
+
+async function post(args: Record<string, unknown>, callerSessionId: string | null, context: ControlCommandContext) {
+  const projectId = boardProject(args, callerSessionId, context);
+  const text = requireString(args.text, "text");
+  const to = args.to === undefined ? [] : Array.isArray(args.to) ? args.to : [args.to];
+  const mentions = to.flatMap((entry) => requireString(entry, "to").split(",")).map((id) => id.trim()).filter(Boolean);
+  const message = await context.board.post({ projectId, text, mentions, from: callerSessionId });
+  return { id: message.id, projectId, to: message.to.map((recipient) => recipient.sessionId) };
+}
+
+async function board(args: Record<string, unknown>, callerSessionId: string | null, context: ControlCommandContext) {
+  const projectId = boardProject(args, callerSessionId, context);
+  let limit = DEFAULT_BOARD_LIMIT;
+  if (args.limit !== undefined) {
+    if (typeof args.limit !== "number" || !Number.isInteger(args.limit) || args.limit < 1) {
+      throw new ControlCommandError("limit는 1 이상의 정수여야 합니다.");
+    }
+    limit = Math.min(args.limit, MAX_BOARD_LIMIT);
+  }
+  const sinceId = args.sinceId === undefined ? undefined : requireString(args.sinceId, "since");
+  const messages = await context.board.list(projectId, { sinceId, limit });
+  return {
+    projectId,
+    messages: messages.map((message) => ({
+      id: message.id,
+      kind: message.kind,
+      from:
+        message.author.kind === "session"
+          ? { sessionId: message.author.sessionId, name: message.author.name, agent: message.author.agent }
+          : message.author.kind,
+      to: message.to.map((recipient) => ({ sessionId: recipient.sessionId, name: recipient.name, delivery: recipient.delivery ?? null })),
+      text: message.text,
+      createdAt: message.createdAt,
+    })),
+  };
 }
 
 function held(args: Record<string, unknown>, context: ControlCommandContext) {
@@ -270,6 +328,7 @@ async function spawn(args: Record<string, unknown>, callerSessionId: string | nu
   // queue holds it until the CLI has finished drawing its first screen.
   const delivery =
     prompt === null ? null : await context.delivery.enqueue({ to: session.id, text: prompt, from: callerSessionId, raw: true });
+  if (delivery) await onBoard(context, delivery, "첫 프롬프트");
   return {
     sessionId: session.id,
     projectId: session.projectId,
@@ -361,6 +420,10 @@ export async function handleControlCommand(
         return { ok: true, result: await broadcast(args, caller, context) };
       case "held":
         return { ok: true, result: held(args, context) };
+      case "post":
+        return { ok: true, result: await post(args, caller, context) };
+      case "board":
+        return { ok: true, result: await board(args, caller, context) };
       case "read":
         return { ok: true, result: await read(args, context) };
       case "wait":

@@ -2500,6 +2500,11 @@ export function App() {
         projectId={fileExplorerOwnerProject?.id ?? null}
         selectedPullRequest={focusedPullRequest ? { projectId: focusedPullRequest.projectId, remoteName: focusedPullRequest.remoteName, prNumber: focusedPullRequest.number } : null}
         onOpenPullRequest={openPullRequest}
+        boardProjectId={fileExplorerOwnerProject?.id ?? null}
+        boardProjectLabel={fileExplorerOwnerProject?.displayName ?? null}
+        sessions={sessions}
+        agents={agents}
+        onFocusSession={selectSession}
       />
 
       {newSessionSlot ? (
