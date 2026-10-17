@@ -677,6 +677,7 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     const id = nonEmptyString(sessionId, "Session id");
     // 폰이 이 세션의 크기를 가져갔다면 데스크톱이 입력하는 순간 되찾는다. 되찾기가 실패해도 입력은 보낸다.
     await dependencies.sizes.desktopInput(id).catch((error) => console.error("Failed to reclaim terminal size", error));
+    dependencies.humanInput.note(id, data);
     return dependencies.coordinator.write(id, data);
   });
   ipc.handle("terminals:resize", (_event, sessionId: unknown, cols: unknown, rows: unknown) =>

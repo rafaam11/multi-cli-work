@@ -154,6 +154,11 @@ export interface TerminalSizeGateway {
   deviceOwners(): Promise<TerminalSizeOwner[]>;
 }
 
+/** Keystrokes from the desktop — what the delivery queue reads to stay out of a person's way. */
+export interface HumanInputGateway {
+  note(sessionId: string, data: string): void;
+}
+
 export interface UpdaterGateway {
   status(): UpdaterStatus;
   check(): Promise<void>;
@@ -318,6 +323,7 @@ export interface MainIpcDependencies {
   remote: RemoteGateway;
   remoteHosts: RemoteHostsGateway;
   sizes: TerminalSizeGateway;
+  humanInput: HumanInputGateway;
   indicators: SessionIndicatorsGateway;
   worktreeScripts: WorktreeScriptsGateway;
   usage: UsageGateway;

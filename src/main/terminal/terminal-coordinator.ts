@@ -267,6 +267,7 @@ export class TerminalCoordinator {
       rows: input.rows,
       createdAt: this.options.now(),
       resumeConversationId: null,
+      ...(input.name ? { name: input.name } : {}),
       updateSelection: options.updateSelection,
     });
   }

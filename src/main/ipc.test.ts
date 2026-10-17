@@ -258,6 +258,7 @@ function setup(
     open: vi.fn(async (_hostId: string) => undefined),
     setNotify: vi.fn(async (_hostId: string, _notify: boolean) => undefined),
   };
+  const humanInput = { note: vi.fn() };
   const sizesGateway = {
     desktopResize: vi.fn(async (_id: string, _cols: number, _rows: number) => undefined),
     desktopInput: vi.fn(async (_id: string) => undefined),
@@ -309,6 +310,7 @@ function setup(
     remote: remoteGateway,
     remoteHosts: remoteHostsGateway as never,
     sizes: sizesGateway,
+    humanInput,
     indicators: { snapshot: () => [] },
     worktreeScripts: { get: vi.fn(async () => null), set: vi.fn(async () => undefined), forget: vi.fn(async () => undefined) },
     usage: { state: () => ({ claude: null, codex: null }), refresh: async () => ({ claude: null, codex: null }) },
@@ -318,6 +320,7 @@ function setup(
     remoteGateway,
     remoteHostsGateway,
     sizesGateway,
+    humanInput,
     projectService,
     settingsGateway,
     pcRootsInfo,
@@ -853,11 +856,12 @@ describe("main IPC boundary", () => {
   });
 
   it("routes desktop resize and input through the size arbiter", async () => {
-    const { handlers, sizesGateway } = setup();
+    const { handlers, sizesGateway, humanInput } = setup();
     await handlers.get("terminals:resize")!({}, "s1", 120, 40);
     expect(sizesGateway.desktopResize).toHaveBeenCalledWith("s1", 120, 40);
     await handlers.get("terminals:write")!({}, "s1", "x");
     expect(sizesGateway.desktopInput).toHaveBeenCalledWith("s1");
+    expect(humanInput.note).toHaveBeenCalledWith("s1", "x");
   });
 
   it("tells the desktop which sessions a device sizes and takes one back on request", async () => {

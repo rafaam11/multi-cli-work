@@ -65,15 +65,23 @@ jk-coding-cli - 멀티 터미널 작업기 제어 CLI (별칭: jk)
 명령:
   list [--project <id>] [--json]
       세션 목록을 보여줍니다.
-  send <sessionId> <텍스트...> | send <sessionId> --stdin
+  send <sessionId> <텍스트...> | send <sessionId> --stdin [--now] [--raw] [--wait <초>]
       다른 세션의 프롬프트에 텍스트를 보냅니다. 여러 줄은 --stdin으로 파이프하세요.
+      대상이 작업 중·승인 대기·사람이 입력 중이면 보류했다가 한가해지면 넣습니다.
+      --now 작업 중이어도 바로(입력 중·승인 대기는 여전히 보류)  --raw 보낸 세션 표기 없이
+      --wait 전달될 때까지 기다릴 최대 초
+  broadcast <텍스트...> [--project <id> | --all] [--agent <kind>] [--stdin] [--now] [--raw]
+      범위 안의 모든 세션(나 제외)에 보냅니다. 범위를 안 주면 지금 세션의 폴더입니다.
+  held [--session <id>] [--drop <messageId>]
+      보류 중인 메시지를 보거나 취소합니다.
   read <sessionId> [--lines N] [--json]
       세션 화면의 마지막 출력을 읽습니다.
   wait <sessionId> [--status <status>] [--timeout <초>] [--json]
       세션이 지정 상태가 될 때까지 기다립니다. 기본 상태: awaiting-input.
       상태: starting working awaiting-input awaiting-approval idle exited error
-  spawn --project <id> [--worktree <id>] --agent <kind> [--json]
+  spawn --project <id> [--worktree <id>] --agent <kind> [--name <이름>] [--prompt <첫 프롬프트>] [--json]
       새 세션을 시작합니다. kind 예: powershell, claude, codex
+      --prompt는 CLI가 준비되면 자동으로 들어갑니다.
   status set <key> <텍스트...> [--color green|amber|red|blue|gray] [--session <id>]
   status clear [key] [--session <id>]
       패인 머리줄에 상태 칩을 붙이거나 뗍니다. 기본 대상은 지금 세션입니다.
@@ -92,7 +100,7 @@ for ($i = 0; $i -lt $rest.Count; $i++) {
   $arg = [string]$rest[$i]
   if ($arg -like "--*") {
     $name = $arg.Substring(2)
-    if ($name -in @("json", "stdin")) { $flags[$name] = $true }
+    if ($name -in @("json", "stdin", "now", "raw", "all")) { $flags[$name] = $true }
     else {
       if ($i + 1 -ge $rest.Count) { Fail "옵션 $arg 에 값이 없습니다." }
       $i++
@@ -114,6 +122,25 @@ switch ($command) {
     elseif ($positional.Count -ge 2) { $requestArgs.text = (@($positional) | Select-Object -Skip 1) -join " " }
     else { Fail "send: 보낼 텍스트가 없습니다. 텍스트를 인자로 주거나 --stdin으로 파이프하세요." }
     if ([string]::IsNullOrWhiteSpace([string]$requestArgs.text)) { Fail "send: 보낼 텍스트가 비어 있습니다." }
+    if ($flags.ContainsKey("now")) { $requestArgs.now = $true }
+    if ($flags.ContainsKey("raw")) { $requestArgs.raw = $true }
+    if ($flags.ContainsKey("wait")) { $requestArgs.waitSeconds = [int]$flags["wait"] }
+    break
+  }
+  "broadcast" {
+    if ($flags.ContainsKey("stdin")) { $requestArgs.text = [Console]::In.ReadToEnd() }
+    else { $requestArgs.text = @($positional) -join " " }
+    if ([string]::IsNullOrWhiteSpace([string]$requestArgs.text)) { Fail "broadcast: 보낼 텍스트가 비어 있습니다." }
+    if ($flags.ContainsKey("project")) { $requestArgs.projectId = $flags["project"] }
+    if ($flags.ContainsKey("all")) { $requestArgs.all = $true }
+    if ($flags.ContainsKey("agent")) { $requestArgs.kind = $flags["agent"] }
+    if ($flags.ContainsKey("now")) { $requestArgs.now = $true }
+    if ($flags.ContainsKey("raw")) { $requestArgs.raw = $true }
+    break
+  }
+  "held" {
+    if ($flags.ContainsKey("session")) { $requestArgs.sessionId = $flags["session"] }
+    if ($flags.ContainsKey("drop")) { $requestArgs.drop = $flags["drop"] }
     break
   }
   "read" {
@@ -161,6 +188,8 @@ switch ($command) {
     $requestArgs.projectId = $flags["project"]
     $requestArgs.kind = $flags["agent"]
     if ($flags.ContainsKey("worktree")) { $requestArgs.worktreeId = $flags["worktree"] }
+    if ($flags.ContainsKey("name")) { $requestArgs.name = $flags["name"] }
+    if ($flags.ContainsKey("prompt")) { $requestArgs.prompt = $flags["prompt"] }
     break
   }
   default { Fail ("알 수 없는 명령: " + $command + [Environment]::NewLine + $HELP) }
@@ -194,6 +223,24 @@ try { $response = $line | ConvertFrom-Json } catch { Fail "jk-coding-cli: 응답
 if (-not $response.ok) { Fail "jk-coding-cli: $($response.error)" }
 $result = $response.result
 
+function Format-Delivery($delivery) {
+  switch ([string]$delivery.outcome) {
+    "delivered" { return "전송됨 -> " + $delivery.sessionId }
+    "held" {
+      $why = switch ([string]$delivery.reason) {
+        "working" { "작업 중" }
+        "awaiting-approval" { "승인 대기" }
+        "typing" { "사람이 입력 중" }
+        "starting" { "시작 중" }
+        "settling" { "화면 정리 중" }
+        default { "대기" }
+      }
+      return "보류됨(" + $why + ") -> " + $delivery.sessionId + "  id=" + $delivery.id + "  (한가해지면 자동 전달)"
+    }
+    default { return "실패 -> " + $delivery.sessionId + ": " + $delivery.reason }
+  }
+}
+
 if ($flags.ContainsKey("json")) {
   Write-Output ($result | ConvertTo-Json -Depth 8)
   exit 0
@@ -209,7 +256,22 @@ switch ($command) {
     }
     break
   }
-  "send" { Write-Output ("전송됨 -> " + $result.sessionId); break }
+  "send" { Write-Output (Format-Delivery $result); break }
+  "broadcast" {
+    if (-not $result.messages -or @($result.messages).Count -eq 0) { Write-Output "(보낼 세션 없음)"; break }
+    foreach ($message in $result.messages) { Write-Output (Format-Delivery $message) }
+    break
+  }
+  "held" {
+    if ($result.dropped) { Write-Output ("취소됨 -> " + $result.dropped.id); break }
+    if (-not $result.messages -or @($result.messages).Count -eq 0) { Write-Output "(보류 중인 메시지 없음)"; break }
+    foreach ($message in $result.messages) {
+      $preview = ([string]$message.text) -replace "\s+", " "
+      if ($preview.Length -gt 50) { $preview = $preview.Substring(0, 49) + "…" }
+      Write-Output ("{0}  -> {1}  [{2}]  {3}" -f $message.id, $message.sessionId, $message.reason, $preview)
+    }
+    break
+  }
   "read" { if ($null -ne $result.text) { Write-Output $result.text }; break }
   "wait" { Write-Output ($result.sessionId + ": " + $result.status); break }
   "spawn" { Write-Output $result.sessionId; break }
@@ -247,7 +309,7 @@ def fail(message):
 
 def parse(argv):
     if not argv or argv[0] in ("help", "--help", "-h"):
-        print("jk-coding-cli: list|send|read|wait|spawn|status|progress [options]")
+        print("jk-coding-cli: list|send|broadcast|held|read|wait|spawn|status|progress [options]")
         raise SystemExit(0)
     command, rest, flags, positional = argv[0], argv[1:], {}, []
     i = 0
@@ -255,7 +317,7 @@ def parse(argv):
         value = rest[i]
         if value.startswith("--"):
             name = value[2:]
-            if name in ("json", "stdin"): flags[name] = True
+            if name in ("json", "stdin", "now", "raw", "all"): flags[name] = True
             else:
                 i += 1
                 if i >= len(rest): fail("옵션 %s 에 값이 없습니다." % value)
@@ -270,6 +332,19 @@ def parse(argv):
         args["sessionId"] = positional[0]
         args["text"] = sys.stdin.read() if flags.get("stdin") else " ".join(positional[1:])
         if not args["text"].strip(): fail("send: 보낼 텍스트가 비어 있습니다.")
+        if flags.get("now"): args["now"] = True
+        if flags.get("raw"): args["raw"] = True
+        if "wait" in flags: args["waitSeconds"] = int(flags["wait"])
+    elif command == "broadcast":
+        args["text"] = sys.stdin.read() if flags.get("stdin") else " ".join(positional)
+        if not args["text"].strip(): fail("broadcast: 보낼 텍스트가 비어 있습니다.")
+        if "project" in flags: args["projectId"] = flags["project"]
+        if "agent" in flags: args["kind"] = flags["agent"]
+        for name in ("all", "now", "raw"):
+            if flags.get(name): args[name] = True
+    elif command == "held":
+        if "session" in flags: args["sessionId"] = flags["session"]
+        if "drop" in flags: args["drop"] = flags["drop"]
     elif command in ("read", "wait"):
         if not positional: fail(command + ": sessionId가 필요합니다.")
         args["sessionId"] = positional[0]
@@ -298,6 +373,8 @@ def parse(argv):
         if "project" not in flags or "agent" not in flags: fail("spawn: --project와 --agent가 필요합니다.")
         args.update(projectId=flags["project"], kind=flags["agent"])
         if "worktree" in flags: args["worktreeId"] = flags["worktree"]
+        if "name" in flags: args["name"] = flags["name"]
+        if "prompt" in flags: args["prompt"] = flags["prompt"]
     else: fail("알 수 없는 명령: " + command)
     return command, flags, args
 
@@ -316,13 +393,26 @@ try:
 except Exception as error: fail("jk-coding-cli: 앱에 연결할 수 없습니다: " + str(error))
 if not response.get("ok"): fail("jk-coding-cli: " + str(response.get("error", "unknown error")))
 result = response.get("result") or {}
+HOLD_REASONS = {"working": "작업 중", "awaiting-approval": "승인 대기", "typing": "사람이 입력 중", "starting": "시작 중", "settling": "화면 정리 중"}
+def delivery(item):
+    if item["outcome"] == "delivered": return "전송됨 -> " + item["sessionId"]
+    if item["outcome"] == "held": return "보류됨(%s) -> %s  id=%s  (한가해지면 자동 전달)" % (HOLD_REASONS.get(item.get("reason"), "대기"), item["sessionId"], item["id"])
+    return "실패 -> %s: %s" % (item["sessionId"], item.get("reason"))
 if flags.get("json"): print(json.dumps(result, ensure_ascii=False)); raise SystemExit(0)
 if command == "list":
     sessions = result.get("sessions", [])
     if not sessions: print("(세션 없음)")
     for item in sessions:
         print("%s  %-10s  %-17s  %s  %s" % (item["id"], item["kind"], item["status"], item.get("projectName") or "-", item.get("name") or item.get("title") or "-"))
-elif command == "send": print("전송됨 -> " + result["sessionId"])
+elif command == "send": print(delivery(result))
+elif command == "broadcast":
+    if not result.get("messages"): print("(보낼 세션 없음)")
+    for item in result.get("messages", []): print(delivery(item))
+elif command == "held":
+    if result.get("dropped"): print("취소됨 -> " + result["dropped"]["id"])
+    elif not result.get("messages"): print("(보류 중인 메시지 없음)")
+    else:
+        for item in result["messages"]: print("%s  -> %s  [%s]  %s" % (item["id"], item["sessionId"], item.get("reason"), " ".join(item["text"].split())[:50]))
 elif command == "read": print(result.get("text", ""))
 elif command == "wait": print(result["sessionId"] + ": " + result["status"])
 elif command == "spawn": print(result["sessionId"])

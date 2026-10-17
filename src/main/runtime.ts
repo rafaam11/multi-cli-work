@@ -35,6 +35,7 @@ import {
   ensureControlCli,
 } from "./control/control-cli-installer";
 import { handleControlCommand, type ControlCommandContext } from "./control/control-commands";
+import { DeliveryQueue } from "./control/delivery-queue";
 import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
 import { GitHubService } from "./github/github-service";
@@ -139,6 +140,7 @@ import { HostStatusLinks } from "./remote-client/host-status-links";
 import { createStatusSocket } from "./remote-client/status-socket";
 import { trayIconDataUrl } from "./tray-icon";
 import { SessionIndicatorTracker } from "./terminal/session-indicators";
+import { HumanInputTracker } from "./terminal/human-input-tracker";
 import { WorktreeScriptRunner } from "./projects/worktree-script-runner";
 import { claudeUsageAllowed, fetchClaudeUsage, parseClaudeUsage, readClaudeCredentials } from "./usage/claude-usage";
 import { readCodexUsage } from "./usage/codex-usage";
@@ -417,9 +419,25 @@ export async function createDesktopRuntime(
         conversationId,
       )) !== null,
   });
-  const controlContext: ControlCommandContext = {
+  // Only the desktop's and the phone's writes are a person typing; the delivery queue keeps out of
+  // their way.
+  const humanInput = new HumanInputTracker();
+  coordinator.onEvent((event) => {
+    if (event.type === "removed") humanInput.forget(event.sessionId);
+  });
+  const delivery = new DeliveryQueue({
     sessions: () => coordinator.list(),
     write: (sessionId, data) => coordinator.write(sessionId, data),
+    onEvent: (listener) => coordinator.onEvent(listener),
+    draft: (sessionId) => humanInput.draft(sessionId),
+    onDraftChange: (listener) => humanInput.onChange(listener),
+    setChip: (sessionId, chip) => indicators.setChip(sessionId, chip),
+    clearChips: (sessionId, key) => indicators.clearChips(sessionId, key),
+    idFactory: () => crypto.randomUUID(),
+  });
+  const controlContext: ControlCommandContext = {
+    sessions: () => coordinator.list(),
+    delivery,
     readReplay: async (sessionId) => (await coordinator.attach(sessionId)).replay,
     create: (input) => coordinator.create(input, { updateSelection: false }),
     onEvent: (listener) => coordinator.onEvent(listener),
@@ -567,7 +585,10 @@ export async function createDesktopRuntime(
     gateway: {
       list: () => coordinator.list(),
       attach: (sessionId) => coordinator.attachForRenderer(sessionId),
-      write: (sessionId, data) => coordinator.write(sessionId, data),
+      write: (sessionId, data) => {
+        humanInput.note(sessionId, data);
+        return coordinator.write(sessionId, data);
+      },
       onEvent: (listener) => coordinator.onEvent(listener),
       projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
       worktreeBranch: async (worktreeId) => (await worktrees.get(worktreeId))?.branch ?? null,
@@ -759,6 +780,7 @@ export async function createDesktopRuntime(
       setNotify: (hostId, notify) => remoteHosts.setNotify(hostId, notify),
     },
     indicators: { snapshot: () => indicators.snapshot() },
+    humanInput: { note: (sessionId, data) => humanInput.note(sessionId, data) },
     usage: { state: () => usageService.snapshot(), refresh: () => usageService.refresh() },
     worktreeScripts: {
       get: (projectId) => readWorktreeScripts(projectId, worktreeScriptsOptions),

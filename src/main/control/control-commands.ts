@@ -1,5 +1,4 @@
 import type { CreateTerminalInput, TerminalSessionView } from "../../shared/api-types";
-import { promptAsTerminalInput } from "../../shared/fan-out";
 import type {
   SessionIndicators,
   SessionProgress,
@@ -8,9 +7,10 @@ import type {
   TerminalEvent,
   TerminalStatus,
 } from "../../shared/terminal-types";
+import type { DeliveryQueue, DeliveryRecord } from "./delivery-queue";
 
 /**
- * The five jk-coding-cli commands, expressed against a narrow gateway so they can be tested without
+ * The jk-coding-cli commands, expressed against a narrow gateway so they can be tested without
  * a coordinator. Token verification lives in the pipe server; everything here assumes the caller
  * already proved it runs inside an app-spawned session.
  */
@@ -29,6 +29,7 @@ const DEFAULT_WAIT_SECONDS = 120;
 const MAX_WAIT_SECONDS = 1800;
 const DEFAULT_READ_LINES = 100;
 const MAX_READ_LINES = 2000;
+const MAX_SESSION_NAME = 60;
 /** Same default the renderer starts sessions at; the pane resizes it on first view. */
 const SPAWN_COLS = 80;
 const SPAWN_ROWS = 24;
@@ -44,7 +45,8 @@ export type ControlResponse = { ok: true; result: unknown } | { ok: false; error
 
 export interface ControlCommandContext {
   sessions(): TerminalSessionView[];
-  write(sessionId: string, data: string): Promise<void>;
+  /** Where every `send` goes: it waits for the target to be free before typing anything. */
+  delivery: Pick<DeliveryQueue, "enqueue" | "held" | "drop" | "waitFor">;
   /** The session's current scrollback — the coordinator's side-effect-free attach replay. */
   readReplay(sessionId: string): Promise<string>;
   /** Must not steal the user's selection: the runtime passes updateSelection false through. */
@@ -105,6 +107,16 @@ async function list(args: Record<string, unknown>, context: ControlCommandContex
   };
 }
 
+function optionalFlag(value: unknown, label: string): boolean {
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") throw new ControlCommandError(`${label}은(는) true/false입니다.`);
+  return value;
+}
+
+function deliveryResult(record: DeliveryRecord) {
+  return { sessionId: record.to, id: record.id, outcome: record.state, reason: record.reason };
+}
+
 async function send(args: Record<string, unknown>, callerSessionId: string | null, context: ControlCommandContext) {
   const sessionId = requireString(args.sessionId, "sessionId");
   const text = requireString(args.text, "text");
@@ -115,8 +127,75 @@ async function send(args: Record<string, unknown>, callerSessionId: string | nul
   if (!canReadInput(session)) {
     throw new ControlCommandError(`세션이 입력을 받을 수 없습니다 (status: ${session.status}).`);
   }
-  await context.write(sessionId, promptAsTerminalInput(text));
-  return { sessionId };
+  let waitSeconds = 0;
+  if (args.waitSeconds !== undefined) {
+    if (typeof args.waitSeconds !== "number" || !Number.isFinite(args.waitSeconds) || args.waitSeconds < 0) {
+      throw new ControlCommandError("wait는 0 이상의 초여야 합니다.");
+    }
+    waitSeconds = Math.min(args.waitSeconds, MAX_WAIT_SECONDS);
+  }
+  let record = await context.delivery.enqueue({
+    to: sessionId,
+    text,
+    from: callerSessionId,
+    raw: optionalFlag(args.raw, "raw"),
+    urgent: optionalFlag(args.now, "now"),
+  });
+  if (record.state === "held" && waitSeconds > 0) record = await context.delivery.waitFor(record.id, waitSeconds * 1000);
+  return deliveryResult(record);
+}
+
+/**
+ * One send per live session in scope. The scope must be named — `--all`, `--project`, or the caller's
+ * own folder — so a stray broadcast can never reach every session by default.
+ */
+async function broadcast(args: Record<string, unknown>, callerSessionId: string | null, context: ControlCommandContext) {
+  const text = requireString(args.text, "text");
+  const all = optionalFlag(args.all, "all");
+  const caller = callerSessionId === null ? undefined : context.sessions().find((session) => session.id === callerSessionId);
+  const projectId =
+    args.projectId !== undefined ? requireString(args.projectId, "projectId") : all ? null : caller?.projectId ?? null;
+  if (!all && projectId === null) throw new ControlCommandError("broadcast: --project <id> 또는 --all을 지정하세요.");
+  const kind = args.kind === undefined ? null : requireString(args.kind, "kind");
+  const targets = context
+    .sessions()
+    .filter(
+      (session) =>
+        session.id !== callerSessionId &&
+        canReadInput(session) &&
+        (projectId === null || session.projectId === projectId) &&
+        (kind === null || session.kind === kind),
+    );
+  const raw = optionalFlag(args.raw, "raw");
+  const urgent = optionalFlag(args.now, "now");
+  const messages = [];
+  for (const target of targets) {
+    messages.push(deliveryResult(await context.delivery.enqueue({ to: target.id, text, from: callerSessionId, raw, urgent })));
+  }
+  return { messages };
+}
+
+function held(args: Record<string, unknown>, context: ControlCommandContext) {
+  if (args.drop !== undefined) {
+    const dropped = context.delivery.drop(requireString(args.drop, "drop"));
+    if (!dropped) throw new ControlCommandError("보류 중인 메시지가 아닙니다 (이미 전달됐거나 없음).");
+    return { dropped: deliveryResult(dropped) };
+  }
+  const sessionId = args.sessionId === undefined ? undefined : requireString(args.sessionId, "sessionId");
+  return {
+    messages: context.delivery.held(sessionId).map((record) => ({
+      ...deliveryResult(record),
+      from: record.from,
+      text: record.text,
+      createdAt: new Date(record.createdAt).toISOString(),
+    })),
+  };
+}
+
+export function cleanSessionName(value: unknown): string {
+  const clean = requireString(value, "name").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!clean) throw new ControlCommandError("name이 비어 있습니다.");
+  return clean.slice(0, MAX_SESSION_NAME);
 }
 
 async function read(args: Record<string, unknown>, context: ControlCommandContext) {
@@ -176,16 +255,27 @@ async function wait(args: Record<string, unknown>, context: ControlCommandContex
   return { sessionId, status };
 }
 
-async function spawn(args: Record<string, unknown>, context: ControlCommandContext) {
+async function spawn(args: Record<string, unknown>, callerSessionId: string | null, context: ControlCommandContext) {
+  const prompt = args.prompt === undefined ? null : requireString(args.prompt, "prompt");
   const input: CreateTerminalInput = {
     projectId: requireString(args.projectId, "projectId"),
     kind: requireString(args.kind, "agent"),
     ...(args.worktreeId !== undefined ? { worktreeId: requireString(args.worktreeId, "worktreeId") } : {}),
+    ...(args.name !== undefined ? { name: cleanSessionName(args.name) } : {}),
     cols: SPAWN_COLS,
     rows: SPAWN_ROWS,
   };
   const session = await context.create(input);
-  return { sessionId: session.id, projectId: session.projectId, kind: session.kind };
+  // The first prompt is the new session's task, not a message from a peer — no sender prefix. The
+  // queue holds it until the CLI has finished drawing its first screen.
+  const delivery =
+    prompt === null ? null : await context.delivery.enqueue({ to: session.id, text: prompt, from: callerSessionId, raw: true });
+  return {
+    sessionId: session.id,
+    projectId: session.projectId,
+    kind: session.kind,
+    ...(delivery ? { promptId: delivery.id } : {}),
+  };
 }
 
 const MAX_CHIPS = 8;
@@ -267,12 +357,16 @@ export async function handleControlCommand(
         return { ok: true, result: await list(args, context) };
       case "send":
         return { ok: true, result: await send(args, caller, context) };
+      case "broadcast":
+        return { ok: true, result: await broadcast(args, caller, context) };
+      case "held":
+        return { ok: true, result: held(args, context) };
       case "read":
         return { ok: true, result: await read(args, context) };
       case "wait":
         return { ok: true, result: await wait(args, context) };
       case "spawn":
-        return { ok: true, result: await spawn(args, context) };
+        return { ok: true, result: await spawn(args, caller, context) };
       case "status":
         return { ok: true, result: status(args, caller, context) };
       case "progress":

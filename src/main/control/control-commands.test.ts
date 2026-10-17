@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TerminalSessionView } from "../../shared/api-types";
 import type { SessionIndicators, StatusChip, TerminalEvent } from "../../shared/terminal-types";
 import { handleControlCommand, type ControlCommandContext } from "./control-commands";
+import type { DeliveryRecord, DeliveryRequest } from "./delivery-queue";
 
 function session(overrides: Partial<TerminalSessionView>): TerminalSessionView {
   return {
@@ -25,11 +26,34 @@ function session(overrides: Partial<TerminalSessionView>): TerminalSessionView {
   };
 }
 
+function record(overrides: Partial<DeliveryRecord> = {}): DeliveryRecord {
+  return {
+    id: "message-1",
+    from: null,
+    to: "session-1",
+    text: "x",
+    state: "delivered",
+    reason: null,
+    createdAt: 0,
+    settledAt: 0,
+    ...overrides,
+  };
+}
+
+function makeDelivery(): ControlCommandContext["delivery"] {
+  return {
+    enqueue: vi.fn(async (request: DeliveryRequest) => record({ to: request.to, text: request.text, from: request.from ?? null })),
+    held: vi.fn(() => []),
+    drop: vi.fn(() => null),
+    waitFor: vi.fn(async (id: string) => record({ id })),
+  };
+}
+
 function makeContext(overrides: Partial<ControlCommandContext> = {}) {
   const listeners = new Set<(event: TerminalEvent) => void>();
   const context: ControlCommandContext = {
     sessions: () => [session({})],
-    write: vi.fn(async () => undefined),
+    delivery: makeDelivery(),
     readReplay: vi.fn(async () => "line1\nline2\nline3"),
     create: vi.fn(async () => session({ id: "session-spawned", status: "starting" })),
     onEvent: (listener) => {
@@ -82,7 +106,7 @@ describe("list", () => {
 });
 
 describe("send", () => {
-  it("encodes the prompt as terminal input and writes it to the target", async () => {
+  it("hands the text to the delivery queue with the caller as sender", async () => {
     const { context } = makeContext();
 
     const response = await handleControlCommand(
@@ -90,19 +114,44 @@ describe("send", () => {
       context,
     );
 
-    expect(response).toEqual({ ok: true, result: { sessionId: "session-1" } });
-    expect(context.write).toHaveBeenCalledWith("session-1", "빌드 돌려줘\r");
+    expect(response).toEqual({
+      ok: true,
+      result: { sessionId: "session-1", id: "message-1", outcome: "delivered", reason: null },
+    });
+    expect(context.delivery.enqueue).toHaveBeenCalledWith({
+      to: "session-1",
+      text: "빌드 돌려줘",
+      from: "session-caller",
+      raw: false,
+      urgent: false,
+    });
   });
 
-  it("wraps a multiline prompt in one bracketed paste", async () => {
+  it("passes --now and --raw through and waits for a held message when asked", async () => {
     const { context } = makeContext();
+    vi.mocked(context.delivery.enqueue).mockResolvedValueOnce(record({ state: "held", reason: "working" }));
 
-    await handleControlCommand(
-      { ...TOKEN, command: "send", args: { sessionId: "session-1", text: "첫 줄\n둘째 줄" } },
+    const response = await handleControlCommand(
+      { ...TOKEN, command: "send", args: { sessionId: "session-1", text: "x", now: true, raw: true, waitSeconds: 5 } },
       context,
     );
 
-    expect(context.write).toHaveBeenCalledWith("session-1", "[200~첫 줄\n둘째 줄[201~\r");
+    expect(context.delivery.enqueue).toHaveBeenCalledWith(expect.objectContaining({ raw: true, urgent: true }));
+    expect(context.delivery.waitFor).toHaveBeenCalledWith("message-1", 5000);
+    expect(response).toMatchObject({ ok: true, result: { outcome: "delivered" } });
+  });
+
+  it("reports a held message without waiting by default", async () => {
+    const { context } = makeContext();
+    vi.mocked(context.delivery.enqueue).mockResolvedValueOnce(record({ state: "held", reason: "typing" }));
+
+    const response = await handleControlCommand(
+      { ...TOKEN, command: "send", args: { sessionId: "session-1", text: "x" } },
+      context,
+    );
+
+    expect(response).toMatchObject({ ok: true, result: { outcome: "held", reason: "typing" } });
+    expect(context.delivery.waitFor).not.toHaveBeenCalled();
   });
 
   it("refuses to send to the caller itself, to unknown sessions, and to finished ones", async () => {
@@ -127,7 +176,59 @@ describe("send", () => {
       context,
     );
     expect(dead).toMatchObject({ ok: false, error: expect.stringContaining("입력을 받을 수 없습니다") });
-    expect(context.write).not.toHaveBeenCalled();
+    expect(context.delivery.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("broadcast", () => {
+  const sessions = [
+    session({ id: "caller" }),
+    session({ id: "peer-claude" }),
+    session({ id: "peer-codex", kind: "codex" }),
+    session({ id: "elsewhere", projectId: "project-2" }),
+    session({ id: "dead", status: "exited", pid: null }),
+  ];
+
+  it("defaults to the caller's folder and skips the caller and finished sessions", async () => {
+    const { context } = makeContext({ sessions: () => sessions });
+    const response = await handleControlCommand(
+      { ...TOKEN, callerSessionId: "caller", command: "broadcast", args: { text: "점검" } },
+      context,
+    );
+    expect(vi.mocked(context.delivery.enqueue).mock.calls.map(([request]) => request.to)).toEqual(["peer-claude", "peer-codex"]);
+    expect(response).toMatchObject({ ok: true, result: { messages: [{ sessionId: "peer-claude" }, { sessionId: "peer-codex" }] } });
+  });
+
+  it("filters by agent kind and reaches every folder with --all", async () => {
+    const { context } = makeContext({ sessions: () => sessions });
+    await handleControlCommand(
+      { ...TOKEN, callerSessionId: "caller", command: "broadcast", args: { text: "x", all: true, kind: "claude" } },
+      context,
+    );
+    expect(vi.mocked(context.delivery.enqueue).mock.calls.map(([request]) => request.to)).toEqual(["peer-claude", "elsewhere"]);
+  });
+
+  it("refuses to guess a scope from outside a session", async () => {
+    const { context } = makeContext({ sessions: () => sessions });
+    const response = await handleControlCommand({ ...TOKEN, command: "broadcast", args: { text: "x" } }, context);
+    expect(response).toMatchObject({ ok: false, error: expect.stringContaining("--all") });
+  });
+});
+
+describe("held", () => {
+  it("lists held messages and drops one by id", async () => {
+    const { context } = makeContext();
+    vi.mocked(context.delivery.held).mockReturnValueOnce([record({ state: "held", reason: "working", text: "대기 중" })]);
+    const listed = await handleControlCommand({ ...TOKEN, command: "held", args: { sessionId: "session-1" } }, context);
+    expect(context.delivery.held).toHaveBeenCalledWith("session-1");
+    expect(listed).toMatchObject({ ok: true, result: { messages: [{ id: "message-1", reason: "working", text: "대기 중" }] } });
+
+    vi.mocked(context.delivery.drop).mockReturnValueOnce(record({ state: "dropped" }));
+    expect(await handleControlCommand({ ...TOKEN, command: "held", args: { drop: "message-1" } }, context)).toMatchObject({
+      ok: true,
+      result: { dropped: { id: "message-1", outcome: "dropped" } },
+    });
+    expect(await handleControlCommand({ ...TOKEN, command: "held", args: { drop: "gone" } }, context)).toMatchObject({ ok: false });
   });
 });
 
@@ -233,6 +334,30 @@ describe("spawn", () => {
       rows: 24,
     });
     expect(response).toMatchObject({ ok: true, result: { sessionId: "session-spawned" } });
+    expect(context.delivery.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("names the session and queues its first prompt without a sender prefix", async () => {
+    const { context } = makeContext();
+
+    const response = await handleControlCommand(
+      {
+        ...TOKEN,
+        callerSessionId: "session-1",
+        command: "spawn",
+        args: { projectId: "project-1", kind: "codex", name: "  리뷰어\u0007 ", prompt: "diff를 검토해" },
+      },
+      context,
+    );
+
+    expect(context.create).toHaveBeenCalledWith(expect.objectContaining({ name: "리뷰어" }));
+    expect(context.delivery.enqueue).toHaveBeenCalledWith({
+      to: "session-spawned",
+      text: "diff를 검토해",
+      from: "session-1",
+      raw: true,
+    });
+    expect(response).toMatchObject({ ok: true, result: { sessionId: "session-spawned", promptId: "message-1" } });
   });
 
   it("surfaces coordinator errors as command failures", async () => {

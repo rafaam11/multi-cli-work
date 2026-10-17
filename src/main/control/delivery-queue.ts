@@ -1,0 +1,326 @@
+import type { TerminalSessionView } from "../../shared/api-types";
+import { promptAsTerminalInput } from "../../shared/fan-out";
+import type { StatusChip, TerminalEvent } from "../../shared/terminal-types";
+import type { HumanDraft } from "../terminal/human-input-tracker";
+
+/**
+ * Text one session (or the board, or a preset) wants typed into another. It is never typed straight
+ * away: a prompt pasted into a CLI that is mid-turn, parked on an approval, or under a person's
+ * fingers lands in the wrong place. Each message waits here until its target is idle, nobody is
+ * typing there, and the screen has settled — then it goes in, one per target at a time.
+ *
+ * Held messages live in memory only. An app restart drops them, and their senders see them fail.
+ */
+
+export type DeliveryState = "held" | "delivered" | "failed" | "dropped";
+export type HoldReason = "working" | "awaiting-approval" | "typing" | "starting" | "settling";
+
+export interface DeliveryRecord {
+  id: string;
+  /** The sending session, when a session sent it. */
+  from: string | null;
+  to: string;
+  /** The text as asked for — without the sender prefix. */
+  text: string;
+  state: DeliveryState;
+  /** Why it is still held, or why it failed. */
+  reason: HoldReason | string | null;
+  createdAt: number;
+  settledAt: number | null;
+}
+
+export interface DeliveryRequest {
+  to: string;
+  text: string;
+  from?: string | null;
+  /** A prefix to use instead of the sending session's name, e.g. "board · 빌더". */
+  label?: string;
+  /** No prefix at all. */
+  raw?: boolean;
+  /** Do not wait for the target's turn to end. A person typing and an approval prompt still hold it. */
+  urgent?: boolean;
+}
+
+export interface DeliveryQueueOptions {
+  sessions(): TerminalSessionView[];
+  write(sessionId: string, data: string): Promise<void>;
+  onEvent(listener: (event: TerminalEvent) => void): () => void;
+  draft(sessionId: string): HumanDraft;
+  onDraftChange(listener: (sessionId: string) => void): () => void;
+  setChip(sessionId: string, chip: StatusChip): void;
+  clearChips(sessionId: string, key: string): void;
+  idFactory(): string;
+  now?: () => number;
+  setInterval?: (callback: () => void, ms: number) => unknown;
+  clearInterval?: (handle: unknown) => void;
+  /** How long after a person's last keystroke the session counts as theirs. */
+  typingQuietMs?: number;
+  /** How long the screen must stay still — Codex reports idle on its first byte, before its TUI is up. */
+  outputQuietMs?: number;
+  /** Gap kept after a delivery before the next one to the same target. */
+  cooldownMs?: number;
+  expireMs?: number;
+}
+
+export const HELD_CHIP_KEY = "jk-held";
+const TICK_MS = 500;
+const KEEP_SETTLED_MS = 10 * 60_000;
+const MAX_SETTLED = 500;
+
+const ESC = String.fromCharCode(27);
+
+/**
+ * Control characters would let a message steer the target's terminal — an `ESC[201~` ends the
+ * bracketed paste early and turns the rest of the text into keystrokes. Newlines and tabs survive.
+ */
+export function sanitizeDeliveryText(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g"), "")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+}
+
+export function sessionLabel(session: Pick<TerminalSessionView, "id" | "name" | "title" | "kind">): string {
+  return session.name?.trim() || session.title?.trim() || `${session.kind}-${session.id.slice(0, 4)}`;
+}
+
+export class DeliveryQueue {
+  private readonly records = new Map<string, DeliveryRecord>();
+  private readonly lastOutputAt = new Map<string, number>();
+  private readonly lastDeliveredAt = new Map<string, number>();
+  private readonly urgent = new Set<string>();
+  private readonly prefixes = new Map<string, string>();
+  private readonly listeners = new Set<(record: DeliveryRecord) => void>();
+  private readonly waiters = new Map<string, Set<(record: DeliveryRecord) => void>>();
+  private readonly unsubscribers: Array<() => void>;
+  private readonly now: () => number;
+  private ticker: unknown = null;
+  private pumping = false;
+  private pumpAgain = false;
+
+  constructor(private readonly options: DeliveryQueueOptions) {
+    this.now = options.now ?? Date.now;
+    this.unsubscribers = [
+      options.onEvent((event) => {
+        if (event.type === "data") this.lastOutputAt.set(event.sessionId, this.now());
+        if (event.type === "removed") this.lastOutputAt.delete(event.sessionId);
+        if (event.type === "status" || event.type === "exit" || event.type === "removed") void this.pump();
+      }),
+      options.onDraftChange(() => void this.pump()),
+    ];
+  }
+
+  async enqueue(request: DeliveryRequest): Promise<DeliveryRecord> {
+    const record: DeliveryRecord = {
+      id: this.options.idFactory(),
+      from: request.from ?? null,
+      to: request.to,
+      text: request.text,
+      state: "held",
+      reason: null,
+      createdAt: this.now(),
+      settledAt: null,
+    };
+    this.records.set(record.id, record);
+    this.prefixes.set(record.id, this.prefixFor(request));
+    if (request.urgent) this.urgent.add(record.id);
+    await this.pump();
+    return { ...(this.records.get(record.id) ?? record) };
+  }
+
+  held(sessionId?: string): DeliveryRecord[] {
+    return [...this.records.values()]
+      .filter((record) => record.state === "held" && (sessionId === undefined || record.to === sessionId))
+      .map((record) => ({ ...record }));
+  }
+
+  get(id: string): DeliveryRecord | null {
+    const record = this.records.get(id);
+    return record ? { ...record } : null;
+  }
+
+  drop(id: string): DeliveryRecord | null {
+    const record = this.records.get(id);
+    if (!record || record.state !== "held") return null;
+    this.settle(record, "dropped", "취소됨");
+    return { ...record };
+  }
+
+  /** Resolves once the message leaves the held state, or with it still held when time runs out. */
+  waitFor(id: string, timeoutMs: number): Promise<DeliveryRecord> {
+    const record = this.records.get(id);
+    if (!record) return Promise.reject(new Error(`알 수 없는 메시지: ${id}`));
+    if (record.state !== "held") return Promise.resolve({ ...record });
+    return new Promise((resolve) => {
+      const waiters = this.waiters.get(id) ?? new Set();
+      this.waiters.set(id, waiters);
+      const done = (settled: DeliveryRecord) => {
+        clearTimeout(timer);
+        waiters.delete(done);
+        resolve(settled);
+      };
+      const timer = setTimeout(() => {
+        waiters.delete(done);
+        resolve(this.get(id) ?? { ...record });
+      }, timeoutMs);
+      (timer as { unref?: () => void }).unref?.();
+      waiters.add(done);
+    });
+  }
+
+  onChange(listener: (record: DeliveryRecord) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  dispose(): void {
+    for (const unsubscribe of this.unsubscribers) unsubscribe();
+    this.stopTicker();
+  }
+
+  /** Delivers whatever is ready, oldest first, one message per target per pass. */
+  async pump(): Promise<void> {
+    if (this.pumping) {
+      this.pumpAgain = true;
+      return;
+    }
+    this.pumping = true;
+    try {
+      do {
+        this.pumpAgain = false;
+        await this.pumpOnce();
+      } while (this.pumpAgain);
+    } finally {
+      this.pumping = false;
+      this.syncTicker();
+    }
+  }
+
+  private async pumpOnce(): Promise<void> {
+    const sessions = new Map(this.options.sessions().map((session) => [session.id, session]));
+    const visited = new Set<string>();
+    const touched = new Set<string>();
+    for (const record of [...this.records.values()]) {
+      if (record.state !== "held" || visited.has(record.to)) continue;
+      visited.add(record.to);
+      touched.add(record.to);
+      const verdict = this.readiness(record, sessions.get(record.to));
+      if (verdict.kind === "fail") {
+        // Everything else queued for a target that is gone fails with it.
+        for (const other of this.records.values()) {
+          if (other.state === "held" && other.to === record.to) this.settle(other, "failed", verdict.reason);
+        }
+        continue;
+      }
+      if (verdict.kind === "hold") {
+        if (record.reason !== verdict.reason) {
+          record.reason = verdict.reason;
+          this.emit(record);
+        }
+        continue;
+      }
+      const prefix = this.prefixes.get(record.id) ?? "";
+      try {
+        await this.options.write(record.to, promptAsTerminalInput(`${prefix}${sanitizeDeliveryText(record.text)}`));
+        this.lastDeliveredAt.set(record.to, this.now());
+        this.settle(record, "delivered", null);
+      } catch (error) {
+        this.settle(record, "failed", error instanceof Error ? error.message : String(error));
+      }
+    }
+    for (const sessionId of touched) this.syncChip(sessionId);
+    this.prune();
+  }
+
+  private readiness(
+    record: DeliveryRecord,
+    session: TerminalSessionView | undefined,
+  ): { kind: "ready" } | { kind: "hold"; reason: HoldReason } | { kind: "fail"; reason: string } {
+    const now = this.now();
+    if (!session) return { kind: "fail", reason: "대상 세션이 없습니다" };
+    if (session.pid === null || session.status === "exited" || session.status === "error") {
+      return { kind: "fail", reason: `대상 세션이 종료됐습니다 (${session.status})` };
+    }
+    if (now - record.createdAt > (this.options.expireMs ?? 30 * 60_000)) {
+      return { kind: "fail", reason: "보류 시간 초과" };
+    }
+    const draft = this.options.draft(record.to);
+    if (draft.length > 0) return { kind: "hold", reason: "typing" };
+    if (draft.lastInputAt !== null && now - draft.lastInputAt < (this.options.typingQuietMs ?? 3000)) {
+      return { kind: "hold", reason: "typing" };
+    }
+    if (session.status === "awaiting-approval") return { kind: "hold", reason: "awaiting-approval" };
+    if (session.status === "starting") return { kind: "hold", reason: "starting" };
+    if (session.status === "working" && !this.urgent.has(record.id)) return { kind: "hold", reason: "working" };
+    const output = this.lastOutputAt.get(record.to);
+    if (output !== undefined && now - output < (this.options.outputQuietMs ?? 1200)) {
+      return { kind: "hold", reason: "settling" };
+    }
+    const delivered = this.lastDeliveredAt.get(record.to);
+    if (delivered !== undefined && now - delivered < (this.options.cooldownMs ?? 2500)) {
+      return { kind: "hold", reason: "settling" };
+    }
+    return { kind: "ready" };
+  }
+
+  private prefixFor(request: DeliveryRequest): string {
+    if (request.raw) return "";
+    if (request.label) return `[${request.label}] `;
+    if (!request.from) return "";
+    const sender = this.options.sessions().find((session) => session.id === request.from);
+    return sender ? `[from ${sessionLabel(sender)} · ${sender.kind}] ` : "";
+  }
+
+  private settle(record: DeliveryRecord, state: Exclude<DeliveryState, "held">, reason: string | null): void {
+    record.state = state;
+    record.reason = reason;
+    record.settledAt = this.now();
+    this.urgent.delete(record.id);
+    this.prefixes.delete(record.id);
+    this.emit(record);
+    const waiters = this.waiters.get(record.id);
+    if (waiters) {
+      this.waiters.delete(record.id);
+      for (const waiter of [...waiters]) waiter({ ...record });
+    }
+    this.syncChip(record.to);
+  }
+
+  private syncChip(sessionId: string): void {
+    const count = [...this.records.values()].filter((record) => record.state === "held" && record.to === sessionId).length;
+    if (count > 0) this.options.setChip(sessionId, { key: HELD_CHIP_KEY, text: `보류 ${count}`, color: "amber" });
+    else this.options.clearChips(sessionId, HELD_CHIP_KEY);
+  }
+
+  private emit(record: DeliveryRecord): void {
+    for (const listener of this.listeners) listener({ ...record });
+  }
+
+  private prune(): void {
+    const now = this.now();
+    const settled = [...this.records.values()].filter((record) => record.state !== "held");
+    for (const record of settled) {
+      if (record.settledAt !== null && now - record.settledAt > KEEP_SETTLED_MS) this.records.delete(record.id);
+    }
+    const overflow = settled.length - MAX_SETTLED;
+    for (const record of settled.slice(0, Math.max(0, overflow))) this.records.delete(record.id);
+  }
+
+  /** Time-based conditions (quiet windows, expiry) need a clock while anything is held. */
+  private syncTicker(): void {
+    const anyHeld = [...this.records.values()].some((record) => record.state === "held");
+    if (anyHeld && this.ticker === null) {
+      const set = this.options.setInterval ?? ((callback: () => void, ms: number) => setInterval(callback, ms));
+      this.ticker = set(() => void this.pump(), TICK_MS);
+      (this.ticker as { unref?: () => void } | null)?.unref?.();
+    } else if (!anyHeld) {
+      this.stopTicker();
+    }
+  }
+
+  private stopTicker(): void {
+    if (this.ticker === null) return;
+    (this.options.clearInterval ?? ((handle: unknown) => clearInterval(handle as NodeJS.Timeout)))(this.ticker);
+    this.ticker = null;
+  }
+}

@@ -110,9 +110,12 @@ export function slotViewsInput(value: unknown, label = "Slot views"): SlotViewsI
 export function validateCreateInput(value: unknown): CreateTerminalInput {
   const input = exactObject(
     value,
-    ["projectId", "kind", "worktreeId", "cols", "rows", "background"],
+    ["projectId", "kind", "worktreeId", "cols", "rows", "background", "name"],
     "Terminal create input",
   );
+  if (input.name !== undefined && (typeof input.name !== "string" || input.name.trim().length === 0 || input.name.length > 60)) {
+    throw new Error("Terminal name is invalid");
+  }
   if (typeof input.kind !== "string" || !AGENT_ID_PATTERN.test(input.kind)) {
     throw new Error("Terminal kind is invalid");
   }
@@ -129,6 +132,7 @@ export function validateCreateInput(value: unknown): CreateTerminalInput {
     cols: integer(input.cols, "Terminal columns"),
     rows: integer(input.rows, "Terminal rows"),
     ...(input.background !== undefined ? { background: input.background } : {}),
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
   };
 }
 

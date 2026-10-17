@@ -249,6 +249,8 @@ export interface CreateTerminalInput {
    * not become the selection the next launch restores either: the user has not been there.
    */
   background?: boolean;
+  /** The pane's name from the start — a preset member or a `jk spawn --name`. */
+  name?: string;
 }
 
 export interface CreateToolTerminalInput {
