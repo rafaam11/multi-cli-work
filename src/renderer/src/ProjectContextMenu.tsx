@@ -1,4 +1,5 @@
 import type { AgentId, AgentView } from "@shared/agent-types";
+import type { SessionPreset } from "@shared/preset-types";
 import { FolderInput, FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
 import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 import { NewSessionMenuItems } from "./NewSessionMenuItems";
@@ -15,6 +16,8 @@ export interface ProjectContextMenuProps {
   newSessionDisabledReason: string | null;
   /** Starts the session in the folder's root without going to it. */
   onStartSession(agentId: AgentId): void;
+  presets?: readonly SessionPreset[];
+  onStartPreset?(presetId: string): void;
   onReveal(): void;
   onOpenInEditor(): void;
   onOpenOnGitHub(): void;
@@ -34,6 +37,8 @@ export function ProjectContextMenu({
   agents,
   newSessionDisabledReason,
   onStartSession,
+  presets,
+  onStartPreset,
   onReveal,
   onOpenInEditor,
   onOpenOnGitHub,
@@ -78,6 +83,8 @@ export function ProjectContextMenu({
         agents={agents}
         disabledReason={newSessionDisabledReason}
         onStart={(agentId) => run(() => onStartSession(agentId))()}
+        presets={presets}
+        onStartPreset={onStartPreset ? (presetId) => run(() => onStartPreset(presetId))() : undefined}
       />
       <button type="button" role="menuitem" onClick={run(onReveal)}>
         <FolderOpen size={15} />

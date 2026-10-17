@@ -38,6 +38,8 @@ import { handleControlCommand, type ControlCommandContext } from "./control/cont
 import { DeliveryQueue } from "./control/delivery-queue";
 import { BoardService } from "./board/board-service";
 import { BoardStore } from "./board/board-store";
+import { readSessionPresets, removeSessionPreset, saveSessionPreset } from "./presets/preset-registry";
+import { launchPreset } from "./presets/preset-service";
 import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
 import { GitHubService } from "./github/github-service";
@@ -445,6 +447,9 @@ export async function createDesktopRuntime(
     now: () => new Date().toISOString(),
     publish: (message) => sendToMainWindow(host.getMainWindow(), "board:changed", message),
   });
+  const presetOptions = {
+    ...(process.env.MULTI_CLI_WORK_SESSION_PRESETS_PATH ? { registryPath: process.env.MULTI_CLI_WORK_SESSION_PRESETS_PATH } : {}),
+  };
   const controlContext: ControlCommandContext = {
     sessions: () => coordinator.list(),
     delivery,
@@ -795,6 +800,28 @@ export async function createDesktopRuntime(
     board: {
       list: (projectId) => board.list(projectId),
       post: (input) => board.post({ ...input, from: null }),
+    },
+    presets: {
+      list: () => readSessionPresets(presetOptions),
+      // Settings may be its own window: the main window hears of every change to keep its menus current.
+      save: async (preset) => {
+        const next = await saveSessionPreset(preset, presetOptions);
+        sendToMainWindow(host.getMainWindow(), "presets:changed", next);
+        return next;
+      },
+      remove: async (presetId) => {
+        const next = await removeSessionPreset(presetId, presetOptions);
+        sendToMainWindow(host.getMainWindow(), "presets:changed", next);
+        return next;
+      },
+      // Placing the panes is the renderer's job; the sessions start without taking the selection.
+      launch: (request) =>
+        launchPreset(request, {
+          presets: () => readSessionPresets(presetOptions),
+          create: (input) => coordinator.create(input, { updateSelection: false }),
+          delivery,
+          board,
+        }),
     },
     usage: { state: () => usageService.snapshot(), refresh: () => usageService.refresh() },
     worktreeScripts: {

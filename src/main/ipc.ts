@@ -40,6 +40,7 @@ import {
   selectedProject,
   projectForPath,
 } from "./ipc-validation";
+import { parseSessionPreset } from "./presets/preset-registry";
 import { assertNotReviewSession } from "./terminal/review-guard";
 import { PC_ROOT_KEYS, type PcRootKey } from "../shared/settings-types";
 import type { WorkProjectRole } from "../shared/work-project-types";
@@ -694,6 +695,22 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     dependencies.board.list(nonEmptyString(projectId, "Project id")),
   );
   ipc.handle("board:post", (_event, input: unknown) => dependencies.board.post(validateBoardPostInput(input)));
+  ipc.handle("presets:list", () => dependencies.presets.list());
+  // The registry's own parser checks a saved preset field by field; here only its shape is a record.
+  ipc.handle("presets:save", (_event, preset: unknown) => dependencies.presets.save(parseSessionPreset(preset)));
+  ipc.handle("presets:remove", (_event, presetId: unknown) =>
+    dependencies.presets.remove(nonEmptyString(presetId, "Preset id")),
+  );
+  ipc.handle("presets:launch", (_event, input: unknown) => {
+    const request = exactObject(input, ["presetId", "projectId", "worktreeId"], "Preset launch");
+    return dependencies.presets.launch({
+      presetId: nonEmptyString(request.presetId, "Preset id"),
+      projectId: nonEmptyString(request.projectId, "Project id"),
+      ...(request.worktreeId !== undefined && request.worktreeId !== null
+        ? { worktreeId: nonEmptyString(request.worktreeId, "Worktree id") }
+        : {}),
+    });
+  });
   ipc.handle("usage:state", () => dependencies.usage.state());
   ipc.handle("usage:refresh", () => dependencies.usage.refresh());
   // 패인 머리줄의 "크기 되찾기". 입력할 때와 같은 길이다 — 기기가 갖고 있지 않으면 아무 일도 없다.

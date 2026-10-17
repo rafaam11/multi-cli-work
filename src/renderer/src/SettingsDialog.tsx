@@ -31,6 +31,7 @@ import {
 import { publishNotionTokenStatus } from "./notion-token-status";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
 import { RemoteSettings } from "./RemoteSettings";
+import { PresetSettings } from "./PresetSettings";
 import { errorMessage } from "./ipc-error";
 
 export type SettingsTab =
@@ -43,6 +44,7 @@ export type SettingsTab =
   | "notion"
   | "mobile"
   | "keybindings"
+  | "presets"
   | "pc";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
@@ -52,6 +54,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "projects", label: "프로젝트" },
   { id: "workspace", label: "워크스페이스" },
   { id: "files", label: "파일" },
+  { id: "presets", label: "팀 프리셋" },
   { id: "notion", label: "노션" },
   { id: "mobile", label: "원격" },
   { id: "keybindings", label: "단축키" },
@@ -1197,6 +1200,7 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
             <ProjectsSettings projects={settings.projects} onChange={(next) => update({ projects: next })} />
           ) : null}
           {tab === "workspace" ? <WorkspaceSettings /> : null}
+          {tab === "presets" ? <PresetSettings /> : null}
           {tab === "files" ? (
             <>
               <h2>파일</h2>

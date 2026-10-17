@@ -11,6 +11,7 @@ import type { RemoteHostView } from "../shared/remote-types";
 import type { SessionIndicatorsUpdate, TerminalEvent } from "../shared/terminal-types";
 import type { UsageSnapshot } from "../shared/usage-types";
 import type { BoardMessage } from "../shared/board-types";
+import type { SessionPreset } from "../shared/preset-types";
 
 const api: MultiCliWorkApi = {
   platform: process.platform,
@@ -268,6 +269,17 @@ const api: MultiCliWorkApi = {
       const handler = (_event: Electron.IpcRendererEvent, message: BoardMessage) => listener(message);
       ipcRenderer.on("board:changed", handler);
       return () => ipcRenderer.removeListener("board:changed", handler);
+    },
+  },
+  presets: {
+    list: () => ipcRenderer.invoke("presets:list"),
+    save: (preset) => ipcRenderer.invoke("presets:save", preset),
+    remove: (presetId) => ipcRenderer.invoke("presets:remove", presetId),
+    launch: (input) => ipcRenderer.invoke("presets:launch", input),
+    onChange(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, presets: SessionPreset[]) => listener(presets);
+      ipcRenderer.on("presets:changed", handler);
+      return () => ipcRenderer.removeListener("presets:changed", handler);
     },
   },
   worktreeScripts: {

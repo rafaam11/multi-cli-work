@@ -5,6 +5,7 @@ import type { ProjectWorkspaceSnapshot, SessionAttention, TerminalSessionView } 
 import { type FileExplorerTarget } from "@shared/file-explorer-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
+import type { SessionPreset } from "@shared/preset-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
 import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
@@ -950,6 +951,44 @@ export function App() {
   useEffect(() => {
     revealSessionRef.current = revealSession;
   });
+
+  const [presets, setPresets] = useState<SessionPreset[]>([]);
+  const refreshPresets = useCallback(() => {
+    void window.multiCliWork.presets
+      .list()
+      .then(setPresets)
+      .catch((error) => console.error("Failed to read session presets", error));
+  }, []);
+  useEffect(refreshPresets, [refreshPresets]);
+  useEffect(() => window.multiCliWork.presets.onChange(setPresets), []);
+
+  /**
+   * Starts a preset's sessions in a folder (or one of its worktrees), then goes there with the board
+   * open — the team is what the user came to see. The reveal waits a frame: the folder's grid takes
+   * every new session in at once only after they are in the session list.
+   */
+  const startPreset = async (project: SharedProject, presetId: string, worktreeId: string | null) => {
+    if (isProjectMissing(project.id)) return;
+    try {
+      const created = await window.multiCliWork.presets.launch({ presetId, projectId: project.id, worktreeId });
+      setSessions((current) => created.reduce(replaceSession, current));
+      // In member order: the grid would otherwise take them newest first.
+      const key = folderViewKeyOf(project.id, worktreeId);
+      for (const session of created) {
+        updateFolderView(key, (view) => (view.slots.includes(session.id) ? view : appendSession(view, session.id)));
+      }
+      const first = created[0];
+      if (first) requestAnimationFrame(() => setTimeout(() => revealSessionRef.current(first), 0));
+      setRightSidebarTab("board");
+      setRightSidebarCollapsed(false);
+    } catch (error) {
+      showToast({
+        tone: "error",
+        title: "프리셋을 시작하지 못했습니다",
+        detail: error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(error),
+      });
+    }
+  };
 
   useEffect(
     () =>
@@ -2317,6 +2356,8 @@ export function App() {
               projectMissing={selectedProjectMissing}
               layoutLabel={resolveLayout(currentView.layoutId, 1).label}
               onStartSession={(kind) => void startSession(selectedProject, kind, selectedWorktree?.id)}
+              presets={presets}
+              onStartPreset={(presetId) => void startPreset(selectedProject, presetId, selectedWorktree?.id ?? null)}
               onSelectWorktree={selectWorktree}
               onCreateWorktree={() => setWorktreeCreateProject(selectedProject)}
               onOpenDetail={() => setActiveView("detail")}
@@ -2505,6 +2546,10 @@ export function App() {
         sessions={sessions}
         agents={agents}
         onFocusSession={selectSession}
+        presets={presets}
+        onStartPreset={(presetId) => {
+          if (fileExplorerOwnerProject) void startPreset(fileExplorerOwnerProject, presetId, selectedWorktree?.id ?? null);
+        }}
       />
 
       {newSessionSlot ? (
@@ -2531,6 +2576,8 @@ export function App() {
           agents={agents}
           newSessionDisabledReason={newSessionDisabledReason(contextMenu.project.id)}
           onStartSession={(agentId) => void startSessionInBackground(contextMenu.project, agentId)}
+          presets={presets}
+          onStartPreset={(presetId) => void startPreset(contextMenu.project, presetId, null)}
           onReveal={() => void runProjectAction(() => window.multiCliWork.projects.reveal(contextMenu.project.id))}
           onOpenInEditor={() =>
             void runProjectAction(() => window.multiCliWork.projects.openInEditor(contextMenu.project.id))
@@ -2568,6 +2615,10 @@ export function App() {
             if (worktreeMenuProject) {
               void startSessionInBackground(worktreeMenuProject, agentId, worktreeMenu.worktree.id);
             }
+          }}
+          presets={presets}
+          onStartPreset={(presetId) => {
+            if (worktreeMenuProject) void startPreset(worktreeMenuProject, presetId, worktreeMenu.worktree.id);
           }}
           onReveal={() =>
             void runProjectAction(() => window.multiCliWork.worktrees.reveal(worktreeMenu.worktree.id))

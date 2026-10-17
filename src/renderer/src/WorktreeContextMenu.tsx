@@ -1,4 +1,5 @@
 import type { AgentId, AgentView } from "@shared/agent-types";
+import type { SessionPreset } from "@shared/preset-types";
 import { CheckCircle2, FileDiff, FolderOpen, RefreshCw, Trash2, Unlock } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 import { VSCodeIcon } from "./brand-icons";
@@ -15,6 +16,8 @@ export interface WorktreeContextMenuProps {
   newSessionDisabledReason: string | null;
   /** Starts the session in this worktree's directory without going to it. */
   onStartSession(agentId: AgentId): void;
+  presets?: readonly SessionPreset[];
+  onStartPreset?(presetId: string): void;
   onReveal(): void;
   onOpenInEditor(): void;
   onShowDiff(): void;
@@ -38,6 +41,8 @@ export function WorktreeContextMenu({
   agents,
   newSessionDisabledReason,
   onStartSession,
+  presets,
+  onStartPreset,
   onReveal,
   onOpenInEditor,
   onShowDiff,
@@ -87,6 +92,8 @@ export function WorktreeContextMenu({
         agents={agents}
         disabledReason={newSessionDisabledReason}
         onStart={(agentId) => run(() => onStartSession(agentId))()}
+        presets={presets}
+        onStartPreset={onStartPreset ? (presetId) => run(() => onStartPreset(presetId))() : undefined}
       />
       <button type="button" role="menuitem" onClick={run(onReveal)}>
         <FolderOpen size={15} />

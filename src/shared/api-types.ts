@@ -1,5 +1,6 @@
 import type { AgentView } from "./agent-types";
 import type { BoardMessage, BoardPostInput } from "./board-types";
+import type { PresetLaunchInput, SessionPreset } from "./preset-types";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
   PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
@@ -315,6 +316,15 @@ export interface MultiCliWorkApi {
     post(input: BoardPostInput): Promise<BoardMessage>;
     /** A new message, or one whose deliveries moved on — replace it by id. */
     onChange(listener: (message: BoardMessage) => void): () => void;
+  };
+  /** 세션 프리셋 — 한 번에 띄우는 세션 묶음(session-presets.json). */
+  presets: {
+    list(): Promise<SessionPreset[]>;
+    save(preset: SessionPreset): Promise<SessionPreset[]>;
+    remove(presetId: string): Promise<SessionPreset[]>;
+    /** The started sessions, in member order; the caller places their panes. */
+    launch(input: PresetLaunchInput): Promise<TerminalSessionView[]>;
+    onChange(listener: (presets: SessionPreset[]) => void): () => void;
   };
   /** 폴더별 워크트리 준비·정리 스크립트(앱 설정에만 있고 레포는 건드리지 않는다). */
   worktreeScripts: {

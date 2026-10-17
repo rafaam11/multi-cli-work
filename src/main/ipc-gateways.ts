@@ -15,12 +15,14 @@ import type {
   ResumeTerminalInput,
   SessionAttention,
   SlotViewsInput,
+  TerminalSessionView,
   TerminalSizeOwner,
   UpdaterStatus,
   WindowChromeState,
   WindowZoomAction,
 } from "../shared/api-types";
 import type { BoardMessage, BoardPostInput } from "../shared/board-types";
+import type { PresetLaunchInput, SessionPreset } from "../shared/preset-types";
 import type { SessionIndicatorsUpdate } from "../shared/terminal-types";
 import type { UsageSnapshot } from "../shared/usage-types";
 import { type AppSettings, type AppSettingsPatch } from "../shared/settings-types";
@@ -159,6 +161,13 @@ export interface TerminalSizeGateway {
 export interface BoardGateway {
   list(projectId: string): Promise<BoardMessage[]>;
   post(input: BoardPostInput): Promise<BoardMessage>;
+}
+
+export interface SessionPresetsGateway {
+  list(): Promise<SessionPreset[]>;
+  save(preset: SessionPreset): Promise<SessionPreset[]>;
+  remove(presetId: string): Promise<SessionPreset[]>;
+  launch(request: PresetLaunchInput): Promise<TerminalSessionView[]>;
 }
 
 /** Keystrokes from the desktop — what the delivery queue reads to stay out of a person's way. */
@@ -332,6 +341,7 @@ export interface MainIpcDependencies {
   sizes: TerminalSizeGateway;
   humanInput: HumanInputGateway;
   board: BoardGateway;
+  presets: SessionPresetsGateway;
   indicators: SessionIndicatorsGateway;
   worktreeScripts: WorktreeScriptsGateway;
   usage: UsageGateway;

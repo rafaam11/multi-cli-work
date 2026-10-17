@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { GitStatusResult } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
+import type { SessionPreset } from "@shared/preset-types";
 import type { TerminalKind } from "@shared/terminal-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import { FolderOpen, GitBranch, PanelsTopLeft, Plus, RefreshCw } from "lucide-react";
@@ -26,6 +27,8 @@ interface FolderStartPageProps {
    */
   layoutLabel: string;
   onStartSession(kind: TerminalKind): void;
+  presets?: readonly SessionPreset[];
+  onStartPreset?(presetId: string): void;
   onSelectWorktree(worktree: SharedWorktree): void;
   onCreateWorktree(): void;
   onOpenDetail(): void;
@@ -53,6 +56,8 @@ export function FolderStartPage({
   projectMissing,
   layoutLabel,
   onStartSession,
+  presets = [],
+  onStartPreset,
   onSelectWorktree,
   onCreateWorktree,
   onOpenDetail,
@@ -121,6 +126,37 @@ export function FolderStartPage({
             </button>
           ))}
         </div>
+
+        {onStartPreset && presets.length > 0 ? (
+          <div className="folder-start-presets" aria-label="프리셋으로 시작">
+            <span className="folder-start-presets-label">팀으로 시작</span>
+            {presets.map((preset) => {
+              const missing = preset.members.find((member) => !agents.find((agent) => agent.id === member.agentId)?.available);
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="folder-start-preset"
+                  disabled={!canLaunch || missing !== undefined}
+                  onClick={() => onStartPreset(preset.id)}
+                  title={
+                    missing
+                      ? `${missing.agentId} 미설치`
+                      : preset.description ?? preset.members.map((member) => member.name).join(", ")
+                  }
+                  aria-label={`프리셋 ${preset.name} 시작`}
+                >
+                  <span className="preset-menu-icons" aria-hidden="true">
+                    {preset.members.map((member, index) => (
+                      <AgentIcon key={index} agent={agents.find((agent) => agent.id === member.agentId)} size={14} />
+                    ))}
+                  </span>
+                  <span>{preset.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
 
         <p className="folder-start-layout-hint">첫 세션은 {layoutLabel} 배치로 열립니다</p>
       </div>

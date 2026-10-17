@@ -7985,6 +7985,16 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   box-shadow: none;
 }
 
+/* The app as a sender — a role prompt, a spawn's first prompt — is the wire's origin point. */
+.board-wire .board-avatar-system::before {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--wire);
+  border-radius: 50%;
+  background: var(--surface-accent-soft);
+  content: "";
+}
+
 .board-feed {
   display: flex;
   flex: 1 1 auto;
@@ -8418,4 +8428,156 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 :root[data-reduce-motion] .board-wire.delivery-held .board-wire-line > i,
 :root[data-reduce-motion] .board-mention.delivery-held .board-mention-dot {
   animation: none;
+}
+
+/* Session presets: wherever a preset is offered, its members' marks sit side by side before its name. */
+.preset-menu-icons {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.preset-menu-item .preset-menu-icons {
+  min-width: 15px;
+}
+
+.folder-start-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.folder-start-presets-label {
+  color: var(--muted);
+  font: var(--type-secondary);
+}
+
+.folder-start-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: var(--type-secondary-semibold);
+  cursor: pointer;
+}
+
+.folder-start-preset:hover:not(:disabled) {
+  border-color: var(--teal);
+  background: var(--surface-hover);
+}
+
+.folder-start-preset:disabled {
+  color: var(--quiet);
+  cursor: default;
+}
+
+.board-roster-preset {
+  padding-left: 9px;
+  border: 1px dashed var(--line-strong);
+}
+
+.preset-settings-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.preset-settings-members > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.preset-settings-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.preset-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-accent-soft);
+}
+
+.preset-editor > label {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font: var(--type-secondary);
+}
+
+.preset-editor input,
+.preset-editor select,
+.preset-editor textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: var(--type-secondary);
+}
+
+.preset-editor input:focus,
+.preset-editor select:focus,
+.preset-editor textarea:focus {
+  border-color: var(--teal);
+  outline: none;
+}
+
+.preset-editor-member {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.preset-editor-member legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font: var(--type-caption-semibold);
+}
+
+.preset-editor-member-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.preset-editor-member textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.preset-editor-actions {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.preset-editor-actions button,
+.preset-settings-actions button,
+.preset-editor-member-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }

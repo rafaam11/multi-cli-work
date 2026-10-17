@@ -1,6 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { BoardAuthor, BoardMessage, BoardRecipient } from "@shared/board-types";
+import type { SessionPreset } from "@shared/preset-types";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, CornerDownLeft, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -28,6 +29,9 @@ export interface TeamBoardProps {
   onFocusSession(session: TerminalSessionView): void;
   /** Messages that arrived while the board was out of sight. */
   onUnreadChange(count: number): void;
+  /** Offered in place of the roster while the folder has no running session. */
+  presets?: readonly SessionPreset[];
+  onStartPreset?(presetId: string): void;
 }
 
 const STICK_TO_BOTTOM_PX = 48;
@@ -37,7 +41,17 @@ const STICK_TO_BOTTOM_PX = 48;
  * sender to recipient, and the wire carries the message's progress: a pulse travels it while the
  * message waits for its target, it closes when the text went in, and it breaks when it could not.
  */
-export function TeamBoard({ hidden, projectId, projectLabel, sessions, agents, onFocusSession, onUnreadChange }: TeamBoardProps) {
+export function TeamBoard({
+  hidden,
+  projectId,
+  projectLabel,
+  sessions,
+  agents,
+  onFocusSession,
+  onUnreadChange,
+  presets = [],
+  onStartPreset,
+}: TeamBoardProps) {
   const [messages, setMessages] = useState<BoardMessage[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [seenCount, setSeenCount] = useState(0);
@@ -107,7 +121,29 @@ export function TeamBoard({ hidden, projectId, projectLabel, sessions, agents, o
     <div className="team-board" hidden={hidden}>
       <header className="board-roster" aria-label={`${projectLabel ?? "이 폴더"}의 세션`}>
         {members.length === 0 ? (
-          <span className="board-roster-empty">실행 중인 세션이 없습니다</span>
+          presets.length > 0 && onStartPreset ? (
+            <>
+              <span className="board-roster-empty">팀 시작:</span>
+              {presets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="board-roster-member board-roster-preset"
+                  onClick={() => onStartPreset(preset.id)}
+                  title={preset.description ?? preset.members.map((member) => member.name).join(", ")}
+                >
+                  <span className="preset-menu-icons" aria-hidden="true">
+                    {preset.members.map((member, index) => (
+                      <AgentIcon key={index} agent={agentsById.get(member.agentId)} size={13} />
+                    ))}
+                  </span>
+                  <span>{preset.name}</span>
+                </button>
+              ))}
+            </>
+          ) : (
+            <span className="board-roster-empty">실행 중인 세션이 없습니다</span>
+          )
         ) : (
           members.map((member) => (
             <button

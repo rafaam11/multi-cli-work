@@ -3,6 +3,7 @@ import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-ty
 import type { PullRequestListItem } from "@shared/github-types";
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
+import type { SessionPreset } from "@shared/preset-types";
 import { Files, GitBranch, MessagesSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { FileExplorer } from "./FileExplorer";
@@ -40,6 +41,8 @@ export interface RightSidebarProps {
   sessions: TerminalSessionView[];
   agents: AgentView[];
   onFocusSession(session: TerminalSessionView): void;
+  presets: readonly SessionPreset[];
+  onStartPreset(presetId: string): void;
 }
 
 const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git", board: "팀 보드" };
@@ -71,6 +74,8 @@ export function RightSidebar({
   sessions,
   agents,
   onFocusSession,
+  presets,
+  onStartPreset,
 }: RightSidebarProps) {
   const [boardUnread, setBoardUnread] = useState(0);
   const badge = (tab: RightSidebarTab) =>
@@ -175,6 +180,8 @@ export function RightSidebar({
           agents={agents}
           onFocusSession={onFocusSession}
           onUnreadChange={setBoardUnread}
+          presets={presets}
+          onStartPreset={onStartPreset}
         />
       </div>
     </aside>

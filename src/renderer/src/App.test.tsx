@@ -448,6 +448,13 @@ function createApi(options?: {
       post: vi.fn(),
       onChange: vi.fn(() => () => undefined),
     },
+    presets: {
+      list: vi.fn().mockResolvedValue([]),
+      save: vi.fn().mockResolvedValue([]),
+      remove: vi.fn().mockResolvedValue([]),
+      launch: vi.fn().mockResolvedValue([]),
+      onChange: vi.fn(() => () => undefined),
+    },
     worktreeScripts: {
       get: vi.fn().mockResolvedValue(null),
       set: vi.fn().mockResolvedValue(undefined),
