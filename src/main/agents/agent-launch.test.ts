@@ -50,6 +50,22 @@ describe("built-in agent command lines", () => {
     });
   });
 
+  it("starts Claude under a separate conversation id when the session id is already taken", () => {
+    expect(
+      buildAgentLaunch(BUILTIN_AGENTS.claude, CLAUDE_EXE, { ...context, newConversationId: "claude-fresh" }),
+    ).toEqual({
+      executable: CLAUDE_EXE,
+      args: [
+        "--session-id",
+        "claude-fresh",
+        "--settings",
+        context.claudeSettingsPath,
+        "--dangerously-skip-permissions",
+      ],
+      providerConversationId: "claude-fresh",
+    });
+  });
+
   it("enables Codex TUI notifications and bypasses approvals without shell quoting", () => {
     const launch = buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, context);
 

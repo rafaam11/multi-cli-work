@@ -8,6 +8,11 @@ export interface AgentLaunchContext {
   codexProfileName: string;
   /** Non-null only when an existing conversation is being resumed. */
   resumeConversationId: string | null;
+  /**
+   * The id a fresh app-generated conversation takes in place of `sessionId`, when an earlier
+   * conversation of this session already holds that one (Claude refuses a reused `--session-id`).
+   */
+  newConversationId?: string;
   /** Codex can let the user select an existing conversation when its exact id was not recorded. */
   codexResumePicker?: boolean;
 }
@@ -77,7 +82,7 @@ export function buildAgentLaunch(
   const resuming = context.resumeConversationId !== null || picker;
   const values: Record<AgentArgToken, string | null> = {
     cwd: context.cwd,
-    sessionId: context.sessionId,
+    sessionId: context.newConversationId ?? context.sessionId,
     conversationId: context.resumeConversationId,
     claudeSettings: context.claudeSettingsPath,
     codexProfile: context.codexProfileName,
@@ -97,7 +102,7 @@ function providerConversationId(definition: AgentDefinition, context: AgentLaunc
       return null;
     // Claude takes the id we hand it, so the session is resumable from the moment it starts.
     case "app-generated":
-      return context.resumeConversationId ?? context.sessionId;
+      return context.resumeConversationId ?? context.newConversationId ?? context.sessionId;
     // Codex mints its own, so a fresh session has none until the transcript is correlated.
     case "provider-assigned":
       return context.resumeConversationId ?? null;

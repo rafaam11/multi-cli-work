@@ -104,7 +104,8 @@ import { SessionWorkspaceReader } from "./providers/session-workspace";
 import { detectProviderExecutables, type ProviderExecutables } from "./providers/provider-launch";
 import type { FileExplorerTarget } from "../shared/file-explorer-types";
 import { startProviderStatusWatcher } from "./providers/provider-status";
-import { SessionTitleReader } from "./providers/session-title";
+import { findClaudeTranscript, SessionTitleReader } from "./providers/session-title";
+import { defaultTranscriptIo } from "./providers/transcript-tail";
 import { AgentEditReader } from "./providers/agent-edits";
 import type { AttentionSnapshot } from "./attention-policy";
 import { createSessionAttentionController } from "./session-attention-controller";
@@ -405,6 +406,16 @@ export async function createDesktopRuntime(
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
     autoResumeEnabled: () => settingsService.current().general.autoResumeSessions,
+    hasProviderConversation: async (session, agent, conversationId) =>
+      agent.titleSource !== "claude-transcript" ||
+      (await findClaudeTranscript(
+        defaultTranscriptIo,
+        // A wrong "missing" would turn a working resume into a refused `--session-id`, so the check
+        // looks wherever this Claude actually keeps its transcripts.
+        claudeProjectsDirectory ?? path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "projects"),
+        session.cwd,
+        conversationId,
+      )) !== null,
   });
   const controlContext: ControlCommandContext = {
     sessions: () => coordinator.list(),

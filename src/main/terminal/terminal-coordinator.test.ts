@@ -111,8 +111,12 @@ async function coordinator(
   },
   appendLog?: (logDir: string, sessionId: string, data: string, maxBytes: number, trimSlackBytes?: number) => Promise<void>,
   statusDir?: string,
+  hasProviderConversation?: (conversationId: string) => Promise<boolean>,
 ) {
   const instance = new TerminalCoordinator({
+    ...(hasProviderConversation
+      ? { hasProviderConversation: (_session, _agent, conversationId) => hasProviderConversation(conversationId) }
+      : {}),
     worker,
     statePath: path.join(root, "state.json"),
     logDir: path.join(root, "logs"),
@@ -694,6 +698,73 @@ describe("TerminalCoordinator", () => {
         ],
       }),
     );
+  });
+
+  it("starts a Claude conversation that was never saved fresh instead of failing to resume it", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+
+    // Claude writes no transcript before the first prompt; `--resume` would exit "No conversation found".
+    const resumedWorker = new FakeWorker();
+    const resumed = await coordinator(root, resumedWorker, undefined, undefined, undefined, async () => false);
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+
+    expect(resumedWorker.create).toHaveBeenCalledWith(expect.objectContaining({
+      args: ["--session-id", "session-1", "--settings", path.join(root, "claude-settings.json"), "--dangerously-skip-permissions"],
+      providerConversationId: "session-1",
+    }));
+  });
+
+  it("follows Claude to the conversation /clear starts and resumes that one", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    const generation = first.worker.create.mock.calls[0][0].generation;
+    // Unversioned events cannot claim the session.
+    first.instance.applyProviderStatus({
+      sessionId: "session-1", status: "idle", event: "SessionStart", at: "2026-07-11T01:00:00.000Z",
+      providerConversationId: "claude-stray",
+    });
+    first.instance.applyProviderStatus({
+      sessionId: "session-1", status: "idle", event: "SessionStart", at: "2026-07-11T01:00:01.000Z",
+      providerConversationId: "claude-cleared", transcriptPath: "C:\\Users\\me\\.claude\\projects\\C--Work\\claude-cleared.jsonl",
+      generation,
+    });
+    await first.instance.flush();
+
+    expect(first.instance.list()[0].providerConversationId).toBe("claude-cleared");
+    const stored = await readAppState({ statePath: path.join(root, "state.json") });
+    expect(stored.state.sessions["session-1"].providerConversationId).toBe("claude-cleared");
+
+    const resumedWorker = new FakeWorker();
+    const resumed = await coordinator(root, resumedWorker, undefined, undefined, undefined, async () => true);
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    expect(resumedWorker.create).toHaveBeenCalledWith(expect.objectContaining({
+      args: expect.arrayContaining(["--resume", "claude-cleared"]),
+      providerConversationId: "claude-cleared",
+    }));
+  });
+
+  it("starts an unsaved post-/clear conversation under a new id when the session id holds the earlier one", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    first.instance.applyProviderStatus({
+      sessionId: "session-1", status: "idle", event: "SessionStart", at: "2026-07-11T01:00:01.000Z",
+      providerConversationId: "claude-cleared", generation: first.worker.create.mock.calls[0][0].generation,
+    });
+    await first.instance.flush();
+
+    // `--session-id session-1` would exit "already in use": the pre-/clear conversation owns it.
+    const resumedWorker = new FakeWorker();
+    const resumed = await coordinator(root, resumedWorker, undefined, undefined, undefined, async (id) => id === "session-1");
+    await resumed.instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+
+    const spec = resumedWorker.create.mock.calls[0][0];
+    expect(spec.args[0]).toBe("--session-id");
+    expect(spec.args[1]).not.toMatch(/^(session-1|claude-cleared)$/);
+    expect(spec.providerConversationId).toBe(spec.args[1]);
   });
 
   it("resumes a hook-correlated Codex conversation without transcript guessing", async () => {

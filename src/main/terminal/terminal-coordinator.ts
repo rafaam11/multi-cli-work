@@ -136,6 +136,11 @@ interface TerminalCoordinatorOptions {
   logFlushMs?: number;
   /** 없으면 켬 — 설정 도입 전과 동일. 꺼지면 lazy auto-resume만 죽고 수동 재개는 그대로다. */
   autoResumeEnabled?(): boolean;
+  /**
+   * Whether the provider saved this conversation, so it can be resumed. Absent, or for a provider
+   * whose transcripts we cannot locate, every conversation is taken to exist.
+   */
+  hasProviderConversation?(session: TerminalSessionView, agent: AgentDefinition, conversationId: string): Promise<boolean>;
 }
 
 const DEFAULT_TITLE_POLL_MS = 2_000;
@@ -313,6 +318,17 @@ export class TerminalCoordinator {
       if (!project) throw new Error(`Unknown project: ${saved.projectId}`);
       cwd = project.rootPath;
     }
+    // Claude saves nothing before the first prompt, so `--resume` of a session closed before one
+    // exits with "No conversation found" — on every retry. There is nothing to lose: start it fresh,
+    // under the session id unless an earlier conversation (one /clear left behind) already holds it.
+    let resumeConversationId = saved.providerConversationId;
+    let newConversationId: string | undefined;
+    const hasConversation = this.options.hasProviderConversation;
+    if (agent.conversationId === "app-generated" && resumeConversationId && hasConversation &&
+      !(await hasConversation(saved, agent, resumeConversationId))) {
+      if (resumeConversationId !== saved.id && await hasConversation(saved, agent, saved.id)) newConversationId = randomUUID();
+      resumeConversationId = null;
+    }
     return this.launch({
       sessionId: saved.id,
       projectId: saved.projectId,
@@ -325,7 +341,8 @@ export class TerminalCoordinator {
       cols: input.cols,
       rows: input.rows,
       createdAt: saved.createdAt,
-      resumeConversationId: saved.providerConversationId,
+      resumeConversationId,
+      newConversationId,
       codexResumePicker,
       updateSelection: options.updateSelection,
       initialReplay: options.initialReplay,
@@ -646,6 +663,10 @@ export class TerminalCoordinator {
       this.enqueueEvent(() => this.applyWorkspaceStatus(event));
     }
     const ownsCodexSession = agent?.conversationId === "provider-assigned" && event.event === "SessionStart";
+    // Claude moves to a new conversation on /clear (or an in-app /resume) without a new process, and
+    // its SessionStart names it. Only this launch's own hook may move the id a later resume uses.
+    const movesClaudeConversation = agent?.conversationId === "app-generated" && agent.statusAdapter === "claude-hook" &&
+      event.event === "SessionStart" && Boolean(event.generation && event.providerConversationId);
     if (
       !view || !agent || (!ownsCodexSession && agent.statusAdapter !== "claude-hook") ||
       event.status === "exited" || event.status === "error"
@@ -673,6 +694,13 @@ export class TerminalCoordinator {
           this.transcriptStartedAt.set(current.id, event.at);
           metadataChanged = true;
         }
+      }
+      if (movesClaudeConversation && live && event.providerConversationId !== current.providerConversationId) {
+        current.providerConversationId = event.providerConversationId!;
+        // Titles and edits must come from the new transcript, not the one /clear left behind.
+        if (event.transcriptPath) this.transcriptPaths.set(current.id, event.transcriptPath);
+        else this.transcriptPaths.delete(current.id);
+        metadataChanged = true;
       }
       const statusChanged = live && current.status !== event.status;
       if (!metadataChanged && !statusChanged) return;
@@ -724,6 +752,7 @@ export class TerminalCoordinator {
     rows: number;
     createdAt: string;
     resumeConversationId: string | null;
+    newConversationId?: string;
     codexResumePicker?: boolean;
     title?: string | null;
     name?: string | null;
@@ -740,6 +769,7 @@ export class TerminalCoordinator {
           claudeSettingsPath: this.options.claudeSettingsPath,
           codexProfileName: this.options.codexProfileName ?? "multi-cli-work",
           resumeConversationId: input.resumeConversationId,
+          newConversationId: input.newConversationId,
           codexResumePicker: input.codexResumePicker,
         });
     // A brief failure must never block the launch itself — the session just starts without context.
