@@ -871,8 +871,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.getByRole("button", { name: "프롬프트 팬아웃" }).click();
     const fanOut = page.getByRole("dialog", { name: "프롬프트 팬아웃" });
     await expect(fanOut.getByRole("checkbox")).toHaveCount(2);
+    // Concatenated so the marker shows only once the command runs: Fan-out sends its Enter 300ms
+    // after the text, and typing into a pane before then would join the two commands.
     await fanOut.getByRole("textbox", { name: "팬아웃 프롬프트" }).fill(
-      shellCommand("Write-Output MCW_FANOUT_OK", "echo MCW_FANOUT_OK"),
+      shellCommand('Write-Output ("MCW_FANOUT_" + "OK")', 'echo MCW_FANOUT_""OK'),
     );
     await attachScreenshot("fan-out");
     await fanOut.getByRole("button", { name: "2개 세션에 전송" }).click();
