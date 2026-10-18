@@ -1,6 +1,7 @@
 import type { TerminalSessionView } from "../../shared/api-types";
 import { promptAsTerminalInput, submitTerminalInput } from "../../shared/fan-out";
 import type { StatusChip, TerminalEvent } from "../../shared/terminal-types";
+import { FirstRunDialogWatcher } from "../terminal/first-run-dialog";
 import type { HumanDraft } from "../terminal/human-input-tracker";
 
 /**
@@ -14,30 +15,6 @@ import type { HumanDraft } from "../terminal/human-input-tracker";
 
 export type DeliveryState = "held" | "delivered" | "failed" | "dropped";
 export type HoldReason = "working" | "awaiting-approval" | "typing" | "starting" | "settling" | "dialog";
-
-/**
- * Screens a CLI puts up before it reads prompts, which no status hook reports: Claude's folder trust
- * and bypass-permissions warnings, Codex's hook trust and folder approval. Typed text lands on their
- * options — a "2" in a message picks "No, exit" on Claude's — so nothing goes in until a person has
- * answered. Matched against the screen with spacing and case dropped, since TUIs draw with cursor
- * moves rather than spaces.
- */
-const BLOCKING_DIALOGS = [/yes,?itrustthisfolder/g, /doyoutrustthe(files|contents)/g, /trustallandcontinue/g, /yes,?iaccept/g, /allowcodextowork/g];
-/**
- * What the CLIs draw around their prompt box. Seen after a dialog's text, it means the dialog has
- * closed — Codex repaints its hook dialog once more on the way out, after the answering keystroke.
- */
-const PROMPT_READY = [/askcodextodoanything/g, /\?forshortcuts/g, /shift\+tabtocycle/g];
-const DIALOG_WINDOW = 600;
-/** Where the last match of any pattern ends, or -1. */
-function lastMatchEnd(text: string, patterns: readonly RegExp[]): number {
-  let end = -1;
-  for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) end = Math.max(end, match.index + match[0].length);
-  }
-  return end;
-}
-const ANSI = new RegExp(`${String.fromCharCode(27)}(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|${String.fromCharCode(27)}\\\\)|.)`, "g");
 
 export interface DeliveryRecord {
   id: string;
@@ -113,15 +90,8 @@ export function sessionLabel(session: Pick<TerminalSessionView, "id" | "name" | 
 export class DeliveryQueue {
   private readonly records = new Map<string, DeliveryRecord>();
   private readonly lastOutputAt = new Map<string, number>();
-  /** The tail of each session's screen text, compacted, for spotting a blocking dialog. */
-  private readonly screenTails = new Map<string, string>();
-  private readonly inDialog = new Set<string>();
-  /**
-   * Sessions whose last keystroke answered a dialog. The Enter that did it reads as a submitted
-   * prompt and marks the session working, but no turn starts — Codex never reports one ending — so
-   * that working is not held for, until the provider's next status or the person's next keystroke.
-   */
-  private readonly answeredDialog = new Set<string>();
+  /** Nothing goes in while a first-run dialog is up, until a person has answered it. */
+  private readonly dialogs = new FirstRunDialogWatcher();
   private readonly lastDeliveredAt = new Map<string, number>();
   private readonly urgent = new Set<string>();
   private readonly prefixes = new Map<string, string>();
@@ -141,23 +111,16 @@ export class DeliveryQueue {
       options.onEvent((event) => {
         if (event.type === "data") {
           this.lastOutputAt.set(event.sessionId, this.now());
-          this.watchScreen(event.sessionId, event.data);
+          this.dialogs.observe(event.sessionId, event.data);
         }
         if (event.type === "removed" || event.type === "exit") {
           this.lastOutputAt.delete(event.sessionId);
-          this.screenTails.delete(event.sessionId);
-          this.inDialog.delete(event.sessionId);
-          this.answeredDialog.delete(event.sessionId);
+          this.dialogs.forget(event.sessionId);
         }
-        if (event.type === "status" && event.status !== "working") this.answeredDialog.delete(event.sessionId);
         if (event.type === "status" || event.type === "exit" || event.type === "removed") void this.pump();
       }),
-      // A person's keystroke is the answer to whatever dialog was up.
       options.onDraftChange((sessionId) => {
-        if (this.inDialog.has(sessionId)) this.answeredDialog.add(sessionId);
-        else this.answeredDialog.delete(sessionId);
-        this.inDialog.delete(sessionId);
-        this.screenTails.delete(sessionId);
+        this.dialogs.answered(sessionId);
         void this.pump();
       }),
     ];
@@ -279,8 +242,6 @@ export class DeliveryQueue {
       try {
         const input = promptAsTerminalInput(`${prefix}${sanitizeDeliveryText(record.text)}`);
         await submitTerminalInput((data) => this.options.write(record.to, data), input, this.sleep);
-        // This Enter does start a turn.
-        this.answeredDialog.delete(record.to);
         this.lastDeliveredAt.set(record.to, this.now());
         this.settle(record, "delivered", null);
       } catch (error) {
@@ -308,12 +269,10 @@ export class DeliveryQueue {
     if (draft.lastInputAt !== null && now - draft.lastInputAt < (this.options.typingQuietMs ?? 3000)) {
       return { kind: "hold", reason: "typing" };
     }
-    if (this.inDialog.has(record.to)) return { kind: "hold", reason: "dialog" };
+    if (this.dialogs.isUp(record.to)) return { kind: "hold", reason: "dialog" };
     if (session.status === "awaiting-approval") return { kind: "hold", reason: "awaiting-approval" };
     if (session.status === "starting") return { kind: "hold", reason: "starting" };
-    if (session.status === "working" && !this.urgent.has(record.id) && !this.answeredDialog.has(record.to)) {
-      return { kind: "hold", reason: "working" };
-    }
+    if (session.status === "working" && !this.urgent.has(record.id)) return { kind: "hold", reason: "working" };
     const output = this.lastOutputAt.get(record.to);
     if (output !== undefined && now - output < (this.options.outputQuietMs ?? 1200)) {
       return { kind: "hold", reason: "settling" };
@@ -323,17 +282,6 @@ export class DeliveryQueue {
       return { kind: "hold", reason: "settling" };
     }
     return { kind: "ready" };
-  }
-
-  private watchScreen(sessionId: string, data: string): void {
-    const compact = data.replace(ANSI, "").replace(/\s+/g, "").toLowerCase();
-    if (!compact) return;
-    const tail = `${this.screenTails.get(sessionId) ?? ""}${compact}`.slice(-DIALOG_WINDOW);
-    this.screenTails.set(sessionId, tail);
-    const dialogAt = lastMatchEnd(tail, BLOCKING_DIALOGS);
-    const readyAt = lastMatchEnd(tail, PROMPT_READY);
-    if (dialogAt > readyAt) this.inDialog.add(sessionId);
-    else if (readyAt > dialogAt) this.inDialog.delete(sessionId);
   }
 
   private prefixFor(request: DeliveryRequest): string {

@@ -7,6 +7,7 @@ import type {
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
 import { tailOnUtf8Boundary } from "../utf8";
+import { FirstRunDialogWatcher } from "./first-run-dialog";
 
 /** ConEmu's numbered OSC 9 commands: `4;3;` (progress), `9;C:\dev` (cwd), a bare `5`… */
 const CONEMU_OSC9_COMMAND = /^\d+(;|$)/;
@@ -71,6 +72,7 @@ interface SessionRecord {
 
 export class TerminalSessionManager {
   private readonly sessions = new Map<string, SessionRecord>();
+  private readonly dialogs = new FirstRunDialogWatcher();
 
   constructor(
     private readonly factory: ManagedPtyFactory,
@@ -119,6 +121,7 @@ export class TerminalSessionManager {
       record.outputSequence += 1;
       record.output.append(data);
       record.session.updatedAt = new Date().toISOString();
+      this.dialogs.observe(session.id, data);
       this.publishEvent(record, { type: "data", sessionId: session.id, data, sequence: record.outputSequence });
       if (record.session.status === "starting") this.setStatus(record, "idle");
       if (record.statusAdapter === "osc9") this.applyOsc9Notifications(record, data);
@@ -142,10 +145,16 @@ export class TerminalSessionManager {
   write(sessionId: string, data: string): void {
     const record = this.requireSession(sessionId);
     record.pty.write(data);
+    const enter = /[\r\n]/.test(data);
+    // An Enter on a first-run dialog answers it; no turn starts, so none would ever end.
+    if (enter && this.dialogs.isUp(sessionId)) {
+      this.dialogs.answered(sessionId);
+      return;
+    }
     // Submitting a prompt means the agent is now working — but only say so for an agent that has a
     // way back out. A `signals` agent reports nothing of its own, so marking it working would strand
     // it there; it stays idle, which is the honest answer when we cannot tell.
-    if (record.statusAdapter !== "signals" && /[\r\n]/.test(data)) this.setStatus(record, "working");
+    if (record.statusAdapter !== "signals" && enter) this.setStatus(record, "working");
   }
 
   resize(sessionId: string, cols: number, rows: number): void {
@@ -170,6 +179,7 @@ export class TerminalSessionManager {
     if (!force && record.session.status !== "exited") return;
     this.stop(sessionId);
     this.sessions.delete(sessionId);
+    this.dialogs.forget(sessionId);
     for (const subscription of record.subscriptions) subscription.dispose();
     record.subscriptions.length = 0;
   }

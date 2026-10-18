@@ -207,6 +207,26 @@ describe("TerminalSessionManager", () => {
     expect(events).toHaveBeenLastCalledWith({ type: "status", sessionId: "session-1", status: "working" });
   });
 
+  it("does not mark a session working for the Enter that answers a first-run dialog", () => {
+    const pty = new FakePty();
+    const events = vi.fn();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, events);
+    manager.create({ ...launchSpec(), kind: "codex", statusAdapter: "osc9" });
+    pty.emitData("› Ask Codex to do anything\r\n");
+    pty.emitData("Hooks need review\r\n› 1. Review hooks\r\n  2. Trust all and continue\r\n");
+    manager.write("session-1", "2");
+    // Codex repaints the dialog for the moved selection, then takes the Enter.
+    pty.emitData("  1. Review hooks\r\n› 2. Trust all and continue\r\n");
+    manager.write("session-1", "\r");
+    pty.emitData("Trusting hooks...  Review hooks  Trust all and continue");
+    pty.emitData("› Ask Codex to do anything\r\n  ? for shortcuts");
+    manager.write("session-1", "continue\r");
+
+    const statuses = events.mock.calls.flatMap(([event]) => (event.type === "status" ? [event.status] : []));
+    // idle on the first byte, and working only for the prompt submitted after the dialog.
+    expect(statuses).toEqual(["starting", "idle", "working"]);
+  });
+
   it("treats a completed Codex response carried in an OSC 9 payload as input wait", () => {
     const pty = new FakePty();
     const events = vi.fn();
