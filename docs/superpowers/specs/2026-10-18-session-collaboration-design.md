@@ -22,7 +22,7 @@ OpenRig(mvschwarz/openrig)를 검토한 결과다. OpenRig는 YAML로 정의한 
   - 보류 개수는 대상 패인 머리줄의 `보류 N` 칩으로 보인다.
 - **확인 창**
   - 상태 훅이 알려 주지 않는 첫 실행 화면들이다: Claude의 폴더 신뢰·권한 우회 경고, Codex의 훅 신뢰·폴더 승인.
-  - 화면 출력에서 공백과 대소문자를 뺀 문구로 찾는다. 사람이 키를 누르면 답한 것으로 본다.
+  - 화면 출력에서 공백과 대소문자를 뺀 문구로 찾는다. 사람이 키를 누르거나, 창 문구 뒤에 입력창 문구(`Ask Codex to do anything`·`? for shortcuts` 등)가 그려지면 닫힌 것으로 본다. Codex는 답한 뒤 훅 창을 한 번 더 그리므로 키 입력만으로는 부족하다.
   - 이것이 없으면 글자가 선택지를 고른다. Claude 신뢰 창에서는 "2"가 "No, exit"다(2026-10-18 실기에서 확인).
 - **사람 입력 추적**: `src/main/terminal/human-input-tracker.ts`
   - 데스크톱 `terminals:write`와 폰 입력만 센다. 문자는 더하고 백스페이스는 빼며, Enter·Ctrl+C에서 0으로 돌린다.
@@ -30,6 +30,7 @@ OpenRig(mvschwarz/openrig)를 검토한 결과다. OpenRig는 YAML로 정의한 
 - **전달 형식**
   - 앞에 `[from <이름> (<kind>)] `를 붙인다. PowerShell이 가운뎃점을 공백으로 그려서 ASCII로 정했다.
   - 보드 글은 `[board: <작성자>] `로 붙인다.
+  - 본문을 쓰고 300ms 뒤에 Enter(`\r`)를 따로 쓴다. Claude는 긴 덩어리 끝의 `\r`을 붙여넣기의 일부로 삼켜 제출하지 않는다(2026-10-18 실기에서 확인).
   - ESC와 C0 제어문자는 지운다. 본문의 `ESC[201~`가 bracketed paste를 일찍 끝내는 것을 막기 위해서다.
 - **jk 명령**
   - `send --now/--raw/--wait`

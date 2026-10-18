@@ -22,8 +22,21 @@ export type HoldReason = "working" | "awaiting-approval" | "typing" | "starting"
  * answered. Matched against the screen with spacing and case dropped, since TUIs draw with cursor
  * moves rather than spaces.
  */
-const BLOCKING_DIALOGS = [/yes,?itrustthisfolder/, /doyoutrustthe(files|contents)/, /trustallandcontinue/, /yes,?iaccept/, /allowcodextowork/];
+const BLOCKING_DIALOGS = [/yes,?itrustthisfolder/g, /doyoutrustthe(files|contents)/g, /trustallandcontinue/g, /yes,?iaccept/g, /allowcodextowork/g];
+/**
+ * What the CLIs draw around their prompt box. Seen after a dialog's text, it means the dialog has
+ * closed — Codex repaints its hook dialog once more on the way out, after the answering keystroke.
+ */
+const PROMPT_READY = [/askcodextodoanything/g, /\?forshortcuts/g, /shift\+tabtocycle/g];
 const DIALOG_WINDOW = 600;
+/** Where the last match of any pattern ends, or -1. */
+function lastMatchEnd(text: string, patterns: readonly RegExp[]): number {
+  let end = -1;
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) end = Math.max(end, match.index + match[0].length);
+  }
+  return end;
+}
 const ANSI = new RegExp(`${String.fromCharCode(27)}(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|${String.fromCharCode(27)}\\\\)|.)`, "g");
 
 export interface DeliveryRecord {
@@ -71,6 +84,12 @@ export interface DeliveryQueueOptions {
   /** Gap kept after a delivery before the next one to the same target. */
   cooldownMs?: number;
   expireMs?: number;
+  /**
+   * Pause between the text and the Enter that submits it. Claude takes a long chunk ending in a
+   * carriage return for a paste and keeps the return as part of it, so the prompt never goes.
+   */
+  submitGapMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export const HELD_CHIP_KEY = "jk-held";
@@ -108,12 +127,14 @@ export class DeliveryQueue {
   private readonly waiters = new Map<string, Set<(record: DeliveryRecord) => void>>();
   private readonly unsubscribers: Array<() => void>;
   private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
   private ticker: unknown = null;
-  private pumping = false;
+  private pumping: Promise<void> | null = null;
   private pumpAgain = false;
 
   constructor(private readonly options: DeliveryQueueOptions) {
     this.now = options.now ?? Date.now;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.unsubscribers = [
       options.onEvent((event) => {
         if (event.type === "data") {
@@ -205,21 +226,24 @@ export class DeliveryQueue {
   }
 
   /** Delivers whatever is ready, oldest first, one message per target per pass. */
-  async pump(): Promise<void> {
+  /** Runs a pass; while one is under way, asks it for another and resolves when it ends. */
+  pump(): Promise<void> {
     if (this.pumping) {
       this.pumpAgain = true;
-      return;
+      return this.pumping;
     }
-    this.pumping = true;
-    try {
-      do {
-        this.pumpAgain = false;
-        await this.pumpOnce();
-      } while (this.pumpAgain);
-    } finally {
-      this.pumping = false;
-      this.syncTicker();
-    }
+    this.pumping = (async () => {
+      try {
+        do {
+          this.pumpAgain = false;
+          await this.pumpOnce();
+        } while (this.pumpAgain);
+      } finally {
+        this.pumping = null;
+        this.syncTicker();
+      }
+    })();
+    return this.pumping;
   }
 
   private async pumpOnce(): Promise<void> {
@@ -247,7 +271,10 @@ export class DeliveryQueue {
       }
       const prefix = this.prefixes.get(record.id) ?? "";
       try {
-        await this.options.write(record.to, promptAsTerminalInput(`${prefix}${sanitizeDeliveryText(record.text)}`));
+        const input = promptAsTerminalInput(`${prefix}${sanitizeDeliveryText(record.text)}`);
+        await this.options.write(record.to, input.slice(0, -1));
+        await this.sleep(this.options.submitGapMs ?? 300);
+        await this.options.write(record.to, "\r");
         this.lastDeliveredAt.set(record.to, this.now());
         this.settle(record, "delivered", null);
       } catch (error) {
@@ -294,12 +321,11 @@ export class DeliveryQueue {
     const compact = data.replace(ANSI, "").replace(/\s+/g, "").toLowerCase();
     if (!compact) return;
     const tail = `${this.screenTails.get(sessionId) ?? ""}${compact}`.slice(-DIALOG_WINDOW);
-    if (BLOCKING_DIALOGS.some((pattern) => pattern.test(tail))) {
-      this.inDialog.add(sessionId);
-      this.screenTails.delete(sessionId);
-      return;
-    }
     this.screenTails.set(sessionId, tail);
+    const dialogAt = lastMatchEnd(tail, BLOCKING_DIALOGS);
+    const readyAt = lastMatchEnd(tail, PROMPT_READY);
+    if (dialogAt > readyAt) this.inDialog.add(sessionId);
+    else if (readyAt > dialogAt) this.inDialog.delete(sessionId);
   }
 
   private prefixFor(request: DeliveryRequest): string {

@@ -51,6 +51,7 @@ function harness(initial: TerminalSessionView[] = [session({}), session({ id: "s
     },
     setChip,
     clearChips,
+    sleep: async () => undefined,
     idFactory: () => `m${(ids += 1)}`,
     now: () => now,
     setInterval: (callback) => {
@@ -66,6 +67,11 @@ function harness(initial: TerminalSessionView[] = [session({}), session({ id: "s
     write,
     setChip,
     clearChips,
+    /** What each target was sent, as whole prompts: the text and its Enter go in separate writes. */
+    sent(target = "target") {
+      const data = write.mock.calls.filter(([id]) => id === target).map(([, chunk]) => chunk).join("");
+      return data.split(/(?<=\r)/).filter(Boolean);
+    },
     setSessions(next: TerminalSessionView[]) {
       sessions = next;
     },
@@ -100,17 +106,23 @@ describe("DeliveryQueue", () => {
     const h = harness();
     const result = await h.queue.enqueue({ to: "target", text: "리뷰해 줘", from: "sender" });
     expect(result).toMatchObject({ state: "delivered", to: "target", text: "리뷰해 줘" });
-    expect(h.write).toHaveBeenCalledWith("target", "[from 빌더 (claude)] 리뷰해 줘\r");
+    expect(h.sent()).toEqual(["[from 빌더 (claude)] 리뷰해 줘\r"]);
     expect(h.clearChips).toHaveBeenCalledWith("target", HELD_CHIP_KEY);
+  });
+
+  it("sends the Enter on its own after a pause, so Claude does not keep it as part of a paste", async () => {
+    const h = harness();
+    await h.queue.enqueue({ to: "target", text: "긴 한 줄", from: "sender" });
+    expect(h.write.mock.calls.map(([, data]) => data)).toEqual(["[from 빌더 (claude)] 긴 한 줄", "\r"]);
   });
 
   it("uses a label or no prefix when asked, and wraps multiline text in one paste", async () => {
     const h = harness();
     await h.queue.enqueue({ to: "target", text: "a", label: "board: 나" });
-    expect(h.write).toHaveBeenLastCalledWith("target", "[board: 나] a\r");
+    expect(h.sent().at(-1)).toBe("[board: 나] a\r");
     h.advance(5000);
     await h.queue.enqueue({ to: "target", text: "첫 줄\n둘째 줄", from: "sender", raw: true });
-    expect(h.write).toHaveBeenLastCalledWith("target", "\u001b[200~첫 줄\n둘째 줄\u001b[201~\r");
+    expect(h.sent().at(-1)).toBe("\u001b[200~첫 줄\n둘째 줄\u001b[201~\r");
   });
 
   it("holds while the target works and delivers once its turn ends", async () => {
@@ -122,7 +134,7 @@ describe("DeliveryQueue", () => {
 
     h.setStatus("awaiting-input");
     await h.queue.pump();
-    expect(h.write).toHaveBeenCalledWith("target", "x\r");
+    expect(h.sent()).toEqual(["x\r"]);
     expect(h.queue.get(result.id)).toMatchObject({ state: "delivered" });
   });
 
@@ -149,7 +161,7 @@ describe("DeliveryQueue", () => {
     expect(h.write).not.toHaveBeenCalled();
     h.advance(3100);
     await h.tick();
-    expect(h.write).toHaveBeenCalledTimes(1);
+    expect(h.sent()).toHaveLength(1);
   });
 
   it("waits for the screen to settle so a CLI still drawing its first screen is not typed into", async () => {
@@ -158,7 +170,7 @@ describe("DeliveryQueue", () => {
     expect(await h.queue.enqueue({ to: "target", text: "x" })).toMatchObject({ state: "held", reason: "settling" });
     h.advance(1300);
     await h.tick();
-    expect(h.write).toHaveBeenCalledTimes(1);
+    expect(h.sent()).toHaveLength(1);
   });
 
   it("holds while a CLI's trust dialog is up, drawn in pieces, until a person answers it", async () => {
@@ -174,7 +186,26 @@ describe("DeliveryQueue", () => {
     h.type(0); // Enter on the dialog
     h.advance(3100);
     await h.tick();
-    expect(h.write).toHaveBeenCalledWith("target", "2) do something\r");
+    expect(h.sent()).toEqual(["2) do something\r"]);
+  });
+
+  it("lets go of a dialog once the prompt box is back, though the answer repainted it", async () => {
+    const h = harness();
+    h.screen("Hooks need review\r\n› 1. Review hooks\r\n  2. Trust all and continue\r\n");
+    h.advance(5000);
+    const record = await h.queue.enqueue({ to: "target", text: "x" });
+    expect(record).toMatchObject({ state: "held", reason: "dialog" });
+
+    h.type(0); // Enter on the dialog — then Codex paints it once more on its way out
+    h.screen("Trusting hooks...  Review hooks  Trust all and continue  Continue without trusting");
+    h.advance(5000);
+    await h.tick();
+    expect(h.queue.get(record.id)).toMatchObject({ state: "held", reason: "dialog" });
+
+    h.screen(">_ OpenAI Codex (v0.163.0)\r\n› Ask Codex to do anything\r\n  ? for shortcuts");
+    h.advance(5000);
+    await h.tick();
+    expect(h.sent()).toEqual(["x\r"]);
   });
 
   it("does not take ordinary output for a dialog", async () => {
@@ -192,10 +223,10 @@ describe("DeliveryQueue", () => {
 
     h.setStatus("idle");
     await h.queue.pump();
-    expect(h.write.mock.calls.map(([, data]) => data)).toEqual(["first\r"]);
+    expect(h.sent()).toEqual(["first\r"]);
     h.advance(3000);
     await h.tick();
-    expect(h.write.mock.calls.map(([, data]) => data)).toEqual(["first\r", "second\r"]);
+    expect(h.sent()).toEqual(["first\r", "second\r"]);
     expect(h.hasTicker()).toBe(false);
   });
 
