@@ -83,7 +83,8 @@ afterEach(async () => {
   await fs.rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
-describe("worktree service against a real repo", () => {
+// Every case here runs real git, several times over; a Windows runner can take seconds per call.
+describe("worktree service against a real repo", { timeout: 30_000 }, () => {
   it("resolves session cwd inside a newly created worktree and rejects unrelated repositories", async () => {
     const { service: worktrees } = service();
     const externalPath = path.join(tempRoot, "external");
