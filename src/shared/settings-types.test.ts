@@ -33,6 +33,7 @@ describe("parseSettings", () => {
       summonShortcut: null,
       taskbarProgress: true,
       reduceMotion: false,
+      jkMcp: true,
     });
     expect(DEFAULT_SETTINGS.notifications).toEqual({
       desktop: true,

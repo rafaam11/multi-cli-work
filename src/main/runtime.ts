@@ -33,7 +33,9 @@ import {
   resolveControlPipeName,
   CONTROL_TOKEN_ENV,
   ensureControlCli,
+  JK_MCP_SCRIPT,
 } from "./control/control-cli-installer";
+import { jkMcpLaunchArgs, removeJkMcpConfig } from "./control/jk-mcp-launch";
 import { handleControlCommand, type ControlCommandContext } from "./control/control-commands";
 import { DeliveryQueue } from "./control/delivery-queue";
 import { BoardService } from "./board/board-service";
@@ -221,7 +223,10 @@ export async function createDesktopRuntime(
   // jk-coding-cli: the client lands in userData/bin (joined to every session's PATH below), the
   // token rotates per app run, and the pipe name can be overridden so a dev build next to an
   // installed one gets its own pipe instead of silently losing the CLI.
-  const controlCli = await ensureControlCli(userData);
+  const controlCli = await ensureControlCli(userData, process.platform, path.join(__dirname, JK_MCP_SCRIPT));
+  // Per-session MCP configs carry this run's token; last run's are dead weight.
+  const jkMcpConfigDir = path.join(userData, "mcp");
+  await removeJkMcpConfig(jkMcpConfigDir).catch(() => undefined);
   const controlPipeName = resolveControlPipeName(process.env, userData);
   const controlToken = crypto.randomUUID();
   const providerEnvironment = await discoverSessionEnvironment(stringEnvironment());
@@ -380,6 +385,20 @@ export async function createDesktopRuntime(
       ]);
     },
     getAgent: (agentId) => agentMap.get(agentId) ?? null,
+    extraLaunchArgs: async (agent, sessionId) =>
+      controlCli.mcpScriptPath && settingsService.current().general.jkMcp
+        ? jkMcpLaunchArgs(agent, sessionId, {
+            executable: process.execPath,
+            scriptPath: controlCli.mcpScriptPath,
+            configDir: jkMcpConfigDir,
+            environment: () => ({
+              [CONTROL_PIPE_ENV]: controlPipeName,
+              [CONTROL_TOKEN_ENV]: controlToken,
+              ...(sessionEnvironment[CONTROL_ENDPOINT_ENV] ? { [CONTROL_ENDPOINT_ENV]: sessionEnvironment[CONTROL_ENDPOINT_ENV] } : {}),
+            }),
+            version: app.getVersion(),
+          })
+        : [],
     toolSessionCwd: () => os.homedir(),
     codexProfileName: codexIntegration.profileName,
     readTitle: (session, agent, transcriptPath) =>
@@ -427,7 +446,9 @@ export async function createDesktopRuntime(
   // their way.
   const humanInput = new HumanInputTracker();
   coordinator.onEvent((event) => {
-    if (event.type === "removed") humanInput.forget(event.sessionId);
+    if (event.type !== "removed") return;
+    humanInput.forget(event.sessionId);
+    void removeJkMcpConfig(jkMcpConfigDir, event.sessionId).catch(() => undefined);
   });
   const delivery = new DeliveryQueue({
     sessions: () => coordinator.list(),

@@ -117,6 +117,8 @@ interface TerminalCoordinatorOptions {
    * the MULTI_CLI_WORK_PROJECT_BRIEF env variable. Absent in tests without work projects.
    */
   getWorkProjectBrief?(projectId: string): Promise<string | null>;
+  /** Arguments the app adds to an agent session's launch — the jk MCP server's config. */
+  extraLaunchArgs?(agent: AgentDefinition, sessionId: string): Promise<string[]>;
   /** Null when a session names an agent the user has since removed from `agents.json`. */
   getAgent(agentId: AgentId): AgentDefinition | null;
   toolSessionCwd(): string;
@@ -762,6 +764,13 @@ export class TerminalCoordinator {
   }): Promise<TerminalSessionView> {
     const agent = this.requireAgent(input.kind);
     const executables = await this.options.getExecutables();
+    // Like the brief below, an addition that fails never blocks the launch.
+    const extraArgs = input.tool
+      ? []
+      : ((await this.options.extraLaunchArgs?.(agent, input.sessionId).catch((error) => {
+          console.error("Failed to prepare a session's extra launch arguments", error);
+          return [];
+        })) ?? []);
     const command = input.tool
       ? buildToolLaunch(input.tool, executables)
       : buildAgentLaunch(agent, agentExecutable(executables, agent), {
@@ -772,6 +781,7 @@ export class TerminalCoordinator {
           resumeConversationId: input.resumeConversationId,
           newConversationId: input.newConversationId,
           codexResumePicker: input.codexResumePicker,
+          extraArgs,
         });
     // A brief failure must never block the launch itself — the session just starts without context.
     const briefPath =

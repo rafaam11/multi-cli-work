@@ -251,6 +251,7 @@ function Format-Delivery($delivery) {
         "typing" { "사람이 입력 중" }
         "starting" { "시작 중" }
         "settling" { "화면 정리 중" }
+        "dialog" { "확인 창 응답 대기" }
         default { "대기" }
       }
       return "보류됨(" + $why + ") -> " + $delivery.sessionId + "  id=" + $delivery.id + "  (한가해지면 자동 전달)"
@@ -432,7 +433,7 @@ try:
 except Exception as error: fail("jk-coding-cli: 앱에 연결할 수 없습니다: " + str(error))
 if not response.get("ok"): fail("jk-coding-cli: " + str(response.get("error", "unknown error")))
 result = response.get("result") or {}
-HOLD_REASONS = {"working": "작업 중", "awaiting-approval": "승인 대기", "typing": "사람이 입력 중", "starting": "시작 중", "settling": "화면 정리 중"}
+HOLD_REASONS = {"working": "작업 중", "awaiting-approval": "승인 대기", "typing": "사람이 입력 중", "starting": "시작 중", "settling": "화면 정리 중", "dialog": "확인 창 응답 대기"}
 def delivery(item):
     if item["outcome"] == "delivered": return "전송됨 -> " + item["sessionId"]
     if item["outcome"] == "held": return "보류됨(%s) -> %s  id=%s  (한가해지면 자동 전달)" % (HOLD_REASONS.get(item.get("reason"), "대기"), item["sessionId"], item["id"])
@@ -477,12 +478,29 @@ async function replaceFile(filePath: string, content: string): Promise<void> {
   }
 }
 
+export const JK_MCP_SCRIPT = "jk-mcp.js";
+
+/**
+ * `mcpScriptSource` is the built `jk-mcp.js` next to the main bundle. It is copied out of the app
+ * (and its asar) so the CLIs can run it with the app's executable in node mode; null when this
+ * build has none, and then no session is offered the MCP server.
+ */
 export async function ensureControlCli(
   userDataPath: string,
   platform: NodeJS.Platform = process.platform,
-): Promise<{ binDir: string }> {
+  mcpScriptSource: string | null = null,
+): Promise<{ binDir: string; mcpScriptPath: string | null }> {
   const binDir = path.join(userDataPath, "bin");
   await fs.mkdir(binDir, { recursive: true });
+  let mcpScriptPath: string | null = null;
+  if (mcpScriptSource) {
+    try {
+      await replaceFile(path.join(binDir, JK_MCP_SCRIPT), await fs.readFile(mcpScriptSource, "utf8"));
+      mcpScriptPath = path.join(binDir, JK_MCP_SCRIPT);
+    } catch (error) {
+      console.error("jk MCP server unavailable", error);
+    }
+  }
   if (platform === "win32") {
     // With a BOM: the shims run Windows PowerShell 5.1, which reads a BOM-less script in the ANSI
     // code page and turns its Korean text into parse errors on any non-UTF-8 Windows.
@@ -498,5 +516,5 @@ export async function ensureControlCli(
     await replaceFile(alias, CONTROL_CLI_PYTHON);
     await Promise.all([fs.chmod(client, 0o755), fs.chmod(alias, 0o755)]);
   }
-  return { binDir };
+  return { binDir, mcpScriptPath };
 }

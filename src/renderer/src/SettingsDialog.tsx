@@ -1030,6 +1030,12 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
                 settings.general.taskbarProgress,
                 (next) => ({ general: { taskbarProgress: next } }),
               )}
+              {checkboxRow(
+                "Claude·Codex 세션에 jk 도구(MCP) 제공 — 새로 시작하는 세션부터",
+                "settings-jk-mcp",
+                settings.general.jkMcp,
+                (next) => ({ general: { jkMcp: next } }),
+              )}
               <div className="settings-row">
                 <span>창 불러오기 단축키</span>
                 <span className="settings-key-controls">

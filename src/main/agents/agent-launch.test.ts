@@ -139,6 +139,13 @@ function userAgent(overrides: Partial<AgentDefinition>): AgentDefinition {
   };
 }
 
+describe("extra arguments", () => {
+  it("go last, as given, without placeholder substitution", () => {
+    const launch = buildAgentLaunch(BUILTIN_AGENTS.claude, CLAUDE_EXE, { ...context, extraArgs: ["--mcp-config", "C:\\x\\{s}.json"] });
+    expect(launch.args.slice(-3)).toEqual(["--dangerously-skip-permissions", "--mcp-config", "C:\\x\\{s}.json"]);
+  });
+});
+
 describe("argument placeholders", () => {
   it("rejects an unknown placeholder rather than passing it through as text", () => {
     // A typo must not reach the PTY as a literal word on the command line.

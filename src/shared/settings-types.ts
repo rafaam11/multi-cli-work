@@ -23,6 +23,8 @@ export interface GeneralSettings {
   taskbarProgress: boolean;
   /** OS 설정과 별개로 앱 애니메이션을 줄인다. OS가 줄이라고 하면 이 값과 무관하게 줄인다. */
   reduceMotion: boolean;
+  /** Claude·Codex 세션에 jk(세션 제어·팀 보드)를 MCP 도구로 붙인다. 새로 시작하는 세션부터 적용된다. */
+  jkMcp: boolean;
 }
 
 export interface TerminalSettings {
@@ -207,7 +209,7 @@ const MAX_FILE_OPEN_WITH_ENTRIES = 200;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "ko",
-  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null, taskbarProgress: true, reduceMotion: false },
+  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null, taskbarProgress: true, reduceMotion: false, jkMcp: true },
   terminal: {
     fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -384,6 +386,7 @@ export function parseSettings(value: unknown): AppSettings {
       autoResumeSessions: readBoolean(general.autoResumeSessions, defaults.general.autoResumeSessions),
       autoCheckUpdates: readBoolean(general.autoCheckUpdates, defaults.general.autoCheckUpdates),
       taskbarProgress: readBoolean(general.taskbarProgress, defaults.general.taskbarProgress),
+      jkMcp: readBoolean(general.jkMcp, defaults.general.jkMcp),
       summonShortcut:
         typeof general.summonShortcut === "string" &&
         general.summonShortcut.length > 0 &&

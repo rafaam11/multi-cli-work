@@ -15,6 +15,8 @@ export interface AgentLaunchContext {
   newConversationId?: string;
   /** Codex can let the user select an existing conversation when its exact id was not recorded. */
   codexResumePicker?: boolean;
+  /** Appended as they are, after every templated argument — the app's own per-session additions. */
+  extraArgs?: readonly string[];
 }
 
 export interface AgentLaunchCommand {
@@ -91,7 +93,7 @@ export function buildAgentLaunch(
   const template = [...(picker ? sessionArgs.filter((arg) => arg !== "{conversationId}") : sessionArgs), ...definition.args];
   return {
     executable,
-    args: template.map((arg) => substituteAgentArg(arg, values)),
+    args: [...template.map((arg) => substituteAgentArg(arg, values)), ...(context.extraArgs ?? [])],
     providerConversationId: providerConversationId(definition, context),
   };
 }
