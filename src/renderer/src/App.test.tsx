@@ -3299,9 +3299,9 @@ describe("prompt fan-out", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "1개 세션에 전송" }));
 
-    await waitFor(() =>
-      expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "상태를 보고해줘\r"),
-    );
+    // The text, then its Enter on its own after a pause.
+    await waitFor(() => expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "\r"));
+    expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "상태를 보고해줘");
   });
 });
 

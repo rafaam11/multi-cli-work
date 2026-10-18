@@ -42,7 +42,7 @@ import { WorkspaceGrid } from "./WorkspaceGrid";
 import { FolderStartPage } from "./FolderStartPage";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import { WorktreeCreateDialog } from "./WorktreeCreateDialog";
-import { fanOutTargets, noteTargets, promptAsTerminalInput } from "@shared/fan-out";
+import { fanOutTargets, noteTargets, promptAsTerminalInput, submitTerminalInput } from "@shared/fan-out";
 import { localDiffNotesPrompt } from "@shared/line-notes";
 import type { QuickOpenItem } from "./quick-open";
 import { projectName, sessionLabel } from "./session-labels";
@@ -1377,7 +1377,11 @@ export function App() {
     setFanOutVisible(false);
     setActionError(null);
     try {
-      await Promise.all(inputs.map((input) => window.multiCliWork.terminals.write(input.sessionId, input.data)));
+      await Promise.all(
+        inputs.map((input) =>
+          submitTerminalInput((data) => window.multiCliWork.terminals.write(input.sessionId, data), input.data),
+        ),
+      );
     } catch (error) {
       setActionError(errorMessage(error));
     }
@@ -1527,7 +1531,10 @@ export function App() {
   const sendDiffNotes = async (sessionId: string, targetLabel: string, sent: LocalDiffNote[]) => {
     setActionError(null);
     try {
-      await window.multiCliWork.terminals.write(sessionId, promptAsTerminalInput(localDiffNotesPrompt(targetLabel, sent)));
+      await submitTerminalInput(
+        (data) => window.multiCliWork.terminals.write(sessionId, data),
+        promptAsTerminalInput(localDiffNotesPrompt(targetLabel, sent)),
+      );
       diffNotes.markSent(sent.map((note) => note.id));
       const session = sessions.find((candidate) => candidate.id === sessionId);
       if (session) {

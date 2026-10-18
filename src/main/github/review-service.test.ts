@@ -118,7 +118,9 @@ describe("private PR annotations", () => {
     expect(result.sent).toBe(1);
     expect(result.annotations[0]).toMatchObject({ status: "sent", sentAt: expect.any(String) });
     expect(writeSession).toHaveBeenCalledWith("session-review", expect.stringContaining("src/a.ts · RIGHT:1"));
-    expect(writeSession.mock.calls[0][1]).toMatch(/\u001b\[201~\r$/);
+    // The paste, then its Enter on its own — Claude keeps a return that rides in the paste's chunk.
+    expect(writeSession.mock.calls[0][1]).toMatch(/\u001b\[201~$/);
+    expect(writeSession.mock.calls[1]).toEqual(["session-review", "\r"]);
   });
 
   it("preserves drafts and the error when PTY write fails", async () => {

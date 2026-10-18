@@ -37,3 +37,25 @@ export function promptAsTerminalInput(prompt: string): string {
   if (!normalized.includes("\n")) return `${normalized}\r`;
   return `${BRACKETED_PASTE_START}${normalized}${BRACKETED_PASTE_END}\r`;
 }
+
+/** Pause between a prompt's text and the Enter that submits it. */
+export const PROMPT_SUBMIT_GAP_MS = 300;
+
+/**
+ * Writes terminal input that ends in a submitting Enter as two writes, the Enter after a pause.
+ * Claude takes a long chunk ending in a carriage return for a paste and keeps the return as part of
+ * it, so the prompt sits in the box and never goes.
+ */
+export async function submitTerminalInput(
+  write: (data: string) => Promise<unknown>,
+  data: string,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<void> {
+  if (!data.endsWith("\r") || data === "\r") {
+    await write(data);
+    return;
+  }
+  await write(data.slice(0, -1));
+  await sleep(PROMPT_SUBMIT_GAP_MS);
+  await write("\r");
+}

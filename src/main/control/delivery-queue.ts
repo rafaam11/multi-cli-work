@@ -1,5 +1,5 @@
 import type { TerminalSessionView } from "../../shared/api-types";
-import { promptAsTerminalInput } from "../../shared/fan-out";
+import { promptAsTerminalInput, submitTerminalInput } from "../../shared/fan-out";
 import type { StatusChip, TerminalEvent } from "../../shared/terminal-types";
 import type { HumanDraft } from "../terminal/human-input-tracker";
 
@@ -84,11 +84,7 @@ export interface DeliveryQueueOptions {
   /** Gap kept after a delivery before the next one to the same target. */
   cooldownMs?: number;
   expireMs?: number;
-  /**
-   * Pause between the text and the Enter that submits it. Claude takes a long chunk ending in a
-   * carriage return for a paste and keeps the return as part of it, so the prompt never goes.
-   */
-  submitGapMs?: number;
+  /** Waits out the pause between a prompt's text and its Enter (`submitTerminalInput`). */
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -282,9 +278,7 @@ export class DeliveryQueue {
       const prefix = this.prefixes.get(record.id) ?? "";
       try {
         const input = promptAsTerminalInput(`${prefix}${sanitizeDeliveryText(record.text)}`);
-        await this.options.write(record.to, input.slice(0, -1));
-        await this.sleep(this.options.submitGapMs ?? 300);
-        await this.options.write(record.to, "\r");
+        await submitTerminalInput((data) => this.options.write(record.to, data), input, this.sleep);
         // This Enter does start a turn.
         this.answeredDialog.delete(record.to);
         this.lastDeliveredAt.set(record.to, this.now());

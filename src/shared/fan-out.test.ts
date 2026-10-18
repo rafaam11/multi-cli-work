@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TerminalSessionView } from "./api-types";
-import { fanOutTargets, noteTargets, promptAsTerminalInput } from "./fan-out";
+import { PROMPT_SUBMIT_GAP_MS, fanOutTargets, noteTargets, promptAsTerminalInput, submitTerminalInput } from "./fan-out";
 
 function session(id: string, status: TerminalSessionView["status"], projectId = "project-1"): TerminalSessionView {
   return {
@@ -48,6 +48,30 @@ describe("promptAsTerminalInput", () => {
 
   it("normalises Windows line endings before wrapping", () => {
     expect(promptAsTerminalInput("a\r\nb")).toBe(`${ESC}[200~a\nb${ESC}[201~\r`);
+  });
+});
+
+describe("submitTerminalInput", () => {
+  it("writes the text, waits, then the Enter on its own", async () => {
+    const calls: string[] = [];
+    await submitTerminalInput(
+      async (data) => calls.push(data),
+      "long prompt\r",
+      async (ms) => {
+        calls.push(`sleep ${ms}`);
+      },
+    );
+    expect(calls).toEqual(["long prompt", `sleep ${PROMPT_SUBMIT_GAP_MS}`, "\r"]);
+  });
+
+  it("writes input with no trailing Enter, or a lone Enter, as it is", async () => {
+    const calls: string[] = [];
+    const sleep = async () => {
+      calls.push("sleep");
+    };
+    await submitTerminalInput(async (data) => calls.push(data), "draft", sleep);
+    await submitTerminalInput(async (data) => calls.push(data), "\r", sleep);
+    expect(calls).toEqual(["draft", "\r"]);
   });
 });
 

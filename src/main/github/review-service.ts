@@ -8,6 +8,7 @@ import type {
   PullRequestReviewAnnotation, PullRequestReviewAnnotationInput, PullRequestReviewAnnotationSendResult,
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "../../shared/github-types";
+import { submitTerminalInput } from "../../shared/fan-out";
 import type { SharedProject } from "../../shared/project-types";
 import type { SharedWorktree, WorktreeRemovalResult } from "../../shared/worktree-types";
 import { defaultWorktreePath } from "../projects/git-worktree";
@@ -266,7 +267,10 @@ export class PullRequestReviewService {
     if (drafts.length === 0) return { sent: 0, annotations: before.annotations };
     const prompt = pullRequestAnnotationsPrompt(remote, prNumber, review.headSha, drafts);
     await this.options.attachSession(review.sessionId);
-    await this.options.writeSession(review.sessionId, `${BRACKETED_PASTE_START}${prompt}${BRACKETED_PASTE_END}\r`);
+    await submitTerminalInput(
+      (data) => this.options.writeSession(review.sessionId, data),
+      `${BRACKETED_PASTE_START}${prompt}${BRACKETED_PASTE_END}\r`,
+    );
 
     const expected = new Map(drafts.map((annotation) => [annotation.id, annotation.updatedAt]));
     const now = this.options.now();
