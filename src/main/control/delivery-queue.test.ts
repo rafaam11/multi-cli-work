@@ -76,6 +76,9 @@ function harness(initial: TerminalSessionView[] = [session({}), session({ id: "s
     output(id = "target") {
       for (const listener of eventListeners) listener({ type: "data", sessionId: id, data: "x", sequence: 1 });
     },
+    screen(data: string, id = "target") {
+      for (const listener of eventListeners) listener({ type: "data", sessionId: id, data, sequence: 1 });
+    },
     type(length: number, id = "target") {
       drafts.set(id, { length, lastInputAt: now });
       for (const listener of draftListeners) listener(id);
@@ -156,6 +159,29 @@ describe("DeliveryQueue", () => {
     h.advance(1300);
     await h.tick();
     expect(h.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds while a CLI's trust dialog is up, drawn in pieces, until a person answers it", async () => {
+    const h = harness();
+    h.output();
+    // Claude draws its folder-trust prompt with cursor moves instead of spaces, across chunks.
+    h.screen("Quick safety check: Is this a project you created or one you trust?\r\n❯ 1. Yes, I\u001b[1Ctrust");
+    h.screen(" this folder\r\n  2. No, exit");
+    h.advance(5000);
+    const record = await h.queue.enqueue({ to: "target", text: "2) do something" });
+    expect(record).toMatchObject({ state: "held", reason: "dialog" });
+
+    h.type(0); // Enter on the dialog
+    h.advance(3100);
+    await h.tick();
+    expect(h.write).toHaveBeenCalledWith("target", "2) do something\r");
+  });
+
+  it("does not take ordinary output for a dialog", async () => {
+    const h = harness();
+    h.screen("I trust this folder's tests. Do you want me to continue?");
+    h.advance(5000);
+    expect(await h.queue.enqueue({ to: "target", text: "x" })).toMatchObject({ state: "delivered" });
   });
 
   it("sends one message per target at a time, in order, with a gap between them", async () => {

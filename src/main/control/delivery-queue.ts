@@ -13,7 +13,18 @@ import type { HumanDraft } from "../terminal/human-input-tracker";
  */
 
 export type DeliveryState = "held" | "delivered" | "failed" | "dropped";
-export type HoldReason = "working" | "awaiting-approval" | "typing" | "starting" | "settling";
+export type HoldReason = "working" | "awaiting-approval" | "typing" | "starting" | "settling" | "dialog";
+
+/**
+ * Screens a CLI puts up before it reads prompts, which no status hook reports: Claude's folder trust
+ * and bypass-permissions warnings, Codex's hook trust and folder approval. Typed text lands on their
+ * options — a "2" in a message picks "No, exit" on Claude's — so nothing goes in until a person has
+ * answered. Matched against the screen with spacing and case dropped, since TUIs draw with cursor
+ * moves rather than spaces.
+ */
+const BLOCKING_DIALOGS = [/yes,?itrustthisfolder/, /doyoutrustthe(files|contents)/, /trustallandcontinue/, /yes,?iaccept/, /allowcodextowork/];
+const DIALOG_WINDOW = 600;
+const ANSI = new RegExp(`${String.fromCharCode(27)}(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|${String.fromCharCode(27)}\\\\)|.)`, "g");
 
 export interface DeliveryRecord {
   id: string;
@@ -87,6 +98,9 @@ export function sessionLabel(session: Pick<TerminalSessionView, "id" | "name" | 
 export class DeliveryQueue {
   private readonly records = new Map<string, DeliveryRecord>();
   private readonly lastOutputAt = new Map<string, number>();
+  /** The tail of each session's screen text, compacted, for spotting a blocking dialog. */
+  private readonly screenTails = new Map<string, string>();
+  private readonly inDialog = new Set<string>();
   private readonly lastDeliveredAt = new Map<string, number>();
   private readonly urgent = new Set<string>();
   private readonly prefixes = new Map<string, string>();
@@ -102,11 +116,23 @@ export class DeliveryQueue {
     this.now = options.now ?? Date.now;
     this.unsubscribers = [
       options.onEvent((event) => {
-        if (event.type === "data") this.lastOutputAt.set(event.sessionId, this.now());
-        if (event.type === "removed") this.lastOutputAt.delete(event.sessionId);
+        if (event.type === "data") {
+          this.lastOutputAt.set(event.sessionId, this.now());
+          this.watchScreen(event.sessionId, event.data);
+        }
+        if (event.type === "removed" || event.type === "exit") {
+          this.lastOutputAt.delete(event.sessionId);
+          this.screenTails.delete(event.sessionId);
+          this.inDialog.delete(event.sessionId);
+        }
         if (event.type === "status" || event.type === "exit" || event.type === "removed") void this.pump();
       }),
-      options.onDraftChange(() => void this.pump()),
+      // A person's keystroke is the answer to whatever dialog was up.
+      options.onDraftChange((sessionId) => {
+        this.inDialog.delete(sessionId);
+        this.screenTails.delete(sessionId);
+        void this.pump();
+      }),
     ];
   }
 
@@ -249,6 +275,7 @@ export class DeliveryQueue {
     if (draft.lastInputAt !== null && now - draft.lastInputAt < (this.options.typingQuietMs ?? 3000)) {
       return { kind: "hold", reason: "typing" };
     }
+    if (this.inDialog.has(record.to)) return { kind: "hold", reason: "dialog" };
     if (session.status === "awaiting-approval") return { kind: "hold", reason: "awaiting-approval" };
     if (session.status === "starting") return { kind: "hold", reason: "starting" };
     if (session.status === "working" && !this.urgent.has(record.id)) return { kind: "hold", reason: "working" };
@@ -261,6 +288,18 @@ export class DeliveryQueue {
       return { kind: "hold", reason: "settling" };
     }
     return { kind: "ready" };
+  }
+
+  private watchScreen(sessionId: string, data: string): void {
+    const compact = data.replace(ANSI, "").replace(/\s+/g, "").toLowerCase();
+    if (!compact) return;
+    const tail = `${this.screenTails.get(sessionId) ?? ""}${compact}`.slice(-DIALOG_WINDOW);
+    if (BLOCKING_DIALOGS.some((pattern) => pattern.test(tail))) {
+      this.inDialog.add(sessionId);
+      this.screenTails.delete(sessionId);
+      return;
+    }
+    this.screenTails.set(sessionId, tail);
   }
 
   private prefixFor(request: DeliveryRequest): string {

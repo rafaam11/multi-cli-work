@@ -80,6 +80,8 @@ export function holdReasonLabel(reason: string | null): string {
       return "시작하는 중";
     case "settling":
       return "화면이 멈추면 전달";
+    case "dialog":
+      return "확인 창에 사람이 답하면 전달";
     default:
       return "차례를 기다리는 중";
   }
