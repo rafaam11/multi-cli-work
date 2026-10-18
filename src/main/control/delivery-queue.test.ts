@@ -208,6 +208,28 @@ describe("DeliveryQueue", () => {
     expect(h.sent()).toEqual(["x\r"]);
   });
 
+  it("does not wait on the working that the Enter answering a dialog sets, which no turn ends", async () => {
+    const h = harness([session({ status: "working" }), session({ id: "other", status: "working" })]);
+    h.screen("Hooks need review\r\n› 1. Review hooks\r\n  2. Trust all and continue\r\n");
+    h.advance(5000);
+    const first = await h.queue.enqueue({ to: "target", text: "x" });
+    h.type(0); // the Enter on the dialog, which the terminal took for a prompt
+    h.setStatus("working");
+    h.screen("› Ask Codex to do anything\r\n  ? for shortcuts");
+    h.advance(5000);
+    await h.tick();
+    expect(h.queue.get(first.id)).toMatchObject({ state: "delivered" });
+
+    // That delivery starts a real turn, which is waited for again.
+    h.setStatus("working");
+    h.advance(5000);
+    expect(await h.queue.enqueue({ to: "target", text: "y" })).toMatchObject({ state: "held", reason: "working" });
+    // Elsewhere, an ordinary keystroke never counts as answering a dialog.
+    h.type(0, "other");
+    h.advance(5000);
+    expect(await h.queue.enqueue({ to: "other", text: "z" })).toMatchObject({ state: "held", reason: "working" });
+  });
+
   it("does not take ordinary output for a dialog", async () => {
     const h = harness();
     h.screen("I trust this folder's tests. Do you want me to continue?");

@@ -120,6 +120,12 @@ export class DeliveryQueue {
   /** The tail of each session's screen text, compacted, for spotting a blocking dialog. */
   private readonly screenTails = new Map<string, string>();
   private readonly inDialog = new Set<string>();
+  /**
+   * Sessions whose last keystroke answered a dialog. The Enter that did it reads as a submitted
+   * prompt and marks the session working, but no turn starts — Codex never reports one ending — so
+   * that working is not held for, until the provider's next status or the person's next keystroke.
+   */
+  private readonly answeredDialog = new Set<string>();
   private readonly lastDeliveredAt = new Map<string, number>();
   private readonly urgent = new Set<string>();
   private readonly prefixes = new Map<string, string>();
@@ -145,11 +151,15 @@ export class DeliveryQueue {
           this.lastOutputAt.delete(event.sessionId);
           this.screenTails.delete(event.sessionId);
           this.inDialog.delete(event.sessionId);
+          this.answeredDialog.delete(event.sessionId);
         }
+        if (event.type === "status" && event.status !== "working") this.answeredDialog.delete(event.sessionId);
         if (event.type === "status" || event.type === "exit" || event.type === "removed") void this.pump();
       }),
       // A person's keystroke is the answer to whatever dialog was up.
       options.onDraftChange((sessionId) => {
+        if (this.inDialog.has(sessionId)) this.answeredDialog.add(sessionId);
+        else this.answeredDialog.delete(sessionId);
         this.inDialog.delete(sessionId);
         this.screenTails.delete(sessionId);
         void this.pump();
@@ -275,6 +285,8 @@ export class DeliveryQueue {
         await this.options.write(record.to, input.slice(0, -1));
         await this.sleep(this.options.submitGapMs ?? 300);
         await this.options.write(record.to, "\r");
+        // This Enter does start a turn.
+        this.answeredDialog.delete(record.to);
         this.lastDeliveredAt.set(record.to, this.now());
         this.settle(record, "delivered", null);
       } catch (error) {
@@ -305,7 +317,9 @@ export class DeliveryQueue {
     if (this.inDialog.has(record.to)) return { kind: "hold", reason: "dialog" };
     if (session.status === "awaiting-approval") return { kind: "hold", reason: "awaiting-approval" };
     if (session.status === "starting") return { kind: "hold", reason: "starting" };
-    if (session.status === "working" && !this.urgent.has(record.id)) return { kind: "hold", reason: "working" };
+    if (session.status === "working" && !this.urgent.has(record.id) && !this.answeredDialog.has(record.to)) {
+      return { kind: "hold", reason: "working" };
+    }
     const output = this.lastOutputAt.get(record.to);
     if (output !== undefined && now - output < (this.options.outputQuietMs ?? 1200)) {
       return { kind: "hold", reason: "settling" };
