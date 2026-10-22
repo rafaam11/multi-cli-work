@@ -65,6 +65,35 @@ export function GoogleDriveIcon({ size = 24, className }: BrandIconProps) {
   );
 }
 
+/** OneDrive — 겹친 구름 두 개. 브랜드 색을 그대로 쓴다. */
+export function OneDriveIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path d="M9.6 8.4a5.6 5.6 0 0 1 10 2.2A3.9 3.9 0 0 1 19.4 18H8.2z" fill="#0364b8" />
+      <path d="M4.6 18a4.1 4.1 0 0 1-.4-8.2 5.5 5.5 0 0 1 10.3-.6 4.3 4.3 0 0 1 4.9 4.3A4.5 4.5 0 0 1 19.4 18z" fill="#28a8ea" />
+    </svg>
+  );
+}
+
+export function DropboxIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        d="M6 1.807 0 5.629l6 3.822 6.001-3.822L6 1.807zM18 1.807l-6 3.822 6 3.822 6-3.822-6-3.822zM0 13.274l6 3.822 6.001-3.822L6 9.452l-6 3.822zM18 9.452l-6 3.822 6 3.822 6-3.822-6-3.822zM6 18.371l6.001 3.822 6-3.822-6-3.822L6 18.371z"
+        fill="#0061ff"
+      />
+    </svg>
+  );
+}
+
+export function ICloudIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path d="M6.2 19a4.7 4.7 0 0 1-.6-9.4 6.6 6.6 0 0 1 12.5 1.3A4.1 4.1 0 0 1 17.8 19z" fill="#3693f3" />
+    </svg>
+  );
+}
+
 export function ClaudeCodeIcon({ size = 24, className }: BrandIconProps) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>

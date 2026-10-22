@@ -10,6 +10,7 @@ import type {
   WorkProjectRegistryV1,
   WorkProjectRole,
 } from "@shared/work-project-types";
+import type { ProjectFolderTemplate } from "@shared/folder-template";
 import type { ProjectCategorySetting } from "@shared/settings-types";
 import { AlertTriangle, BookOpen, Check, ExternalLink, FolderOpen, FolderPlus, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -90,6 +91,8 @@ interface WorkProjectDetailPageProps {
   tagSuggestions: readonly string[];
   /** 설정의 구분 목록 — select의 선택지이자 색의 근거. 목록에 없는 현재 값도 선택지에 남는다. */
   categories: readonly ProjectCategorySetting[];
+  /** 설정의 폴더 템플릿 — 드라이브 폴더를 만들 때 고른다. */
+  folderTemplates: readonly ProjectFolderTemplate[];
   onSelectSession(session: TerminalSessionView): void;
   onSelectProject(projectId: string): void;
   onRegistryChanged(registry: WorkProjectRegistryV1): void;
@@ -115,6 +118,7 @@ export function WorkProjectDetailPage({
   tags: savedTags,
   tagSuggestions,
   categories,
+  folderTemplates,
   onSelectSession,
   onSelectProject,
   onRegistryChanged,
@@ -508,6 +512,8 @@ export function WorkProjectDetailPage({
 
         <WorkProjectDriveCard
           workProject={workProject}
+          categories={categories}
+          folderTemplates={folderTemplates}
           onMemberFolderAdded={onMemberFolderAdded}
           onProjectRelinked={onProjectRelinked}
           onOpenPcSettings={onOpenPcSettings}

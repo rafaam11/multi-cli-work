@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { isCategoryCode, sortCategoriesByCode } from "@shared/category-code";
+import { DRIVE_KINDS, driveKindLabel, inferDriveKind } from "@shared/drive-kind";
 import type { PcRootsInfo } from "@shared/pc-roots-types";
 import type { ProfileFolderAction, ProfileImportPreview } from "@shared/profile-types";
 import type { NotionTokenStatus } from "@shared/notion-types";
@@ -17,7 +18,14 @@ import {
   TERMINAL_FONT_SIZE_RANGE,
   TERMINAL_LINE_HEIGHT_RANGE,
   TERMINAL_SCROLLBACK_RANGE,
+  defaultFolderTemplates,
 } from "@shared/settings-types";
+import {
+  MAX_FOLDER_TEMPLATE_NAME_LENGTH,
+  MAX_FOLDER_TEMPLATES,
+  parseFolderTemplateLines,
+  type ProjectFolderTemplate,
+} from "@shared/folder-template";
 import { ACCENT_COLOR_COUNT, ACCENT_INDEXES, accentClass } from "@shared/accent-palette";
 import {
   KEYMAP_ACTIONS,
@@ -29,6 +37,7 @@ import {
   type KeymapAction,
 } from "./keymap";
 import { publishNotionTokenStatus } from "./notion-token-status";
+import { DriveKindIcon } from "./drive-kind-icon";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
 import { RemoteSettings } from "./RemoteSettings";
 import { PresetSettings } from "./PresetSettings";
@@ -458,6 +467,52 @@ function ProjectsSettings({
     onChange({ defaultCategory: name });
   };
 
+  const changeCategoryTemplate = (index: number, templateId: string) => {
+    applyCategories(
+      categories.map((category, at) => {
+        if (at !== index) return category;
+        const { templateId: _previous, ...rest } = category;
+        return templateId.length > 0 ? { ...rest, templateId } : rest;
+      }),
+    );
+  };
+
+  const [templates, setTemplates] = useState<ProjectFolderTemplate[]>(projects.folderTemplates);
+  // 되돌리기는 같은 id로 내용만 바꾸므로, 편집기의 드래프트를 버리게 key를 함께 바꾼다.
+  const [templateGeneration, setTemplateGeneration] = useState(0);
+
+  /** 템플릿이 사라지면 그 템플릿을 기본으로 쓰던 구분도 같은 패치에서 "없음"으로 돌린다. */
+  const applyTemplates = (next: ProjectFolderTemplate[]) => {
+    setTemplates(next);
+    const ids = new Set(next.map((template) => template.id));
+    if (!categories.some((category) => category.templateId !== undefined && !ids.has(category.templateId))) {
+      onChange({ folderTemplates: next });
+      return;
+    }
+    const nextCategories = categories.map((category) => {
+      if (category.templateId === undefined || ids.has(category.templateId)) return category;
+      const { templateId: _orphaned, ...rest } = category;
+      return rest;
+    });
+    setCategories(nextCategories);
+    onChange({ folderTemplates: next, categories: nextCategories });
+  };
+
+  const addTemplate = () => {
+    const takenNames = new Set(templates.map((template) => template.name));
+    let name = "새 템플릿";
+    for (let suffix = 2; takenNames.has(name); suffix += 1) name = `새 템플릿 ${suffix}`;
+    const takenIds = new Set(templates.map((template) => template.id));
+    let id = `custom-${Date.now().toString(36)}`;
+    for (let suffix = 2; takenIds.has(id); suffix += 1) id = `custom-${Date.now().toString(36)}-${suffix}`;
+    applyTemplates([...templates, { id, name, folders: [] }]);
+  };
+
+  const resetTemplates = () => {
+    applyTemplates(defaultFolderTemplates());
+    setTemplateGeneration((current) => current + 1);
+  };
+
   return (
     <>
       <h2>프로젝트 구분</h2>
@@ -510,6 +565,20 @@ function ProjectsSettings({
                 />
               ))}
             </span>
+            <select
+              className="settings-category-template"
+              aria-label={`${category.name} 폴더 템플릿`}
+              title="드라이브 폴더를 만들 때 기본으로 고를 템플릿"
+              value={category.templateId ?? ""}
+              onChange={(event) => changeCategoryTemplate(index, event.target.value)}
+            >
+              <option value="">템플릿 없음</option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
             <span className="settings-key-controls">
               <button type="button" disabled={index === 0} onClick={() => moveUp(index)}>
                 {`${category.name} 위로`}
@@ -558,7 +627,104 @@ function ProjectsSettings({
         새로 만들어지는 업무 프로젝트가 받는 구분입니다. 이미 있는 프로젝트의 구분은 바뀌지 않습니다. 이름을
         바꿔도 마찬가지입니다 — 목록에서 빠진 구분은 회색으로 보이고, 상세 페이지에서 다시 고를 수 있습니다.
       </p>
+      <h2>드라이브 폴더 템플릿</h2>
+      <p className="settings-hint">
+        드라이브 폴더를 만들 때 함께 만들 하위 폴더입니다. 한 줄에 하나씩 적고, <code>/</code>로 하위 폴더를 만들 수
+        있습니다(<code>02_발표자료/회의록</code>). 템플릿으로 만들면 <code>CLAUDE.md</code>도 함께 생깁니다. 구분마다
+        기본 템플릿을 위 목록에서 고릅니다.
+      </p>
+      <ul className="settings-list" aria-label="폴더 템플릿 목록">
+        {templates.map((template, index) => (
+          <FolderTemplateEditor
+            key={`${templateGeneration}:${template.id}`}
+            template={template}
+            onChange={(next) => applyTemplates(templates.map((current, at) => (at === index ? next : current)))}
+            onRemove={() => applyTemplates(templates.filter((_, at) => at !== index))}
+          />
+        ))}
+      </ul>
+      <div className="settings-row">
+        <span />
+        <span className="settings-key-controls">
+          <button type="button" onClick={resetTemplates}>
+            기본값으로 되돌리기
+          </button>
+          <button type="button" onClick={addTemplate} disabled={templates.length >= MAX_FOLDER_TEMPLATES}>
+            템플릿 추가
+          </button>
+        </span>
+      </div>
     </>
+  );
+}
+
+/**
+ * 템플릿 하나. 이름과 폴더 목록은 blur에서 저장한다 — 타이핑 중 값과 저장된 값을 나눠 두는 것은 구분
+ * 이름 입력과 같다. 잘못된 줄이 하나라도 있으면 저장하지 않고 줄 번호를 보여 준다.
+ */
+function FolderTemplateEditor({
+  template,
+  onChange,
+  onRemove,
+}: {
+  template: ProjectFolderTemplate;
+  onChange(next: ProjectFolderTemplate): void;
+  onRemove(): void;
+}) {
+  const [name, setName] = useState(template.name);
+  const [text, setText] = useState(template.folders.join("\n"));
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const commitName = () => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed === template.name) {
+      setName(template.name);
+      return;
+    }
+    onChange({ ...template, name: trimmed });
+  };
+
+  const commitFolders = () => {
+    const parsed = parseFolderTemplateLines(text);
+    setErrors(parsed.errors);
+    if (parsed.errors.length > 0) return;
+    setText(parsed.folders.join("\n"));
+    if (parsed.folders.join("\n") === template.folders.join("\n")) return;
+    onChange({ ...template, folders: parsed.folders });
+  };
+
+  return (
+    <li className="settings-folder-template">
+      <div className="settings-row">
+        <input
+          type="text"
+          aria-label={`${template.name} 템플릿 이름`}
+          maxLength={MAX_FOLDER_TEMPLATE_NAME_LENGTH}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onBlur={commitName}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) event.currentTarget.blur();
+          }}
+        />
+        <button type="button" onClick={onRemove}>
+          {`${template.name} 템플릿 삭제`}
+        </button>
+      </div>
+      <textarea
+        aria-label={`${template.name} 폴더 목록`}
+        rows={Math.max(3, text.split("\n").length)}
+        spellCheck={false}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commitFolders}
+      />
+      {errors.length > 0 ? (
+        <p className="settings-error" role="alert">
+          {errors.join(" · ")}
+        </p>
+      ) : null}
+    </li>
   );
 }
 
@@ -568,7 +734,7 @@ const PROFILE_SETTING_LABELS: Record<string, string> = {
   terminal: "터미널",
   notifications: "알림",
   keybindings: "단축키",
-  projects: "프로젝트 구분",
+  projects: "프로젝트 구분·폴더 템플릿",
   files: "파일",
   fanOut: "팬아웃 템플릿",
   appearance: "테마",
@@ -727,7 +893,7 @@ function ProfileSection() {
 }
 
 const PC_ROOT_LABELS: Array<{ key: PcRootKey; label: string; hint: string }> = [
-  { key: "drive", label: "Google Drive", hint: "내 드라이브 — 업무 프로젝트 문서 폴더의 기준" },
+  { key: "drive", label: "문서", hint: "업무 프로젝트 문서 폴더의 기준 — Google Drive·OneDrive·NAS·로컬 폴더 어디든" },
   { key: "dev", label: "dev", hint: "개발 레포 — 레포 추가 대화상자가 여기서 시작" },
   { key: "data", label: "data", hint: "대용량 데이터 — 참고 폴더 대화상자가 여기서 시작" },
   { key: "work", label: "work", hint: "작업 셸·문서(선택)" },
@@ -813,6 +979,38 @@ function PcSettings({ profileSection }: { profileSection?: ReactNode }) {
             );
           })}
         </ul>
+      )}
+      {info === null ? null : (
+        <div className="drive-kind-picker">
+          <span className="settings-hint">문서 루트 종류 — 아이콘과 화면 문구의 이름</span>
+          <div className="drive-kind-options" role="radiogroup" aria-label="문서 루트 종류">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={info.driveKind.configured === null}
+              className="drive-kind-option"
+              disabled={busy}
+              onClick={() => run(() => window.multiCliWork.pcRoots.setDriveKind(null))}
+            >
+              <DriveKindIcon kind={inferDriveKind(info.effective.drive)} size={18} />
+              <span>자동 ({driveKindLabel(inferDriveKind(info.effective.drive))})</span>
+            </button>
+            {DRIVE_KINDS.map((kind) => (
+              <button
+                key={kind.id}
+                type="button"
+                role="radio"
+                aria-checked={info.driveKind.configured === kind.id}
+                className="drive-kind-option"
+                disabled={busy}
+                onClick={() => run(() => window.multiCliWork.pcRoots.setDriveKind(kind.id))}
+              >
+                <DriveKindIcon kind={kind.id} size={18} />
+                <span>{kind.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       <div className="settings-row">
         <span />

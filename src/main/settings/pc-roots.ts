@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { inferDriveKind, type DriveKind } from "../../shared/drive-kind";
 import type { LogicalRoots } from "../../shared/logical-path";
 import type { PcRootsInfo } from "../../shared/pc-roots-types";
 import { PC_ROOT_KEYS, type PcRootsSettings } from "../../shared/settings-types";
@@ -57,10 +58,16 @@ export function detectPcRoots(options: PcRootsDetectOptions = {}): PcRootsSettin
   };
 }
 
-export function resolvePcRoots(configured: PcRootsSettings, detected: PcRootsSettings, home: string): PcRootsInfo {
+export function resolvePcRoots(
+  configured: PcRootsSettings,
+  detected: PcRootsSettings,
+  home: string,
+  configuredKind: DriveKind | null = null,
+): PcRootsInfo {
   const effective = { ...detected };
   for (const key of PC_ROOT_KEYS) effective[key] = configured[key] ?? detected[key];
-  return { configured, detected, effective, home };
+  const driveKind = { configured: configuredKind, effective: configuredKind ?? inferDriveKind(effective.drive) };
+  return { configured, detected, effective, driveKind, home };
 }
 
 export function logicalRootsOf(info: PcRootsInfo): LogicalRoots {
@@ -78,13 +85,14 @@ export class PcRootsProvider {
   constructor(
     private readonly configured: () => PcRootsSettings,
     private readonly options: PcRootsDetectOptions = {},
+    private readonly configuredKind: () => DriveKind | null = () => null,
   ) {
     this.home = options.home ?? os.homedir();
   }
 
   info(): PcRootsInfo {
     this.detected ??= detectPcRoots(this.options);
-    return resolvePcRoots(this.configured(), this.detected, this.home);
+    return resolvePcRoots(this.configured(), this.detected, this.home, this.configuredKind());
   }
 
   redetect(): PcRootsInfo {

@@ -26,6 +26,14 @@ import {
   type ProjectCategorySetting,
 } from "../shared/settings-types";
 import { ACCENT_COLOR_COUNT } from "../shared/accent-palette";
+import {
+  FOLDER_TEMPLATE_ID_PATTERN,
+  MAX_FOLDER_TEMPLATE_ENTRIES,
+  MAX_FOLDER_TEMPLATE_NAME_LENGTH,
+  MAX_FOLDER_TEMPLATES,
+  folderTemplatePathError,
+  type ProjectFolderTemplate,
+} from "../shared/folder-template";
 import type { FileExplorerTarget } from "../shared/file-explorer-types";
 import type {
   PullRequestListQuery,
@@ -549,22 +557,55 @@ export function validateSettingsPatch(value: unknown): AppSettingsPatch {
     // IPC는 엄격하다(exactObject·nonEmptyString) — 파서가 고쳐 주는 것(공백 정리, 잘못된 색
     // 순환 기본값)과 게이트웨이가 애초에 받아 주는 것은 다른 문제라, 여기서는 모양이 어긋나면
     // 바로 던지고 정규화는 하지 않는다.
-    const projects = exactObject(raw.projects, ["categories", "defaultCategory"], "Settings projects");
+    const projects = exactObject(raw.projects, ["categories", "defaultCategory", "folderTemplates"], "Settings projects");
     patch.projects = {};
     if (projects.categories !== undefined) {
       if (!Array.isArray(projects.categories)) throw new Error("Settings projects.categories must be an array");
       patch.projects.categories = projects.categories.map((item, index): ProjectCategorySetting => {
-        const category = exactObject(item, ["name", "color", "code"], `Settings projects.categories[${index}]`);
+        const category = exactObject(item, ["name", "color", "code", "templateId"], `Settings projects.categories[${index}]`);
         const color = integer(category.color, `Settings projects.categories[${index}].color`);
         if (color < 1 || color > ACCENT_COLOR_COUNT) {
           throw new Error(`Settings projects.categories[${index}].color must be between 1 and ${ACCENT_COLOR_COUNT}`);
         }
         const name = nonEmptyString(category.name, `Settings projects.categories[${index}].name`);
-        if (category.code === undefined) return { name, color };
-        if (typeof category.code !== "string" || !CATEGORY_CODE_PATTERN.test(category.code)) {
-          throw new Error(`Settings projects.categories[${index}].code must be one uppercase letter`);
+        const result: ProjectCategorySetting = { name, color };
+        if (category.code !== undefined) {
+          if (typeof category.code !== "string" || !CATEGORY_CODE_PATTERN.test(category.code)) {
+            throw new Error(`Settings projects.categories[${index}].code must be one uppercase letter`);
+          }
+          result.code = category.code;
         }
-        return { name, color, code: category.code };
+        if (category.templateId !== undefined) {
+          if (typeof category.templateId !== "string" || !FOLDER_TEMPLATE_ID_PATTERN.test(category.templateId)) {
+            throw new Error(`Settings projects.categories[${index}].templateId must be a template id`);
+          }
+          result.templateId = category.templateId;
+        }
+        return result;
+      });
+    }
+    if (projects.folderTemplates !== undefined) {
+      if (!Array.isArray(projects.folderTemplates) || projects.folderTemplates.length > MAX_FOLDER_TEMPLATES) {
+        throw new Error(`Settings projects.folderTemplates must be an array of at most ${MAX_FOLDER_TEMPLATES}`);
+      }
+      patch.projects.folderTemplates = projects.folderTemplates.map((item, index): ProjectFolderTemplate => {
+        const label = `Settings projects.folderTemplates[${index}]`;
+        const template = exactObject(item, ["id", "name", "folders"], label);
+        if (typeof template.id !== "string" || !FOLDER_TEMPLATE_ID_PATTERN.test(template.id)) {
+          throw new Error(`${label}.id must be a template id`);
+        }
+        const name = nonEmptyString(template.name, `${label}.name`);
+        if (name.length > MAX_FOLDER_TEMPLATE_NAME_LENGTH) throw new Error(`${label}.name is too long`);
+        if (!Array.isArray(template.folders) || template.folders.length > MAX_FOLDER_TEMPLATE_ENTRIES) {
+          throw new Error(`${label}.folders must be an array of at most ${MAX_FOLDER_TEMPLATE_ENTRIES}`);
+        }
+        const folders = template.folders.map((folder, at) => {
+          if (typeof folder !== "string" || folderTemplatePathError(folder) !== null) {
+            throw new Error(`${label}.folders[${at}] must be a relative folder path`);
+          }
+          return folder;
+        });
+        return { id: template.id, name, folders };
       });
     }
     if (projects.defaultCategory !== undefined) {

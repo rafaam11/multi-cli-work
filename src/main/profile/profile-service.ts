@@ -184,7 +184,7 @@ function importedSettings(profile: MultiCliWorkProfileV1, current: AppSettings):
 }
 
 function settingsPatch(next: AppSettings): AppSettingsPatch {
-  const { remote: _remote, pcRoots: _pcRoots, ...rest } = next;
+  const { remote: _remote, pcRoots: _pcRoots, driveKind: _driveKind, ...rest } = next;
   return rest;
 }
 

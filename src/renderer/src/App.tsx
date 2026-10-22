@@ -48,6 +48,7 @@ import type { QuickOpenItem } from "./quick-open";
 import { projectName, sessionLabel } from "./session-labels";
 import { neighbourSlot, resolveLayout, type FocusDirection } from "./grid-layouts";
 import { SESSION_SIGNAL_MS, SessionSignalsContext, sessionSignalFor, type SessionSignal } from "./session-signals";
+import { DriveRootContext, type DriveRootInfo } from "./drive-root-context";
 import { showToast, Toaster } from "./toast";
 import { useTransientSet } from "./use-transient-set";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
@@ -202,6 +203,7 @@ export function App() {
   /** 설정을 특정 탭으로 열 때만 값이 있다. */
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
   const [workProjectCreateOpen, setWorkProjectCreateOpen] = useState(false);
+  const [driveRoot, setDriveRoot] = useState<DriveRootInfo>({ root: null, kind: "gdrive" });
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   /** Each folder's saved grid, keyed by `folderViewKeyOf`. */
   const [folderViews, setFolderViews] = useState<Record<string, SlotViewState>>({});
@@ -601,6 +603,22 @@ export function App() {
   }, []);
 
   // index.css pairs every reduced-motion rule with a :root[data-reduce-motion] twin; MotionConfig below covers motion/react.
+  // 문서 루트 아이콘·이름 — 설정에서 루트나 종류를 바꾸면 settings가 바뀌므로 그때 다시 읽는다.
+  const configuredDriveRoot = appSettings.pcRoots.drive;
+  const configuredDriveKind = appSettings.driveKind;
+  useEffect(() => {
+    let alive = true;
+    window.multiCliWork.pcRoots
+      .get()
+      .then((info) => {
+        if (alive) setDriveRoot({ root: info.effective.drive, kind: info.driveKind.effective });
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [configuredDriveRoot, configuredDriveKind]);
+
   const reduceMotion = appSettings.general.reduceMotion;
   useEffect(() => {
     document.documentElement.toggleAttribute("data-reduce-motion", reduceMotion);
@@ -2072,6 +2090,7 @@ export function App() {
   return (
     <MotionConfig reducedMotion={reduceMotion ? "always" : "user"}>
     <SessionSignalsContext.Provider value={sessionSignals.map}>
+    <DriveRootContext.Provider value={driveRoot}>
     <div className="app-frame">
       <TitleBar
         menus={titleBarMenus}
@@ -2392,6 +2411,7 @@ export function App() {
               workProject={selectedWorkProject}
               members={selectedWorkProjectMembers}
               categories={projectCategories}
+              folderTemplates={appSettings.projects.folderTemplates}
               teamsSyncRoot={workProjectRegistry?.teamsSyncRoot ?? null}
               sessions={folderSessions.filter((session) =>
                 selectedWorkProjectMembers.some((member) => member.project.id === session.projectId),
@@ -2689,6 +2709,7 @@ export function App() {
         <WorkProjectCreateDialog
           categories={appSettings.projects.categories}
           defaultCategory={appSettings.projects.defaultCategory}
+          folderTemplates={appSettings.projects.folderTemplates}
           onDone={(registry, createdId) => void handleWorkProjectsCreated(registry, createdId)}
           onClose={() => setWorkProjectCreateOpen(false)}
         />
@@ -2804,6 +2825,7 @@ export function App() {
     </div>
     <Toaster />
     </div>
+    </DriveRootContext.Provider>
     </SessionSignalsContext.Provider>
     </MotionConfig>
   );

@@ -5691,6 +5691,28 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   width: 140px;
 }
 
+.settings-row select.settings-category-template {
+  width: 110px;
+}
+
+.settings-folder-template {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-folder-template textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: var(--type-secondary);
+  font-family: var(--font-family-mono);
+  resize: vertical;
+}
+
 .settings-swatches {
   display: inline-flex;
   gap: 4px;
@@ -7201,12 +7223,24 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface-hover);
 }
 
-.drive-card-template {
+.folder-template-picker {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   color: var(--muted);
   font-size: var(--type-secondary-size);
+}
+
+.folder-template-picker > label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.folder-template-preview {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .drive-subfolders {
@@ -7292,6 +7326,46 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .pc-root-source {
   color: var(--quiet);
+}
+
+.drive-kind-picker {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.drive-kind-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 6px;
+}
+
+.drive-kind-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+.drive-kind-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-kind-option:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.drive-kind-option[aria-checked="true"] {
+  border-color: var(--teal);
+  box-shadow: inset 0 0 0 1px var(--teal);
 }
 
 .profile-preview {

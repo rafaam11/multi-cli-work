@@ -1,8 +1,10 @@
 import type { MultiCliWorkApi } from "@shared/api-types";
 import type { DriveProjectStatus } from "@shared/drive-types";
+import { DEFAULT_FOLDER_TEMPLATES } from "@shared/folder-template";
 import type { WorkProject } from "@shared/work-project-types";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DriveRootContext, type DriveRootInfo } from "./drive-root-context";
 import { WorkProjectDriveCard } from "./WorkProjectDriveCard";
 
 afterEach(cleanup);
@@ -28,7 +30,7 @@ function status(patch: Partial<DriveProjectStatus>): DriveProjectStatus {
   return { root: DRIVE, folderPath: FOLDER, exists: true, subfolders: [], linkedProjectId: null, legacyDocs: [], ...patch };
 }
 
-function setup(first: DriveProjectStatus, after: DriveProjectStatus = first) {
+function setup(first: DriveProjectStatus, after: DriveProjectStatus = first, drive: DriveRootInfo = { root: DRIVE, kind: "gdrive" }) {
   const memberResult = { project: { id: "p-docs" }, workProjects: {} };
   const relinked = { id: "p-teams", rootPath: FOLDER };
   const api = {
@@ -44,7 +46,16 @@ function setup(first: DriveProjectStatus, after: DriveProjectStatus = first) {
     onProjectRelinked: vi.fn(),
     onOpenPcSettings: vi.fn(),
   };
-  render(<WorkProjectDriveCard workProject={WORK_PROJECT} {...props} />);
+  render(
+    <DriveRootContext.Provider value={drive}>
+      <WorkProjectDriveCard
+        workProject={WORK_PROJECT}
+        categories={[{ name: "연구개발", color: 3, code: "R", templateId: "minimal" }]}
+        folderTemplates={DEFAULT_FOLDER_TEMPLATES}
+        {...props}
+      />
+    </DriveRootContext.Provider>,
+  );
   return { api, props, memberResult, relinked };
 }
 
@@ -55,11 +66,19 @@ describe("WorkProjectDriveCard", () => {
     expect(props.onOpenPcSettings).toHaveBeenCalledOnce();
   });
 
-  it("폴더가 없으면 템플릿 여부를 골라 만들고 문서 폴더로 등록한다", async () => {
+  it("제목과 안내는 사용자가 고른 문서 루트 종류의 이름을 쓴다", async () => {
+    setup(status({ root: null, folderPath: null, exists: false }), undefined, { root: null, kind: "nas" });
+    expect(screen.getByRole("region", { name: "문서 · NAS" })).toBeInTheDocument();
+    expect(await screen.findByText(/이 PC의 NAS 폴더를 찾지 못했습니다/)).toBeInTheDocument();
+  });
+
+  it("폴더가 없으면 구분의 기본 템플릿에서 골라 만들고 문서 폴더로 등록한다", async () => {
     const { api, props, memberResult } = setup(status({ exists: false }), status({ linkedProjectId: "p-docs" }));
-    fireEvent.click(await screen.findByRole("checkbox"));
+    const picker = await screen.findByLabelText("폴더 템플릿");
+    expect(picker).toHaveValue("minimal");
+    fireEvent.change(picker, { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "드라이브 폴더 만들기" }));
-    await waitFor(() => expect(api.createFolder).toHaveBeenCalledWith("wp-1", { template: false }));
+    await waitFor(() => expect(api.createFolder).toHaveBeenCalledWith("wp-1", { templateId: null }));
     expect(props.onMemberFolderAdded).toHaveBeenCalledWith(memberResult);
     expect(await screen.findByText("연결됨")).toBeInTheDocument();
   });

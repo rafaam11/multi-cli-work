@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { driveKindLabel, isSyncedDriveKind, type DriveKind } from "../../shared/drive-kind";
 import { isUnderRoot } from "../../shared/logical-path";
 import type { SharedProject } from "../../shared/project-types";
 import type { WorkProject, WorkProjectRole } from "../../shared/work-project-types";
@@ -41,7 +42,7 @@ export function renderWorkProjectBrief(
   workProject: WorkProject,
   members: WorkProjectBriefMember[],
   tags: readonly string[] = [],
-  options: { teamsSyncRoot?: string | null; driveRoot?: string | null } = {},
+  options: { teamsSyncRoot?: string | null; driveRoot?: string | null; driveKind?: DriveKind } = {},
 ): string {
   const repos = members.filter((member) => member.role === "repo");
   const docs = members.filter((member) => member.role === "docs");
@@ -49,6 +50,8 @@ export function renderWorkProjectBrief(
   // 팀즈는 그 루트가 설정된 사용자의 레거시 어휘다. v2 PRJ의 docs 멤버는 `C:\work\projects\…`다.
   const drive = docs.some((member) => isUnderRoot(member.project.rootPath, options.driveRoot ?? null));
   const teams = !drive && Boolean(options.teamsSyncRoot);
+  // 종류를 모르면(이전 호출부) 예전처럼 Google Drive로 본다.
+  const driveKind = options.driveKind ?? "gdrive";
   const lines = [
     `# 업무 프로젝트: ${workProject.name}`,
     "",
@@ -61,7 +64,7 @@ export function renderWorkProjectBrief(
     lines.push(
       "",
       drive
-        ? "## 문서 폴더 · Google Drive (공식 문서: 계획서·보고서·발표자료)"
+        ? `## 문서 폴더 · ${driveKindLabel(driveKind)} (공식 문서: 계획서·보고서·발표자료)`
         : teams
           ? "## 팀즈 문서 폴더 (공식 문서: 계획서·보고서·발표자료)"
           : "## 문서 폴더 (공식 문서: 계획서·보고서·발표자료)",
@@ -69,7 +72,9 @@ export function renderWorkProjectBrief(
     lines.push(...docs.map(memberLine));
     if (drive) {
       lines.push(
-        "- 드라이브 폴더는 세 PC가 동기화로 공유한다. 그 안에서 `git init`·커밋을 하지 않고, 코드는 개발 레포에 둔다.",
+        isSyncedDriveKind(driveKind)
+          ? "- 드라이브 폴더는 세 PC가 동기화로 공유한다. 그 안에서 `git init`·커밋을 하지 않고, 코드는 개발 레포에 둔다."
+          : "- 문서 폴더 안에서 `git init`·커밋을 하지 않고, 코드는 개발 레포에 둔다.",
       );
     }
   }

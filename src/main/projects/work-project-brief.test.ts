@@ -141,6 +141,19 @@ describe("renderWorkProjectBrief", () => {
     expect(brief).not.toContain("팀즈");
   });
 
+  it("문서 루트 종류의 이름을 제목에 쓰고, 로컬 폴더면 동기화 안내 없이 git 금지만 남긴다", () => {
+    const root = path.join("D:", "문서");
+    const brief = renderWorkProjectBrief(
+      WORK_PROJECT,
+      [{ project: project("2", path.join(root, "R_DOTORI")), role: "docs" }],
+      [],
+      { driveRoot: root, driveKind: "local" },
+    );
+    expect(brief).toContain("## 문서 폴더 · 로컬 디스크 (공식 문서: 계획서·보고서·발표자료)");
+    expect(brief).toContain("`git init`·커밋을 하지 않고");
+    expect(brief).not.toContain("동기화");
+  });
+
   it("팀즈 루트가 없으면 어디에도 팀즈라는 말이 없다", () => {
     const brief = renderWorkProjectBrief(
       { ...WORK_PROJECT, notionLinks: [] },

@@ -1,14 +1,9 @@
 import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { categoryForCode, parsePrefixedName } from "../../shared/category-code";
-import {
-  DRIVE_TEMPLATE_FOLDERS,
-  type DriveCreateOptions,
-  type DriveFolderEntry,
-  type DriveLegacyDocs,
-  type DriveOverview,
-  type DriveProjectStatus,
-} from "../../shared/drive-types";
+import { driveKindLabel, type DriveKind } from "../../shared/drive-kind";
+import type { DriveFolderEntry, DriveLegacyDocs, DriveOverview, DriveProjectStatus } from "../../shared/drive-types";
+import { folderNameError, folderTemplatePathError, normalizeFolderTemplatePath } from "../../shared/folder-template";
 import { isUnderRoot } from "../../shared/logical-path";
 import type { SharedProject } from "../../shared/project-types";
 import type { ProjectCategorySetting } from "../../shared/settings-types";
@@ -112,18 +107,16 @@ export async function driveProjectStatus(input: DriveStatusInput): Promise<Drive
 export function assertDriveFolderName(name: string): string {
   const trimmed = driveNameKey(name);
   if (trimmed.length === 0 || trimmed.length > 120) throw new Error("드라이브 폴더 이름이 비었거나 너무 깁니다");
-  if (/[<>:"/\\|?*\u0000-\u001f]/.test(trimmed) || /[. ]$/.test(trimmed) || trimmed === "." || trimmed === "..") {
-    throw new Error(`드라이브 폴더 이름으로 쓸 수 없습니다: ${trimmed}`);
-  }
+  if (folderNameError(trimmed) !== null) throw new Error(`드라이브 폴더 이름으로 쓸 수 없습니다: ${trimmed}`);
   return trimmed;
 }
 
-function claudeStub(name: string, category: string): string {
+function claudeStub(name: string, category: string, kind: DriveKind): string {
   return [
     `# ${name}`,
     "",
     `- 구분: ${category}`,
-    "- 문서 원본은 이 폴더(Google Drive)에, 코드는 각 PC의 dev 루트에 둔다. 이 폴더 안에서 `git init`·커밋을 하지 않는다.",
+    `- 문서 원본은 이 폴더(${driveKindLabel(kind)})에, 코드는 각 PC의 dev 루트에 둔다. 이 폴더 안에서 \`git init\`·커밋을 하지 않는다.`,
     "- 폴더 규약은 드라이브 루트의 `README.md`를 따른다.",
     "",
   ].join("\n");
@@ -131,20 +124,28 @@ function claudeStub(name: string, category: string): string {
 
 /**
  * `<root>\<name>`을 만든다. 이미 있으면 그대로 두고 빠진 템플릿 폴더만 채운다 — 사용자 파일은
- * 절대 덮어쓰지 않는다(CLAUDE.md도 없을 때만 쓴다).
+ * 절대 덮어쓰지 않는다(CLAUDE.md도 없을 때만 쓴다). `templateFolders`가 null이면 템플릿 없이 만든다.
+ * 템플릿 경로는 설정 파서가 이미 걸렀지만, 폴더를 만드는 마지막 관문이라 한 번 더 확인한다.
  */
 export async function createDriveProjectFolder(
   root: string,
   name: string,
   category: string,
-  options: DriveCreateOptions,
+  templateFolders: readonly string[] | null,
+  kind: DriveKind = "folder",
 ): Promise<string> {
   if (!(await isDirectory(root))) throw new Error(`드라이브 루트를 열 수 없습니다: ${root}`);
   const folderPath = path.join(root, assertDriveFolderName(name));
+  const subfolders = (templateFolders ?? []).map((entry) => {
+    const normalized = normalizeFolderTemplatePath(entry);
+    const error = folderTemplatePathError(normalized);
+    if (error !== null) throw new Error(`템플릿 폴더 경로로 쓸 수 없습니다(${entry}): ${error}`);
+    return path.join(folderPath, ...normalized.split("/"));
+  });
   await mkdir(folderPath, { recursive: true });
-  if (options.template) {
-    for (const folder of DRIVE_TEMPLATE_FOLDERS) await mkdir(path.join(folderPath, folder), { recursive: true });
-    await writeFile(path.join(folderPath, "CLAUDE.md"), claudeStub(path.basename(folderPath), category), {
+  if (templateFolders !== null) {
+    for (const subfolder of subfolders) await mkdir(subfolder, { recursive: true });
+    await writeFile(path.join(folderPath, "CLAUDE.md"), claudeStub(path.basename(folderPath), category, kind), {
       encoding: "utf8",
       flag: "wx",
     }).catch((error: NodeJS.ErrnoException) => {

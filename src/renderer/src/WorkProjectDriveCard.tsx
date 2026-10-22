@@ -1,15 +1,22 @@
 import type { WorkProjectMemberFolderAddResult } from "@shared/api-types";
+import { driveKindLabel } from "@shared/drive-kind";
 import type { DriveProjectStatus } from "@shared/drive-types";
+import type { ProjectFolderTemplate } from "@shared/folder-template";
 import type { SharedProject } from "@shared/project-types";
+import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { WorkProject } from "@shared/work-project-types";
 import { ArrowRight, FolderOpen, FolderPlus, Link2, RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { GoogleDriveIcon } from "./brand-icons";
 import { DocsFolderIcon } from "./docs-folder-icon";
+import { DriveKindIcon } from "./drive-kind-icon";
+import { useDriveRoot } from "./drive-root-context";
+import { FolderTemplatePicker } from "./FolderTemplatePicker";
 import { errorMessage } from "./ipc-error";
 
 interface WorkProjectDriveCardProps {
   workProject: WorkProject;
+  categories: readonly ProjectCategorySetting[];
+  folderTemplates: readonly ProjectFolderTemplate[];
   onMemberFolderAdded(result: WorkProjectMemberFolderAddResult): void;
   onProjectRelinked(project: SharedProject): void;
   onOpenPcSettings(): void;
@@ -21,14 +28,21 @@ interface WorkProjectDriveCardProps {
  */
 export function WorkProjectDriveCard({
   workProject,
+  categories,
+  folderTemplates,
   onMemberFolderAdded,
   onProjectRelinked,
   onOpenPcSettings,
 }: WorkProjectDriveCardProps) {
+  const drive = useDriveRoot();
+  const driveLabel = driveKindLabel(drive.kind);
   const [status, setStatus] = useState<DriveProjectStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [template, setTemplate] = useState(true);
+  // 템플릿은 프로젝트 구분의 기본값에서 시작하고, 구분이 바뀌면 따라간다.
+  const categoryTemplateId = categories.find((category) => category.name === workProject.category)?.templateId ?? null;
+  const [templateId, setTemplateId] = useState<string | null>(categoryTemplateId);
+  useEffect(() => setTemplateId(categoryTemplateId), [categoryTemplateId]);
 
   // 이름·멤버가 바뀌면 다시 본다 — 이름이 곧 연결 규칙이고, 연결은 멤버로 남는다.
   const memberSignature = workProject.members.map((member) => `${member.projectId}:${member.role}`).join(",");
@@ -58,7 +72,7 @@ export function WorkProjectDriveCard({
   };
 
   const createFolder = () =>
-    run(async () => onMemberFolderAdded(await window.multiCliWork.drive.createFolder(workProject.id, { template })));
+    run(async () => onMemberFolderAdded(await window.multiCliWork.drive.createFolder(workProject.id, { templateId })));
   const linkFolder = () => run(async () => onMemberFolderAdded(await window.multiCliWork.drive.link(workProject.id)));
   const migrate = (projectId: string) =>
     run(async () => onProjectRelinked(await window.multiCliWork.drive.migrateDocs(workProject.id, projectId)));
@@ -66,11 +80,11 @@ export function WorkProjectDriveCard({
     run(() => window.multiCliWork.drive.reveal(workProject.id, subfolder));
 
   return (
-    <section className="detail-card work-project-drive-card" aria-label="문서 · Google Drive">
+    <section className="detail-card work-project-drive-card" aria-label={`문서 · ${driveLabel}`}>
       <div className="detail-card-header">
         <h2>
-          <GoogleDriveIcon size={15} />
-          <span>문서 · Google Drive</span>
+          <DriveKindIcon kind={drive.kind} size={15} />
+          <span>문서 · {driveLabel}</span>
         </h2>
         <button
           type="button"
@@ -92,7 +106,7 @@ export function WorkProjectDriveCard({
         <p className="detail-empty">드라이브를 확인하는 중…</p>
       ) : status.root === null ? (
         <div className="drive-card-state">
-          <p className="detail-empty">이 PC의 Google Drive 폴더를 찾지 못했습니다. 설정에서 위치를 지정하세요.</p>
+          <p className="detail-empty">이 PC의 {driveLabel} 폴더를 찾지 못했습니다. 설정에서 위치를 지정하세요.</p>
           <div className="detail-actions-row">
             <button type="button" onClick={onOpenPcSettings}>
               <Settings size={14} />
@@ -106,10 +120,7 @@ export function WorkProjectDriveCard({
           <p className="drive-card-path" title={status.folderPath ?? undefined}>
             <code>{status.folderPath}</code>
           </p>
-          <label className="drive-card-template">
-            <input type="checkbox" checked={template} onChange={(event) => setTemplate(event.target.checked)} />
-            <span>업무 템플릿으로 만들기 (1.~7. 폴더, Data, tmp, CLAUDE.md)</span>
-          </label>
+          <FolderTemplatePicker templates={folderTemplates} value={templateId} onChange={setTemplateId} />
           <div className="detail-actions-row">
             <button type="button" disabled={pending} onClick={() => void createFolder()}>
               <FolderPlus size={14} />

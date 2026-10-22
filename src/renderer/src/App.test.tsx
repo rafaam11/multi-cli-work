@@ -349,7 +349,13 @@ function createApi(options?: {
     warnings: [],
   };
   const noRoots = { dev: null, data: null, work: null, drive: null };
-  const pcRootsInfo = { configured: noRoots, detected: noRoots, effective: noRoots, home: "C:/Users/test" };
+  const pcRootsInfo = {
+    configured: noRoots,
+    detected: noRoots,
+    effective: noRoots,
+    driveKind: { configured: null, effective: "folder" as const },
+    home: "C:/Users/test",
+  };
   const api: MultiCliWorkApi = {
     platform: "win32",
     projects: {
@@ -385,6 +391,7 @@ function createApi(options?: {
       redetect: vi.fn().mockResolvedValue(pcRootsInfo),
       choose: vi.fn().mockResolvedValue(null),
       clear: vi.fn().mockResolvedValue(pcRootsInfo),
+      setDriveKind: vi.fn().mockResolvedValue(pcRootsInfo),
     },
     profile: {
       defaultPath: vi.fn().mockResolvedValue(null),
@@ -2413,7 +2420,7 @@ describe("work project categories", () => {
     act(() => {
       harness.emitSettings({
         ...DEFAULT_SETTINGS,
-        projects: { categories: [{ name: "업무", color: 6 }], defaultCategory: "업무" },
+        projects: { categories: [{ name: "업무", color: 6 }], defaultCategory: "업무", folderTemplates: [] },
       });
     });
     await waitFor(async () => expect(await groupOf("스마트팩토리 과제")).toHaveClass("accent-6"));

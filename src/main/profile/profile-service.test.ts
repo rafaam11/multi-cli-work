@@ -155,10 +155,11 @@ function seedHome() {
       ...DEFAULT_SETTINGS,
       projects: {
         categories: [
-          { name: "연구개발", color: 3, code: "R" },
+          { name: "연구개발", color: 3, code: "R", templateId: "lab" },
           { name: "기타", color: 6, code: "Z" },
         ],
         defaultCategory: "기타",
+        folderTemplates: [{ id: "lab", name: "실험", folders: ["01_문서", "02_실험/원본"] }],
       },
       appearance: { theme: "light" },
       remote: { enabled: true, port: 50000 },
@@ -236,6 +237,9 @@ describe("설정 프로필", () => {
     // 설정은 병합되지만 이 PC의 원격 설정은 그대로다.
     expect(lab.getSettings().appearance.theme).toBe("light");
     expect(lab.getSettings().projects.categories.map((category) => category.code)).toEqual(["R", "Z"]);
+    // 폴더 템플릿과 구분의 기본 템플릿도 같이 옮겨진다.
+    expect(lab.getSettings().projects.folderTemplates).toEqual([{ id: "lab", name: "실험", folders: ["01_문서", "02_실험/원본"] }]);
+    expect(lab.getSettings().projects.categories[0]?.templateId).toBe("lab");
     expect(lab.getSettings().remote).toEqual(DEFAULT_SETTINGS.remote);
 
     const labWork = Object.values(lab.workProjects.workProjects);

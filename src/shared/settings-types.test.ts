@@ -325,13 +325,65 @@ describe("구분 코드", () => {
         defaultCategory: "기타",
       },
     });
+    // folderTemplates가 없는 구버전 설정이라 G·O 코드는 과제형 템플릿을 기본값으로 받는다.
     expect(parsed.projects.categories).toEqual([
-      { name: "정부과제", color: 1, code: "G" },
-      { name: "외주용역", color: 2, code: "O" },
+      { name: "정부과제", color: 1, code: "G", templateId: "project" },
+      { name: "외주용역", color: 2, code: "O", templateId: "project" },
       { name: "연구개발", color: 3 },
       { name: "개인", color: 4 },
       { name: "기타", color: 5 },
     ]);
+  });
+});
+
+describe("폴더 템플릿", () => {
+  it("템플릿이 없던 설정은 기본 두 벌을 받고, 구분은 코드로 기본 템플릿을 정한다", () => {
+    const parsed = parseSettings({
+      projects: {
+        categories: [
+          { name: "정부과제", color: 1, code: "G" },
+          { name: "연구개발", color: 3, code: "R" },
+          { name: "개인", color: 4, code: "S" },
+        ],
+        defaultCategory: "정부과제",
+      },
+    });
+    expect(parsed.projects.folderTemplates.map((template) => template.id)).toEqual(["minimal", "project"]);
+    expect(parsed.projects.categories.map((category) => category.templateId)).toEqual(["project", "minimal", undefined]);
+  });
+
+  it("저장된 템플릿은 그대로 존중한다 — 다 지운 빈 목록도, 없는 템플릿을 가리키는 구분은 템플릿 없음으로", () => {
+    const parsed = parseSettings({
+      projects: {
+        categories: [{ name: "정부과제", color: 1, code: "G", templateId: "project" }],
+        defaultCategory: "정부과제",
+        folderTemplates: [],
+      },
+    });
+    expect(parsed.projects.folderTemplates).toEqual([]);
+    expect(parsed.projects.categories).toEqual([{ name: "정부과제", color: 1, code: "G" }]);
+  });
+
+  it("손으로 고친 템플릿은 정리하고, 잘못된 id·겹치는 id·잘못된 경로는 버린다", () => {
+    const parsed = parseSettings({
+      projects: {
+        folderTemplates: [
+          { id: "a", name: "  가  ", folders: ["01_문서\\회의록", "01_문서/회의록", "../밖", "", 3] },
+          { id: "a", name: "중복", folders: [] },
+          { id: "공백 id", name: "x", folders: [] },
+          { id: "b", name: "   ", folders: [] },
+        ],
+      },
+    });
+    expect(parsed.projects.folderTemplates).toEqual([{ id: "a", name: "가", folders: ["01_문서/회의록"] }]);
+  });
+
+  it("병합은 템플릿 목록을 통째로 바꾼다", () => {
+    const next = mergeSettingsPatch(DEFAULT_SETTINGS, {
+      projects: { folderTemplates: [{ id: "x", name: "엑스", folders: ["a"] }] },
+    });
+    expect(next.projects.folderTemplates).toEqual([{ id: "x", name: "엑스", folders: ["a"] }]);
+    expect(next.projects.categories).toEqual(DEFAULT_SETTINGS.projects.categories);
   });
 });
 

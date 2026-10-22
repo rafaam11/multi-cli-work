@@ -11,8 +11,8 @@ import type { WorkProjectNotionLink, WorkProjectRole } from "./work-project-type
 export const PROFILE_FORMAT = "mcw-profile";
 export const PROFILE_VERSION = 1;
 
-/** 프로필로 옮기지 않는 설정 — PC마다 다른 값이다(원격 포트, 이 PC의 루트). */
-export const PROFILE_EXCLUDED_SETTINGS = ["remote", "pcRoots"] as const;
+/** 프로필로 옮기지 않는 설정 — PC마다 다른 값이다(원격 포트, 이 PC의 루트와 문서 루트 종류). */
+export const PROFILE_EXCLUDED_SETTINGS = ["remote", "pcRoots", "driveKind"] as const;
 
 export interface ProfileFolderProject {
   path: string;

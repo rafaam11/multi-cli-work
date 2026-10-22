@@ -1,13 +1,18 @@
 import type { DriveOverview } from "@shared/drive-types";
+import type { ProjectFolderTemplate } from "@shared/folder-template";
 import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { WorkProjectRegistryV1 } from "@shared/work-project-types";
 import { categoryForCode, parsePrefixedName, withCategoryPrefix } from "@shared/category-code";
+import { driveKindLabel } from "@shared/drive-kind";
 import { useEffect, useMemo, useState } from "react";
+import { useDriveRoot } from "./drive-root-context";
+import { FolderTemplatePicker } from "./FolderTemplatePicker";
 import { errorMessage } from "./ipc-error";
 
 interface WorkProjectCreateDialogProps {
   categories: readonly ProjectCategorySetting[];
   defaultCategory: string;
+  folderTemplates: readonly ProjectFolderTemplate[];
   /** 만든(또는 가져온) 뒤의 레지스트리와, 하나만 만들었으면 그 id. */
   onDone(registry: WorkProjectRegistryV1, createdId: string | null): void;
   onClose(): void;
@@ -20,12 +25,20 @@ type Mode = "new" | "drive";
  * 드라이브 폴더도 함께 만들 수 있다. 다른 PC에서 이미 만든 드라이브 폴더는 "드라이브에서 가져오기"로
  * 한 번에 업무 프로젝트가 된다.
  */
-export function WorkProjectCreateDialog({ categories, defaultCategory, onDone, onClose }: WorkProjectCreateDialogProps) {
+export function WorkProjectCreateDialog({
+  categories,
+  defaultCategory,
+  folderTemplates,
+  onDone,
+  onClose,
+}: WorkProjectCreateDialogProps) {
+  const driveLabel = driveKindLabel(useDriveRoot().kind);
+  const templateOf = (name: string) => categories.find((candidate) => candidate.name === name)?.templateId ?? null;
   const [mode, setMode] = useState<Mode>("new");
   const [category, setCategory] = useState(defaultCategory);
   const [baseName, setBaseName] = useState("");
   const [withDriveFolder, setWithDriveFolder] = useState(true);
-  const [template, setTemplate] = useState(true);
+  const [templateId, setTemplateId] = useState<string | null>(() => templateOf(defaultCategory));
   const [overview, setOverview] = useState<DriveOverview | null>(null);
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const [pending, setPending] = useState(false);
@@ -57,12 +70,19 @@ export function WorkProjectCreateDialog({ categories, defaultCategory, onDone, o
   const unlinked = overview?.folders.filter((folder) => folder.workProjectId === null) ?? [];
   const driveReady = overview?.available === true;
 
+  // 템플릿은 구분을 따라간다 — 구분을 바꾼 뒤 직접 고르면 그 값이 남는다.
+  const changeCategory = (name: string) => {
+    if (name === category) return;
+    setCategory(name);
+    setTemplateId(templateOf(name));
+  };
+
   // 사용자가 접두어까지 쳤다면(`R_새과제`) 그 코드의 구분으로 맞춘다 — 코드와 구분이 어긋날 수 없게.
   const changeName = (value: string) => {
     setBaseName(value);
     const parsed = parsePrefixedName(value);
     const matched = parsed ? categoryForCode(categories, parsed.code) : undefined;
-    if (matched) setCategory(matched.name);
+    if (matched) changeCategory(matched.name);
   };
 
   const createNew = async () => {
@@ -74,7 +94,7 @@ export function WorkProjectCreateDialog({ categories, defaultCategory, onDone, o
       let registry = await window.multiCliWork.workProjects.create({ name: finalName, category });
       const createdId = Object.keys(registry.workProjects).find((id) => !before.has(id)) ?? null;
       if (createdId && withDriveFolder && driveReady) {
-        registry = (await window.multiCliWork.drive.createFolder(createdId, { template })).workProjects;
+        registry = (await window.multiCliWork.drive.createFolder(createdId, { templateId })).workProjects;
       }
       onDone(registry, createdId);
     } catch (cause) {
@@ -124,7 +144,7 @@ export function WorkProjectCreateDialog({ categories, defaultCategory, onDone, o
           >
             <label>
               구분
-              <select aria-label="구분" value={category} onChange={(event) => setCategory(event.target.value)}>
+              <select aria-label="구분" value={category} onChange={(event) => changeCategory(event.target.value)}>
                 {categories.map((option) => (
                   <option key={option.name} value={option.name}>
                     {option.code ? `${option.code} · ${option.name}` : option.name}
@@ -151,15 +171,17 @@ export function WorkProjectCreateDialog({ categories, defaultCategory, onDone, o
                 onChange={(event) => setWithDriveFolder(event.target.checked)}
               />
               <span>
-                Google Drive에 폴더 만들기
+                {driveLabel}에 폴더 만들기
                 {driveReady ? null : " (이 PC의 드라이브 폴더를 찾지 못함)"}
               </span>
             </label>
             {withDriveFolder && driveReady ? (
-              <label className="work-project-create-check work-project-create-sub">
-                <input type="checkbox" checked={template} onChange={(event) => setTemplate(event.target.checked)} />
-                <span>업무 템플릿(1.~7., Data, tmp, CLAUDE.md)</span>
-              </label>
+              <FolderTemplatePicker
+                className="work-project-create-sub"
+                templates={folderTemplates}
+                value={templateId}
+                onChange={setTemplateId}
+              />
             ) : null}
             {error ? (
               <p className="detail-save-error" role="alert">
@@ -185,7 +207,7 @@ export function WorkProjectCreateDialog({ categories, defaultCategory, onDone, o
             {overview === null ? (
               <p className="detail-empty">드라이브를 읽는 중…</p>
             ) : !overview.available ? (
-              <p className="detail-empty">이 PC의 Google Drive 폴더를 찾지 못했습니다. 설정 › PC · 프로필에서 지정하세요.</p>
+              <p className="detail-empty">이 PC의 {driveLabel} 폴더를 찾지 못했습니다. 설정 › PC · 프로필에서 지정하세요.</p>
             ) : unlinked.length === 0 ? (
               <p className="detail-empty">드라이브의 모든 프로젝트 폴더가 이미 업무 프로젝트입니다.</p>
             ) : (

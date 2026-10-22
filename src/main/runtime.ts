@@ -199,7 +199,11 @@ export async function createDesktopRuntime(
   const recoveryMarkerPath = path.join(userData, "shutdown-recovery.json");
   await consumeRecoveryMarker(recoveryMarkerPath, statePath);
   const settingsService = await createSettingsService(path.join(userData, "settings.json"));
-  const pcRoots = new PcRootsProvider(() => settingsService.current().pcRoots);
+  const pcRoots = new PcRootsProvider(
+    () => settingsService.current().pcRoots,
+    {},
+    () => settingsService.current().driveKind,
+  );
   // 노션 통합 토큰은 시크릿이라 settings.json(평문)이 아니라 safeStorage로 암호화한 별도 파일에 둔다.
   const notionService = createNotionService(
     createNotionTokenStore(path.join(userData, "notion-credentials.json"), safeStorage),
@@ -366,7 +370,11 @@ export async function createDesktopRuntime(
               .filter((member): member is WorkProjectBriefMember => member.project !== null),
             tags,
             // 문서 어휘(드라이브·팀즈)는 문서 폴더가 어느 루트 아래에 있는지로 정해진다.
-            { teamsSyncRoot: workProjectRegistry.teamsSyncRoot, driveRoot: pcRoots.info().effective.drive },
+            {
+              teamsSyncRoot: workProjectRegistry.teamsSyncRoot,
+              driveRoot: pcRoots.info().effective.drive,
+              driveKind: pcRoots.info().driveKind.effective,
+            },
           )
         : null;
       const project = registry.projects[projectId] ?? null;

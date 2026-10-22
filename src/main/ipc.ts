@@ -42,6 +42,8 @@ import {
 } from "./ipc-validation";
 import { parseSessionPreset } from "./presets/preset-registry";
 import { assertNotReviewSession } from "./terminal/review-guard";
+import { driveKindLabel, isDriveKind } from "../shared/drive-kind";
+import { findFolderTemplate } from "../shared/folder-template";
 import { PC_ROOT_KEYS, type PcRootKey } from "../shared/settings-types";
 import type { WorkProjectRole } from "../shared/work-project-types";
 import {
@@ -247,6 +249,11 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     await dependencies.settings.update({ pcRoots: { [rootKey(key)]: null } });
     return dependencies.pcRoots.info();
   });
+  ipc.handle("pc-roots:set-drive-kind", async (_event, kind: unknown) => {
+    if (kind !== null && !isDriveKind(kind)) throw new Error("Drive kind is invalid");
+    await dependencies.settings.update({ driveKind: kind });
+    return dependencies.pcRoots.info();
+  });
 
   // ── 설정 프로필 ──────────────────────────────────────────────────────────────────────────
   ipc.handle("profile:default-path", () => dependencies.profile.defaultPath());
@@ -254,11 +261,14 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   ipc.handle("profile:preview", () => dependencies.profile.previewImport());
   ipc.handle("profile:apply", () => dependencies.profile.applyImport());
 
-  // ── Google Drive: 업무 프로젝트 ↔ 드라이브 최상위 폴더(이름이 같으면 연결) ─────────────────────
+  // ── 문서 루트(드라이브): 업무 프로젝트 ↔ 드라이브 최상위 폴더(이름이 같으면 연결) ─────────────────
   const driveRoot = () => dependencies.pcRoots.info().effective.drive;
+  const driveKind = () => dependencies.pcRoots.info().driveKind.effective;
   const requireDriveRoot = () => {
     const root = driveRoot();
-    if (root === null) throw new Error("이 PC의 Google Drive 폴더가 지정되지 않았습니다 (설정 › PC · 프로필)");
+    if (root === null) {
+      throw new Error(`이 PC의 문서 루트(${driveKindLabel(driveKind())}) 폴더가 지정되지 않았습니다 (설정 › PC · 프로필)`);
+    }
     return root;
   };
   const workProjectById = async (value: unknown) => {
@@ -287,10 +297,21 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   });
   ipc.handle("drive:create-folder", async (_event, workProjectId: unknown, options: unknown) => {
     const workProject = await workProjectById(workProjectId);
-    const parsed = exactObject(options, ["template"], "Drive folder options");
-    const folderPath = await createDriveProjectFolder(requireDriveRoot(), workProject.name, workProject.category, {
-      template: booleanValue(parsed.template, "Drive folder template"),
-    });
+    const parsed = exactObject(options, ["templateId"], "Drive folder options");
+    let templateFolders: string[] | null = null;
+    if (parsed.templateId !== null) {
+      const templateId = nonEmptyString(parsed.templateId, "Drive folder templateId");
+      const template = findFolderTemplate(dependencies.settings.get().projects.folderTemplates, templateId);
+      if (template === undefined) throw new Error(`폴더 템플릿을 찾을 수 없습니다: ${templateId}`);
+      templateFolders = template.folders;
+    }
+    const folderPath = await createDriveProjectFolder(
+      requireDriveRoot(),
+      workProject.name,
+      workProject.category,
+      templateFolders,
+      driveKind(),
+    );
     return registerMemberFolder(workProject.id, folderPath, "docs");
   });
   // 드라이브에 있지만 업무 프로젝트가 없는 폴더들을 한 번에 업무 프로젝트로 — 구분은 접두 코드로.

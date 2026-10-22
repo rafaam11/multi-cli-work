@@ -35,6 +35,7 @@ import type {
   WorktreeWorkspaceSnapshot,
 } from "./worktree-types";
 import type { AppSettings, AppSettingsPatch, PcRootKey } from "./settings-types";
+import type { DriveKind } from "./drive-kind";
 import type { PcRootsInfo } from "./pc-roots-types";
 import type { ProfileExportResult, ProfileImportPreview, ProfileImportResult } from "./profile-types";
 import type { DriveCreateOptions, DriveOverview, DriveProjectStatus } from "./drive-types";
@@ -385,6 +386,8 @@ export interface MultiCliWorkApi {
     choose(key: PcRootKey): Promise<PcRootsInfo | null>;
     /** 지정을 지워 자동 탐지로 되돌린다. */
     clear(key: PcRootKey): Promise<PcRootsInfo>;
+    /** 문서 루트의 종류(아이콘·이름)를 정한다. null이면 경로로 짐작한다. */
+    setDriveKind(kind: DriveKind | null): Promise<PcRootsInfo>;
   };
   /** 설정 프로필 — 드라이브(`_config\multi-cli-work\profile.json`)에 두고 PC 사이에 손으로 옮긴다. */
   profile: {

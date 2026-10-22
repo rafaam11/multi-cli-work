@@ -6,6 +6,10 @@ import { SettingsDialog } from "./SettingsDialog";
 
 const DEFAULT_CATEGORIES = DEFAULT_SETTINGS.projects.categories;
 
+function categoryRows() {
+  return within(screen.getByRole("list", { name: "구분 목록" })).getAllByRole("listitem");
+}
+
 const update = vi.fn().mockResolvedValue(DEFAULT_SETTINGS);
 const notion = {
   status: vi.fn(),
@@ -199,15 +203,14 @@ describe("프로젝트 탭", () => {
     fireEvent.click(screen.getByRole("button", { name: "개인 삭제" }));
     fireEvent.click(screen.getByRole("button", { name: "연구 삭제" }));
     fireEvent.click(screen.getByRole("button", { name: "기타 삭제" }));
-    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(1));
+    await waitFor(() => expect(categoryRows()).toHaveLength(1));
     expect(screen.getByRole("button", { name: "업무 삭제" })).toBeDisabled();
   });
 
   it("구분 추가는 새 구분을 끝에 붙이고 그 입력에 포커스한다", () => {
     openProjects();
     fireEvent.click(screen.getByRole("button", { name: "구분 추가" }));
-    const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(5);
+    expect(categoryRows()).toHaveLength(5);
     const newInput = screen.getByLabelText("구분 5 이름");
     expect(newInput).toHaveValue("새 구분");
     expect(newInput).toHaveFocus();
@@ -553,6 +556,7 @@ describe("구분 코드", () => {
         { name: "미분류", color: 2 },
       ],
       defaultCategory: "기타",
+      folderTemplates: [],
     },
   };
 
@@ -600,6 +604,7 @@ describe("PC · 프로필 탭", () => {
     configured: { ...noRoots, dev: "D:\\dev" },
     detected: { ...noRoots, dev: "C:\\dev", drive: "G:\\내 드라이브" },
     effective: { ...noRoots, dev: "D:\\dev", drive: "G:\\내 드라이브" },
+    driveKind: { configured: null, effective: "gdrive" as const },
     home: "C:\\Users\\u",
   };
 
@@ -609,6 +614,7 @@ describe("PC · 프로필 탭", () => {
       redetect: vi.fn().mockResolvedValue(info),
       choose: vi.fn().mockResolvedValue(null),
       clear: vi.fn().mockResolvedValue({ ...info, configured: noRoots, effective: { ...info.effective, dev: "C:\\dev" } }),
+      setDriveKind: vi.fn().mockResolvedValue({ ...info, driveKind: { configured: "nas", effective: "nas" } }),
     };
     const profile = {
       defaultPath: vi.fn().mockResolvedValue("G:\\내 드라이브\\_config\\multi-cli-work\\profile.json"),
@@ -637,10 +643,20 @@ describe("PC · 프로필 탭", () => {
   it("루트의 실제 값과 출처(지정·자동)를 보이고, 지정을 지우면 자동으로 돌아간다", async () => {
     const { pcRoots } = install();
     expect(await screen.findByTitle("D:\\dev")).toHaveTextContent("· 지정");
-    expect(screen.getByRole("button", { name: "Google Drive 루트 자동으로" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "문서 루트 자동으로" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "dev 루트 자동으로" }));
     await waitFor(() => expect(pcRoots.clear).toHaveBeenCalledWith("dev"));
     expect(await screen.findByTitle("C:\\dev")).toHaveTextContent("· 자동");
+  });
+
+  it("문서 루트 종류는 자동(경로로 짐작)에서 시작하고, 아이콘을 고르면 저장한다", async () => {
+    const { pcRoots } = install();
+    const group = await screen.findByRole("radiogroup", { name: "문서 루트 종류" });
+    expect(within(group).getByRole("radio", { name: "자동 (Google Drive)" })).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(within(group).getByRole("radio", { name: "NAS" }));
+    await waitFor(() => expect(pcRoots.setDriveKind).toHaveBeenCalledWith("nas"));
+    expect(await within(group).findByRole("radio", { name: "NAS" })).toHaveAttribute("aria-checked", "true");
   });
 
   it("내보내고, 불러올 프로필을 미리 본 뒤 적용한다", async () => {
@@ -653,7 +669,7 @@ describe("PC · 프로필 탭", () => {
     fireEvent.click(screen.getByRole("button", { name: "불러오기…" }));
     const region = await screen.findByRole("region", { name: "불러오기 미리보기" });
     expect(region).toHaveTextContent("OFFICE-DESKTOP");
-    expect(region).toHaveTextContent("설정: 프로젝트 구분, 테마");
+    expect(region).toHaveTextContent("설정: 프로젝트 구분·폴더 템플릿, 테마");
     expect(region).toHaveTextContent("추가 1개 · 갱신 1개");
     expect(region).toHaveTextContent("이 PC에 없음 1개");
 
@@ -661,5 +677,90 @@ describe("PC · 프로필 탭", () => {
     await waitFor(() => expect(profile.apply).toHaveBeenCalledOnce());
     expect(await screen.findByRole("status")).toHaveTextContent("건너뛴 폴더 1개");
     expect(screen.queryByRole("region", { name: "불러오기 미리보기" })).toBeNull();
+  });
+});
+
+describe("드라이브 폴더 템플릿", () => {
+  const TEMPLATES = [
+    { id: "minimal", name: "최소", folders: ["01_문서", "tmp"] },
+    { id: "project", name: "과제형", folders: ["01_계획서"] },
+  ];
+  const WITH_TEMPLATES = {
+    ...DEFAULT_SETTINGS,
+    projects: {
+      categories: [
+        { name: "정부과제", color: 1, code: "G", templateId: "project" },
+        { name: "연구개발", color: 3, code: "R" },
+      ],
+      defaultCategory: "정부과제",
+      folderTemplates: TEMPLATES,
+    },
+  };
+
+  function openProjects() {
+    render(<SettingsDialog settings={WITH_TEMPLATES} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트" }));
+  }
+
+  it("구분마다 기본 템플릿을 고른다", async () => {
+    openProjects();
+    expect(screen.getByLabelText("정부과제 폴더 템플릿")).toHaveValue("project");
+    fireEvent.change(screen.getByLabelText("연구개발 폴더 템플릿"), { target: { value: "minimal" } });
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith({
+        projects: {
+          categories: [
+            { name: "정부과제", color: 1, code: "G", templateId: "project" },
+            { name: "연구개발", color: 3, code: "R", templateId: "minimal" },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("폴더 목록은 blur에 정리해 저장하고, 잘못된 줄이 있으면 저장하지 않고 줄 번호를 보인다", async () => {
+    openProjects();
+    const list = screen.getByLabelText("최소 폴더 목록");
+    fireEvent.change(list, { target: { value: "01_문서\n02_미디어\\사진\n\n01_문서" } });
+    fireEvent.blur(list);
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith({
+        projects: { folderTemplates: [{ ...TEMPLATES[0], folders: ["01_문서", "02_미디어/사진"] }, TEMPLATES[1]] },
+      }),
+    );
+    expect(list).toHaveValue("01_문서\n02_미디어/사진");
+
+    update.mockClear();
+    fireEvent.change(list, { target: { value: "01_문서\n../밖" } });
+    fireEvent.blur(list);
+    expect(await screen.findByRole("alert")).toHaveTextContent("2번째 줄");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("템플릿을 지우면 그 템플릿을 쓰던 구분도 같은 패치에서 템플릿 없음이 된다", async () => {
+    openProjects();
+    fireEvent.click(screen.getByRole("button", { name: "과제형 템플릿 삭제" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith({
+        projects: {
+          folderTemplates: [TEMPLATES[0]],
+          categories: [
+            { name: "정부과제", color: 1, code: "G" },
+            { name: "연구개발", color: 3, code: "R" },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByLabelText("정부과제 폴더 템플릿")).toHaveValue("");
+  });
+
+  it("기본값으로 되돌리면 기본 두 벌로 돌아가고 편집 중이던 내용도 버린다", async () => {
+    openProjects();
+    fireEvent.change(screen.getByLabelText("최소 폴더 목록"), { target: { value: "임시" } });
+    fireEvent.click(screen.getByRole("button", { name: "기본값으로 되돌리기" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith({ projects: { folderTemplates: DEFAULT_SETTINGS.projects.folderTemplates } }),
+    );
+    expect(screen.getByLabelText("최소 폴더 목록")).toHaveValue(DEFAULT_SETTINGS.projects.folderTemplates[0]!.folders.join("\n"));
   });
 });

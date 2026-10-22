@@ -6,6 +6,18 @@
  * version number or migration code.
  */
 import { ACCENT_COLOR_COUNT } from "./accent-palette";
+import { isDriveKind, type DriveKind } from "./drive-kind";
+import {
+  DEFAULT_FOLDER_TEMPLATES,
+  FOLDER_TEMPLATE_ID_PATTERN,
+  MAX_FOLDER_TEMPLATE_ENTRIES,
+  MAX_FOLDER_TEMPLATE_NAME_LENGTH,
+  MAX_FOLDER_TEMPLATES,
+  folderTemplatePathError,
+  legacyTemplateIdForCode,
+  normalizeFolderTemplatePath,
+  type ProjectFolderTemplate,
+} from "./folder-template";
 
 /** TerminalStatus values a desktop notification can be raised for. */
 export type NotifiableStatus = "awaiting-input" | "awaiting-approval" | "exited" | "error";
@@ -61,12 +73,15 @@ export interface ProjectCategorySetting {
    * (`R_DOTORI`)로 쓰여, 알파벳순 정렬이 곧 구분 순서가 되게 한다. 없으면 접두어 규칙을 쓰지 않는다.
    */
   code?: string;
+  /** 드라이브 폴더를 만들 때 기본으로 고를 폴더 템플릿 id. 없으면 템플릿 없이 만든다. */
+  templateId?: string;
 }
 
 export interface ProjectSettings {
   categories: ProjectCategorySetting[];
   /** 항상 categories 안의 이름이다(파서가 보장). */
   defaultCategory: string;
+  folderTemplates: ProjectFolderTemplate[];
 }
 
 /**
@@ -162,6 +177,8 @@ export interface AppSettings {
   remote: RemoteSettings;
   usage: UsageSettings;
   pcRoots: PcRootsSettings;
+  /** 이 PC 문서 루트의 종류(아이콘·이름). null이면 경로로 짐작한다. pcRoots처럼 PC마다 다르다. */
+  driveKind: DriveKind | null;
 }
 
 export interface AppSettingsPatch {
@@ -176,8 +193,8 @@ export interface AppSettingsPatch {
   };
   /** 전체 교체 — 리매핑 UI는 항상 완전한 오버라이드 맵을 보낸다. 부분 병합이면 해제가 불가능하다. */
   keybindings?: Record<string, string | null>;
-  /** categories는 통째 교체 — 삭제·순서 변경은 부분 병합으로 표현할 수 없다. */
-  projects?: { categories?: ProjectCategorySetting[]; defaultCategory?: string };
+  /** categories·folderTemplates는 통째 교체 — 삭제·순서 변경은 부분 병합으로 표현할 수 없다. */
+  projects?: { categories?: ProjectCategorySetting[]; defaultCategory?: string; folderTemplates?: ProjectFolderTemplate[] };
   /** `openWith`은 전체 교체 — keybindings와 같은 이유로, 부분 병합이면 항목 삭제가 불가능하다. */
   files?: { defaultOpenWith?: FileOpenTarget; openWith?: Record<string, FileOpenTarget>; unsupportedOpensWithOs?: boolean };
   /** 템플릿 목록은 통째 교체 — 삭제·순서 변경을 부분 병합으로 표현할 수 없다. */
@@ -186,6 +203,7 @@ export interface AppSettingsPatch {
   remote?: Partial<RemoteSettings>;
   usage?: Partial<UsageSettings>;
   pcRoots?: Partial<PcRootsSettings>;
+  driveKind?: DriveKind | null;
 }
 
 export const TERMINAL_FONT_SIZE_RANGE = { min: 8, max: 32 } as const;
@@ -202,6 +220,11 @@ export const DEFAULT_PROJECT_CATEGORIES: readonly ProjectCategorySetting[] = [
   { name: "연구", color: 3 },
   { name: "기타", color: 5 },
 ];
+
+/** 기본 폴더 템플릿의 깊은 사본 — 설정 객체가 상수를 공유하면 한쪽 편집이 상수를 바꾼다. */
+export function defaultFolderTemplates(): ProjectFolderTemplate[] {
+  return DEFAULT_FOLDER_TEMPLATES.map((template) => ({ ...template, folders: [...template.folders] }));
+}
 
 const MAX_ACCELERATOR_LENGTH = 64;
 const FILE_OPEN_WITH_EXTENSION_PATTERN = /^[a-z0-9]{1,16}$/;
@@ -225,13 +248,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     snoozedUntil: null,
   },
   keybindings: {},
-  projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타" },
+  projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타", folderTemplates: defaultFolderTemplates() },
   files: { defaultOpenWith: "os", openWith: {}, unsupportedOpensWithOs: true },
   fanOut: { templates: [] },
   appearance: { theme: "dark" },
   remote: { enabled: false, port: DEFAULT_REMOTE_PORT },
   usage: { enabled: true, notifyAt90: true },
   pcRoots: { dev: null, data: null, work: null, drive: null },
+  driveKind: null,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -283,9 +307,17 @@ function readNumber(value: unknown, min: number, max: number, fallback: number):
  * defaultCategory에는 "이 값"이라 부를 고정 기본값이 없다: 구분 목록 자체가 사용자 정의라, 지워진
  * 기본 구분을 대신할 것은 남은 목록의 첫 항목뿐이다(규칙 ⑤). 그래서 categories가 통째로 사라진
  * 경우에만 defaults를 쓰고, 그 외에는 항상 "남은 목록의 첫 항목"으로 떨어진다.
+ *
+ * folderTemplates 필드가 아예 없으면 템플릿이 생기기 전 파일이다 — 기본 템플릿을 넣고, 구분마다
+ * 코드로 기본 템플릿을 정해 준다(`legacyTemplateIdForCode`). 필드가 있으면(빈 배열이라도) 사용자가
+ * 고른 값이므로 그대로 두고, 없는 템플릿을 가리키는 templateId만 버린다.
  */
 function readProjectSettings(raw: unknown, defaults: ProjectSettings): ProjectSettings {
   if (!isRecord(raw)) return defaults;
+
+  const storedTemplates = readFolderTemplates(raw.folderTemplates);
+  const folderTemplates = storedTemplates ?? defaultFolderTemplates();
+  const templateIds = new Set(folderTemplates.map((template) => template.id));
 
   let categories: ProjectCategorySetting[];
   if (Array.isArray(raw.categories)) {
@@ -307,7 +339,18 @@ function readProjectSettings(raw: unknown, defaults: ProjectSettings): ProjectSe
         item.color <= ACCENT_COLOR_COUNT
           ? item.color
           : (categories.length % ACCENT_COLOR_COUNT) + 1;
-      categories.push(code !== undefined ? { name, color, code } : { name, color });
+      const templateId =
+        storedTemplates === null
+          ? legacyTemplateIdForCode(code)
+          : typeof item.templateId === "string" && templateIds.has(item.templateId)
+            ? item.templateId
+            : undefined;
+      categories.push({
+        name,
+        color,
+        ...(code !== undefined ? { code } : {}),
+        ...(templateId !== undefined ? { templateId } : {}),
+      });
     }
     if (categories.length === 0) categories = [...DEFAULT_PROJECT_CATEGORIES];
   } else {
@@ -319,7 +362,33 @@ function readProjectSettings(raw: unknown, defaults: ProjectSettings): ProjectSe
     ? rawDefault
     : categories[0]!.name;
 
-  return { categories, defaultCategory };
+  return { categories, defaultCategory, folderTemplates };
+}
+
+/**
+ * 배열이 아니면 null(필드 없음 — 구버전). id가 잘못됐거나 겹치는 항목, 이름이 빈 항목은 버리고,
+ * 경로는 정리한 뒤 쓸 수 없는 것과 중복을 뺀다.
+ */
+function readFolderTemplates(raw: unknown): ProjectFolderTemplate[] | null {
+  if (!Array.isArray(raw)) return null;
+  const seen = new Set<string>();
+  const templates: ProjectFolderTemplate[] = [];
+  for (const item of raw) {
+    if (templates.length >= MAX_FOLDER_TEMPLATES) break;
+    if (!isRecord(item) || typeof item.id !== "string" || typeof item.name !== "string") continue;
+    if (!FOLDER_TEMPLATE_ID_PATTERN.test(item.id) || seen.has(item.id)) continue;
+    const name = item.name.trim().slice(0, MAX_FOLDER_TEMPLATE_NAME_LENGTH);
+    if (name.length === 0) continue;
+    const folders: string[] = [];
+    for (const entry of Array.isArray(item.folders) ? item.folders : []) {
+      if (typeof entry !== "string" || folders.length >= MAX_FOLDER_TEMPLATE_ENTRIES) continue;
+      const normalized = normalizeFolderTemplatePath(entry);
+      if (folderTemplatePathError(normalized) === null && !folders.includes(normalized)) folders.push(normalized);
+    }
+    seen.add(item.id);
+    templates.push({ id: item.id, name, folders });
+  }
+  return templates;
 }
 
 function readRootPath(value: unknown): string | null {
@@ -478,6 +547,7 @@ export function parseSettings(value: unknown): AppSettings {
       work: readRootPath(pcRoots.work),
       drive: readRootPath(pcRoots.drive),
     },
+    driveKind: isDriveKind(raw.driveKind) ? raw.driveKind : null,
   };
 }
 
@@ -514,5 +584,6 @@ export function mergeSettingsPatch(current: AppSettings, patch: AppSettingsPatch
     remote: { ...current.remote, ...patch.remote },
     usage: { ...current.usage, ...patch.usage },
     pcRoots: { ...current.pcRoots, ...patch.pcRoots },
+    driveKind: patch.driveKind !== undefined ? patch.driveKind : current.driveKind,
   };
 }

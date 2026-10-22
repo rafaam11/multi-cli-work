@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SlotViewsInput } from "../shared/api-types";
 import { DEFAULT_SETTINGS } from "../shared/settings-types";
 import { notionLinkCheck } from "../shared/notion-types";
+import type { PcRootsInfo } from "../shared/pc-roots-types";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
 
 function setup(
@@ -266,7 +267,13 @@ function setup(
   };
   const readRegistry = vi.fn(async () => ({ registry, source: "primary" as const, writable: true }));
   const noRoots = { dev: null, data: null, work: null, drive: null } as Record<"dev" | "data" | "work" | "drive", string | null>;
-  const pcRootsInfo = { configured: { ...noRoots }, detected: { ...noRoots }, effective: { ...noRoots }, home: "C:\\Users\\PC" };
+  const pcRootsInfo: PcRootsInfo = {
+    configured: { ...noRoots },
+    detected: { ...noRoots },
+    effective: { ...noRoots },
+    driveKind: { configured: null, effective: "gdrive" },
+    home: "C:\\Users\\PC",
+  };
   const pcRootsGateway = { info: vi.fn(() => pcRootsInfo), redetect: vi.fn(() => pcRootsInfo) };
   const profileGateway = {
     defaultPath: vi.fn(() => "G:\내 드라이브\_config\multi-cli-work\profile.json"),
@@ -842,6 +849,24 @@ describe("main IPC boundary", () => {
     expect(() => handlers.get("settings:update")!({}, { pcRoots: { dev: "  " } })).toThrow(/pcRoots.dev/);
   });
 
+  it("폴더 템플릿 패치는 id·이름·경로가 맞을 때만 통과한다", async () => {
+    const { handlers, settingsGateway } = setup();
+    const templates = [{ id: "minimal", name: "최소", folders: ["01_문서", "02_발표자료/회의록"] }];
+
+    await handlers.get("settings:update")!({}, {
+      projects: { categories: [{ name: "연구개발", color: 3, code: "R", templateId: "minimal" }], folderTemplates: templates },
+    });
+    expect(settingsGateway.update).toHaveBeenCalledWith({
+      projects: { categories: [{ name: "연구개발", color: 3, code: "R", templateId: "minimal" }], folderTemplates: templates },
+    });
+    const patch = (folderTemplates: unknown) => () =>
+      handlers.get("settings:update")!({}, { projects: { folderTemplates } });
+    expect(patch([{ id: "a b", name: "x", folders: [] }])).toThrow();
+    expect(patch([{ id: "a", name: "", folders: [] }])).toThrow();
+    expect(patch([{ id: "a", name: "x", folders: ["../밖"] }])).toThrow();
+    expect(patch([{ id: "a", name: "x", folders: [], extra: 1 }])).toThrow(/unknown/);
+  });
+
   it("rejects unknown fields, out-of-range values, and mistyped settings patches", () => {
     const { handlers, settingsGateway } = setup();
 
@@ -1299,15 +1324,37 @@ describe("PC 루트 · Google Drive IPC", () => {
     await expect(handlers.get("pc-roots:choose")!({}, "onedrive")).rejects.toThrow(/key/);
   });
 
+  it("문서 루트 종류는 알려진 id나 null(자동)만 저장한다", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("pc-roots:set-drive-kind")!({}, "nas");
+    expect(settingsGateway.update).toHaveBeenCalledWith({ driveKind: "nas" });
+    await handlers.get("pc-roots:set-drive-kind")!({}, null);
+    expect(settingsGateway.update).toHaveBeenCalledWith({ driveKind: null });
+    await expect(handlers.get("pc-roots:set-drive-kind")!({}, "ftp")).rejects.toThrow(/Drive kind/);
+  });
+
   it("드라이브 루트 없이 폴더를 만들려 하면 이유를 말하고 멈춘다", async () => {
     const { handlers, workProjectRegistry, projectService } = setup();
     Object.assign(workProjectRegistry.workProjects, {
       "wp-1": { id: "wp-1", name: "R_바이브코딩", category: "연구개발", members: [] },
     });
 
-    await expect(handlers.get("drive:create-folder")!({}, "wp-1", { template: true })).rejects.toThrow(/Google Drive/);
+    await expect(handlers.get("drive:create-folder")!({}, "wp-1", { templateId: null })).rejects.toThrow(/Google Drive/);
     await expect(handlers.get("drive:overview")!({})).resolves.toEqual({ root: null, available: false, folders: [] });
     expect(projectService.registerManualFolder).not.toHaveBeenCalled();
+  });
+
+  it("폴더 템플릿은 설정에 있는 id로만 고른다", async () => {
+    const { handlers, workProjectRegistry } = setup();
+    Object.assign(workProjectRegistry.workProjects, {
+      "wp-1": { id: "wp-1", name: "R_바이브코딩", category: "연구개발", members: [] },
+    });
+
+    await expect(handlers.get("drive:create-folder")!({}, "wp-1", { templateId: "없는것" })).rejects.toThrow(
+      /폴더 템플릿을 찾을 수 없습니다/,
+    );
+    await expect(handlers.get("drive:create-folder")!({}, "wp-1", { template: true })).rejects.toThrow(/unknown/);
   });
 
   it("제안 경로가 없는 문서 폴더는 드라이브로 옮기지 않는다", async () => {

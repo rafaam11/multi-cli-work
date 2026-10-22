@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import type { ProjectCategorySetting } from "../../shared/settings-types";
 import type { WorkProject } from "../../shared/work-project-types";
-import { DRIVE_TEMPLATE_FOLDERS } from "../../shared/drive-types";
+import { DEFAULT_FOLDER_TEMPLATES } from "../../shared/folder-template";
 import {
   assertDriveFolderName,
   createDriveProjectFolder,
@@ -152,28 +152,40 @@ describe("driveProjectStatus", () => {
 });
 
 describe("createDriveProjectFolder", () => {
+  const minimal = DEFAULT_FOLDER_TEMPLATES[0]!.folders;
+
   it("템플릿 폴더와 CLAUDE.md를 만든다", async () => {
-    const folder = await createDriveProjectFolder(drive, "R_바이브코딩", "연구개발", { template: true });
+    const folder = await createDriveProjectFolder(drive, "R_바이브코딩", "연구개발", minimal);
     expect(folder).toBe(path.join(drive, "R_바이브코딩"));
     const entries = await readdir(folder);
-    for (const name of DRIVE_TEMPLATE_FOLDERS) expect(entries).toContain(name);
+    for (const name of minimal) expect(entries).toContain(name);
     expect(await readFile(path.join(folder, "CLAUDE.md"), "utf8")).toContain("- 구분: 연구개발");
+  });
+
+  it("하위 경로 항목은 중첩 폴더로 만든다", async () => {
+    const folder = await createDriveProjectFolder(drive, "G_새과제", "정부과제", ["02_발표자료/회의록", "tmp"]);
+    expect(await readdir(path.join(folder, "02_발표자료"))).toEqual(["회의록"]);
   });
 
   it("이미 있는 폴더의 사용자 파일은 덮어쓰지 않고 빠진 템플릿 폴더만 채운다", async () => {
     await writeFile(path.join(drive, "R_DOTORI", "CLAUDE.md"), "내 지식", "utf8");
-    await createDriveProjectFolder(drive, "R_DOTORI", "연구개발", { template: true });
+    await createDriveProjectFolder(drive, "R_DOTORI", "연구개발", minimal);
     expect(await readFile(path.join(drive, "R_DOTORI", "CLAUDE.md"), "utf8")).toBe("내 지식");
-    expect(await readdir(path.join(drive, "R_DOTORI"))).toContain("7. 산출물");
+    expect(await readdir(path.join(drive, "R_DOTORI"))).toContain("03_데이터");
   });
 
   it("템플릿 없이 만들면 빈 폴더다", async () => {
-    const folder = await createDriveProjectFolder(drive, "S_커리어", "개인", { template: false });
+    const folder = await createDriveProjectFolder(drive, "S_커리어", "개인", null);
     expect(await readdir(folder)).toEqual([]);
   });
 
+  it("템플릿 경로가 프로젝트 폴더 밖을 가리키면 아무것도 만들지 않는다", async () => {
+    await expect(createDriveProjectFolder(drive, "R_탈출", "연구개발", ["../밖"])).rejects.toThrow(/템플릿 폴더 경로/);
+    expect(await readdir(drive)).not.toContain("R_탈출");
+  });
+
   it("드라이브 루트가 없거나 이름이 위험하면 만들지 않는다", async () => {
-    await expect(createDriveProjectFolder(path.join(base, "없음"), "R_x", "연구개발", { template: false })).rejects.toThrow(
+    await expect(createDriveProjectFolder(path.join(base, "없음"), "R_x", "연구개발", null)).rejects.toThrow(
       /드라이브 루트/,
     );
     expect(() => assertDriveFolderName("..")).toThrow();

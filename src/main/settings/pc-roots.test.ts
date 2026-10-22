@@ -33,6 +33,13 @@ describe("resolvePcRoots", () => {
     const info = resolvePcRoots({ ...none, dev: "E:\\code" }, { ...none, dev: "C:\\dev", drive: "G:\\내 드라이브" }, "C:\\Users\\u");
     expect(info.effective).toEqual({ dev: "E:\\code", data: null, work: null, drive: "G:\\내 드라이브" });
   });
+
+  it("문서 루트 종류는 지정값이 이기고, 없으면 실제 루트 경로로 짐작한다", () => {
+    const detected = { ...none, drive: "G:\\내 드라이브" };
+    expect(resolvePcRoots(none, detected, "C:\\Users\\u").driveKind).toEqual({ configured: null, effective: "gdrive" });
+    expect(resolvePcRoots({ ...none, drive: "\\\\nas\\docs" }, detected, "C:\\Users\\u").driveKind.effective).toBe("nas");
+    expect(resolvePcRoots(none, detected, "C:\\Users\\u", "local").driveKind).toEqual({ configured: "local", effective: "local" });
+  });
 });
 
 describe("PcRootsProvider", () => {

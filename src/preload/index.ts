@@ -56,6 +56,7 @@ const api: MultiCliWorkApi = {
     redetect: () => ipcRenderer.invoke("pc-roots:redetect"),
     choose: (key) => ipcRenderer.invoke("pc-roots:choose", key),
     clear: (key) => ipcRenderer.invoke("pc-roots:clear", key),
+    setDriveKind: (kind) => ipcRenderer.invoke("pc-roots:set-drive-kind", kind),
   },
   profile: {
     defaultPath: () => ipcRenderer.invoke("profile:default-path"),

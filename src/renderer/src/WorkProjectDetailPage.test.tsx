@@ -95,6 +95,7 @@ function renderPage(
       tags={tagProps.tags ?? []}
       tagSuggestions={tagProps.tagSuggestions ?? []}
       categories={tagProps.categories ?? DEFAULT_PROJECT_CATEGORIES}
+      folderTemplates={[]}
       onSelectSession={vi.fn()}
       onSelectProject={vi.fn()}
       onRegistryChanged={vi.fn()}
