@@ -53,7 +53,7 @@ import { showToast, Toaster } from "./toast";
 import { useTransientSet } from "./use-transient-set";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
 import { recentProjects } from "./recent-folders";
-import { buildSessionPanelItems, type SessionScopeTarget } from "./session-panel";
+import { buildSessionPanelItems } from "./session-panel";
 import {
   documentPaneId,
   isDocumentPaneId,
@@ -266,7 +266,7 @@ export function App() {
   const tagSuggestions = useMemo(() => knownTags(tagsByWorkProjectId), [tagsByWorkProjectId]);
 
   /**
-   * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 사이드바가 기본 묶기를 켜는
+   * 워크스페이스 셸에서 만들어진 업무 프로젝트: id → 그 셸. 폴더의 프로젝트 소속을 찾는
    * 근거이며, 대응하는 업무 프로젝트가 사라진 연결은 그냥 빠진다. 링크와 셸은 동기화와 같은
    * 키로 맞춘다 — `_archive`로 옮겨진 v2 Project도 저장된 링크 그대로 제 셸을 찾는다.
    */
@@ -1658,32 +1658,6 @@ export function App() {
       selectedFileTab.encoding === "utf8",
   );
 
-  /** 세션 패널의 "여기"가 가리키는 곳. 페이지가 있는 선택만 범위가 된다. */
-  const sessionScopeTarget = useMemo<SessionScopeTarget>(() => {
-    if (activeView === "home") return { kind: "none" };
-    if (activeView === "work-project") {
-      return selectedWorkProject
-        ? {
-            kind: "folders",
-            projectIds: selectedWorkProjectMembers.map(({ project }) => project.id),
-            label: selectedWorkProject.name,
-          }
-        : { kind: "none" };
-    }
-    // 셸프는 어느 폴더의 것도 아니다.
-    if (activeView === "terminal" && shelfKind !== null) return { kind: "none" };
-    if (selectedWorktree) return { kind: "worktree", worktreeId: selectedWorktree.id, label: selectedWorktree.branch };
-    if (selectedProject) return { kind: "folders", projectIds: [selectedProject.id], label: projectName(selectedProject) };
-    return { kind: "none" };
-  }, [
-    activeView,
-    shelfKind,
-    selectedWorktree,
-    selectedProject,
-    selectedWorkProject,
-    selectedWorkProjectMembers,
-  ]);
-
   /** 세션 패널이 그리는 줄. shelfPaneRows와 같은 이유로 여기서 만든다. */
   const sessionPanelItems = useMemo(
     () => buildSessionPanelItems({ sessions, documentPanes, projects, worktrees, agents, unread }),
@@ -2122,7 +2096,6 @@ export function App() {
         snapshot={snapshot}
         projects={projects}
         workProjects={workProjects}
-        workspaceShells={workspaceShells}
         categories={projectCategories}
         tagsByWorkProject={tagsByWorkProjectId}
         projectMembership={projectMembership}
@@ -2151,7 +2124,6 @@ export function App() {
         onToggleProject={toggleProject}
         gridProjectId={gridProjectId}
         sessionPanelItems={sessionPanelItems}
-        sessionScopeTarget={sessionScopeTarget}
         focusedPaneId={activeView === "terminal" ? focusedPaneId : null}
         onScreenPaneIds={onScreenPaneIds}
         onSessionContextMenu={(session, event) => {

@@ -6,22 +6,16 @@ import { DocumentRow, SessionRow } from "./PaneRows";
 import { findAgent } from "./session-labels";
 import {
   isWaitingItem,
-  matchesScope,
   sessionPanelWaitCount,
   type SessionPanelItem,
-  type SessionScope,
-  type SessionScopeTarget,
 } from "./session-panel";
 
 export interface SessionPanelProps {
-  /** 작업공간 선반에 속한 패인만, 선반 슬롯 순서로 받는다. 범위 필터는 여기서 건다. */
+  /** 작업공간 선반에 속한 패인만, 선반 슬롯 순서로 받는다. */
   items: readonly SessionPanelItem[];
-  scopeTarget: SessionScopeTarget;
-  scope: SessionScope;
-  onChangeScope(scope: SessionScope): void;
-  /** Keeps only sessions asking for input or approval. Works together with the scope. */
-  waitingOnly?: boolean;
-  onToggleWaitingOnly?(): void;
+  /** Keeps only sessions asking for input or approval. */
+  waitingOnly: boolean;
+  onChangeWaitingOnly(waitingOnly: boolean): void;
   open: boolean;
   onToggleOpen(): void;
   selected: boolean;
@@ -61,11 +55,8 @@ export interface SessionPanelProps {
  */
 export function SessionPanel({
   items,
-  scopeTarget,
-  scope,
-  onChangeScope,
-  waitingOnly = false,
-  onToggleWaitingOnly,
+  waitingOnly,
+  onChangeWaitingOnly,
   open,
   onToggleOpen,
   selected,
@@ -85,10 +76,7 @@ export function SessionPanel({
   paneDropProps,
   headingDropProps,
 }: SessionPanelProps) {
-  // 범위를 걸 곳이 없으면 저장된 선호가 "여기"여도 전체를 보인다 — 홈에 다녀왔다고 토글이 리셋되면 안 된다.
-  const effectiveScope: SessionScope = scopeTarget.kind === "none" ? "all" : scope;
-  const scoped = effectiveScope === "all" ? items : items.filter((item) => matchesScope(item, scopeTarget));
-  const visible = waitingOnly ? scoped.filter(isWaitingItem) : scoped;
+  const visible = waitingOnly ? items.filter(isWaitingItem) : items;
   const waiting = sessionPanelWaitCount(items);
 
   /**
@@ -196,41 +184,24 @@ export function SessionPanel({
           {waiting > 0 ? <span className="session-panel-wait">대기 {waiting}</span> : null}
         </button>
         <div className="session-panel-scope" role="group" aria-label="세션 범위">
-          <button type="button" aria-pressed={effectiveScope === "all"} onClick={() => onChangeScope("all")}>
+          <button type="button" aria-pressed={!waitingOnly} onClick={() => onChangeWaitingOnly(false)}>
             전체
           </button>
           <button
             type="button"
-            aria-pressed={effectiveScope === "here"}
-            disabled={scopeTarget.kind === "none"}
-            title={scopeTarget.kind === "none" ? "지금 화면에는 범위로 삼을 폴더가 없습니다" : scopeTarget.label}
-            onClick={() => onChangeScope("here")}
+            aria-pressed={waitingOnly}
+            title="입력·승인을 기다리는 세션만 보기"
+            onClick={() => onChangeWaitingOnly(true)}
           >
-            여기
+            대기
           </button>
-          {onToggleWaitingOnly ? (
-            <button
-              type="button"
-              aria-pressed={waitingOnly}
-              title="입력·승인을 기다리는 세션만 보기"
-              onClick={onToggleWaitingOnly}
-            >
-              대기
-            </button>
-          ) : null}
         </div>
       </div>
       {open ? (
         <ul className="session-tree session-panel-list" role="group" aria-label="세션 목록">
-          {/* 범위를 좁혀 놓았을 때만 어디가 비었는지 말한다 — 전체를 보고 있는데 폴더 이름을
-              대면 그 폴더만 비었다는 뜻으로 읽힌다. */}
           {visible.length === 0 ? (
             <li className="session-panel-empty">
-              {waitingOnly
-                ? "기다리는 세션이 없습니다"
-                : effectiveScope === "here" && scopeTarget.kind !== "none"
-                  ? `${scopeTarget.label}에 열린 세션이 없습니다`
-                  : "열린 세션이 없습니다"}
+              {waitingOnly ? "기다리는 세션이 없습니다" : "열린 세션이 없습니다"}
             </li>
           ) : null}
           {visible.map((item, index) =>

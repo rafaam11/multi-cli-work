@@ -88,7 +88,7 @@ export function useFolderTree({ projects, workProjects, sessions, projectMembers
   /**
    * 두 층이 펼침을 다르게 갖는다 — 폴더는 저장된 접힘 집합과 나란히 펼침 집합을 들고 있고, 업무
    * 프로젝트의 펼침은 접힘 집합의 여집합이다. 그래서 일괄 동작은 각 층에서 "열어 둘 것"만 말하고
-   * 나머지 채우기를 여기 맡긴다. 태그 묶음 층은 사이드바가 자기 키에 따로 적는다.
+   * 나머지 채우기를 여기 맡긴다.
    */
   const applyExpansion = (expandedProjectIds: Set<string>, expandedWorkProjectIds: Set<string>) => {
     const collapsedProjects = new Set(

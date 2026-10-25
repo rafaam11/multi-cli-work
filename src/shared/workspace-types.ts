@@ -63,7 +63,7 @@ export interface WorkspaceShellInfo {
   /** v2: PRJ-key · v1: 셸 폴더명. `shellLink.shell`로 저장된다. */
   shell: string;
   /**
-   * 태그 시드와 기본 묶기가 쓰는 묶음 라벨. v2는 `PROJECT.yaml`의 `primaryContext`,
+   * 태그 시드로 쓰는 라벨. v2는 `PROJECT.yaml`의 `primaryContext`,
    * v1은 채널 라벨(과제·용역·연구·기타·개인)이다. 없으면 빈 문자열이고 그때는 묶지 않는다.
    */
   groupLabel: string;

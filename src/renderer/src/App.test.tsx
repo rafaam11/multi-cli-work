@@ -13,7 +13,6 @@ import { DEFAULT_SETTINGS, mergeSettingsPatch, type AppSettings, type AppSetting
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { SESSION_DRAG_TYPE } from "./session-drag";
-import { tagAccentClass } from "./tag-color";
 
 const terminalHarness = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -1836,19 +1835,14 @@ describe("work project categories", () => {
     )!;
   };
 
-  /**
-   * 태그로 묶으면 트리에 묶음 한 겹이 더 선다. 고른 태그를 순서대로 훑어 첫 번째로 걸리는 묶음
-   * 아래에 한 번만 서고, 어느 태그에도 걸리지 않으면 나머지 묶음이며, 미분류는 묶음 밖에 남는다.
-   * ws-root 셸이 있으면 동기화가 심어 둔 채널 라벨 태그가 저장된 선호 없이도 도는 기본값이다.
-   */
-  describe("태그 묶음", () => {
-    /** 묶음 줄은 접혀 있어도 서 있으므로, 이름으로 찾으면 접힘 상태와 무관하게 잡힌다. */
-    const tagGroup = (nav: HTMLElement, label: string) =>
-      [...nav.querySelectorAll<HTMLElement>(".tag-group-node")].find(
-        (node) => node.querySelector(".tag-group-name")?.textContent === label,
-      )!;
-
-    it("고른 태그로 업무 프로젝트를 묶고, 묶음은 그 태그의 색을 쓴다", async () => {
+  describe("워크스페이스 프로젝트 목록", () => {
+    it.each([false, true])("태그와 예전 묶기 설정(%s)이 있어도 프로젝트 순서와 폴더를 그대로 보여 준다", async (savedGrouping) => {
+      if (savedGrouping) {
+        localStorage.setItem("multi-cli-work.sidebar.v1", JSON.stringify({
+          groupingTags: ["개인", "용역"],
+          expandedWorkspaces: ["tag:개인", "tag:용역"],
+        }));
+      }
       const harness = createApi({
         projects: [atlas],
         sessions: [],
@@ -1858,7 +1852,7 @@ describe("work project categories", () => {
           }),
           workProject("wp-career", "진로", "기타", { order: 1 }),
         ],
-        // ws-root 동기화가 채널 라벨을 태그로 심어 둔 상태 — 기본 묶기가 그 라벨들로 돈다.
+        // 워크스페이스에서 받은 태그가 있어도 프로젝트를 한 단계 더 묶지 않는다.
         projectTags: { "wp-vsp": ["용역"], "wp-career": ["개인"] },
         workspace: workspaceSnapshot(
           [VSP, CAREER],
@@ -1876,15 +1870,13 @@ describe("work project categories", () => {
       const group = (await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).closest(
         ".work-project-node",
       )!;
-      const service = group.closest(".tag-group-node")!;
-      expect(service).toHaveClass(tagAccentClass("용역"));
-      expect(service).toHaveTextContent("용역");
-      // 다른 태그는 자기 묶음을 따로 가진다.
-      const personal = (await within(nav).findByRole("button", { name: "진로 프로젝트 열기" })).closest(
-        ".tag-group-node",
-      )!;
-      expect(personal).toHaveClass(tagAccentClass("개인"));
-      expect(personal).not.toBe(service);
+      const tree = within(nav).getByRole("tree");
+      expect(group.parentElement).toBe(tree);
+      expect([...tree.children].map((node) => node.querySelector(".work-project-select")?.textContent)).toEqual([
+        "가상수술계획용역", "진로개인",
+      ]);
+      expect(within(group as HTMLElement).getByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
+      expect(harness.api.projectTags.set).not.toHaveBeenCalled();
     });
 
     it("워크스페이스가 다시 동기화되면 재시작 없이 새 업무 프로젝트와 태그를 그린다", async () => {
@@ -1912,214 +1904,6 @@ describe("work project categories", () => {
 
       expect(await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).toBeInTheDocument();
       expect(harness.api.workspace.list).toHaveBeenCalledTimes(2);
-    });
-
-    it("묶음을 접어 두었다가 다시 편다", async () => {
-      const harness = createApi({
-        projects: [atlas],
-        sessions: [],
-        workProjects: [workProject("wp-vsp", "가상수술계획", "개인")],
-        projectTags: { "wp-vsp": ["용역"] },
-        workspace: workspaceSnapshot([VSP], [
-          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
-        ]),
-      });
-      window.multiCliWork = harness.api;
-      render(<App />);
-
-      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      expect(await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" })).toBeInTheDocument();
-
-      fireEvent.click(within(nav).getByRole("button", { name: "용역 접기" }));
-      expect(within(nav).queryByRole("button", { name: "가상수술계획 프로젝트 열기" })).not.toBeInTheDocument();
-
-      fireEvent.click(within(nav).getByRole("button", { name: "용역 펼치기" }));
-      expect(within(nav).getByRole("button", { name: "가상수술계획 프로젝트 열기" })).toBeInTheDocument();
-    });
-
-    it("묶기가 비어 있으면 셸에서 온 업무 프로젝트도 최상위에 그대로 선다", async () => {
-      const harness = createApi({
-        projects: [atlas],
-        sessions: [],
-        workProjects: [
-          workProject("wp-manual", "손으로 만든 묶음", "업무"),
-          workProject("wp-vsp", "가상수술계획", "개인", { order: 1 }),
-        ],
-        // 셸은 있지만 태그가 하나도 없다 — 기본 묶기가 빌 것이 없어 트리는 평면이다.
-        workspace: workspaceSnapshot([VSP], [
-          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
-        ]),
-      });
-      window.multiCliWork = harness.api;
-      render(<App />);
-
-      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      const manual = (await within(nav).findByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" })).closest(
-        ".work-project-node",
-      )!;
-      expect(manual.closest(".tag-group-node")).toBeNull();
-      expect(nav.querySelector(".tag-group-node")).toBeNull();
-      expect(within(nav).getByRole("button", { name: "묶기 설정" })).toHaveTextContent("묶기: 없음");
-    });
-
-    it("묶기가 돌고 있는데 태그가 없는 업무 프로젝트는 나머지 묶음 아래로 간다", async () => {
-      const harness = createApi({
-        projects: [atlas],
-        sessions: [],
-        workProjects: [
-          workProject("wp-manual", "손으로 만든 묶음", "업무"),
-          workProject("wp-vsp", "가상수술계획", "개인", { order: 1 }),
-        ],
-        projectTags: { "wp-vsp": ["용역"] },
-        workspace: workspaceSnapshot([VSP], [
-          { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
-        ]),
-      });
-      window.multiCliWork = harness.api;
-      render(<App />);
-
-      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      const manual = (await within(nav).findByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" })).closest(
-        ".work-project-node",
-      )!;
-      const other = manual.closest(".tag-group-node")!;
-      expect(other).toHaveClass("tag-group-other");
-      expect(other).toBe(tagGroup(nav, "나머지"));
-      // 나머지는 언제나 마지막이다 — 태그가 붙은 묶음보다 뒤에 선다.
-      const groups = [...nav.querySelectorAll(".tag-group-node")];
-      expect(groups.at(-1)).toBe(other);
-    });
-
-    /**
-     * `기타`는 ws-root Z_ 채널이 심는 진짜 태그라 미일치 묶음과 이름이 부딪힐 수 있었다. 둘이
-     * 같은 이름이면 트리에 이름도 토글 접근성 이름도 똑같은 형제 줄이 나란히 선다.
-     */
-    it("태그 `기타` 묶음과 미일치 묶음은 이름도 색도 다른 별개의 두 줄이다", async () => {
-      const harness = createApi({
-        projects: [atlas],
-        sessions: [],
-        workProjects: [
-          workProject("wp-etc", "가상수술계획", "개인"),
-          workProject("wp-none", "손으로 만든 묶음", "업무", { order: 1 }),
-        ],
-        projectTags: { "wp-etc": ["기타"] },
-        // groupLabel을 "기타"로 덮어써야 한다 — 기본 묶기는 이제 워크스페이스가 실제로 심은
-        // 라벨만 후보로 삼으므로, VSP의 원래 라벨("용역")로는 "기타" 태그가 골라지지 않는다.
-        workspace: workspaceSnapshot([{ ...VSP, groupLabel: "기타" }], [
-          { workProjectId: "wp-etc", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
-        ]),
-      });
-      window.multiCliWork = harness.api;
-      render(<App />);
-
-      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" });
-
-      expect([...nav.querySelectorAll(".tag-group-name")].map((node) => node.textContent)).toEqual([
-        "기타",
-        "나머지",
-      ]);
-      const tagged = tagGroup(nav, "기타");
-      const other = tagGroup(nav, "나머지");
-      expect(tagged).not.toBe(other);
-      expect(tagged).toHaveClass(tagAccentClass("기타"));
-      expect(tagged).not.toHaveClass("tag-group-other");
-      expect(other).toHaveClass("tag-group-other");
-      expect(
-        within(tagged).getByRole("button", { name: "가상수술계획 프로젝트 열기" }),
-      ).toBeInTheDocument();
-      expect(
-        within(other).getByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" }),
-      ).toBeInTheDocument();
-      // 두 토글이 서로 다른 이름으로 잡혀야 스크린 리더가 둘을 가른다.
-      expect(within(nav).getByRole("button", { name: "기타 접기" })).toBeInTheDocument();
-      expect(within(nav).getByRole("button", { name: "나머지 접기" })).toBeInTheDocument();
-    });
-
-    it("묶기 메뉴로 태그 둘을 고르면 그 순서로 묶이고, 재시작해도 그대로다", async () => {
-      // 알파는 용역만, 베타는 둘 다 — 고른 순서가 베타를 어느 묶음에 세울지 가른다.
-      const harness = () =>
-        createApi({
-          projects: [atlas, dashboard],
-          sessions: [],
-          workProjects: [
-            workProject("wp-alpha", "알파", "개인", { members: [{ projectId: atlas.id, role: "repo" }] }),
-            workProject("wp-beta", "베타", "기타", {
-              order: 1,
-              members: [{ projectId: dashboard.id, role: "repo" }],
-            }),
-          ],
-          projectTags: { "wp-alpha": ["용역"], "wp-beta": ["용역", "개인"] },
-        });
-      window.multiCliWork = harness().api;
-      const view = render(<App />);
-
-      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      // 셸이 없으니 저장된 선호도 기본값도 없다 — 평면에서 시작한다.
-      expect(nav.querySelector(".tag-group-node")).toBeNull();
-
-      fireEvent.click(within(nav).getByRole("button", { name: "묶기 설정" }));
-      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "개인" }));
-      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "용역" }));
-      fireEvent.keyDown(window, { key: "Escape" });
-
-      await waitFor(() => expect(tagGroup(nav, "개인")).toBeDefined());
-      expect(within(nav).getByRole("button", { name: "묶기 설정" })).toHaveTextContent("묶기: 개인 › 용역");
-      // 베타는 둘 다 가졌지만 먼저 고른 개인 묶음에만 선다.
-      expect(
-        within(tagGroup(nav, "개인")).getByRole("button", { name: "베타 프로젝트 열기" }),
-      ).toBeInTheDocument();
-      expect(
-        within(tagGroup(nav, "용역")).getByRole("button", { name: "알파 프로젝트 열기" }),
-      ).toBeInTheDocument();
-      expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}").groupingTags).toEqual([
-        "개인",
-        "용역",
-      ]);
-
-      view.unmount();
-      window.multiCliWork = harness().api;
-      render(<App />);
-
-      const reopened = await screen.findByRole("navigation", { name: "프로젝트" });
-      await waitFor(() => expect(tagGroup(reopened, "개인")).toBeDefined());
-      expect(
-        within(tagGroup(reopened, "개인")).getByRole("button", { name: "베타 프로젝트 열기" }),
-      ).toBeInTheDocument();
-      // 저장된 선호가 이겼으므로 더는 기본값이 아니다.
-      expect(within(reopened).getByRole("button", { name: "묶기 설정" })).not.toHaveTextContent("(자동)");
-    });
-
-    it("저장된 선호가 없고 셸과 채널 라벨 태그가 있으면 그 라벨로 저절로 묶인다", async () => {
-      const harness = createApi({
-        projects: [atlas],
-        sessions: [],
-        workProjects: [
-          workProject("wp-vsp", "가상수술계획", "개인"),
-          workProject("wp-career", "진로", "기타", { order: 1 }),
-        ],
-        projectTags: { "wp-vsp": ["용역"], "wp-career": ["개인"] },
-        workspace: workspaceSnapshot(
-          [VSP, CAREER],
-          [
-            { workProjectId: "wp-vsp", channel: "O_SMCH", shell: "24_SMCH_VSP-1" },
-            { workProjectId: "wp-career", channel: "P_Personal", shell: "26_Personal_Career-1" },
-          ],
-        ),
-      });
-      window.multiCliWork = harness.api;
-      render(<App />);
-
-      const nav = await screen.findByRole("navigation", { name: "프로젝트" });
-      await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" });
-      // 고정 순서(과제·용역·연구·기타·개인)에서 실제로 붙어 있는 것만 남는다.
-      expect(within(nav).getByRole("button", { name: "묶기 설정" })).toHaveTextContent("묶기: 용역 › 개인 (자동)");
-      expect([...nav.querySelectorAll(".tag-group-name")].map((node) => node.textContent)).toEqual([
-        "용역",
-        "개인",
-      ]);
-      // 파생값이라 저장하지 않는다 — 사용자가 한 번 고르기 전까지는 키가 없다.
-      expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}").groupingTags).toBeUndefined();
     });
 
     it("draws the tree exactly as before when no workspace root is registered", async () => {
@@ -2157,7 +1941,7 @@ describe("work project categories", () => {
       expect(within(group as HTMLElement).getByRole("button", { name: "VSP_FastAPI 폴더 선택" })).toBeInTheDocument();
     });
 
-    it("셸 연결 업무 프로젝트도 사용자가 고친 이름으로 불린다 — 사이드바·빠른 열기·세션 범위", async () => {
+    it("셸 연결 업무 프로젝트도 사용자가 고친 이름으로 불린다 — 사이드바·빠른 열기·상세 화면", async () => {
       const harness = createApi({
         projects: [atlas],
         sessions: [],
@@ -2187,10 +1971,7 @@ describe("work project categories", () => {
       fireEvent.keyDown(within(dialog).getByRole("textbox", { name: "빠른 열기 검색" }), { key: "Escape" });
 
       fireEvent.click(open);
-      const region = await screen.findByRole("region", { name: "세션 패널" });
-      await waitFor(() =>
-        expect(within(region).getByRole("button", { name: "여기" })).toHaveAttribute("title", "VSP 수술계획 고도화"),
-      );
+      expect(await screen.findByRole("heading", { name: "VSP 수술계획 고도화" })).toBeInTheDocument();
     });
 
     it("_archive로 옮겨진 v2 Project도 저장된 링크(channel projects)로 제 셸을 찾는다", async () => {
@@ -2219,8 +2000,7 @@ describe("work project categories", () => {
       const group = (await within(nav).findByRole("button", { name: "세컨드브레인 프로젝트 열기" })).closest(
         ".work-project-node",
       )!;
-      // 셸 라벨로 기본 묶기가 돈다 — 링크가 셸을 찾았다는 뜻이다.
-      expect(within(nav).getByRole("button", { name: "묶기 설정" })).toHaveTextContent("묶기: 개인 (자동)");
+      expect(group.parentElement).toBe(within(nav).getByRole("tree"));
       expect(within(group as HTMLElement).getByRole("button", { name: "bolt 폴더 선택" })).toBeInTheDocument();
     });
   });
@@ -2995,13 +2775,15 @@ describe("세션 패널", () => {
     expect(document.querySelector(".tools-group")).toBeNull();
   });
 
-  it("'여기'는 현재 폴더의 세션만 남기고, 홈에서는 비활성이다", async () => {
+  it("예전 '여기' 설정을 무시하고 전체·대기를 전환하며 폴더를 바꿔도 세션을 유지한다", async () => {
+    localStorage.setItem("multi-cli-work.sidebar.v1", JSON.stringify({ sessionScope: "here" }));
     const dashboardSession: TerminalSessionView = {
       ...powershellSession,
       id: "session-dashboard",
       name: "대시보드 작업",
       projectId: dashboard.id,
       cwd: dashboard.rootPath,
+      status: "awaiting-input",
     };
     const harness = createApi({
       projects: [atlas, dashboard],
@@ -3009,25 +2791,31 @@ describe("세션 패널", () => {
       selection: { selectedProjectId: atlas.id, selectedSessionId: powershellSession.id },
     });
     window.multiCliWork = harness.api;
-    render(<App />);
+    const { unmount } = render(<App />);
 
     await screen.findByRole("region", { name: "세션 패널" });
+    await within(panel()).findByRole("button", { name: "PowerShell 패인 열기" });
     expect(rows()).toHaveLength(2);
-    fireEvent.click(within(panel()).getByRole("button", { name: "여기" }));
-    expect(rows()).toEqual(["PowerShell 패인 열기"]);
+    expect(within(panel()).queryByRole("button", { name: "여기" })).not.toBeInTheDocument();
+    fireEvent.click(within(panel()).getByRole("button", { name: "대기" }));
+    expect(rows()).toEqual(["대시보드 작업 패인 열기"]);
+    expect(within(panel()).getByRole("button", { name: "전체" })).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(screen.getByRole("button", { name: "홈 대시보드 열기" }));
-    expect(within(panel()).getByRole("button", { name: "여기" })).toBeDisabled();
-    // 범위를 걸 곳이 없으면 전체가 보인다.
-    expect(rows()).toHaveLength(2);
-    // 저장된 선호까지 지우지는 않는다 — 홈에 다녀왔다고 토글이 리셋되면 안 된다.
-    expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}").sessionScope).toBe("here");
+    expect(rows()).toEqual(["대시보드 작업 패인 열기"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
-    await waitFor(() =>
-      expect(within(panel()).getByRole("button", { name: "여기" })).toHaveAttribute("aria-pressed", "true"),
-    );
-    expect(rows()).toEqual(["PowerShell 패인 열기"]);
+    expect(rows()).toEqual(["대시보드 작업 패인 열기"]);
+    fireEvent.click(within(panel()).getByRole("button", { name: "전체" }));
+    expect(rows()).toHaveLength(2);
+    expect(within(panel()).getByRole("button", { name: "대기" })).toHaveAttribute("aria-pressed", "false");
+    expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1") ?? "{}").sessionWaitingOnly).toBe(false);
+
+    unmount();
+    render(<App />);
+    await screen.findByRole("region", { name: "세션 패널" });
+    await within(panel()).findByRole("button", { name: "PowerShell 패인 열기" });
+    expect(rows()).toHaveLength(2);
   });
 
   it("전체를 보고 있으면 폴더 이름을 대지 않고 그냥 비었다고 말한다", async () => {
@@ -3058,7 +2846,7 @@ describe("세션 패널", () => {
     expect(within(panel()).getByRole("button", { name: "세션 패널 펼치기" })).toBeInTheDocument();
   });
 
-  it("범위 안에 세션이 없으면 그렇다고 말한다", async () => {
+  it("선택한 폴더에 세션이 없어도 다른 폴더의 세션이 보인다", async () => {
     const harness = createApi({
       projects: [atlas, dashboard],
       sessions: [powershellSession],
@@ -3068,8 +2856,7 @@ describe("세션 패널", () => {
     render(<App />);
 
     await screen.findByRole("region", { name: "세션 패널" });
-    fireEvent.click(within(panel()).getByRole("button", { name: "여기" }));
-    expect(within(panel()).getByText("Dashboard에 열린 세션이 없습니다")).toBeInTheDocument();
+    expect(rows()).toEqual(["PowerShell 패인 열기"]);
   });
 });
 
@@ -4415,16 +4202,6 @@ describe("folder colour", () => {
     within(screen.getByRole("navigation", { name: "프로젝트" }))
       .getByRole("button", { name: `${name} 프로젝트 열기` })
       .closest(".work-project-node")!;
-  /**
-   * 태그 묶음 줄은 접혀 있어도 서 있으므로, 이름 그대로 찾으면 접힘 상태와 무관하게 잡힌다.
-   * 묶음 라벨 칸(`.tag-group-name`)으로 좁힌다 — 같은 태그 글자가 이제 업무 프로젝트 행의
-   * 칩에도 나오므로, 그냥 `getByText`는 두 곳 다 잡아 버린다.
-   */
-  const tagGroupNode = (label: string) =>
-    [...screen.getByRole("navigation", { name: "프로젝트" }).querySelectorAll<HTMLElement>(".tag-group-node")].find(
-      (node) => node.querySelector(".tag-group-name")?.textContent === label,
-    )!;
-
   it("follows the folder's own agents rather than a hand-set flag", async () => {
     const harness = createApi({ projects: [atlas], sessions: [powershellSession] });
     window.multiCliWork = harness.api;
@@ -4562,11 +4339,11 @@ describe("folder colour", () => {
     expect(harness.api.projects.update).not.toHaveBeenCalled();
   });
 
-  it("keeps folders with a running agent open and closes the rest, across the tag, group and folder layers", async () => {
+  it("keeps folders with a running agent open and closes the rest, across the project and folder layers", async () => {
     const working: TerminalSessionView = { ...powershellSession, status: "working" };
     const harness = createApi({
       projects: [atlas, dashboard, archive],
-      // Only Atlas has an agent running, so only its group — and the tag group above it — stays open.
+      // Only Atlas has an agent running, so only its project stays open.
       sessions: [working],
       workProjects: [
         workProject("wp-vsp", "가상수술계획", atlas.id, 0),
@@ -4582,13 +4359,12 @@ describe("folder colour", () => {
     render(<App />);
 
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    fireEvent.click(screen.getByTitle("작업중인 폴더가 있는 묶음과 프로젝트만 펼치기"));
+    fireEvent.click(screen.getByTitle("작업중인 폴더와 해당 프로젝트만 펼치기"));
 
-    // 작업중 폴더가 없는 묶음은 통째로 접히고, 그 안의 폴더도 화면에서 사라진다.
-    await waitFor(() => expect(tagGroupNode("개인")).toHaveAttribute("aria-expanded", "false"));
+    // 작업중 폴더가 없는 프로젝트만 접히고, 프로젝트 이름은 계속 보인다.
+    await waitFor(() => expect(groupNode("진로")).toHaveAttribute("aria-expanded", "false"));
     expect(screen.queryByRole("button", { name: "Archive 폴더 선택" })).not.toBeInTheDocument();
 
-    expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "true");
     expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "true");
     expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
     // Dashboard is 미분류 and idle, so it closes on its own without a group to close it.
@@ -4596,7 +4372,7 @@ describe("folder colour", () => {
   });
 
   it("collapses and re-expands every layer at once, and remembers it across a restart", async () => {
-    // 태그가 붙은 것은 용역 묶음 아래에, 붙지 않은 것은 나머지 묶음 아래에 — 두 층이 한 화면에 같이 선다.
+    // 태그 유무와 관계없이 두 프로젝트의 폴더를 함께 접고 펼친다.
     const harness = () =>
       createApi({
         projects: [atlas, dashboard],
@@ -4615,30 +4391,23 @@ describe("folder colour", () => {
 
     const nav = await screen.findByRole("navigation", { name: "프로젝트" });
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    fireEvent.click(screen.getByTitle("모든 묶음과 프로젝트 접기"));
+    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 접기"));
 
-    // 묶음이 접히면 그 안의 업무 프로젝트 줄까지 통째로 화면에서 사라진다.
-    await waitFor(() => expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "false"));
-    expect(tagGroupNode("나머지")).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: "손으로 만든 묶음 프로젝트 열기" })).not.toBeInTheDocument();
-
-    // 묶음 하나만 도로 펴면 그 안의 프로젝트도 폴더도 접힌 채로 서 있다 — 세 층은 서로 다른 키에 적힌다.
-    fireEvent.click(within(nav).getByRole("button", { name: "나머지 펼치기" }));
+    await waitFor(() => expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "false"));
     expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "false");
+    expect(within(nav).queryByRole("button", { name: "Atlas 폴더 선택" })).not.toBeInTheDocument();
 
-    // 폴더·프로젝트 접힘은 App이, 묶음 접힘은 사이드바가 각자의 키에 적으므로 재시작해도 그대로다.
+    // 프로젝트와 폴더의 접힘 상태는 재시작 뒤에도 유지된다.
     view.unmount();
     window.multiCliWork = harness().api;
     render(<App />);
 
     await waitFor(() => expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "false"));
-    expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "false");
-    expect(tagGroupNode("나머지")).toHaveAttribute("aria-expanded", "true");
+    expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "false");
 
-    fireEvent.click(screen.getByTitle("모든 묶음과 프로젝트 펼치기"));
+    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 펼치기"));
 
     await waitFor(() => expect(groupNode("손으로 만든 묶음")).toHaveAttribute("aria-expanded", "true"));
-    expect(tagGroupNode("용역")).toHaveAttribute("aria-expanded", "true");
     expect(groupNode("가상수술계획")).toHaveAttribute("aria-expanded", "true");
     expect(folderNode("Atlas")).toHaveAttribute("aria-expanded", "true");
     expect(folderNode("Dashboard")).toHaveAttribute("aria-expanded", "true");
@@ -4680,7 +4449,7 @@ describe("folder colour", () => {
       within(screen.getByRole("navigation", { name: "프로젝트" })).getByRole("button", {
         name: "진행 과제 프로젝트 열기",
       });
-    fireEvent.click(screen.getByTitle("모든 묶음과 프로젝트 접기"));
+    fireEvent.click(screen.getByTitle("모든 프로젝트와 폴더 접기"));
     await waitFor(() => expect(groupNode("진행 과제")).toHaveAttribute("aria-expanded", "false"));
 
     fireEvent.click(group());

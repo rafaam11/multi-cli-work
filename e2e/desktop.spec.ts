@@ -367,10 +367,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
         gapToScope: scopeBounds && titleBounds ? scopeBounds.left - titleBounds.right : Number.POSITIVE_INFINITY,
       };
     });
-    // The title's flex-grow gives it every pixel left after the fixed-width toggle (26px) and scope
-    // buttons, so its share depends on how wide those neighbors happen to be — with 전체·여기·대기 at
-    // the default 264px sidebar it lands at ~33%. 0.3 still fails the old flex:0 0 auto layout (which
-    // sized to the two-character "세션" label alone, well under 20%) while tolerating that split.
+    // The title's flex-grow gives it every pixel left after the fixed-width toggle (26px) and
+    // 전체·대기 buttons. The minimum still catches the old flex:0 0 auto layout, which sized to
+    // the two-character "세션" label alone, well under 20% of the default 264px sidebar.
     expect(sessionHeaderLayout.titleWidth).toBeGreaterThanOrEqual(sessionHeaderLayout.headingWidth * 0.3);
     expect(sessionHeaderLayout.gapToScope).toBeLessThanOrEqual(8);
     // `.session-panel-heading` carries a 1px transparent border (shared with every row's
@@ -1674,5 +1673,6 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // The tree row and the collapsed rail both name the project, so any one of them proves the point.
     await expect(page.getByRole("button", { name: "알파 프로젝트 프로젝트 열기" }).first()).toBeVisible();
+    await attachScreenshot("workspace-projects-without-grouping");
   });
 });

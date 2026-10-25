@@ -2200,17 +2200,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   white-space: nowrap;
 }
 
-/* Bulk expansion gets its own row: the heading's four icons are already as many as it holds. The
-   묶기 picker rides on the same row, so these rules stay on the direct children — the picker's own
-   button and its menu items are buttons too, and must not inherit the pill shape. */
+/* Bulk expansion has its own row below the project heading. */
 .tree-controls {
   display: flex;
   gap: 3px;
   padding: 0 6px 5px;
 }
 
-.tree-controls > button,
-.grouping-picker-button {
+.tree-controls > button {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -2227,126 +2224,15 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   cursor: pointer;
 }
 
-.tree-controls > button:hover,
-.grouping-picker-button:hover {
+.tree-controls > button:hover {
   color: var(--text);
 }
 
-.tree-controls > button > span,
-.grouping-picker-value {
+.tree-controls > button > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/*
- * 묶기 메뉴. 트리 컨트롤 줄의 넷째 칸이지만 무엇으로 묶여 있는지를 글로 읽어야 하므로, 셋보다
- * 넓은 몫을 갖는다. 열리면 그 줄 바로 아래에 붙는다 — 컨텍스트 메뉴와 달리 마우스 좌표가 아니라
- * 누른 버튼에 매달리는 것이라, 위치 계산 없이 position: absolute면 된다.
- */
-.grouping-picker {
-  position: relative;
-  display: flex;
-  flex: 1.6;
-  min-width: 0;
-}
-
-/*
- * 태그가 많으면 메뉴가 `.project-navigation`의 overflow: hidden에 잘리고, 맨 아래 `묶기 해제`가
- * 가장 먼저 사라진다 — 그래서 컨텍스트 메뉴처럼 높이를 묶고 스스로 스크롤한다. 창 최소 높이가
- * 600px이고 이 줄은 그보다 한참 위에 있으므로, 40vh면 어떤 창에서도 잘리기 전에 스크롤이 선다.
- */
-.grouping-picker-menu {
-  position: absolute;
-  top: calc(100% + 3px);
-  right: 0;
-  z-index: 40;
-  display: flex;
-  min-width: 150px;
-  max-width: 220px;
-  max-height: min(40vh, 300px);
-  flex-direction: column;
-  padding: 4px;
-  overflow-y: auto;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--surface-raised);
-  box-shadow: 0 12px 30px rgb(0 0 0 / 36%);
-  scrollbar-color: var(--line-strong) transparent;
-  scrollbar-width: thin;
-}
-
-/* 세로 flex라 넘칠 때 항목이 눌리는 것이 기본이다 — 눌리는 대신 넘쳐서 스크롤되어야 한다. */
-.grouping-picker-menu > * {
-  flex: 0 0 auto;
-}
-
-.grouping-picker-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 5px;
-  color: var(--text);
-  text-align: left;
-  background: transparent;
-  font-size: var(--type-caption-size);
-  cursor: pointer;
-}
-
-.grouping-picker-item:hover {
-  background: var(--surface-hover);
-}
-
-.grouping-picker-swatch {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 8px;
-  border-radius: 50%;
-  background: var(--category-accent, var(--quiet));
-}
-
-/* 고른 것만 제 태그 색으로 배경이 물든다 — 체크 표시를 하나 더 놓기에는 줄이 좁고, 같은 색의
-   점이 이미 왼쪽에 서 있어 두 신호가 한 뜻으로 읽힌다. */
-.grouping-picker-item[aria-checked="true"] {
-  background: color-mix(in srgb, var(--category-accent, transparent) 18%, var(--surface-hover));
-}
-
-.grouping-picker-tag {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.grouping-picker-empty {
-  margin: 0;
-  padding: 6px 8px;
-  color: var(--quiet);
-  font-size: var(--type-caption-size);
-}
-
-.grouping-picker-separator {
-  margin: 4px 2px;
-  border-top: 1px solid var(--line);
-}
-
-.grouping-picker-clear {
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 5px;
-  color: var(--quiet);
-  text-align: left;
-  background: transparent;
-  font-size: var(--type-caption-size);
-  cursor: pointer;
-}
-
-.grouping-picker-clear:hover {
-  color: var(--text);
-  background: var(--surface-hover);
 }
 
 .icon-button {
@@ -2519,53 +2405,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--quiet);
   font: var(--type-secondary-semibold);
   text-transform: uppercase;
-}
-
-/*
- * 태그 묶음 줄. 업무 프로젝트 줄보다 한 단 위지만 더 조용하다 — 묶음은 열 화면이 없고 접고
- * 펴는 것이 전부라, 눌러야 할 것처럼 보이면 안 된다. 그래서 배경도 선택 상태도 없고, 대문자
- * 캡션과 태그 색 점만 남긴다(미분류 라벨과 같은 급). 레일 색은 `.accent-n`이 세운
- * `--category-accent`에서 오고, 어느 태그에도 걸리지 않은 나머지 묶음만 회색이다.
- */
-.tag-group-node + .tag-group-node,
-.tag-group-node + .work-project-node,
-.work-project-node + .tag-group-node {
-  margin-top: 10px;
-}
-
-.tag-group-other {
-  --category-accent: var(--category-etc);
-}
-
-.tag-group-row {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  min-height: 24px;
-  align-items: center;
-}
-
-.tag-group-copy {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: var(--category-accent, var(--quiet));
-}
-
-.tag-group-name {
-  font: var(--type-caption-semibold);
-  letter-spacing: 0.04em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 묶음 아래의 프로젝트들은 들여쓰기 없이 선다 — 묶음 줄 자체가 이미 낮고 조용해서, 한 단 더
-   밀면 폴더 이름이 사이드바 폭을 잃는다. 묶임은 각 프로젝트의 색 레일이 이어 준다. */
-.tag-group-children {
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
 }
 
 /* Folders are the layer below, and the indent has to carry that on its own — the group rail is the

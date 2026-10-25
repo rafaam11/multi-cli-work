@@ -48,7 +48,7 @@ export function tagsByWorkProject(
   return result;
 }
 
-/** 자동완성·묶기 후보. 많이 쓰인 태그가 앞, 동률이면 이름순 — 고르는 목록은 예측 가능해야 한다. */
+/** 태그 자동완성 후보. 많이 쓰인 태그가 앞, 동률이면 이름순 — 고르는 목록은 예측 가능해야 한다. */
 export function knownTags(byWorkProject: Readonly<Record<string, readonly string[]>>): string[] {
   const counts = new Map<string, number>();
   for (const tags of Object.values(byWorkProject)) {

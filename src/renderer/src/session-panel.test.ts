@@ -4,7 +4,7 @@ import type { SharedProject } from "@shared/project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import { describe, expect, it } from "vitest";
 import type { DocumentPane } from "./pane-items";
-import { buildSessionPanelItems, matchesScope, sessionPanelWaitCount, sessionRank } from "./session-panel";
+import { buildSessionPanelItems, sessionPanelWaitCount, sessionRank } from "./session-panel";
 
 function agent(id: string, label: string): AgentView {
   return {
@@ -130,30 +130,6 @@ describe("buildSessionPanelItems", () => {
     });
     expect(items[0]).toMatchObject({ id: "orphan", place: null, projectId: "project-gone" });
     expect(items[1]).toMatchObject({ kind: "document", place: null, projectId: null });
-  });
-});
-
-describe("matchesScope", () => {
-  const folder = build({ sessions: [session({ id: "folder" })] })[0];
-  const wt = build({ sessions: [session({ id: "wt", worktreeId: worktree.id })] })[0];
-  const tool = build({ sessions: [session({ id: "tool", projectId: null, tool: "claude-update" })] })[0];
-
-  it("none은 전부 통과시킨다", () => {
-    for (const item of [folder, wt, tool]) expect(matchesScope(item, { kind: "none" })).toBe(true);
-  });
-
-  it("worktree 대상은 그 worktree의 항목만 남긴다", () => {
-    const target = { kind: "worktree" as const, worktreeId: worktree.id, label: "feature-x" };
-    expect(matchesScope(wt, target)).toBe(true);
-    expect(matchesScope(folder, target)).toBe(false);
-  });
-
-  it("폴더 대상은 그 폴더의 worktree 세션까지 포함하고, 도구 세션은 어디에도 들지 않는다", () => {
-    const target = { kind: "folders" as const, projectIds: [atlas.id], label: "Atlas" };
-    expect(matchesScope(folder, target)).toBe(true);
-    expect(matchesScope(wt, target)).toBe(true);
-    expect(matchesScope(tool, target)).toBe(false);
-    expect(matchesScope(folder, { kind: "folders", projectIds: [dashboard.id], label: "Dashboard" })).toBe(false);
   });
 });
 

@@ -11,14 +11,6 @@ import { projectName, sessionLabel } from "./session-labels";
  * 답하는 곳이다. App이 여기서 만든 정렬된 목록을 넘기고 패널은 그리기만 한다 — `shelfPaneRows`와
  * 같은 이유로, 어느 id가 무엇인지는 App만 안다.
  */
-export type SessionScope = "all" | "here";
-
-/** "여기"가 가리키는 곳. 홈·셸프·채널에는 페이지가 없으므로 none이고 토글은 비활성이다. */
-export type SessionScopeTarget =
-  | { kind: "none" }
-  | { kind: "worktree"; worktreeId: string; label: string }
-  | { kind: "folders"; projectIds: readonly string[]; label: string };
-
 interface SessionPanelItemBase {
   /** 패인 id — 세션 id 또는 문서 id. 드래그 페이로드가 그대로 이 값이다. */
   id: string;
@@ -134,18 +126,6 @@ export function buildSessionPanelItems(input: {
   });
 
   return [...sessions, ...documents];
-}
-
-export function matchesScope(item: SessionPanelItem, target: SessionScopeTarget): boolean {
-  switch (target.kind) {
-    case "none":
-      return true;
-    case "worktree":
-      return item.worktreeId === target.worktreeId;
-    case "folders":
-      // 폴더 배지가 worktree 세션을 세는 것과 같은 정의: 폴더는 자기 worktree까지 품는다.
-      return item.projectId !== null && target.projectIds.includes(item.projectId);
-  }
 }
 
 /** 등급 0·1(승인·입력 대기) 세션의 수 — 패널 헤더의 `대기 N`. */

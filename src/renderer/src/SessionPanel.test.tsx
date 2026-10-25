@@ -46,9 +46,8 @@ const items: SessionPanelItem[] = [sessionItem("session-1", true), sessionItem("
 function renderPanel(overrides: Partial<SessionPanelProps> = {}) {
   const props: SessionPanelProps = {
     items,
-    scopeTarget: { kind: "none" },
-    scope: "all",
-    onChangeScope: vi.fn(),
+    waitingOnly: false,
+    onChangeWaitingOnly: vi.fn(),
     open: true,
     onToggleOpen: vi.fn(),
     selected: false,
@@ -78,8 +77,8 @@ afterEach(() => {
 
 describe("SessionPanel", () => {
   it("대기만 켜면 입력·승인을 기다리는 세션만 남고, 없으면 그렇게 말한다", () => {
-    const onToggleWaitingOnly = vi.fn();
-    renderPanel({ waitingOnly: true, onToggleWaitingOnly });
+    const onChangeWaitingOnly = vi.fn();
+    renderPanel({ waitingOnly: true, onChangeWaitingOnly });
     const list = screen.getByRole("group", { name: "세션 목록" });
     expect(within(list).getByRole("button", { name: /^세션 session-1 패인 열기/ })).toBeInTheDocument();
     expect(within(list).queryByRole("button", { name: /^세션 session-2 패인 열기/ })).not.toBeInTheDocument();
@@ -87,10 +86,10 @@ describe("SessionPanel", () => {
     const toggle = screen.getByRole("button", { name: "대기" });
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(toggle);
-    expect(onToggleWaitingOnly).toHaveBeenCalled();
+    expect(onChangeWaitingOnly).toHaveBeenCalledWith(true);
 
     cleanup();
-    renderPanel({ items: [sessionItem("session-2", false)], waitingOnly: true, onToggleWaitingOnly });
+    renderPanel({ items: [sessionItem("session-2", false)], waitingOnly: true, onChangeWaitingOnly });
     expect(screen.getByText("기다리는 세션이 없습니다")).toBeInTheDocument();
   });
 
@@ -145,7 +144,7 @@ describe("SessionPanel", () => {
     expect(props.onSelectWorkspace).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "전체" }));
-    expect(props.onChangeScope).toHaveBeenCalledWith("all");
+    expect(props.onChangeWaitingOnly).toHaveBeenCalledWith(false);
     expect(props.onSelectWorkspace).not.toHaveBeenCalled();
     expect(props.onToggleOpen).toHaveBeenCalledTimes(1);
   });
