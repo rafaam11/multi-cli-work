@@ -1573,7 +1573,16 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     await notes.getByRole("button", { name: /메모 1개 보내기/ }).click();
     await expect(notes).toBeHidden();
+    // The shell parses the multi-line prompt and can scroll its echo off a narrow pane.
+    // Search that same terminal's history so successful delivery does not depend on pane height.
+    await terminal.click();
+    await page.keyboard.press("Control+f");
+    const search = page.getByRole("search", { name: "터미널에서 찾기" });
+    await search.getByRole("textbox", { name: "찾을 텍스트" }).fill("MCW_NOTE_ASK");
+    await page.keyboard.press("Shift+Enter");
     await expect(terminal.locator(".xterm-rows")).toContainText("MCW_NOTE_ASK");
+    await page.keyboard.press("Escape");
+    await expect(search).toBeHidden();
     await fs.rm(changed, { force: true });
   });
 

@@ -3,6 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { REMOTE_SESSION_NAME_MAX, type RemoteSessionSummary } from "@shared/remote-types";
+import { DEFAULT_SETTINGS } from "@shared/settings-types";
+import { createTerminalOutputFilter } from "../terminal-output-filter";
 import { createAutoFit, type AutoFit, type AutoFitState } from "./auto-fit";
 import { TERMINAL_FONT_INDEX, TERMINAL_FONT_SIZES, type TerminalSize } from "./initial-size";
 import type { RemoteClient } from "./remote-client";
@@ -10,7 +12,7 @@ import { statusLabels as STATUS_LABEL } from "../session-labels";
 import { terminalTheme } from "../terminal-themes";
 import { currentTheme, useResolvedTheme } from "../theme";
 import { clipboardKeyAction, createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
-import { planTouchScroll } from "./touch-scroll";
+import { planTouchScroll, shouldSendWheel } from "./touch-scroll";
 
 interface SessionScreenProps {
   client: RemoteClient;
@@ -48,6 +50,7 @@ interface SessionScreenProps {
    * 그대로라 `focused`가 바뀌지 않는다 — 그때도 입력이 터미널로 가게.
    */
   focusRequest?: number;
+  onReady?(ready: boolean): void;
 }
 
 const FONT_SIZES = TERMINAL_FONT_SIZES;
@@ -59,22 +62,12 @@ const AUTO_FIT_DEBOUNCE_MS = 150;
  * 쪽이든 호스트가 크기를 되찾으면(입력·패인 크기 변경) 맞춤이 꺼지거나 멈춘다.
  */
 export function SessionScreen({
-  client,
-  session,
-  deviceId,
-  onBack,
-  wide = false,
-  onMeasured,
-  tabs,
-  focused = true,
-  onClose,
-  onFocus,
-  fitOnlyWhenFocused = false,
-  paneActions,
-  onHeaderDragStart,
-  onRename,
-  focusRequest,
+  client, session, deviceId, onBack, wide = false, onMeasured, tabs,
+  focused = true, onClose, onFocus, fitOnlyWhenFocused = false, paneActions,
+  onHeaderDragStart, onRename, focusRequest, onReady,
 }: SessionScreenProps) {
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -112,10 +105,14 @@ export function SessionScreen({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    let live = true;
+    let attachment = 0;
+    const notReady = () => { attachment++; onReadyRef.current?.(false); };
+    notReady();
     const terminal = new Terminal({
       fontSize: FONT_SIZES[TERMINAL_FONT_INDEX],
       fontFamily: 'ui-monospace, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace',
-      scrollback: 5_000,
+      scrollback: DEFAULT_SETTINGS.terminal.scrollback,
       cursorBlink: false,
       theme: terminalTheme(currentTheme()),
     });
@@ -165,7 +162,11 @@ export function SessionScreen({
     setFitState("fitting");
     if (wide && focusedRef.current) terminal.focus();
 
-    const gate = createReplayGate((data) => terminal.write(data));
+    let outputFilter = createTerminalOutputFilter();
+    const gate = createReplayGate((data) => {
+      const filtered = outputFilter.write(data);
+      if (filtered) terminal.write(filtered);
+    });
     const applySize = (cols: number | null, rows: number | null) => {
       if (cols !== null && rows !== null && (terminal.cols !== cols || terminal.rows !== rows)) terminal.resize(cols, rows);
     };
@@ -180,10 +181,16 @@ export function SessionScreen({
       if (!("sessionId" in message) || message.sessionId !== session.id) return;
       if (message.type === "attached") {
         terminal.reset();
+        outputFilter = createTerminalOutputFilter();
+        terminal.options.scrollback = message.scrollback ?? DEFAULT_SETTINGS.terminal.scrollback;
         applySize(message.cols, message.rows);
         if (autoFit) autoFit.attached();
         else giveBackToggle(message.sizeOwner);
         gate.attached(message.replay, message.sequence);
+        const revision = attachment;
+        terminal.write("", () => requestAnimationFrame(() => {
+          if (live && revision === attachment) onReadyRef.current?.(true);
+        }));
       } else if (message.type === "data") {
         gate.data(message.data, message.sequence);
       } else if (message.type === "size") {
@@ -193,10 +200,12 @@ export function SessionScreen({
       }
     });
     reattachRef.current = () => {
+      notReady();
       gate.reset();
       client.send({ type: "attach", sessionId: session.id });
     };
     const offState = client.onState((state) => {
+      notReady();
       if (state !== "open") return;
       gate.reset();
       phoneSizeRef.current = false;
@@ -262,7 +271,7 @@ export function SessionScreen({
       const cellHeight = screen && terminal.rows > 0 ? screen.clientHeight / terminal.rows : 16;
       const buffer = terminal.buffer.active;
       // claude 같은 전체 화면 앱은 스크롤백이 없고 휠 입력으로 스스로 스크롤한다.
-      const fullScreen = buffer.type === "alternate";
+      const fullScreen = shouldSendWheel(buffer.type, terminal.modes?.mouseTrackingMode ?? "none");
       const step = planTouchScroll(
         {
           containerTop: host.scrollTop,
@@ -321,6 +330,8 @@ export function SessionScreen({
       host.removeEventListener("touchcancel", onTouchEnd);
       if (phoneSizeRef.current) client.send({ type: "releaseSize", sessionId: session.id });
       client.send({ type: "detach", sessionId: session.id });
+      live = false;
+      notReady();
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;

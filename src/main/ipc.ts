@@ -766,6 +766,10 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     dependencies.onSessionSelected?.(sessionId);
     return snapshot;
   });
+  ipc.handle("terminals:set-exposed-sessions", (_event, sessionIds: unknown) => {
+    if (!Array.isArray(sessionIds) || !sessionIds.every(id => typeof id === "string" && id.length > 0)) throw new Error("Exposed session ids are invalid");
+    dependencies.onExposedSessions?.(sessionIds);
+  });
   ipc.handle("terminals:set-visible-sessions", async (_event, sessionIds: unknown) => {
     if (!Array.isArray(sessionIds) || sessionIds.some((id) => typeof id !== "string" || id.length === 0)) {
       throw new Error("Visible session ids are invalid");

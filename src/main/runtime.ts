@@ -116,6 +116,7 @@ import { defaultTranscriptIo } from "./providers/transcript-tail";
 import { AgentEditReader } from "./providers/agent-edits";
 import type { AttentionSnapshot } from "./attention-policy";
 import { createSessionAttentionController } from "./session-attention-controller";
+import { MobileAttentionStore } from "./remote/mobile-attention-store";
 import { isMainWindowSender, mainWindowState, sendToMainWindow } from "./main-window";
 import { checkForUpdates, openReleasesPage, openRepositoryPage, updaterStatus } from "./updater";
 import { discoverSessionEnvironment, prependPath } from "./platform-env";
@@ -173,6 +174,7 @@ export interface DesktopRuntime {
   /** Saves a settings patch and tells every window — what the settings dialog does, for the tray. */
   updateSettings(patch: AppSettingsPatch): Promise<AppSettings>;
   markVisibleSessionsSeen(): Promise<void>;
+  markMobileVisibleSeen(): Promise<void>;
   writeRecoveryMarker(): void;
   dispose(): Promise<void>;
 }
@@ -634,7 +636,9 @@ export async function createDesktopRuntime(
     const window = host.getMainWindow();
     return window && !window.isDestroyed() ? window : null;
   };
+  let mobileExposedSessions = new Set<string>();
   const remoteHub = new RemoteSessionHub({
+    attention: new MobileAttentionStore(path.join(userData, "mobile-attention.json")),
     gateway: {
       list: () => coordinator.list(),
       attach: (sessionId) => coordinator.attachForRenderer(sessionId),
@@ -645,6 +649,14 @@ export async function createDesktopRuntime(
       onEvent: (listener) => coordinator.onEvent(listener),
       projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
       worktreeBranch: async (worktreeId) => (await worktrees.get(worktreeId))?.branch ?? null,
+      projectRootPath: async (projectId) => (await getProject(projectId))?.rootPath ?? null,
+      scrollback: () => settingsService.current().terminal.scrollback,
+      isSessionViewed: async (sessionId) => {
+        const window = mainWindowState(host.getMainWindow());
+        return window.visible && window.focused &&
+          desktopPresence(window, powerMonitor.getSystemIdleState(PRESENCE_IDLE_THRESHOLD_SECONDS)) === "focused" &&
+          mobileExposedSessions.has(sessionId);
+      },
       catalog: async () =>
         buildRemoteCatalog(
           Object.values((await readProjectRegistry({ registryPath })).registry.projects),
@@ -1135,6 +1147,11 @@ export async function createDesktopRuntime(
     attentionState: () => attention.snapshot().unread,
     onSessionSelected(sessionId) {
       attention.markSeen(sessionId);
+      void remoteHub.desktopViewed(sessionId).catch(error => console.error("Mobile seen update failed", error));
+    },
+    onExposedSessions(sessionIds) {
+      mobileExposedSessions = new Set(sessionIds);
+      void remoteHub.desktopViewed().catch(error => console.error("Mobile seen update failed", error));
     },
     isTrustedSender: (event) => isMainWindowSender(host.getMainWindow(), event),
   });
@@ -1227,7 +1244,10 @@ export async function createDesktopRuntime(
     coordinator,
     settings: settingsService,
     updateSettings,
-    markVisibleSessionsSeen: () => attention.markVisibleSessionsSeen(),
+    markVisibleSessionsSeen: async () => {
+      await Promise.all([attention.markVisibleSessionsSeen(), remoteHub.desktopViewed()]);
+    },
+    markMobileVisibleSeen: () => remoteHub.desktopViewed(),
     writeRecoveryMarker() {
       const activeIds = coordinator.list()
         .filter((session) => session.pid !== null && session.status !== "exited" && session.status !== "error")

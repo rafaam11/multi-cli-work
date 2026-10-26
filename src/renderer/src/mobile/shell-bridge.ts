@@ -6,6 +6,8 @@ export interface ShellBridge {
   /** 호스트가 이 기기를 거절했다(철회) — 셸이 호스트를 지우고 목록으로 돌아간다. */
   unpaired(): void;
   backToHosts(): void;
+  isForeground?(): boolean;
+  viewingSession?(sessionId: string, generation: number): void;
 }
 
 interface RawShell {
@@ -13,6 +15,8 @@ interface RawShell {
   pairingJson(): string;
   unpaired(): void;
   backToHosts(): void;
+  isForeground?(): boolean;
+  viewingSession?(sessionId: string, generation: number): void;
 }
 
 function isRawShell(value: unknown): value is RawShell {
@@ -44,5 +48,7 @@ export function readShellBridge(target: { McwShell?: unknown }): ShellBridge | n
     pairing: parsePairing(shell.pairingJson()),
     unpaired: () => shell.unpaired(),
     backToHosts: () => shell.backToHosts(),
+    ...(typeof shell.isForeground === "function" ? { isForeground: () => shell.isForeground!() } : {}),
+    ...(typeof shell.viewingSession === "function" ? { viewingSession: (id: string, generation: number) => shell.viewingSession!(id, generation) } : {}),
   };
 }

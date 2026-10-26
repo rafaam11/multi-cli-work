@@ -1954,6 +1954,16 @@ export function App() {
     `${activeView}|${selectedProjectId ?? ""}|${resolvedView.layout.id}`,
   );
 
+  // A layout slot is not necessarily visible: detail/home unmount the grid, and zoom parks peers.
+  // Keep this transient signal separate from the existing desktop badge/layout selection policy.
+  const exposedSessionKey = JSON.stringify(showsGrid ? gridSlots.flatMap(slot =>
+    slot?.kind === "session" && (zoomedPaneId === null || paneContentId(slot) === zoomedPaneId) ? [slot.session.id] : [],
+  ) : []);
+  useEffect(() => {
+    void window.multiCliWork.terminals.setExposedSessions(JSON.parse(exposedSessionKey) as string[]).catch(error => setActionError(errorMessage(error)));
+  }, [exposedSessionKey]);
+  useEffect(() => () => { void window.multiCliWork.terminals.setExposedSessions([]).catch(() => undefined); }, []);
+
   /** Ctrl+Alt+방향키: 그리드에서 이웃 패인으로. 빈 슬롯은 건너뛰고, 확대 중이면 먼저 푼다. */
   const moveFocus = (direction: FocusDirection) => {
     if (!showsGrid) return;

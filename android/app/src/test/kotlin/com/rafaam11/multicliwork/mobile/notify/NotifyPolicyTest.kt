@@ -39,7 +39,9 @@ class NotifyPolicyTest {
         assertFalse(allowed("awaiting-input", settings = defaults.copy(enabled = false)))
         assertFalse(allowed("awaiting-input", settings = defaults.copy(mutedHosts = setOf("h1"))))
         assertTrue(allowed("awaiting-input", settings = defaults.copy(mutedHosts = setOf("h2"))))
-        assertFalse(allowed("awaiting-input", viewingHostId = "h1"))
+        assertTrue(allowed("awaiting-input", viewingHostId = "h1"))
         assertTrue(allowed("awaiting-input", viewingHostId = "h2"))
+        assertFalse(NotifyPolicy.allowed(defaults, "h1", "awaiting-input", null, "h1", "s1", "s1"))
+        assertTrue(NotifyPolicy.allowed(defaults, "h1", "awaiting-input", null, "h1", "s2", "s1"))
     }
 }

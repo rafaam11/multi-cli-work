@@ -10,6 +10,9 @@ class McwShellBridge(
     private val host: Host,
     private val onUnpaired: () -> Unit,
     private val onBack: () -> Unit,
+    private val foreground: () -> Boolean = { false },
+    private val onViewing: (String, Long?) -> Unit = { _, _ -> },
+    private val onLegacyViewing: (String, String) -> Unit = { _, _ -> },
 ) {
     @JavascriptInterface
     fun bridgeVersion(): Int = BRIDGE_VERSION
@@ -27,7 +30,16 @@ class McwShellBridge(
     @JavascriptInterface
     fun backToHosts() = onBack()
 
+    @JavascriptInterface
+    fun isForeground(): Boolean = foreground()
+
+    @JavascriptInterface
+    fun viewingSession(sessionId: String, generation: Long) = onViewing(sessionId, generation.takeIf { it >= 0 })
+
+    @JavascriptInterface
+    fun legacyViewingSession(sessionId: String, status: String) = onLegacyViewing(sessionId, status)
+
     companion object {
-        const val BRIDGE_VERSION = 1
+        const val BRIDGE_VERSION = 2
     }
 }

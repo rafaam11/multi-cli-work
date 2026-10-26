@@ -49,6 +49,9 @@ function createWindow(): BrowserWindow {
   });
 
   window.once("ready-to-show", () => window.show());
+  window.on("focus", () => {
+    void runtime?.markMobileVisibleSeen().catch(error => console.error("Failed to sync mobile seen state", error));
+  });
   // The renderer draws the maximize/restore glyph itself, so it has to hear about every state
   // change — including the ones it did not ask for (double-click on the drag region, Win+Up, a
   // window manager tiling the app).

@@ -5,6 +5,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class StatusTrackerTest {
+    @Test fun endedNoticeUsesOrdinaryBudgetAndSurvivesTheFollowingExitEvent() {
+        val tracker = tracker(SessionSummary("s1", "종료 테스트", "working"))
+        val notice = tracker.receive(StatusMessage.Status("s1", "exited", null, Attention(1, 0)), always)!!
+        assertEquals(true, notice.audible)
+        tracker.posted(notice)
+        tracker.receive(StatusMessage.Exit("s1"), always)
+        assertEquals(emptyList<String>(), tracker.resolved)
+        assertEquals(false, tracker.receive(StatusMessage.Status("s1", "error", null, Attention(2, 0)), always)?.audible)
+    }
     private val always: (String, String?) -> Boolean = { _, _ -> true }
 
     private fun tracker(vararg sessions: SessionSummary) = StatusTracker().apply {
@@ -29,9 +38,14 @@ class StatusTrackerTest {
     }
 
     @Test
-    fun notifiesOnceUntilTheWaitEnds() {
+    fun updatesSilentlyAcrossWorkAndRearmsOnlyAfterViewing() {
         val tracker = tracker(SessionSummary("s1", "리팩터", "working"))
-        tracker.receive(StatusMessage.Status("s1", "awaiting-input", null), always)
+        tracker.posted(tracker.receive(StatusMessage.Status("s1", "awaiting-input", null), always)!!)
+        assertEquals(false, tracker.receive(StatusMessage.Status("s1", "awaiting-input", null), always)?.audible)
+        tracker.receive(StatusMessage.Status("s1", "working", null), always)
+        assertEquals(listOf("s1"), tracker.resolved)
+        assertEquals(false, tracker.receive(StatusMessage.Status("s1", "awaiting-input", null), always)?.audible)
+        tracker.viewed("s1", null)
         assertNull(tracker.receive(StatusMessage.Status("s1", "awaiting-input", null), always))
         tracker.receive(StatusMessage.Status("s1", "working", null), always)
         assertEquals(
@@ -74,5 +88,16 @@ class StatusTrackerTest {
         val tracker = tracker(SessionSummary("s1", "리팩터", "awaiting-input"))
         tracker.disconnected()
         assertEquals(0, tracker.awaiting)
+    }
+
+    @Test fun snapshotAndSeenCancelOnlyTheObservedWait() {
+        val tracker = tracker(SessionSummary("s1", "리팩터", "working", attention = Attention(0, 0)))
+        tracker.posted(tracker.receive(StatusMessage.Status("s1", "awaiting-input", null, Attention(1, 0)), always)!!)
+        tracker.receive(StatusMessage.Status("s1", "awaiting-input", null, Attention(2, 0)), always)
+        tracker.receive(StatusMessage.Seen("s1", Attention(2, 1)), always)
+        assertEquals(emptyList<String>(), tracker.resolved)
+        tracker.disconnected()
+        assertNull(tracker.receive(StatusMessage.Sessions(listOf(SessionSummary("s1", "리팩터", "awaiting-input", attention = Attention(2, 2)))), always))
+        assertEquals(listOf("s1"), tracker.resolved)
     }
 }

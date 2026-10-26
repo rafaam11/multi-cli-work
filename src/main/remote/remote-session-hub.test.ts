@@ -1,6 +1,10 @@
 // @vitest-environment node
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { MobileAttentionStore } from "./mobile-attention-store";
 import type { TerminalSessionView } from "../../shared/api-types";
 import type { TerminalEvent } from "../../shared/terminal-types";
 import {
@@ -33,10 +37,11 @@ const view = (id: string, overrides: Partial<TerminalSessionView> = {}): Termina
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup() {
+function setup(attention?: MobileAttentionStore) {
   const listeners = new Set<(event: TerminalEvent) => void>();
   let resolveAttach: ((value: { session: TerminalSessionView; replay: string; sequence: number }) => void) | null = null;
   const gateway = {
+    isSessionViewed: vi.fn(async (_id: string) => false),
     list: vi.fn(() => [view("s1")]),
     attach: vi.fn(
       () =>
@@ -71,7 +76,7 @@ function setup() {
   };
   const resize = vi.fn(async () => undefined);
   const sizes = new TerminalSizeArbiter(resize);
-  const hub = new RemoteSessionHub({ gateway, devices, sizes, hostId: async () => "host-1", hostName: "PC", helloTimeoutMs: 50, shellLatest: () => ({ versionCode: 2, versionName: "0.2.0", sha256: "c".repeat(64) }) });
+  const hub = new RemoteSessionHub({ gateway, devices, sizes, attention, hostId: async () => "host-1", hostName: "PC", helloTimeoutMs: 50, shellLatest: () => ({ versionCode: 2, versionName: "0.2.0", sha256: "c".repeat(64) }) });
   const sent: RemoteServerMessage[] = [];
   const close = vi.fn();
   const handle = hub.open({ send: (message) => sent.push(message), close });
@@ -88,6 +93,36 @@ function setup() {
 afterEach(() => vi.useRealTimers());
 
 describe("RemoteSessionHub", () => {
+  it("orders wait generations and validates seen against attachment, including stale acknowledgments", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mcw-hub-seen-"));
+    const attention = new MobileAttentionStore(path.join(dir, "attention.json"));
+    const { hub, gateway, sent, hello, emit, handle, attachWith } = setup(attention);
+    try {
+      await hello();
+      await vi.waitFor(() => expect(sent.some(message => message.type === "sessions")).toBe(true));
+      expect(sent[0]).toMatchObject({ capabilities: ["session-seen-v1"] });
+      emit({ type: "status", sessionId: "s1", status: "awaiting-input" });
+      emit({ type: "status", sessionId: "s1", status: "working" });
+      emit({ type: "status", sessionId: "s1", status: "awaiting-approval" });
+      await vi.waitFor(() => expect(sent.at(-1)).toMatchObject({ attention: { generation: 2, seenThrough: 0 } }));
+      handle.receive('{"type":"seen","sessionId":"s1","generation":2}');
+      await vi.waitFor(() => expect(sent.at(-1)).toMatchObject({ type: "error", code: "not-attached" }));
+      handle.receive('{"type":"attach","sessionId":"s1"}');
+      await flush();
+      attachWith("", 0);
+      handle.receive('{"type":"seen","sessionId":"s1","generation":1}');
+      await vi.waitFor(() => expect(sent.at(-1)).toMatchObject({ type: "seen", attention: { generation: 2, seenThrough: 1 } }));
+      await hub.desktopViewed("s1");
+      expect(await attention.current("s1")).toEqual({ generation: 2, seenThrough: 1 });
+      gateway.isSessionViewed.mockResolvedValue(true);
+      await hub.desktopViewed("s1");
+      expect(sent.at(-1)).toMatchObject({ type: "seen", attention: { generation: 2, seenThrough: 2 } });
+      emit({ type: "status", sessionId: "s1", status: "working" });
+      emit({ type: "status", sessionId: "s1", status: "awaiting-input" });
+      await vi.waitFor(() => expect(sent.at(-1)).toMatchObject({ type: "status", attention: { generation: 3, seenThrough: 3 } }));
+    } finally { hub.dispose(); await fs.rm(dir, { recursive: true, force: true }); }
+  });
+
   it("welcomes a valid token and sends the session list", async () => {
     const { sent, hello, devices } = setup();
     await hello();
@@ -106,6 +141,7 @@ describe("RemoteSessionHub", () => {
           id: "s1",
           projectId: "p1",
           projectName: "Sample Project",
+          cwd: "C:/work",
           kind: "claude",
           label: "제목",
           status: "working",
@@ -152,6 +188,21 @@ describe("RemoteSessionHub", () => {
     await hello();
     const list = sent.find((message) => message.type === "sessions");
     expect(list?.type === "sessions" && list.sessions.map((session) => session.worktreeBranch)).toEqual([undefined, "feat/search"]);
+  });
+
+  it("forwards actual cwd changes, project roots and configured scrollback", async () => {
+    const { gateway, sent, hello, emit, handle, attachWith } = setup();
+    Object.assign(gateway, { projectRootPath: async () => "C:/root", scrollback: () => 24000 });
+    await hello();
+    expect(sent[1]).toMatchObject({ sessions: [{ cwd: "C:/work", projectRootPath: "C:/root" }] });
+    emit({ type: "workspace", sessionId: "s1", session: view("s1", { cwd: "C:/worktree/feature" }) });
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ type: "workspace", session: { cwd: "C:/worktree/feature", projectRootPath: "C:/root" } });
+    handle.receive('{"type":"attach","sessionId":"s1"}');
+    await flush();
+    attachWith("history", 2);
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ type: "attached", scrollback: 24000 });
   });
 
   it("forwards data that arrives while attach is in flight, and only for attached sessions", async () => {

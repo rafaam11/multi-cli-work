@@ -21,6 +21,10 @@ import { SessionScreen } from "./SessionScreen";
 import { applySessionMessage } from "./session-list-model";
 import { readShellBridge } from "./shell-bridge";
 import { SessionTabs } from "./SessionTabs";
+import { SessionDrawer } from "./SessionDrawer";
+import { SessionContext } from "./SessionContext";
+import { useSessionDrawer } from "./use-session-drawer";
+import { useSessionViewing } from "./use-session-viewing";
 import { sessionHash, sessionIdFromHash, useWideLayout } from "./wide-layout";
 
 /** 이 앱이 세션 화면으로 쌓은 history 항목 표시. 이 항목에서 ←는 history.back()이다. */
@@ -55,11 +59,22 @@ function mirrorPlaceLabel(mirror: RemoteMirror): string {
 }
 
 export function MobileApp() {
+  // The native shell's old-host adapter must not compete with generation-aware viewing.
+  useEffect(() => { (window as unknown as { __mcwSessionViewingV2: boolean }).__mcwSessionViewingV2 = true; }, []);
   const [bridge] = useState(() => readShellBridge(window as unknown as { McwShell?: unknown }));
   const [pairing, setPairing] = useState<StoredPairing | null>(() => bridge?.pairing ?? loadPairing(storage()));
   const [notice, setNotice] = useState<string | null>(null);
   const [connection, setConnection] = useState<RemoteClientState>("connecting");
   const [sessions, setSessions] = useState<RemoteSessionSummary[]>([]);
+  const [hostId, setHostId] = useState(window.location.origin);
+  const [seenCapable, setSeenCapable] = useState(false);
+  const [readySessionIds, setReadySessionIds] = useState<ReadonlySet<string>>(() => new Set());
+  const sessionReady = (id: string, ready: boolean) => setReadySessionIds(current => {
+    if (current.has(id) === ready) return current;
+    const next = new Set(current);
+    if (ready) next.add(id); else next.delete(id);
+    return next;
+  });
   const [openSessionId, setOpenSessionId] = useState<string | null>(() => sessionIdFromHash(window.location.hash));
   const wide = useWideLayout();
   /** 새 세션 폼이 열려 있는지와, 호스트가 알려 준 폴더·에이전트 목록. */
@@ -164,6 +179,19 @@ export function MobileApp() {
   showSessionRef.current = showSession;
 
   const [client, setClient] = useState<RemoteClient | null>(null);
+  const drawer = useSessionDrawer();
+  const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
+  const viewedId = mirroring ? mirrorFocusId : wide && !panes.includes(openSessionId ?? "") ? null : openSessionId;
+  const viewedSession = sessions.find(session => session.id === viewedId) ?? null;
+  useSessionViewing(client, bridge, viewedSession, connection === "open" && !!viewedId && readySessionIds.has(viewedId),
+    drawer.isOpen, seenCapable);
+  const mainRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (mainRef.current) mainRef.current.inert = drawer.isOpen && !wide;
+  }, [drawer.isOpen, wide]);
+  useEffect(() => {
+    if (wide && drawer.isOpen) drawer.close();
+  }, [wide, drawer.isOpen, drawer.close]);
 
   // 클라이언트는 effect 안에서 만들고 cleanup에서 닫는다 — 닫힌 RemoteClient는 다시 connect하지
   // 않으므로, StrictMode의 이중 실행에서도 매번 새 인스턴스여야 한다.
@@ -173,6 +201,7 @@ export function MobileApp() {
     const offMessage = next.onMessage((message) => {
       setSessions((current) => applySessionMessage(current, message));
       if (message.type === "removed") setPanes((current) => current.filter((id) => id !== message.sessionId));
+      if (message.type === "welcome") { setHostId(message.hostId); setSeenCapable(message.capabilities?.includes("session-seen-v1") ?? false); }
       if (message.type === "catalog") setCatalog({ projects: message.projects, agents: message.agents });
       // 이 화면이 만들거나 다시 시작한 세션 — 바로 연다. 목록에는 created가 따로 실어 온다.
       // 호스트 그리드를 따라 그리는 중이면 호스트 그리드에 연다 — 포커스가 돌아오며 이 화면도 따른다.
@@ -225,7 +254,6 @@ export function MobileApp() {
     );
   }
 
-  const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
   const openNewSessionForm = (initial: { projectId: string; worktreeId: string | null } | null = null) => {
     // 폴더·에이전트는 열 때마다 다시 묻는다 — 호스트에서 그사이 바뀌었을 수 있다.
     setCatalog(null);
@@ -328,6 +356,7 @@ export function MobileApp() {
       session={openSession}
       deviceId={pairing.deviceId}
       wide={wide}
+      onReady={ready => sessionReady(openSession.id, ready)}
       onBack={showList}
       onMeasured={measured}
       onRename={rename(openSession.id)}
@@ -367,6 +396,7 @@ export function MobileApp() {
                 wide
                 fitOnlyWhenFocused
                 focused={pane.focused}
+                onReady={ready => sessionReady(pane.session.id, ready)}
                 onBack={showList}
                 onMeasured={pane.focused ? measured : undefined}
                 onFocus={pane.onFocus}
@@ -404,6 +434,7 @@ export function MobileApp() {
                     deviceId={pairing.deviceId}
                     wide
                     focused={focused}
+                    onReady={ready => sessionReady(session.id, ready)}
                     onBack={showList}
                     onMeasured={focused ? measured : undefined}
                     onFocus={() => showSession(session.id, "session")}
@@ -423,7 +454,11 @@ export function MobileApp() {
   }
   return (
     <>
-      {screen ?? list}
+      <div className="m-phone-main" ref={mainRef}>
+        {openSession && <SessionContext key={openSession.id} session={openSession} onOpen={drawer.open} />}
+        <div className="m-phone-body">{screen ?? list}</div>
+      </div>
+      {drawer.isOpen && <SessionDrawer hostId={hostId} hostName={pairing.hostName} sessions={sessions} activeId={openSession?.id ?? null} onClose={() => drawer.close()} onSelect={id => drawer.close(() => showSession(id, openSession ? "session" : "list"))} />}
       {toast}
     </>
   );

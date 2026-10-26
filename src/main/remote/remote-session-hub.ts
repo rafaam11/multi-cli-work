@@ -17,6 +17,7 @@ import {
 } from "../../shared/remote-types";
 import type { RemoteDevice } from "./device-store";
 import type { SizeState, TerminalSizeArbiter } from "./size-arbiter";
+import type { MobileAttentionStore } from "./mobile-attention-store";
 
 export interface RemoteHubGateway {
   list(): TerminalSessionView[];
@@ -25,6 +26,8 @@ export interface RemoteHubGateway {
   write(sessionId: string, data: string): Promise<void>;
   onEvent(listener: (event: TerminalEvent) => void): () => void;
   projectName(projectId: string): Promise<string | null>;
+  projectRootPath?(projectId: string): Promise<string | null>;
+  scrollback?(): number;
   /** 워크트리의 브랜치. 목록에서 워크트리 세션을 구별하게 한다. */
   worktreeBranch?(worktreeId: string): Promise<string | null>;
   /** 새 세션을 띄울 수 있는 폴더와 에이전트. */
@@ -51,6 +54,7 @@ export interface RemoteHubGateway {
   requestView?(action: RemoteViewAction): Promise<void>;
   /** 빈 이름이면 사용자가 붙인 이름을 지운다. */
   rename?(sessionId: string, name: string): Promise<void>;
+  isSessionViewed?(sessionId: string): Promise<boolean>;
 }
 
 export interface RemoteHubDevices {
@@ -88,6 +92,7 @@ export interface RemoteHubOptions {
   hostName: string;
   helloTimeoutMs?: number;
   shellLatest?: () => ShellRelease | null;
+  attention?: MobileAttentionStore;
 }
 
 interface Client {
@@ -95,6 +100,7 @@ interface Client {
   device: RemoteDevice | null;
   /** 철회·강제 종료된 연결. 소켓이 닫히는 동안 도착한 메시지도 더는 처리하지 않는다. */
   closed: boolean;
+  ready: boolean;
   attached: Set<string>;
   helloTimer: ReturnType<typeof setTimeout>;
 }
@@ -104,6 +110,7 @@ export function toSessionSummary(
   projectName: string | null,
   worktreeBranch: string | null = null,
   hidden = false,
+  projectRootPath: string | null = null,
 ): RemoteSessionSummary {
   return {
     id: view.id,
@@ -113,6 +120,8 @@ export function toSessionSummary(
     label: view.name ?? view.title ?? view.kind,
     status: view.status,
     updatedAt: view.updatedAt,
+    cwd: view.cwd,
+    ...(projectRootPath ? { projectRootPath } : {}),
     ...(worktreeBranch ? { worktreeBranch } : {}),
     ...(hidden ? { hidden } : {}),
   };
@@ -129,10 +138,20 @@ function errorText(error: unknown): string {
 export class RemoteSessionHub {
   private readonly clients = new Set<Client>();
   private readonly unsubscribes: Array<() => void>;
+  private events: Promise<unknown> = Promise.resolve();
+
+  private ordered<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.events.then(operation);
+    this.events = result.catch(() => undefined);
+    return result;
+  }
 
   constructor(private readonly options: RemoteHubOptions) {
     this.unsubscribes = [
-      options.gateway.onEvent((event) => this.forward(event)),
+      options.gateway.onEvent((event) => {
+        if (event.type === "data" || !options.attention) { void this.forward(event); return; }
+        void this.ordered(async () => { await this.forward(event); }).catch(error => console.error("Mobile attention update failed", error));
+      }),
       options.sizes.onChange((sessionId, state) => this.broadcastSize(sessionId, state)),
       ...(options.gateway.onShelvesChanged ? [options.gateway.onShelvesChanged(() => this.broadcastSessions())] : []),
       ...(options.gateway.onMirrorChanged ? [options.gateway.onMirrorChanged(() => this.broadcastMirror())] : []),
@@ -144,6 +163,7 @@ export class RemoteSessionHub {
       connection,
       device: null,
       closed: false,
+      ready: false,
       attached: new Set(),
       helloTimer: setTimeout(
         () => connection.close(REMOTE_CLOSE.retry, "hello timeout"),
@@ -208,12 +228,23 @@ export class RemoteSessionHub {
       case "hello":
         return;
       case "list":
-        client.connection.send({ type: "sessions", sessions: await this.summaries() });
+        await this.ordered(async () => client.connection.send({ type: "sessions", sessions: await this.summaries() }));
+        return;
+      case "seen":
+        if (!this.requireAttached(client, message.sessionId) || !this.options.attention) return;
+        await this.ordered(async () => {
+          this.requireSession(message.sessionId);
+          const attention = await this.options.attention!.seen(message.sessionId, message.generation);
+          this.broadcast({ type: "seen", sessionId: message.sessionId, attention });
+        });
         return;
       case "attach": {
         // 먼저 붙여 두어야 attach가 도는 동안 나온 출력도 전달된다. 클라이언트가 sequence로 중복을 버린다.
         client.attached.add(message.sessionId);
-        const result = await this.options.gateway.attach(message.sessionId);
+        const result = await this.options.gateway.attach(message.sessionId).catch(error => {
+          client.attached.delete(message.sessionId);
+          throw error;
+        });
         const size = this.options.sizes.current(message.sessionId);
         client.connection.send({
           type: "attached",
@@ -223,6 +254,7 @@ export class RemoteSessionHub {
           cols: size.cols,
           rows: size.rows,
           sizeOwner: size.owner,
+          ...(this.options.gateway.scrollback ? { scrollback: this.options.gateway.scrollback() } : {}),
         });
         return;
       }
@@ -336,9 +368,15 @@ export class RemoteSessionHub {
       deviceId: device.deviceId,
       protocolVersion: REMOTE_PROTOCOL_VERSION,
       shellLatest: this.options.shellLatest?.() ?? null,
+      ...(this.options.attention ? { capabilities: ["session-seen-v1"] } : {}),
     });
-    client.connection.send({ type: "sessions", sessions: await this.summaries() });
-    if (this.options.gateway.mirror) client.connection.send({ type: "mirror", mirror: this.options.gateway.mirror() });
+    await this.ordered(async () => {
+      const sessions = await this.summaries();
+      if (client.closed) return;
+      client.connection.send({ type: "sessions", sessions });
+      client.ready = true;
+    });
+    if (!client.closed && this.options.gateway.mirror) client.connection.send({ type: "mirror", mirror: this.options.gateway.mirror() });
   }
 
   private requireAttached(client: Client, sessionId: string): boolean {
@@ -359,28 +397,34 @@ export class RemoteSessionHub {
   private async summaries(): Promise<RemoteSessionSummary[]> {
     const views = this.options.gateway.list();
     const names = new Map<string, string | null>();
+    const roots = new Map<string, string | null>();
     for (const projectId of new Set(views.map((view) => view.projectId))) {
-      if (projectId !== null) names.set(projectId, await this.options.gateway.projectName(projectId));
+      if (projectId !== null) {
+        names.set(projectId, await this.options.gateway.projectName(projectId));
+        roots.set(projectId, await this.options.gateway.projectRootPath?.(projectId) ?? null);
+      }
     }
     const branches = new Map<string, string | null>();
     for (const worktreeId of new Set(views.map((view) => view.worktreeId))) {
       if (worktreeId) branches.set(worktreeId, await this.worktreeBranch(worktreeId));
     }
     const hidden = this.options.gateway.hiddenSessionIds?.() ?? new Set<string>();
-    return views.map((view) =>
-      toSessionSummary(
+    return Promise.all(views.map(async (view) => ({
+      ...toSessionSummary(
         view,
         view.projectId === null ? null : names.get(view.projectId) ?? null,
         view.worktreeId ? branches.get(view.worktreeId) ?? null : null,
         hidden.has(view.id),
+        view.projectId ? roots.get(view.projectId) ?? null : null,
       ),
-    );
+      ...(this.options.attention ? { attention: await this.options.attention.observe(view.id, view.status, await this.options.gateway.isSessionViewed?.(view.id) ?? false) } : {}),
+    })));
   }
 
   /** 목록 전체가 바뀌는 변화(선반 이동)를 붙어 있는 모든 화면에 알린다. */
   private broadcastSessions(): void {
     if (this.authenticated().length === 0) return;
-    void this.summaries()
+    void this.ordered(() => this.summaries())
       .then((sessions) => this.broadcast({ type: "sessions", sessions }))
       .catch(() => undefined);
   }
@@ -396,10 +440,10 @@ export class RemoteSessionHub {
   }
 
   private authenticated(): Client[] {
-    return [...this.clients].filter((client) => client.device !== null && !client.closed);
+    return [...this.clients].filter((client) => client.device !== null && client.ready && !client.closed);
   }
 
-  private forward(event: TerminalEvent): void {
+  private forward(event: TerminalEvent): void | Promise<void> {
     switch (event.type) {
       case "data":
         for (const client of this.authenticated()) {
@@ -415,6 +459,11 @@ export class RemoteSessionHub {
         return;
       case "status": {
         const presence = this.options.gateway.presence?.();
+        if (this.options.attention) return (async () => {
+          const viewed = await this.options.gateway.isSessionViewed?.(event.sessionId) ?? false;
+          const attention = await this.options.attention!.observe(event.sessionId, event.status, viewed);
+          this.broadcast({ type: "status", sessionId: event.sessionId, status: event.status, attention, ...(presence ? { presence } : {}) });
+        })();
         this.broadcast({ type: "status", sessionId: event.sessionId, status: event.status, ...(presence ? { presence } : {}) });
         return;
       }
@@ -428,18 +477,19 @@ export class RemoteSessionHub {
         for (const client of this.clients) client.attached.delete(event.sessionId);
         this.options.sizes.forget(event.sessionId);
         this.broadcast({ type: "removed", sessionId: event.sessionId });
-        return;
-      case "created": {
+        return this.options.attention?.remove(event.sessionId);
+      case "created":
+      case "workspace": {
         const projectId = event.session.projectId;
-        void Promise.all([
+        return Promise.all([
           projectId === null ? Promise.resolve(null) : this.options.gateway.projectName(projectId),
           this.worktreeBranch(event.session.worktreeId),
+          projectId === null ? Promise.resolve(null) : this.options.gateway.projectRootPath?.(projectId) ?? Promise.resolve(null),
         ])
-          .then(([name, branch]) =>
-            this.broadcast({ type: "created", session: toSessionSummary(event.session, name, branch) }),
-          )
-          .catch(() => undefined);
-        return;
+          .then(async ([name, branch, root]) => {
+            const attention = this.options.attention ? await this.options.attention.observe(event.session.id, event.session.status, await this.options.gateway.isSessionViewed?.(event.session.id) ?? false) : undefined;
+            this.broadcast({ type: event.type, session: { ...toSessionSummary(event.session, name, branch, this.options.gateway.hiddenSessionIds?.().has(event.session.id) ?? false, root), ...(attention ? { attention } : {}) } });
+          });
       }
       case "renamed":
         // 목록의 이름은 summaries가 만든다 — 한 세션만 고치는 메시지가 따로 없으니 목록을 다시 보낸다.
@@ -452,6 +502,20 @@ export class RemoteSessionHub {
 
   private broadcast(message: RemoteServerMessage): void {
     for (const client of this.authenticated()) client.connection.send(message);
+  }
+
+  /** Queue at the actual PC-view signal, before any later waits can enter the clock. */
+  desktopViewed(sessionId?: string | null): Promise<void> {
+    if (!this.options.attention) return Promise.resolve();
+    return this.ordered(async () => {
+      const ids = sessionId ? [sessionId] : this.options.gateway.list().map(session => session.id);
+      for (const id of ids) {
+        const observed = await this.options.attention!.current(id);
+        if (observed.seenThrough >= observed.generation || !await this.options.gateway.isSessionViewed?.(id)) continue;
+        const attention = await this.options.attention!.seen(id, observed.generation);
+        this.broadcast({ type: "seen", sessionId: id, attention });
+      }
+    });
   }
 
   private broadcastSize(sessionId: string, state: SizeState): void {

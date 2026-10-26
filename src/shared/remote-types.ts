@@ -40,7 +40,10 @@ export interface ShellRelease {
   sha256: string;
 }
 
+export interface RemoteAttentionState { generation: number; seenThrough: number }
+
 export interface RemoteSessionSummary {
+  attention?: RemoteAttentionState;
   id: string;
   projectId: string | null;
   projectName: string | null;
@@ -52,6 +55,8 @@ export interface RemoteSessionSummary {
   worktreeBranch?: string;
   /** 호스트 메인 창의 숨김 선반에 있는 세션이면 true. 없으면 작업공간 세션이다. */
   hidden?: boolean;
+  cwd?: string;
+  projectRootPath?: string;
 }
 
 /** 호스트 메인 창의 두 선반. 세션은 둘 중 하나에만 있다. */
@@ -137,6 +142,7 @@ export type RemoteClientMessage =
   | { type: "list" }
   | { type: "attach"; sessionId: string }
   | { type: "detach"; sessionId: string }
+  | { type: "seen"; sessionId: string; generation: number }
   | { type: "write"; sessionId: string; data: string }
   | { type: "resize"; sessionId: string; cols: number; rows: number }
   | { type: "releaseSize"; sessionId: string }
@@ -172,6 +178,7 @@ export type RemoteServerMessage =
       deviceId: string;
       protocolVersion: number;
       shellLatest: ShellRelease | null;
+      capabilities?: string[];
     }
   | { type: "sessions"; sessions: RemoteSessionSummary[] }
   | {
@@ -182,13 +189,16 @@ export type RemoteServerMessage =
       cols: number | null;
       rows: number | null;
       sizeOwner: SizeOwner;
+      scrollback?: number;
     }
   | { type: "data"; sessionId: string; data: string; sequence: number }
   /** presence는 v1.37.0 호스트부터 싣는다. 없으면 클라이언트는 away로 본다. */
-  | { type: "status"; sessionId: string; status: TerminalStatus; presence?: DesktopPresence }
+  | { type: "status"; sessionId: string; status: TerminalStatus; presence?: DesktopPresence; attention?: RemoteAttentionState }
+  | { type: "seen"; sessionId: string; attention: RemoteAttentionState }
   | { type: "title"; sessionId: string; title: string }
   | { type: "exit"; sessionId: string; exitCode: number }
   | { type: "created"; session: RemoteSessionSummary }
+  | { type: "workspace"; session: RemoteSessionSummary }
   | { type: "size"; sessionId: string; cols: number; rows: number; sizeOwner: SizeOwner }
   | ({ type: "catalog" } & RemoteCatalog)
   /** create·resume을 보낸 연결에만 간다 — 그 화면이 이 세션을 연다. */
@@ -265,6 +275,9 @@ export function parseRemoteClientMessage(raw: string): RemoteClientMessage | nul
       return text(value.sessionId) ? { type: "attach", sessionId: value.sessionId } : null;
     case "detach":
       return text(value.sessionId) ? { type: "detach", sessionId: value.sessionId } : null;
+    case "seen":
+      return text(value.sessionId) && typeof value.generation === "number" && Number.isSafeInteger(value.generation) && value.generation >= 0
+        ? { type: "seen", sessionId: value.sessionId, generation: value.generation } : null;
     case "releaseSize":
       return text(value.sessionId) ? { type: "releaseSize", sessionId: value.sessionId } : null;
     case "catalog":

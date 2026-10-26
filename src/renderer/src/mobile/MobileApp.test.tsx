@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteMirror, RemoteSessionSummary } from "@shared/remote-types";
@@ -17,6 +17,7 @@ vi.mock("./SessionScreen", () => ({
     onFocus,
     paneActions,
     onRename,
+    onReady,
   }: {
     session: RemoteSessionSummary;
     wide?: boolean;
@@ -28,9 +29,11 @@ vi.mock("./SessionScreen", () => ({
     onFocus?(): void;
     paneActions?: ReactNode;
     onRename?(name: string): void;
+    onReady?(ready: boolean): void;
   }) => (
     <div data-testid="screen" data-wide={String(Boolean(wide))} data-focused={String(focused)}>
       <span data-testid="screen-label">{session.label}</span>
+      <button type="button" onClick={() => onReady?.(true)}>{session.label} 렌더 완료</button>
       {onFocus ? (
         <button type="button" onClick={onFocus}>
           {session.label} 칸 고르기
@@ -113,6 +116,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete (window as unknown as { McwShell?: unknown }).McwShell;
   window.history.replaceState(null, "", window.location.pathname);
@@ -130,6 +134,63 @@ function screenLabels() {
 }
 
 describe("MobileApp", () => {
+  it("acknowledges only the rendered focused grid session and clears it when the host shows a document", () => {
+    useScreen(true);
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    render(<MobileApp />);
+    connect();
+    const mirror: RemoteMirror = {
+      tree: [],
+      view: { place: { kind: "shelf", shelf: "active" }, layoutId: "cols:1-1", columnRows: [1, 1],
+        page: 0, pages: 1, focusedPaneId: "s1", slots: [{ kind: "session", id: "s1" }, { kind: "session", id: "s2" }] },
+    };
+    act(() => {
+      FakeSocket.last!.receive({ type: "welcome", hostId: "h", hostName: "PC", deviceId: "d", protocolVersion: 1, capabilities: ["session-seen-v1"] });
+      FakeSocket.last!.receive({ type: "sessions", sessions: SESSIONS.map(session => ({ ...session, attention: { generation: 1, seenThrough: 0 } })) });
+      FakeSocket.last!.receive({ type: "mirror", mirror });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "테스트 렌더 완료" }));
+    expect(FakeSocket.last!.sent.filter(message => message.type === "seen")).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "리팩터 렌더 완료" }));
+    expect(FakeSocket.last!.sent.filter(message => message.type === "seen")).toEqual([{ type: "seen", sessionId: "s1", generation: 1 }]);
+    act(() => FakeSocket.last!.receive({ type: "mirror", mirror: { ...mirror, view: { ...mirror.view, focusedPaneId: "s2" } } }));
+    expect(FakeSocket.last!.sent.filter(message => message.type === "seen")).toHaveLength(2);
+    act(() => {
+      FakeSocket.last!.receive({ type: "mirror", mirror: { ...mirror, view: { ...mirror.view, focusedPaneId: "doc", slots: [{ kind: "document", id: "doc", label: "README" }] } } });
+      FakeSocket.last!.receive({ type: "sessions", sessions: SESSIONS.map(session => ({ ...session, attention: { generation: 2, seenThrough: 0 } })) });
+    });
+    expect(FakeSocket.last!.sent.filter(message => message.type === "seen")).toHaveLength(2);
+  });
+
+  it("selects a drawer session and preserves one session history entry", async () => {
+    useScreen(false);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
+    fireEvent.click(screen.getByRole("button", { name: "세션 사이드바 열기" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /테스트/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByTestId("screen-label")).toHaveTextContent("테스트");
+    expect(window.location.hash).toBe("#session=s2");
+    fireEvent.click(screen.getByRole("button", { name: "세션 목록으로" }));
+    await waitFor(() => expect(screen.queryByTestId("screen")).not.toBeInTheDocument());
+  });
+
+  it("opens a path drawer without replacing the terminal and Back closes only the drawer", async () => {
+    useScreen(false);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
+    const terminal = screen.getByTestId("screen");
+    fireEvent.click(screen.getByRole("button", { name: "세션 사이드바 열기" }));
+    expect(screen.getByRole("dialog", { name: "프로젝트와 경로별 세션" })).toBeInTheDocument();
+    expect(screen.getByText("경로 정보 없음", { selector: ".m-drawer-path-label" })).toBeInTheDocument();
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByTestId("screen")).toBe(terminal);
+    expect(window.location.hash).toBe("#session=s1");
+  });
+
   it("keeps the list beside the open session on a wide screen", () => {
     useScreen(true);
     render(<MobileApp />);
