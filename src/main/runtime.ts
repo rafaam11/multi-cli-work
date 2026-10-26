@@ -637,6 +637,8 @@ export async function createDesktopRuntime(
       onEvent: (listener) => coordinator.onEvent(listener),
       projectName: async (projectId) => (await getProject(projectId))?.displayName ?? null,
       worktreeBranch: async (worktreeId) => (await worktrees.get(worktreeId))?.branch ?? null,
+      projectRootPath: async (projectId) => (await getProject(projectId))?.rootPath ?? null,
+      scrollback: () => settingsService.current().terminal.scrollback,
       catalog: async () =>
         buildRemoteCatalog(
           Object.values((await readProjectRegistry({ registryPath })).registry.projects),

@@ -50,6 +50,8 @@ export interface RemoteSessionSummary {
   updatedAt: string;
   /** 워크트리에서 도는 세션이면 그 브랜치(v1.38.0 호스트부터). */
   worktreeBranch?: string;
+  cwd?: string;
+  projectRootPath?: string;
 }
 
 export type RemoteClientMessage =
@@ -96,6 +98,7 @@ export type RemoteServerMessage =
       cols: number | null;
       rows: number | null;
       sizeOwner: SizeOwner;
+      scrollback?: number;
     }
   | { type: "data"; sessionId: string; data: string; sequence: number }
   /** presence는 v1.37.0 호스트부터 싣는다. 없으면 클라이언트는 away로 본다. */
@@ -103,6 +106,7 @@ export type RemoteServerMessage =
   | { type: "title"; sessionId: string; title: string }
   | { type: "exit"; sessionId: string; exitCode: number }
   | { type: "created"; session: RemoteSessionSummary }
+  | { type: "workspace"; session: RemoteSessionSummary }
   | { type: "size"; sessionId: string; cols: number; rows: number; sizeOwner: SizeOwner }
   | ({ type: "catalog" } & RemoteCatalog)
   /** create·resume을 보낸 연결에만 간다 — 그 화면이 이 세션을 연다. */

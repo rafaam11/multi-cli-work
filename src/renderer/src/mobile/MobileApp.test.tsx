@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteSessionSummary } from "@shared/remote-types";
@@ -73,6 +73,7 @@ function connect() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("WebSocket", FakeSocket);
   (window as unknown as { McwShell: unknown }).McwShell = {
     bridgeVersion: () => 1,
@@ -90,6 +91,35 @@ afterEach(() => {
 });
 
 describe("MobileApp", () => {
+  it("selects a drawer session and preserves one session history entry", async () => {
+    useScreen(false);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "세션 사이드바 열기" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /테스트/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByTestId("screen-label")).toHaveTextContent("테스트");
+    expect(window.location.hash).toBe("#session=s2");
+    fireEvent.click(screen.getByRole("button", { name: "세션 목록으로" }));
+    await waitFor(() => expect(screen.queryByTestId("screen")).not.toBeInTheDocument());
+  });
+
+  it("opens a path drawer without replacing the terminal and Back closes only the drawer", async () => {
+    useScreen(false);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    const terminal = screen.getByTestId("screen");
+    fireEvent.click(screen.getByRole("button", { name: "세션 사이드바 열기" }));
+    expect(screen.getByRole("dialog", { name: "프로젝트와 경로별 세션" })).toBeInTheDocument();
+    expect(screen.getByText("경로 정보 없음", { selector: ".m-drawer-path-label" })).toBeInTheDocument();
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByTestId("screen")).toBe(terminal);
+    expect(window.location.hash).toBe("#session=s1");
+  });
+
   it("keeps the list beside the open session on a wide screen", () => {
     useScreen(true);
     render(<MobileApp />);

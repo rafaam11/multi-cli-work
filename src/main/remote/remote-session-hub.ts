@@ -22,6 +22,8 @@ export interface RemoteHubGateway {
   write(sessionId: string, data: string): Promise<void>;
   onEvent(listener: (event: TerminalEvent) => void): () => void;
   projectName(projectId: string): Promise<string | null>;
+  projectRootPath?(projectId: string): Promise<string | null>;
+  scrollback?(): number;
   /** 워크트리의 브랜치. 목록에서 워크트리 세션을 구별하게 한다. */
   worktreeBranch?(worktreeId: string): Promise<string | null>;
   /** 새 세션을 띄울 수 있는 폴더와 에이전트. */
@@ -86,6 +88,7 @@ export function toSessionSummary(
   view: TerminalSessionView,
   projectName: string | null,
   worktreeBranch: string | null = null,
+  projectRootPath: string | null = null,
 ): RemoteSessionSummary {
   return {
     id: view.id,
@@ -95,6 +98,8 @@ export function toSessionSummary(
     label: view.name ?? view.title ?? view.kind,
     status: view.status,
     updatedAt: view.updatedAt,
+    cwd: view.cwd,
+    ...(projectRootPath ? { projectRootPath } : {}),
     ...(worktreeBranch ? { worktreeBranch } : {}),
   };
 }
@@ -202,6 +207,7 @@ export class RemoteSessionHub {
           cols: size.cols,
           rows: size.rows,
           sizeOwner: size.owner,
+          ...(this.options.gateway.scrollback ? { scrollback: this.options.gateway.scrollback() } : {}),
         });
         return;
       }
@@ -320,8 +326,12 @@ export class RemoteSessionHub {
   private async summaries(): Promise<RemoteSessionSummary[]> {
     const views = this.options.gateway.list();
     const names = new Map<string, string | null>();
+    const roots = new Map<string, string | null>();
     for (const projectId of new Set(views.map((view) => view.projectId))) {
-      if (projectId !== null) names.set(projectId, await this.options.gateway.projectName(projectId));
+      if (projectId !== null) {
+        names.set(projectId, await this.options.gateway.projectName(projectId));
+        roots.set(projectId, await this.options.gateway.projectRootPath?.(projectId) ?? null);
+      }
     }
     const branches = new Map<string, string | null>();
     for (const worktreeId of new Set(views.map((view) => view.worktreeId))) {
@@ -332,6 +342,7 @@ export class RemoteSessionHub {
         view,
         view.projectId === null ? null : names.get(view.projectId) ?? null,
         view.worktreeId ? branches.get(view.worktreeId) ?? null : null,
+        view.projectId ? roots.get(view.projectId) ?? null : null,
       ),
     );
   }
@@ -375,14 +386,16 @@ export class RemoteSessionHub {
         this.options.sizes.forget(event.sessionId);
         this.broadcast({ type: "removed", sessionId: event.sessionId });
         return;
-      case "created": {
+      case "created":
+      case "workspace": {
         const projectId = event.session.projectId;
         void Promise.all([
           projectId === null ? Promise.resolve(null) : this.options.gateway.projectName(projectId),
           this.worktreeBranch(event.session.worktreeId),
+          projectId === null ? Promise.resolve(null) : this.options.gateway.projectRootPath?.(projectId) ?? Promise.resolve(null),
         ])
-          .then(([name, branch]) =>
-            this.broadcast({ type: "created", session: toSessionSummary(event.session, name, branch) }),
+          .then(([name, branch, root]) =>
+            this.broadcast({ type: event.type, session: toSessionSummary(event.session, name, branch, root) }),
           )
           .catch(() => undefined);
         return;

@@ -1,3 +1,7 @@
+export function shouldSendWheel(bufferType: string, mouseTrackingMode: string): boolean {
+  return bufferType === "alternate" || mouseTrackingMode !== "none";
+}
+
 export interface TouchScrollState {
   /** 터미널을 담은 틀(.m-terminal)의 현재 scrollTop과 최댓값. PC 크기로 그리면 틀이 넘친다. */
   containerTop: number;

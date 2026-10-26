@@ -3,12 +3,14 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RemoteSessionSummary } from "@shared/remote-types";
+import { DEFAULT_SETTINGS } from "@shared/settings-types";
+import { createTerminalOutputFilter } from "../terminal-output-filter";
 import { createAutoFit, type AutoFit, type AutoFitState } from "./auto-fit";
 import { TERMINAL_FONT_INDEX, TERMINAL_FONT_SIZES, type TerminalSize } from "./initial-size";
 import type { RemoteClient } from "./remote-client";
 import { STATUS_LABEL } from "./SessionList";
 import { clipboardKeyAction, createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
-import { planTouchScroll } from "./touch-scroll";
+import { planTouchScroll, shouldSendWheel } from "./touch-scroll";
 
 interface SessionScreenProps {
   client: RemoteClient;
@@ -65,7 +67,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
     const terminal = new Terminal({
       fontSize: FONT_SIZES[TERMINAL_FONT_INDEX],
       fontFamily: 'ui-monospace, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace',
-      scrollback: 5_000,
+      scrollback: DEFAULT_SETTINGS.terminal.scrollback,
       cursorBlink: false,
       theme: { background: "#101214" },
     });
@@ -114,7 +116,11 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
     setFitState("fitting");
     if (wide) terminal.focus();
 
-    const gate = createReplayGate((data) => terminal.write(data));
+    let outputFilter = createTerminalOutputFilter();
+    const gate = createReplayGate((data) => {
+      const filtered = outputFilter.write(data);
+      if (filtered) terminal.write(filtered);
+    });
     const applySize = (cols: number | null, rows: number | null) => {
       if (cols !== null && rows !== null && (terminal.cols !== cols || terminal.rows !== rows)) terminal.resize(cols, rows);
     };
@@ -129,6 +135,8 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
       if (!("sessionId" in message) || message.sessionId !== session.id) return;
       if (message.type === "attached") {
         terminal.reset();
+        outputFilter = createTerminalOutputFilter();
+        terminal.options.scrollback = message.scrollback ?? DEFAULT_SETTINGS.terminal.scrollback;
         applySize(message.cols, message.rows);
         if (autoFit) autoFit.attached();
         else giveBackToggle(message.sizeOwner);
@@ -211,7 +219,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
       const cellHeight = screen && terminal.rows > 0 ? screen.clientHeight / terminal.rows : 16;
       const buffer = terminal.buffer.active;
       // claude 같은 전체 화면 앱은 스크롤백이 없고 휠 입력으로 스스로 스크롤한다.
-      const fullScreen = buffer.type === "alternate";
+      const fullScreen = shouldSendWheel(buffer.type, terminal.modes?.mouseTrackingMode ?? "none");
       const step = planTouchScroll(
         {
           containerTop: host.scrollTop,

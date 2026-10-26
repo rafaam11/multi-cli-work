@@ -12,6 +12,7 @@ export function applySessionMessage(
     case "sessions":
       return message.sessions;
     case "created":
+    case "workspace":
       // 이미 아는 세션이면 새 상태로 바꾼다 — 다시 시작한 세션은 created로 자기를 알린다.
       return sessions.some((session) => session.id === message.session.id)
         ? sessions.map((session) => (session.id === message.session.id ? message.session : session))

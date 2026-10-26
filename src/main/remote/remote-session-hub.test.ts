@@ -100,6 +100,7 @@ describe("RemoteSessionHub", () => {
           id: "s1",
           projectId: "p1",
           projectName: "Sample Project",
+          cwd: "C:/work",
           kind: "claude",
           label: "제목",
           status: "working",
@@ -146,6 +147,21 @@ describe("RemoteSessionHub", () => {
     await hello();
     const list = sent.find((message) => message.type === "sessions");
     expect(list?.type === "sessions" && list.sessions.map((session) => session.worktreeBranch)).toEqual([undefined, "feat/search"]);
+  });
+
+  it("forwards actual cwd changes, project roots and configured scrollback", async () => {
+    const { gateway, sent, hello, emit, handle, attachWith } = setup();
+    Object.assign(gateway, { projectRootPath: async () => "C:/root", scrollback: () => 24000 });
+    await hello();
+    expect(sent[1]).toMatchObject({ sessions: [{ cwd: "C:/work", projectRootPath: "C:/root" }] });
+    emit({ type: "workspace", sessionId: "s1", session: view("s1", { cwd: "C:/worktree/feature" }) });
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ type: "workspace", session: { cwd: "C:/worktree/feature", projectRootPath: "C:/root" } });
+    handle.receive('{"type":"attach","sessionId":"s1"}');
+    await flush();
+    attachWith("history", 2);
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ type: "attached", scrollback: 24000 });
   });
 
   it("forwards data that arrives while attach is in flight, and only for attached sessions", async () => {

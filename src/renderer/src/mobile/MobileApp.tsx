@@ -17,6 +17,9 @@ import { SessionScreen } from "./SessionScreen";
 import { applySessionMessage } from "./session-list-model";
 import { readShellBridge } from "./shell-bridge";
 import { SessionTabs } from "./SessionTabs";
+import { SessionDrawer } from "./SessionDrawer";
+import { SessionContext } from "./SessionContext";
+import { useSessionDrawer } from "./use-session-drawer";
 import { sessionHash, sessionIdFromHash, useWideLayout } from "./wide-layout";
 
 /** 이 앱이 세션 화면으로 쌓은 history 항목 표시. 이 항목에서 ←는 history.back()이다. */
@@ -44,6 +47,7 @@ export function MobileApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [connection, setConnection] = useState<RemoteClientState>("connecting");
   const [sessions, setSessions] = useState<RemoteSessionSummary[]>([]);
+  const [hostId, setHostId] = useState(window.location.origin);
   const [openSessionId, setOpenSessionId] = useState<string | null>(() => sessionIdFromHash(window.location.hash));
   const wide = useWideLayout();
   /** 새 세션 폼이 열려 있는지와, 호스트가 알려 준 폴더·에이전트 목록. */
@@ -102,6 +106,14 @@ export function MobileApp() {
   showSessionRef.current = showSession;
 
   const [client, setClient] = useState<RemoteClient | null>(null);
+  const drawer = useSessionDrawer();
+  const mainRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (mainRef.current) mainRef.current.inert = drawer.isOpen && !wide;
+  }, [drawer.isOpen, wide]);
+  useEffect(() => {
+    if (wide && drawer.isOpen) drawer.close();
+  }, [wide, drawer.isOpen, drawer.close]);
 
   // 클라이언트는 effect 안에서 만들고 cleanup에서 닫는다 — 닫힌 RemoteClient는 다시 connect하지
   // 않으므로, StrictMode의 이중 실행에서도 매번 새 인스턴스여야 한다.
@@ -110,6 +122,7 @@ export function MobileApp() {
     const next = new RemoteClient({ url: remoteSocketUrl(window.location), token: pairing.token });
     const offMessage = next.onMessage((message) => {
       setSessions((current) => applySessionMessage(current, message));
+      if (message.type === "welcome") setHostId(message.hostId);
       if (message.type === "catalog") setCatalog({ projects: message.projects, agents: message.agents });
       // 이 화면이 만들거나 다시 시작한 세션 — 바로 연다. 목록에는 created가 따로 실어 온다.
       else if (message.type === "started") {
@@ -249,7 +262,11 @@ export function MobileApp() {
   }
   return (
     <>
-      {screen ?? list}
+      <div className="m-phone-main" ref={mainRef}>
+        {openSession && <SessionContext key={openSession.id} session={openSession} onOpen={drawer.open} />}
+        <div className="m-phone-body">{screen ?? list}</div>
+      </div>
+      {drawer.isOpen && <SessionDrawer hostId={hostId} hostName={pairing.hostName} sessions={sessions} activeId={openSession?.id ?? null} onClose={() => drawer.close()} onSelect={id => drawer.close(() => showSession(id, openSession ? "session" : "list"))} />}
       {toast}
     </>
   );

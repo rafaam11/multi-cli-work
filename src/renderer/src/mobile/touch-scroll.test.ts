@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planTouchScroll } from "./touch-scroll";
+import { planTouchScroll, shouldSendWheel } from "./touch-scroll";
 
 const CELL = 10;
 const state = (overrides: Partial<Parameters<typeof planTouchScroll>[0]> = {}) => ({
@@ -11,6 +11,13 @@ const state = (overrides: Partial<Parameters<typeof planTouchScroll>[0]> = {}) =
 });
 
 describe("planTouchScroll", () => {
+  it("routes normal-buffer mouse reporting apps to their own history even with no scrollback", () => {
+    const unbounded = shouldSendWheel("normal", "vt200");
+    expect(unbounded).toBe(true);
+    expect(planTouchScroll(state({ viewportY: 0, baseY: 0, unbounded }), 80, 16, 0).lines).toBe(-5);
+    expect(shouldSendWheel("normal", "none")).toBe(false);
+    expect(shouldSendWheel("alternate", "none")).toBe(true);
+  });
   it("dragging down first scrolls the oversized container back to its top", () => {
     expect(planTouchScroll(state({ containerTop: 30, containerMax: 200 }), 20, CELL, 0)).toEqual({
       containerDelta: -20,
