@@ -25,4 +25,15 @@ describe("platform environment", () => {
       expect.arrayContaining(["/inherited", "/usr/local/bin", "/usr/bin", "/bin"]),
     );
   });
+
+  it("strips stray quotes from a Windows PATH so cmd.exe and Rust still search every entry", async () => {
+    // A lone `"` (e.g. `C:\Program Files\WSL"`) makes cmd.exe and Rust's split_paths treat the rest
+    // of PATH as one quoted entry: codex then cannot find `npm`, and its cmd shim cannot find `node`.
+    const env = await discoverSessionEnvironment(
+      { Path: String.raw`C:\Windows;C:\Program Files\WSL";C:\Program Files\nodejs\;;"C:\Quoted Dir"` },
+      "win32",
+    );
+    expect(env.Path).toBe(String.raw`C:\Windows;C:\Program Files\WSL;C:\Program Files\nodejs\;C:\Quoted Dir`);
+    expect(env.PATH).toBeUndefined();
+  });
 });

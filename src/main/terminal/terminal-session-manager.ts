@@ -161,7 +161,16 @@ export class TerminalSessionManager {
     if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 2 || rows < 1) {
       throw new Error("Terminal dimensions are invalid");
     }
-    this.requireSession(sessionId).pty.resize(cols, rows);
+    const record = this.requireSession(sessionId);
+    if (record.session.status === "exited") return;
+    try {
+      record.pty.resize(cols, rows);
+    } catch (error) {
+      // ConPTY closes its handles before onExit is delivered, so a pane resize racing a process that
+      // just quit (e.g. a resume whose CLI failed to start) lands here. There is nothing to resize.
+      if (error instanceof Error && /already exited/i.test(error.message)) return;
+      throw error;
+    }
   }
 
   stop(sessionId: string): void {

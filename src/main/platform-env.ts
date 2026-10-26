@@ -31,12 +31,29 @@ function fallbackLinuxPath(inherited: string | undefined): string {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].join(":");
 }
 
+/**
+ * A stray `"` in a Windows PATH entry (an installer leaving `C:\Program Files\WSL"`) makes cmd.exe and
+ * Rust's `split_paths` treat everything after it as one quoted entry, so tools listed later vanish:
+ * `codex update` cannot find `npm`, and the codex cmd shim cannot find `node`. Quotes are never part
+ * of a Windows path, so drop them, along with empty entries.
+ */
+function sanitizeWindowsPath(env: Record<string, string>): Record<string, string> {
+  const key = pathKey(env, "win32");
+  const value = env[key];
+  if (!value) return { ...env };
+  const entries = value
+    .split(";")
+    .map((entry) => entry.replaceAll('"', "").trim())
+    .filter(Boolean);
+  return { ...env, [key]: entries.join(";") };
+}
+
 export async function discoverSessionEnvironment(
   inherited: Record<string, string>,
   platform: NodeJS.Platform = process.platform,
   execute: ExecFile = execFileAsync,
 ): Promise<Record<string, string>> {
-  if (platform === "win32") return { ...inherited };
+  if (platform === "win32") return sanitizeWindowsPath(inherited);
   let discovered = "";
   try {
     const result = await execute("/bin/bash", ["--login", "-c", `printf '%s' "$PATH"`], {

@@ -160,6 +160,25 @@ describe("TerminalSessionManager", () => {
     expect(pty.resize).toHaveBeenCalledWith(140, 44);
   });
 
+  it("ignores a resize that lands after the PTY has exited", () => {
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    manager.create(launchSpec());
+
+    // ConPTY closes before onExit is delivered; node-pty throws on a resize in that gap.
+    pty.resize.mockImplementationOnce(() => { throw new Error("Cannot resize a pty that has already exited"); });
+    expect(() => manager.resize("session-1", 120, 40)).not.toThrow();
+
+    pty.emitExit(1);
+    manager.resize("session-1", 120, 40);
+    expect(pty.resize).toHaveBeenCalledTimes(1);
+
+    pty.resize.mockImplementationOnce(() => { throw new Error("boom"); });
+    const live = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    live.create(launchSpec());
+    expect(() => live.resize("session-1", 120, 40)).toThrow("boom");
+  });
+
   it("returns bounded replay output when a renderer attaches", () => {
     const pty = new FakePty();
     const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined, 10);
