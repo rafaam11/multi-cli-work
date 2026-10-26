@@ -28,10 +28,11 @@ class HostLink(
     private val client: OkHttpClient,
     private val handler: Handler,
     private val listener: Listener,
+    private val tracker: StatusTracker,
 ) {
     interface Listener {
-        fun allowed(host: Host, status: String, presence: String?): Boolean
-        fun onNotice(host: Host, notice: SessionNotice)
+        fun allowed(host: Host, sessionId: String, status: String, presence: String?): Boolean
+        fun onNotice(host: Host, notice: SessionNotice): Boolean
         /** 그 세션이 더 기다리지 않는다(풀렸거나 지워졌다) — 떠 있는 알림을 내린다. */
         fun onResolved(host: Host, sessionId: String)
         fun onChanged()
@@ -45,7 +46,12 @@ class HostLink(
         private set
     val awaiting: Int get() = if (state == State.OPEN) tracker.awaiting else 0
 
-    private val tracker = StatusTracker()
+    var seenSync = false
+        private set
+
+    fun viewed(sessionId: String, generation: Long?) {
+        if (tracker.viewed(sessionId, generation)) listener.onResolved(host, sessionId)
+    }
     private val backoff = Backoff()
     private var socket: WebSocket? = null
     private var stopped = false
@@ -111,15 +117,13 @@ class HostLink(
     private fun receive(text: String) {
         val message = StatusMessages.parse(text) ?: return
         if (message is StatusMessage.Welcome) {
+            seenSync = message.seenSync
             backoff.reset()
             state = State.OPEN
         }
-        val notice = tracker.receive(message) { status, presence -> listener.allowed(host, status, presence) }
-        when {
-            notice != null -> listener.onNotice(host, notice)
-            message is StatusMessage.Status && !isWaiting(message.status) -> listener.onResolved(host, message.sessionId)
-            message is StatusMessage.Removed -> listener.onResolved(host, message.sessionId)
-        }
+        val notice = tracker.receive(message) { status, presence -> listener.allowed(host, (message as? StatusMessage.Status)?.sessionId ?: "", status, presence) }
+        tracker.resolved.forEach { listener.onResolved(host, it) }
+        if (notice != null && listener.onNotice(host, notice)) tracker.posted(notice)
         listener.onChanged()
     }
 

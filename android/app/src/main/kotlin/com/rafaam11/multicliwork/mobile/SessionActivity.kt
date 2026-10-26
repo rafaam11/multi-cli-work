@@ -29,6 +29,7 @@ import com.rafaam11.multicliwork.mobile.web.McwShellBridge
 class SessionActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private var host: Host? = null
+    @Volatile private var foreground = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,10 +68,23 @@ class SessionActivity : ComponentActivity() {
                     }
                 },
                 onBack = { runOnUiThread { leave() } },
+                foreground = { foreground },
+                onViewing = { sessionId, generation -> runOnUiThread {
+                    if (foreground && sessionId.isNotEmpty()) {
+                        ForegroundTracker.viewingHostId = host.hostId
+                        ForegroundTracker.viewingSessionId = sessionId
+                        val listener = ForegroundTracker.onViewed
+                        if (listener != null) listener(host.hostId, sessionId, generation)
+                        else ShellGraph.attention(this, host.hostId).localSeen(sessionId, generation)
+                    } else ForegroundTracker.clear(host.hostId)
+                } },
             ),
             "McwShell",
         )
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                ForegroundTracker.clear(host.hostId)
+            }
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 !HostOrigin.isInside(host.address, request.url.toString())
         }
@@ -98,12 +112,19 @@ class SessionActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        ForegroundTracker.viewingHostId = host?.hostId
+        foreground = true
+        announceForeground()
     }
 
     override fun onPause() {
-        if (ForegroundTracker.viewingHostId == host?.hostId) ForegroundTracker.viewingHostId = null
+        foreground = false
+        ForegroundTracker.clear(host?.hostId)
+        announceForeground()
         super.onPause()
+    }
+
+    private fun announceForeground() {
+        if (::webView.isInitialized) webView.evaluateJavascript("window.dispatchEvent(new Event('mcw-foreground'))", null)
     }
 
     private fun urlFor(host: Host, intent: Intent): String =

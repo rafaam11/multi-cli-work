@@ -34,6 +34,7 @@ class StatusService : Service(), HostLink.Listener {
     override fun onCreate() {
         super.onCreate()
         Notifications.ensureChannels(this)
+        ForegroundTracker.onViewed = { hostId, sessionId, generation -> links[hostId]?.viewed(sessionId, generation) }
         // 호스트도 30초마다 ping한다. 이쪽 ping은 Doze 뒤처럼 조용히 죽은 연결을 알아채려는 것이다.
         client = OkHttpClient.Builder().pingInterval(45, TimeUnit.SECONDS).readTimeout(0, TimeUnit.MILLISECONDS).build()
         val callback = object : ConnectivityManager.NetworkCallback() {
@@ -67,6 +68,7 @@ class StatusService : Service(), HostLink.Listener {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        ForegroundTracker.onViewed = null
         links.values.forEach(HostLink::stop)
         links.clear()
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
@@ -91,7 +93,7 @@ class StatusService : Service(), HostLink.Listener {
             }
         }
         for ((hostId, host) in hosts) {
-            if (hostId !in links) links[hostId] = HostLink(host, client, handler, this).also(HostLink::start)
+            if (hostId !in links) links[hostId] = HostLink(host, client, handler, this, StatusTracker(ShellGraph.attention(this, hostId))).also(HostLink::start)
         }
         onChanged()
     }
@@ -101,11 +103,13 @@ class StatusService : Service(), HostLink.Listener {
         val open = links.values.count { it.state == HostLink.State.OPEN }
         val awaiting = links.values.sumOf { it.awaiting }
         val connected = if (open == 0) "PC에 연결하는 중…" else "PC ${open}대 연결됨"
-        return if (awaiting > 0) "$connected · 대기 $awaiting" else connected
+        val text = if (awaiting > 0) "$connected · 대기 $awaiting" else connected
+        return if (links.values.any { it.state == HostLink.State.OPEN && !it.seenSync }) "$text · PC 확인 동기화는 PC 업데이트 필요" else text
     }
 
-    override fun allowed(host: Host, status: String, presence: String?): Boolean =
-        NotifyPolicy.allowed(ShellGraph.notifyPrefs(this).load(), host.hostId, status, presence, ForegroundTracker.viewingHostId)
+    override fun allowed(host: Host, sessionId: String, status: String, presence: String?): Boolean =
+        !Notifications.blocked(this) && NotifyPolicy.allowed(ShellGraph.notifyPrefs(this).load(), host.hostId, status, presence,
+            ForegroundTracker.viewingHostId, sessionId, ForegroundTracker.viewingSessionId)
 
     override fun onNotice(host: Host, notice: SessionNotice) = Notifications.session(this, host, notice)
 

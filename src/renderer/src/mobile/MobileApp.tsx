@@ -20,6 +20,7 @@ import { SessionTabs } from "./SessionTabs";
 import { SessionDrawer } from "./SessionDrawer";
 import { SessionContext } from "./SessionContext";
 import { useSessionDrawer } from "./use-session-drawer";
+import { useSessionViewing } from "./use-session-viewing";
 import { sessionHash, sessionIdFromHash, useWideLayout } from "./wide-layout";
 
 /** 이 앱이 세션 화면으로 쌓은 history 항목 표시. 이 항목에서 ←는 history.back()이다. */
@@ -48,6 +49,8 @@ export function MobileApp() {
   const [connection, setConnection] = useState<RemoteClientState>("connecting");
   const [sessions, setSessions] = useState<RemoteSessionSummary[]>([]);
   const [hostId, setHostId] = useState(window.location.origin);
+  const [seenCapable, setSeenCapable] = useState(false);
+  const [readySessionId, setReadySessionId] = useState<string | null>(null);
   const [openSessionId, setOpenSessionId] = useState<string | null>(() => sessionIdFromHash(window.location.hash));
   const wide = useWideLayout();
   /** 새 세션 폼이 열려 있는지와, 호스트가 알려 준 폴더·에이전트 목록. */
@@ -107,6 +110,9 @@ export function MobileApp() {
 
   const [client, setClient] = useState<RemoteClient | null>(null);
   const drawer = useSessionDrawer();
+  const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
+  useSessionViewing(client, bridge, openSession, connection === "open" && readySessionId === openSessionId,
+    drawer.isOpen, seenCapable);
   const mainRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (mainRef.current) mainRef.current.inert = drawer.isOpen && !wide;
@@ -122,7 +128,7 @@ export function MobileApp() {
     const next = new RemoteClient({ url: remoteSocketUrl(window.location), token: pairing.token });
     const offMessage = next.onMessage((message) => {
       setSessions((current) => applySessionMessage(current, message));
-      if (message.type === "welcome") setHostId(message.hostId);
+      if (message.type === "welcome") { setHostId(message.hostId); setSeenCapable(message.capabilities?.includes("session-seen-v1") ?? false); }
       if (message.type === "catalog") setCatalog({ projects: message.projects, agents: message.agents });
       // 이 화면이 만들거나 다시 시작한 세션 — 바로 연다. 목록에는 created가 따로 실어 온다.
       else if (message.type === "started") {
@@ -172,7 +178,6 @@ export function MobileApp() {
     );
   }
 
-  const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
   const openNewSessionForm = () => {
     // 폴더·에이전트는 열 때마다 다시 묻는다 — 호스트에서 그사이 바뀌었을 수 있다.
     setCatalog(null);
@@ -229,6 +234,7 @@ export function MobileApp() {
       session={openSession}
       deviceId={pairing.deviceId}
       wide={wide}
+      onReady={ready => setReadySessionId(ready ? openSession.id : null)}
       onBack={showList}
       onMeasured={(size) => {
         measuredRef.current = { ...size, wide };

@@ -59,7 +59,8 @@ object Notifications {
 
     fun updateOngoing(context: Context, text: String) = post(context, ONGOING_ID, ongoing(context, text))
 
-    fun session(context: Context, host: Host, notice: SessionNotice) {
+    fun session(context: Context, host: Host, notice: SessionNotice): Boolean {
+        if (context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL_SESSIONS)?.importance == NotificationManager.IMPORTANCE_NONE) return false
         val id = sessionNotificationId(host.hostId, notice.sessionId)
         val open = PendingIntent.getActivity(
             context,
@@ -68,16 +69,22 @@ object Notifications {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val reason = BODY[notice.status] ?: notice.status
+        val location = notice.cwd ?: "경로 정보 없음 · PC 업데이트 필요"
+        val detail = listOfNotNull("${host.name} · ${notice.kind ?: "에이전트 정보 없음"}", location, notice.worktreeBranch?.let { "브랜치 · $it" }, reason).joinToString("\n")
         val notification = NotificationCompat.Builder(context, CHANNEL_SESSIONS)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("${host.name} · ${notice.label}")
-            .setContentText(BODY[notice.status] ?: notice.status)
+            .setContentTitle("${notice.projectName ?: "프로젝트 없음"} · ${notice.label}")
+            .setContentText("${host.name} · $reason · $location")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setSilent(!notice.audible)
+            .setOnlyAlertOnce(!notice.audible)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(open)
             .build()
-        post(context, id, notification)
+        return post(context, id, notification)
     }
 
     fun resolve(context: Context, host: Host, sessionId: String) {
@@ -105,12 +112,14 @@ object Notifications {
         return !NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
 
-    private fun post(context: Context, id: Int, notification: Notification) {
-        if (blocked(context)) return
-        try {
+    private fun post(context: Context, id: Int, notification: Notification): Boolean {
+        if (blocked(context)) return false
+        return try {
             NotificationManagerCompat.from(context).notify(id, notification)
+            true
         } catch (_: SecurityException) {
             // 확인과 게시 사이에 권한이 회수됐다.
+            false
         }
     }
 

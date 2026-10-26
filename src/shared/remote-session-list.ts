@@ -20,7 +20,10 @@ export function applySessionMessage(
     case "removed":
       return sessions.filter((session) => session.id !== message.sessionId);
     case "status":
-      return sessions.map((session) => (session.id === message.sessionId ? { ...session, status: message.status } : session));
+      return sessions.map((session) => (session.id === message.sessionId ? { ...session, status: message.status, ...(message.attention ? { attention: message.attention } : {}) } : session));
+    case "seen":
+      return sessions.map(session => session.id === message.sessionId && (!session.attention || message.attention.generation >= session.attention.generation)
+        ? { ...session, attention: message.attention } : session);
     case "title":
       return sessions.map((session) => (session.id === message.sessionId ? { ...session, label: message.title } : session));
     case "exit":

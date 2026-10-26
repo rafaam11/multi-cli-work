@@ -23,6 +23,7 @@ interface SessionScreenProps {
   onMeasured?(size: TerminalSize): void;
   /** 헤더 바로 아래에 그리는 세션 탭 줄(좁은 화면). */
   tabs?: ReactNode;
+  onReady?(ready: boolean): void;
 }
 
 const FONT_SIZES = TERMINAL_FONT_SIZES;
@@ -33,7 +34,9 @@ const AUTO_FIT_DEBOUNCE_MS = 150;
  * 켜면 이 화면 폭으로 PTY를 줄인다. 넓은 화면(PC)은 반대로 이 창 크기에 맞추는 것이 기본이다. 어느
  * 쪽이든 호스트가 크기를 되찾으면(입력·패인 크기 변경) 맞춤이 꺼지거나 멈춘다.
  */
-export function SessionScreen({ client, session, deviceId, onBack, wide = false, onMeasured, tabs }: SessionScreenProps) {
+export function SessionScreen({ client, session, deviceId, onBack, wide = false, onMeasured, tabs, onReady }: SessionScreenProps) {
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -64,6 +67,10 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    let live = true;
+    let attachment = 0;
+    const notReady = () => { attachment++; onReadyRef.current?.(false); };
+    notReady();
     const terminal = new Terminal({
       fontSize: FONT_SIZES[TERMINAL_FONT_INDEX],
       fontFamily: 'ui-monospace, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace',
@@ -141,6 +148,10 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
         if (autoFit) autoFit.attached();
         else giveBackToggle(message.sizeOwner);
         gate.attached(message.replay, message.sequence);
+        const revision = attachment;
+        terminal.write("", () => requestAnimationFrame(() => {
+          if (live && revision === attachment) onReadyRef.current?.(true);
+        }));
       } else if (message.type === "data") {
         gate.data(message.data, message.sequence);
       } else if (message.type === "size") {
@@ -150,10 +161,12 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
       }
     });
     reattachRef.current = () => {
+      notReady();
       gate.reset();
       client.send({ type: "attach", sessionId: session.id });
     };
     const offState = client.onState((state) => {
+      notReady();
       if (state !== "open") return;
       gate.reset();
       phoneSizeRef.current = false;
@@ -278,6 +291,8 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
       host.removeEventListener("touchcancel", onTouchEnd);
       if (phoneSizeRef.current) client.send({ type: "releaseSize", sessionId: session.id });
       client.send({ type: "detach", sessionId: session.id });
+      live = false;
+      notReady();
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;

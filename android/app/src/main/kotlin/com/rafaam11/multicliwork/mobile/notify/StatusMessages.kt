@@ -5,16 +5,20 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /** 세션 목록에서 알림에 필요한 것만. 호스트의 RemoteSessionSummary에서 골라 읽는다. */
-data class SessionSummary(val id: String, val label: String, val status: String)
+data class SessionSummary(val id: String, val label: String, val status: String,
+    val projectName: String? = null, val cwd: String? = null, val kind: String? = null,
+    val worktreeBranch: String? = null, val attention: Attention? = null)
 
 /** 상태 연결이 쓰는 호스트 메시지(src/shared/remote-types.ts의 RemoteServerMessage 일부). */
 sealed interface StatusMessage {
-    data class Welcome(val hostName: String) : StatusMessage
+    data class Welcome(val hostName: String, val seenSync: Boolean = false) : StatusMessage
     data class Sessions(val sessions: List<SessionSummary>) : StatusMessage
     /** presence는 v1.37.0 호스트부터 온다. 없으면 null. */
-    data class Status(val sessionId: String, val status: String, val presence: String?) : StatusMessage
+    data class Status(val sessionId: String, val status: String, val presence: String?, val attention: Attention? = null) : StatusMessage
+    data class Seen(val sessionId: String, val attention: Attention) : StatusMessage
     data class Title(val sessionId: String, val title: String) : StatusMessage
     data class Exit(val sessionId: String) : StatusMessage
     data class Created(val session: SessionSummary) : StatusMessage
@@ -31,21 +35,23 @@ object StatusMessages {
     fun parse(raw: String): StatusMessage? {
         val value = runCatching { json.parseToJsonElement(raw) }.getOrNull() as? JsonObject ?: return null
         return when (value.text("type")) {
-            "welcome" -> value.text("hostName")?.let(StatusMessage::Welcome)
+            "welcome" -> value.text("hostName")?.let { name -> StatusMessage.Welcome(name,
+                (value["capabilities"] as? JsonArray)?.any { (it as? JsonPrimitive)?.content == "session-seen-v1" } == true) }
             "sessions" -> (value["sessions"] as? JsonArray)?.let { list ->
                 StatusMessage.Sessions(list.mapNotNull { (it as? JsonObject)?.let(::summary) })
             }
             "status" -> {
                 val sessionId = value.text("sessionId") ?: return null
                 val status = value.text("status") ?: return null
-                StatusMessage.Status(sessionId, status, value.text("presence"))
+                StatusMessage.Status(sessionId, status, value.text("presence"), attention(value))
             }
+            "seen" -> StatusMessage.Seen(value.text("sessionId") ?: return null, attention(value) ?: return null)
             "title" -> {
                 val sessionId = value.text("sessionId") ?: return null
                 StatusMessage.Title(sessionId, value.text("title") ?: return null)
             }
             "exit" -> value.text("sessionId")?.let(StatusMessage::Exit)
-            "created" -> (value["session"] as? JsonObject)?.let(::summary)?.let(StatusMessage::Created)
+            "created", "workspace" -> (value["session"] as? JsonObject)?.let(::summary)?.let(StatusMessage::Created)
             "removed" -> value.text("sessionId")?.let(StatusMessage::Removed)
             else -> null
         }
@@ -53,7 +59,15 @@ object StatusMessages {
 
     private fun summary(value: JsonObject): SessionSummary? {
         val id = value.text("id") ?: return null
-        return SessionSummary(id, value.text("label") ?: "세션", value.text("status") ?: return null)
+        return SessionSummary(id, value.text("label") ?: "세션", value.text("status") ?: return null,
+            value.text("projectName"), value.text("cwd"), value.text("kind"), value.text("worktreeBranch"), attention(value))
+    }
+
+    private fun attention(value: JsonObject): Attention? {
+        val state = value["attention"] as? JsonObject ?: return null
+        val generation = (state["generation"] as? JsonPrimitive)?.longOrNull ?: return null
+        val seen = (state["seenThrough"] as? JsonPrimitive)?.longOrNull ?: return null
+        return if (generation >= 0 && seen in 0..generation) Attention(generation, seen) else null
     }
 
     private fun JsonObject.text(key: String): String? {

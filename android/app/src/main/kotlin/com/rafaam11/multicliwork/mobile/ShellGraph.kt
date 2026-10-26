@@ -6,6 +6,7 @@ import com.rafaam11.multicliwork.mobile.data.KeystoreTokenSealer
 import com.rafaam11.multicliwork.mobile.data.NotifyPrefs
 import com.rafaam11.multicliwork.mobile.data.PrefsStore
 import com.rafaam11.multicliwork.mobile.net.HostApi
+import com.rafaam11.multicliwork.mobile.notify.AttentionLedger
 
 /** 앱 전역에서 하나씩만 쓰는 것들. */
 object ShellGraph {
@@ -13,4 +14,5 @@ object ShellGraph {
     private val sealer = KeystoreTokenSealer()
     fun hosts(context: Context) = HostRepository(PrefsStore(context), sealer)
     fun notifyPrefs(context: Context) = NotifyPrefs(PrefsStore(context, "mcw-notify"))
+    fun attention(context: Context, hostId: String) = AttentionLedger(PrefsStore(context, "mcw-attention", durable = true), hostId)
 }
