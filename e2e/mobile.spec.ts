@@ -110,6 +110,14 @@ process.stdin.on("data", (data) => {
       },
     });
     page = await app.firstWindow();
+    page.on("pageerror", error => console.error("Mobile E2E renderer error:", error.message));
+  });
+
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus && page && !page.isClosed()) {
+      await page.screenshot({ path: testInfo.outputPath("desktop-failure.png") });
+      console.error("Desktop at failure:", page.url(), await page.locator("body").innerText());
+    }
   });
 
   test.afterAll(async () => {
@@ -251,4 +259,76 @@ process.stdin.on("data", (data) => {
     await page.evaluate((deviceId) => window.multiCliWork.remote.revokeDevice(deviceId), devices[0]!.deviceId);
     await expect(phone.getByText("이 기기의 연결이 해제되었습니다. 다시 페어링하세요.")).toBeVisible();
   });
+
+  for (const mode of ["normal", "alternate"] as const) {
+    test(`reads earlier CLI-owned text in ${mode} buffer and preserves the terminal through the drawer`, async ({}, testInfo) => {
+      const phonePromise = app.waitForEvent("window");
+      await app.evaluate(({ BrowserWindow }) => {
+        const window = new BrowserWindow({ width: 390, height: 844, show: true });
+        void window.loadURL("about:blank");
+      });
+      const phone = await phonePromise;
+      await phone.setViewportSize({ width: 390, height: 844 });
+      await phone.addInitScript(() => {
+        (window as unknown as { McwShell: unknown }).McwShell = {
+          bridgeVersion: () => 2,
+          pairingJson: () => JSON.stringify({ token: "fixture", deviceId: "phone", hostName: "연구실 PC" }),
+          unpaired: () => {}, backToHosts: () => {}, isForeground: () => true, viewingSession: () => {},
+        };
+      });
+      let attaches = 0;
+      let resizes = 0;
+      let sequence = 1;
+      const active = { id: "fixture", projectId: "p1", projectName: "multi-cli-work", kind: mode === "normal" ? "codex" : "claude",
+        label: "모바일 화면 개선", status: "awaiting-input", updatedAt: NOW, cwd: "C:\\dev\\multi-cli-work\\feature", projectRootPath: "C:\\dev\\multi-cli-work", attention: { generation: 1, seenThrough: 0 } };
+      await phone.routeWebSocket(`ws://127.0.0.1:${port}/ws`, socket => {
+        const send = (message: unknown) => socket.send(JSON.stringify(message));
+        socket.onMessage(raw => {
+          const message = JSON.parse(String(raw));
+          if (message.type === "hello") {
+            send({ type: "welcome", hostId: "fixture-host", hostName: "연구실 PC", deviceId: "phone", protocolVersion: 1, shellLatest: null, capabilities: ["session-seen-v1"] });
+            send({ type: "sessions", sessions: [active,
+              { ...active, id: "other-path", cwd: "C:\\dev\\multi-cli-work\\main", label: "회귀 테스트", status: "working" },
+              { ...active, id: "other-project", projectId: "p2", projectRootPath: "D:\\archive\\multi-cli-work", cwd: "D:\\archive\\multi-cli-work", label: "승인 대기", status: "awaiting-approval" },
+            ] });
+          } else if (message.type === "attach") {
+            attaches++;
+            send({ type: "attached", sessionId: message.sessionId, sequence, cols: 44, rows: 20, sizeOwner: "desktop", scrollback: 10000,
+              replay: `${mode === "alternate" ? "\x1b[?1049h" : ""}\x1b[?1000h\x1b[?1006h\x1b[HRECENT_ANSWER\r\nDrag down to read earlier text` });
+          } else if (message.type === "resize") resizes++;
+          else if (message.type === "write" && /\u001b\[<64;/.test(message.data)) {
+            send({ type: "data", sessionId: "fixture", sequence: ++sequence, data: "\x1b[2J\x1b[HEARLIER_ANSWER_001\r\nThis older conversation is now readable." });
+          }
+        });
+      });
+      await phone.goto(`http://127.0.0.1:${port}/mobile/#session=fixture`);
+      await expect(phone.locator(".xterm-rows")).toContainText("RECENT_ANSWER");
+      const terminal = await phone.locator(".xterm").elementHandle();
+      const before = { attaches, resizes };
+      await phone.getByRole("button", { name: "세션 사이드바 열기" }).click();
+      await expect(phone.getByRole("dialog")).toBeVisible();
+      await expect(phone.locator(".m-drawer-project")).toHaveCount(2);
+      await expect(phone.locator(".m-drawer-path-label").first()).toHaveText(active.cwd);
+      await phone.screenshot({ path: testInfo.outputPath(`mobile-${mode}-drawer.png`) });
+      await phone.goBack();
+      await expect(phone.getByRole("dialog")).toBeHidden();
+      expect(await terminal?.evaluate(node => node === document.querySelector(".xterm"))).toBe(true);
+      expect({ attaches, resizes }).toEqual(before);
+      await phone.getByRole("button", { name: "현재 세션 경로" }).click();
+      await expect(phone.locator(".m-context-full")).toContainText(active.cwd);
+      await phone.getByRole("button", { name: "전체 경로 닫기" }).click();
+      const box = await phone.locator(".m-terminal").boundingBox();
+      if (!box) throw new Error("terminal missing");
+      const cdp = await phone.context().newCDPSession(phone);
+      const x = box.x + Math.min(box.width / 2, 150);
+      const startY = box.y + 20;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: startY }] });
+      for (let step = 1; step <= 10; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: startY + step * ((box.height - 40) / 10) }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect(phone.locator(".xterm-rows")).toContainText("EARLIER_ANSWER_001");
+      await phone.screenshot({ path: testInfo.outputPath(`mobile-${mode}-history.png`) });
+      await cdp.detach();
+      await phone.close();
+    });
+  }
 });
