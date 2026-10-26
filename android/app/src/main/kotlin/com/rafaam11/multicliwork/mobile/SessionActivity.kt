@@ -78,12 +78,26 @@ class SessionActivity : ComponentActivity() {
                         else ShellGraph.attention(this, host.hostId).localSeen(sessionId, generation)
                     } else ForegroundTracker.clear(host.hostId)
                 } },
+                onLegacyViewing = { sessionId, status -> runOnUiThread {
+                    if (foreground && sessionId.isNotEmpty()) {
+                        ForegroundTracker.viewingHostId = host.hostId
+                        ForegroundTracker.viewingSessionId = sessionId
+                        val listener = ForegroundTracker.onLegacyViewed
+                        if (listener != null) listener(host.hostId, sessionId, status)
+                        else ShellGraph.attention(this, host.hostId).legacySeen(sessionId, status)
+                    } else ForegroundTracker.clear(host.hostId)
+                } },
             ),
             "McwShell",
         )
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                 ForegroundTracker.clear(host.hostId)
+            }
+            override fun onPageFinished(view: WebView, url: String?) {
+                if (url != null && HostOrigin.isInside(host.address, url)) {
+                    view.evaluateJavascript(assets.open("legacy-viewing.js").bufferedReader().use { it.readText() }, null)
+                }
             }
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 !HostOrigin.isInside(host.address, request.url.toString())

@@ -52,6 +52,9 @@ class HostLink(
     fun viewed(sessionId: String, generation: Long?) {
         if (tracker.viewed(sessionId, generation)) listener.onResolved(host, sessionId)
     }
+    fun viewedLegacy(sessionId: String, status: String) {
+        if (!seenSync && tracker.viewedLegacy(sessionId, status)) listener.onResolved(host, sessionId)
+    }
     private val backoff = Backoff()
     private var socket: WebSocket? = null
     private var stopped = false

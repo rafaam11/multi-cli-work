@@ -234,6 +234,7 @@ const api: MultiCliWorkApi = {
     exportLog: (sessionId, fileLabel) => ipcRenderer.invoke("terminals:export-log", sessionId, fileLabel),
     select: (projectId, sessionId) => ipcRenderer.invoke("terminals:select", projectId, sessionId),
     setVisibleSessions: (sessionIds) => ipcRenderer.invoke("terminals:set-visible-sessions", sessionIds),
+    setExposedSessions: (sessionIds) => ipcRenderer.invoke("terminals:set-exposed-sessions", sessionIds),
     setSlotViews: (input) => ipcRenderer.invoke("terminals:set-slot-views", input),
     onEvent(listener) {
       const handler = (_event: Electron.IpcRendererEvent, terminalEvent: TerminalEvent) => listener(terminalEvent);

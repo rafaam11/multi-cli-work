@@ -74,5 +74,6 @@ class StatusTracker(private val ledger: AttentionLedger = AttentionLedger(Memory
         ledger.localSeen(sessionId, generation)
         return ledger.isSeen(sessionId)
     }
+    fun viewedLegacy(sessionId: String, status: String): Boolean = ledger.legacySeen(sessionId, status)
     fun disconnected() { sessions = emptyList() }
 }

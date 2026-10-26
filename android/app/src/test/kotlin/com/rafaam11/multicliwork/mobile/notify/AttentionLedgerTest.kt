@@ -5,6 +5,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AttentionLedgerTest {
+    @Test fun legacyViewingRequiresTheDisplayedStatusAndRearmsFutureWaits() {
+        val ledger = AttentionLedger(Memory(), "old-host")
+        ledger.observe("s", "awaiting-input", null)
+        ledger.posted("s", "awaiting-input")
+        ledger.observe("s", "awaiting-approval", null)
+        assertFalse(ledger.legacySeen("s", "awaiting-input"))
+        assertTrue(ledger.audible("s", "awaiting-approval"))
+        assertTrue(ledger.legacySeen("s", "awaiting-approval"))
+        assertFalse(ledger.audible("s", "awaiting-approval"))
+        ledger.observe("s", "working", null)
+        ledger.observe("s", "awaiting-input", null)
+        assertTrue(ledger.audible("s", "awaiting-input"))
+    }
     @Test fun approvalFirstConsumesBothLevelsUntilSeenAndLegacyPhoneViewsPersist() {
         val storage = Memory()
         val ledger = AttentionLedger(storage, "legacy")

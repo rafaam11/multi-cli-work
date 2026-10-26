@@ -34,7 +34,14 @@ class StatusService : Service(), HostLink.Listener {
     override fun onCreate() {
         super.onCreate()
         Notifications.ensureChannels(this)
-        ForegroundTracker.onViewed = { hostId, sessionId, generation -> links[hostId]?.viewed(sessionId, generation) }
+        ForegroundTracker.onViewed = { hostId, sessionId, generation ->
+            val link = links[hostId]
+            if (link != null) link.viewed(sessionId, generation) else ShellGraph.attention(this, hostId).localSeen(sessionId, generation)
+        }
+        ForegroundTracker.onLegacyViewed = { hostId, sessionId, status ->
+            val link = links[hostId]
+            if (link != null) link.viewedLegacy(sessionId, status) else ShellGraph.attention(this, hostId).legacySeen(sessionId, status)
+        }
         // 호스트도 30초마다 ping한다. 이쪽 ping은 Doze 뒤처럼 조용히 죽은 연결을 알아채려는 것이다.
         client = OkHttpClient.Builder().pingInterval(45, TimeUnit.SECONDS).readTimeout(0, TimeUnit.MILLISECONDS).build()
         val callback = object : ConnectivityManager.NetworkCallback() {
@@ -69,6 +76,7 @@ class StatusService : Service(), HostLink.Listener {
 
     override fun onDestroy() {
         ForegroundTracker.onViewed = null
+        ForegroundTracker.onLegacyViewed = null
         links.values.forEach(HostLink::stop)
         links.clear()
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }

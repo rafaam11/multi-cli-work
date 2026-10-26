@@ -41,6 +41,11 @@ class AttentionLedger(private val store: KeyValueStore, hostId: String) {
         if (generation > previous.generation || generation < 0) return
         sync(id, Attention(previous.generation, generation))
     }
+    fun legacySeen(id: String, displayedStatus: String): Boolean {
+        if (entries[id]?.status != displayedStatus) return false
+        localSeen(id, null)
+        return isSeen(id)
+    }
     fun isSeen(id: String): Boolean = entries[id]?.let { it.seenThrough >= it.generation } ?: false
     fun audible(id: String, status: String): Boolean = !isSeen(id) && severity(status) > (entries[id]?.severity ?: 0)
     fun posted(id: String, status: String) {

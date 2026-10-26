@@ -43,6 +43,8 @@ function storage(): Storage | null {
 }
 
 export function MobileApp() {
+  // The native shell's old-host adapter must not compete with generation-aware viewing.
+  useEffect(() => { (window as unknown as { __mcwSessionViewingV2: boolean }).__mcwSessionViewingV2 = true; }, []);
   const [bridge] = useState(() => readShellBridge(window as unknown as { McwShell?: unknown }));
   const [pairing, setPairing] = useState<StoredPairing | null>(() => bridge?.pairing ?? loadPairing(storage()));
   const [notice, setNotice] = useState<string | null>(null);

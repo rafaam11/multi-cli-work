@@ -357,6 +357,7 @@ export interface MainIpcDependencies {
   editAgents(): Promise<void>;
   attentionState(): Record<string, SessionAttention>;
   onSessionSelected?(sessionId: string | null): void;
+  onExposedSessions?(sessionIds: string[]): void;
   /** 메인 창의 렌더러가 보낸 요청인지. 없으면(테스트) 모든 요청을 받는다. */
   isTrustedSender?(event: unknown): boolean;
   settings: {

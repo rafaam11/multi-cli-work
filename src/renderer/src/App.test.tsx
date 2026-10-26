@@ -633,6 +633,7 @@ function createApi(options?: {
         },
       }),
       setVisibleSessions: vi.fn().mockResolvedValue(appState),
+      setExposedSessions: vi.fn().mockResolvedValue(undefined),
       setSlotViews: vi.fn().mockResolvedValue(appState),
       onEvent: vi.fn((listener) => {
         listeners.add(listener);
@@ -3100,6 +3101,22 @@ describe("prompt fan-out", () => {
 });
 
 describe("workspace grid", () => {
+  it("reports only exposed terminals as mobile views, excluding detail and zoom-hidden panes", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "claude 터미널" });
+    await waitFor(() => expect(harness.api.terminals.setExposedSessions).toHaveBeenLastCalledWith([claudeSession.id, powershellSession.id]));
+    fireEvent.click(screen.getByRole("button", { name: "폴더 상세" }));
+    await waitFor(() => expect(harness.api.terminals.setExposedSessions).toHaveBeenLastCalledWith([]));
+    fireEvent.click(screen.getByRole("button", { name: "Atlas 폴더 선택" }));
+    await screen.findByRole("region", { name: "claude 터미널" });
+    fireEvent.click(screen.getAllByRole("button", { name: "패인 확대" })[0]!);
+    await waitFor(() => expect(harness.api.terminals.setExposedSessions).toHaveBeenLastCalledWith([claudeSession.id]));
+    fireEvent.click(screen.getByRole("button", { name: "홈 대시보드 열기" }));
+    await waitFor(() => expect(harness.api.terminals.setExposedSessions).toHaveBeenLastCalledWith([]));
+  });
+
   it("opens a folder straight into a grid of its sessions, most recent first", async () => {
     // Boots on Dashboard, which owns no session at all, so the grid starts empty.
     const harness = createApi({

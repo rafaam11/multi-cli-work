@@ -610,6 +610,8 @@ export interface MultiCliWorkApi {
     select(projectId: string | null, sessionId: string | null): Promise<AppStateSnapshot>;
     /** Which sessions fill the grid panes on the current page; an empty array collapses the grid. */
     setVisibleSessions(sessionIds: readonly string[]): Promise<AppStateSnapshot>;
+    /** Transient foreground exposure, independent of the persisted layout and desktop badge policy. */
+    setExposedSessions(sessionIds: readonly string[]): Promise<void>;
     /** The saved arrangements — each folder's grid and the curated workspaces. */
     setSlotViews(input: SlotViewsInput): Promise<AppStateSnapshot>;
     onEvent(listener: (event: TerminalEvent) => void): () => void;

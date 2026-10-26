@@ -628,6 +628,7 @@ export async function createDesktopRuntime(
     deviceName: remoteDeviceName,
     send: (owner) => sendToMainWindow(host.getMainWindow(), "terminals:size-owner", owner),
   });
+  let mobileExposedSessions = new Set<string>();
   const remoteHub = new RemoteSessionHub({
     attention: new MobileAttentionStore(path.join(userData, "mobile-attention.json")),
     gateway: {
@@ -643,11 +644,10 @@ export async function createDesktopRuntime(
       projectRootPath: async (projectId) => (await getProject(projectId))?.rootPath ?? null,
       scrollback: () => settingsService.current().terminal.scrollback,
       isSessionViewed: async (sessionId) => {
-        const { state } = await coordinator.state();
         const window = mainWindowState(host.getMainWindow());
         return window.visible && window.focused &&
           desktopPresence(window, powerMonitor.getSystemIdleState(PRESENCE_IDLE_THRESHOLD_SECONDS)) === "focused" &&
-          (state.visibleSessionIds ?? [state.selectedSessionId]).includes(sessionId);
+          mobileExposedSessions.has(sessionId);
       },
       catalog: async () =>
         buildRemoteCatalog(
@@ -1114,6 +1114,10 @@ export async function createDesktopRuntime(
     onSessionSelected(sessionId) {
       attention.markSeen(sessionId);
       void remoteHub.desktopViewed(sessionId).catch(error => console.error("Mobile seen update failed", error));
+    },
+    onExposedSessions(sessionIds) {
+      mobileExposedSessions = new Set(sessionIds);
+      void remoteHub.desktopViewed().catch(error => console.error("Mobile seen update failed", error));
     },
     isTrustedSender: (event) => isMainWindowSender(host.getMainWindow(), event),
   });
