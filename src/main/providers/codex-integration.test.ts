@@ -26,6 +26,34 @@ describe("ensureCodexIntegration", () => {
     });
   });
 
+  it("hands Codex the work-project brief as SessionStart context, ASCII-escaped, and still reports status", async () => {
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-codex-hook-"));
+    roots.push(root);
+    const result = await ensureCodexIntegration({ userData: root, codexHome: path.join(root, "codex") });
+    const briefPath = path.join(root, "brief.md");
+    await fs.writeFile(briefPath, "# 업무 프로젝트: 테스트\n\n## 레포 최신화 (세션 시작 시점)\n\n레포 1개 중 1개 최신화 🚀\n", "utf8");
+    const run = async (env: Record<string, string>) => {
+      // The test runner may itself live in an mcw session that carries a brief of its own.
+      const child = promisify(execFile)(process.execPath, [result.hookScriptPath], {
+        env: { ...process.env, MULTI_CLI_WORK_PROJECT_BRIEF: "", ...env },
+      });
+      child.child.stdin?.end(JSON.stringify({ hook_event_name: "SessionStart", session_id: "codex-1", cwd: root }));
+      return (await child).stdout;
+    };
+
+    const stdout = await run({ MULTI_CLI_WORK_SESSION_ID: "shell-1", MULTI_CLI_WORK_STATUS_DIR: root, MULTI_CLI_WORK_PROJECT_BRIEF: briefPath });
+    expect(stdout).toMatch(/^[\x20-\x7e]*$/);
+    const output = JSON.parse(stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    expect(output.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(output.hookSpecificOutput.additionalContext).toBe(await fs.readFile(briefPath, "utf8"));
+    expect(JSON.parse(await fs.readFile(path.join(root, "shell-1.json"), "utf8"))).toMatchObject({ provider: "codex" });
+
+    // A folder outside any work project gets no brief, and the hook then prints nothing at all.
+    expect(await run({ MULTI_CLI_WORK_SESSION_ID: "shell-2", MULTI_CLI_WORK_STATUS_DIR: root })).toBe("");
+    await fs.writeFile(briefPath, "  \n", "utf8");
+    expect(await run({ MULTI_CLI_WORK_PROJECT_BRIEF: briefPath })).toBe("");
+  });
+
   it("writes an app-owned SessionStart profile without bypassing hook trust", async () => {
     const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-codex-hook-"));
     roots.push(root);
