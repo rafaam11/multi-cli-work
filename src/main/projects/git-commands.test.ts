@@ -54,6 +54,9 @@ afterEach(async () => {
   await fs.rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
+// Each case spawns git a dozen times; Windows CI runners take several seconds for that.
+const REAL_GIT = { timeout: 30_000 };
+
 describe("parseGitStatusV2", () => {
   it("reads branch headers, ordinary changes, untracked files, renames, and ignored paths", () => {
     const output = [
@@ -94,7 +97,7 @@ describe("parseGitStatusV2", () => {
   });
 });
 
-describe("git panel data against a real repo", () => {
+describe("git panel data against a real repo", REAL_GIT, () => {
   it("reports branch, changes, and the branch list", async () => {
     await write("readme.md", "changed\n");
     await write("fresh.txt", "new\n");
@@ -143,7 +146,7 @@ describe("git panel data against a real repo", () => {
   });
 });
 
-describe("branch operations", () => {
+describe("branch operations", REAL_GIT, () => {
   it("creates a branch, then checks the original back out", async () => {
     await createGitBranch(repoRoot, "feature/x");
     expect((await readGitPanelData(repoRoot)).currentBranch).toBe("feature/x");
@@ -172,7 +175,7 @@ describe("branch operations", () => {
   );
 });
 
-describe("commitGitFiles", () => {
+describe("commitGitFiles", REAL_GIT, () => {
   it("commits exactly the checked files, staging untracked ones first", async () => {
     await write("readme.md", "changed\n");
     await write("fresh.txt", "new\n");
@@ -210,7 +213,7 @@ describe("commitGitFiles", () => {
   });
 });
 
-describe("readGitFileOriginal", () => {
+describe("readGitFileOriginal", REAL_GIT, () => {
   it("returns the HEAD content for a tracked file and empty for a path new since HEAD", async () => {
     await write("readme.md", "changed\n");
     await write("fresh.txt", "new\n");
@@ -224,7 +227,7 @@ describe("readGitFileOriginal", () => {
   });
 });
 
-describe("remote operations against a local bare origin", () => {
+describe("remote operations against a local bare origin", REAL_GIT, () => {
   let originPath: string;
 
   beforeEach(async () => {
