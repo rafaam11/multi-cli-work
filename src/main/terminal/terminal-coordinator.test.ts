@@ -481,9 +481,15 @@ describe("TerminalCoordinator", () => {
     });
     await instance.initialize();
     await instance.create({ projectId: "project-1", kind: "claude", cols: 80, rows: 24 });
+    const renamed: unknown[] = [];
+    instance.onEvent((event) => {
+      if (event.type === "renamed") renamed.push(event);
+    });
 
     const named = await instance.rename("session-1", "  내 이름  ");
     expect(named).toMatchObject({ name: "내 이름", title: null });
+    // Remote screens list sessions by name, so a rename is announced like any other change.
+    expect(renamed).toEqual([{ type: "renamed", sessionId: "session-1", session: expect.objectContaining({ name: "내 이름" }) }]);
 
     await instance.refreshTitles();
     expect(instance.list()[0]).toMatchObject({ name: "내 이름", title: "프로바이더 제목" });

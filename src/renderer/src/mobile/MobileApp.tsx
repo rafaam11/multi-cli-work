@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { RemoteCatalog, RemoteSessionSummary } from "@shared/remote-types";
+import type { RemoteCatalog, RemoteMirror, RemoteSessionSummary, RemoteViewAction } from "@shared/remote-types";
 import { startSize, type MeasuredSize } from "./initial-size";
 import { NewSessionForm } from "./NewSessionForm";
+import { MirrorGrid } from "./MirrorGrid";
 import { closePane, gridColumns, loadPanes, placePane, savePanes } from "./pane-grid";
 import { PairScreen } from "./PairScreen";
+import { ProjectTree } from "./ProjectTree";
 import {
   clearPairing,
   loadPairing,
@@ -13,6 +15,7 @@ import {
   type RemoteClientState,
   type StoredPairing,
 } from "./remote-client";
+import { SHELF_TEXT } from "../shelves";
 import { SessionList } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
 import { applySessionMessage } from "./session-list-model";
@@ -39,6 +42,18 @@ function storage(): Storage | null {
   }
 }
 
+/** 미러 도구줄에 쓰는 호스트가 보는 곳의 이름. */
+function mirrorPlaceLabel(mirror: RemoteMirror): string {
+  const place = mirror.view.place;
+  if (place.kind === "shelf") return SHELF_TEXT[place.shelf].name;
+  if (place.kind === "other") return "호스트 화면";
+  const folder = mirror.tree.flatMap((section) => section.folders).find((item) => item.id === place.projectId);
+  if (!folder) return "호스트 화면";
+  if (place.worktreeId === null) return folder.name;
+  const worktree = folder.worktrees.find((item) => item.id === place.worktreeId);
+  return worktree ? `${folder.name} · ${worktree.branch}` : folder.name;
+}
+
 export function MobileApp() {
   const [bridge] = useState(() => readShellBridge(window as unknown as { McwShell?: unknown }));
   const [pairing, setPairing] = useState<StoredPairing | null>(() => bridge?.pairing ?? loadPairing(storage()));
@@ -49,11 +64,17 @@ export function MobileApp() {
   const wide = useWideLayout();
   /** 새 세션 폼이 열려 있는지와, 호스트가 알려 준 폴더·에이전트 목록. */
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  /** 트리의 "+"로 열면 그 폴더·worktree가 골라진 채로 연다. */
+  const [newSessionInitial, setNewSessionInitial] = useState<{ projectId: string; worktreeId: string | null } | null>(null);
+  // 목록에서 세션을 누를 때마다 늘린다 — 호스트 포커스가 이미 그 칸이어도 키보드가 터미널로 가게.
+  const [mirrorFocusRequest, setMirrorFocusRequest] = useState(0);
   const [catalog, setCatalog] = useState<RemoteCatalog | null>(null);
   /** 호스트가 거절한 이유 — 이미 끝난 세션, 지울 수 없는 세션 같은 것. */
   const [refusal, setRefusal] = useState<string | null>(null);
   /** 세션 화면이 마지막으로 잰 터미널 크기. 새 세션을 이 화면에 맞는 크기로 띄우는 데 쓴다. */
   const measuredRef = useRef<MeasuredSize | null>(null);
+  /** 호스트 메인 창의 트리와 그리드. null이면 호스트 창이 없거나 구버전이라 이 화면이 자기 그리드를 쓴다. */
+  const [mirror, setMirror] = useState<RemoteMirror | null>(null);
 
   /**
    * 넓은 화면 그리드에 떠 있는 세션들. 포커스(키보드) 칸은 `openSessionId`이고, 해시도 그것만 따른다.
@@ -76,16 +97,29 @@ export function MobileApp() {
   openSessionIdRef.current = openSessionId;
   const wideRef = useRef(wide);
   wideRef.current = wide;
+  /** 넓은 화면이 호스트 그리드를 따라 그리는 중인지. 그때는 칸을 이 화면이 놓지 않고 호스트에 요청한다. */
+  const mirroring = wide && mirror !== null;
+  const mirroringRef = useRef(mirroring);
+  mirroringRef.current = mirroring;
 
   // 포커스로 온 세션이 칸에 없으면 놓는다 — 목록·링크·새 세션 어디서 왔든. 가득 찼으면 직전 포커스 칸을 바꾼다.
   const previousFocusRef = useRef<string | null>(null);
   useEffect(() => {
     const previous = previousFocusRef.current;
-    if (wide && openSessionId) {
+    if (wide && openSessionId && !mirroringRef.current) {
       setPanes((current) => (current.includes(openSessionId) ? current : placePane(current, previous, openSessionId)));
     }
     previousFocusRef.current = openSessionId;
   }, [wide, openSessionId]);
+
+  // 호스트 그리드를 따라 그릴 때 포커스·해시는 호스트의 포커스 칸을 따른다. 문서 칸이면 그대로 둔다.
+  const mirrorFocusId =
+    mirror?.view.slots.find((slot) => slot?.kind === "session" && slot.id === mirror.view.focusedPaneId)?.id ?? null;
+  useEffect(() => {
+    if (!mirroring || !mirrorFocusId || mirrorFocusId === openSessionIdRef.current) return;
+    window.history.replaceState(window.history.state, "", sessionHash(mirrorFocusId));
+    setOpenSessionId(mirrorFocusId);
+  }, [mirroring, mirrorFocusId]);
 
   // 세션 화면은 history 항목 하나다 — Android 뒤로가기(WebView goBack)가 PC 목록이 아니라 세션 목록으로
   // 돌아오게. 링크(알림)로 바로 열었으면 목록 항목을 그 아래에 깔아 둔다.
@@ -141,9 +175,11 @@ export function MobileApp() {
       if (message.type === "removed") setPanes((current) => current.filter((id) => id !== message.sessionId));
       if (message.type === "catalog") setCatalog({ projects: message.projects, agents: message.agents });
       // 이 화면이 만들거나 다시 시작한 세션 — 바로 연다. 목록에는 created가 따로 실어 온다.
+      // 호스트 그리드를 따라 그리는 중이면 호스트 그리드에 연다 — 포커스가 돌아오며 이 화면도 따른다.
       else if (message.type === "started") {
-        showSessionRef.current(message.sessionId, openSessionIdRef.current ? "session" : "list");
-      }
+        if (mirroringRef.current) next.send({ type: "view", action: "open", sessionId: message.sessionId });
+        else showSessionRef.current(message.sessionId, openSessionIdRef.current ? "session" : "list");
+      } else if (message.type === "mirror") setMirror(message.mirror);
       // 인증·버전 오류는 연결이 끊기며 따로 처리된다. 여기서는 요청이 거절된 이유만 보인다.
       else if (message.type === "error" && message.code !== "unauthorized" && message.code !== "protocol") {
         setRefusal(message.message);
@@ -168,6 +204,7 @@ export function MobileApp() {
       offState();
       next.close();
       setClient(null);
+      setMirror(null);
     };
   }, [pairing, bridge]);
 
@@ -189,9 +226,10 @@ export function MobileApp() {
   }
 
   const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
-  const openNewSessionForm = () => {
+  const openNewSessionForm = (initial: { projectId: string; worktreeId: string | null } | null = null) => {
     // 폴더·에이전트는 열 때마다 다시 묻는다 — 호스트에서 그사이 바뀌었을 수 있다.
     setCatalog(null);
+    setNewSessionInitial(initial);
     setNewSessionOpen(true);
     client.send({ type: "catalog" });
   };
@@ -205,14 +243,41 @@ export function MobileApp() {
     window.history.replaceState(window.history.state, "", next.focusedId ? sessionHash(next.focusedId) : listUrl());
     setOpenSessionId(next.focusedId);
   };
+  const sendView = (action: RemoteViewAction) => client.send({ type: "view", ...action });
+  const rename = (sessionId: string) => (name: string) => client.send({ type: "rename", sessionId, name });
+  const mirrorSessionIds = mirror
+    ? mirror.view.slots.flatMap((slot) => (slot?.kind === "session" ? [slot.id] : []))
+    : [];
+  /** 목록·트리에서 세션을 누르면: 호스트 그리드를 따르면 호스트에 열고, 아니면 이 화면에 연다. */
+  const openFromList = (sessionId: string) => {
+    if (mirroring) {
+      sendView({ action: "open", sessionId });
+      setMirrorFocusRequest((count) => count + 1);
+    } else showSession(sessionId, "list");
+  };
+  const disabled = connection !== "open";
+  const tree = mirror ? (
+    <ProjectTree
+      tree={mirror.tree}
+      sessions={sessions}
+      place={mirror.view.place}
+      onScreenSessionIds={wide ? mirrorSessionIds : []}
+      disabled={disabled}
+      onSelectFolder={
+        mirroring ? (projectId, worktreeId) => sendView({ action: "select-folder", projectId, worktreeId }) : undefined
+      }
+      onNewSession={(projectId, worktreeId) => openNewSessionForm({ projectId, worktreeId })}
+      onOpenSession={openFromList}
+    />
+  ) : null;
   const list = (
     <SessionList
       hostName={pairing.hostName}
       connection={connection}
       sessions={sessions}
-      onOpen={(sessionId) => showSession(sessionId, "list")}
-      activeSessionId={wide ? (openSession?.id ?? null) : null}
-      onScreenSessionIds={wide ? gridSessions.map((session) => session.id) : []}
+      onOpen={openFromList}
+      activeSessionId={wide ? (mirroring ? mirrorFocusId : (openSession?.id ?? null)) : null}
+      onScreenSessionIds={wide ? (mirroring ? mirrorSessionIds : gridSessions.map((session) => session.id)) : []}
       onMoveShelf={(sessionId, shelf) => client.send({ type: "shelf", sessionId, shelf })}
       leaveLabel={bridge ? "호스트 목록" : "연결 해제"}
       onUnpair={() => {
@@ -223,11 +288,14 @@ export function MobileApp() {
         clearPairing(storage());
         setPairing(null);
       }}
-      onNewSession={openNewSessionForm}
+      onNewSession={() => openNewSessionForm()}
+      footer={tree}
     >
       {newSessionOpen ? (
         <NewSessionForm
+          key={newSessionInitial ? `${newSessionInitial.projectId}:${newSessionInitial.worktreeId ?? ""}` : "blank"}
           catalog={catalog}
+          initial={newSessionInitial}
           onStart={(projectId, kind, worktreeId) => {
             const size = startSize({
               measured: measuredRef.current,
@@ -262,6 +330,7 @@ export function MobileApp() {
       wide={wide}
       onBack={showList}
       onMeasured={measured}
+      onRename={rename(openSession.id)}
       tabs={
         wide ? undefined : (
           <SessionTabs
@@ -278,6 +347,42 @@ export function MobileApp() {
     />
   ) : null;
 
+  if (mirroring && mirror) {
+    return (
+      <>
+        <div className="m-wide">
+          {list}
+          <MirrorGrid
+            view={mirror.view}
+            placeLabel={mirrorPlaceLabel(mirror)}
+            sessions={sessions}
+            disabled={disabled}
+            onView={sendView}
+            renderPane={(pane) => (
+              <SessionScreen
+                key={pane.session.id}
+                client={client}
+                session={pane.session}
+                deviceId={pairing.deviceId}
+                wide
+                fitOnlyWhenFocused
+                focused={pane.focused}
+                onBack={showList}
+                onMeasured={pane.focused ? measured : undefined}
+                onFocus={pane.onFocus}
+                onClose={pane.onClose}
+                paneActions={pane.actions}
+                onHeaderDragStart={pane.onDragStart}
+                onRename={rename(pane.session.id)}
+                focusRequest={mirrorFocusRequest}
+              />
+            )}
+          />
+        </div>
+        {toast}
+      </>
+    );
+  }
   if (wide) {
     return (
       <>
@@ -303,6 +408,7 @@ export function MobileApp() {
                     onMeasured={focused ? measured : undefined}
                     onFocus={() => showSession(session.id, "session")}
                     onClose={() => closeGridPane(session.id)}
+                    onRename={rename(session.id)}
                   />
                 );
               })}

@@ -101,6 +101,17 @@ describe("SessionScreen", () => {
     expect(keyHandlers[0]!(plain as unknown as KeyboardEvent)).toBe(true);
   });
 
+  it("takes the keyboard back when asked again while already focused", () => {
+    const { client } = fakeClient();
+    const { rerender } = render(<SessionScreen wide client={client} session={SESSION} deviceId="d" onBack={vi.fn()} focusRequest={0} />);
+    focus.mockClear();
+    rerender(<SessionScreen wide client={client} session={SESSION} deviceId="d" onBack={vi.fn()} focusRequest={1} />);
+    expect(focus).toHaveBeenCalledOnce();
+    focus.mockClear();
+    rerender(<SessionScreen wide focused={false} client={client} session={SESSION} deviceId="d" onBack={vi.fn()} focusRequest={2} />);
+    expect(focus).not.toHaveBeenCalled();
+  });
+
   it("offers stop for a running session and restart for a finished one", () => {
     const { client, send } = fakeClient();
     const { rerender } = render(<SessionScreen client={client} session={SESSION} deviceId="d" onBack={vi.fn()} />);
@@ -112,6 +123,24 @@ describe("SessionScreen", () => {
     expect(screen.queryByRole("button", { name: "중지" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "재시작" }));
     expect(send).toHaveBeenLastCalledWith({ type: "resume", sessionId: "s1" });
+  });
+
+  it("renames from a double-clicked title, and leaves it alone on Escape or no change", () => {
+    const onRename = vi.fn();
+    render(<SessionScreen client={fakeClient().client} session={SESSION} deviceId="d" onBack={vi.fn()} onRename={onRename} />);
+    const title = () => screen.getByRole("heading", { name: SESSION.label });
+
+    fireEvent.doubleClick(title());
+    fireEvent.keyDown(screen.getByLabelText("세션 이름"), { key: "Escape" });
+    fireEvent.doubleClick(title());
+    fireEvent.submit(screen.getByLabelText("세션 이름"));
+    expect(onRename).not.toHaveBeenCalled();
+
+    fireEvent.doubleClick(title());
+    fireEvent.change(screen.getByLabelText("세션 이름"), { target: { value: "  빌드 감시  " } });
+    fireEvent.submit(screen.getByLabelText("세션 이름"));
+    expect(onRename).toHaveBeenCalledWith("빌드 감시");
+    expect(screen.queryByLabelText("세션 이름")).not.toBeInTheDocument();
   });
 
   it("asks twice before removing", () => {

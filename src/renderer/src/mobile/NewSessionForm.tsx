@@ -4,6 +4,8 @@ import type { RemoteCatalog } from "@shared/remote-types";
 interface NewSessionFormProps {
   /** 호스트에 물어 둔 폴더·에이전트 목록. 아직 답이 없으면 null. */
   catalog: RemoteCatalog | null;
+  /** 프로젝트 트리의 "+"로 열었으면 그 폴더(와 worktree)를 골라 둔다. */
+  initial?: { projectId: string; worktreeId: string | null } | null;
   /** worktreeId가 null이면 폴더 루트에서 시작한다. */
   onStart(projectId: string, kind: string, worktreeId: string | null): void;
   onCancel(): void;
@@ -13,17 +15,20 @@ interface NewSessionFormProps {
  * 호스트 PC에 새 세션을 띄우는 폼. 어디서(폴더, 있으면 그 안의 워크트리) 무엇을(에이전트) 돌릴지만 고른다 — 시작 크기는
  * MobileApp이 이 화면에 맞게 어림해 싣고, 열린 뒤에는 다른 세션과 같은 규칙으로 맞춘다.
  */
-export function NewSessionForm({ catalog, onStart, onCancel }: NewSessionFormProps) {
-  const [projectId, setProjectId] = useState("");
+export function NewSessionForm({ catalog, initial = null, onStart, onCancel }: NewSessionFormProps) {
+  const [projectId, setProjectId] = useState(initial?.projectId ?? "");
   const [kind, setKind] = useState("");
   /** 고른 폴더 안의 작업 위치. 빈 문자열이 폴더 루트다. */
-  const [worktreeId, setWorktreeId] = useState("");
+  const [worktreeId, setWorktreeId] = useState(initial?.worktreeId ?? "");
 
   // 목록이 오면 첫 항목을 골라 둔다. 고른 것이 목록에서 사라졌을 때도 마찬가지다.
   useEffect(() => {
     if (!catalog) return;
-    setProjectId((current) =>
-      catalog.projects.some((project) => project.id === current) ? current : (catalog.projects[0]?.id ?? ""),
+    const project = (id: string) => catalog.projects.find((candidate) => candidate.id === id);
+    setProjectId((current) => (project(current) ? current : (catalog.projects[0]?.id ?? "")));
+    // 골라 둔 worktree가 그 폴더의 목록에 없으면(봇 브랜치 등) 루트에서 시작한다.
+    setWorktreeId((current) =>
+      current !== "" && project(projectId)?.worktrees.some((worktree) => worktree.id === current) ? current : "",
     );
     setKind((current) => (catalog.agents.some((agent) => agent.id === current) ? current : (catalog.agents[0]?.id ?? "")));
   }, [catalog]);

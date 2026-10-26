@@ -7,7 +7,7 @@ import type {
   UpdaterStatus,
   WindowChromeState,
 } from "../shared/api-types";
-import type { RemoteHostView, RemoteShelf } from "../shared/remote-types";
+import type { RemoteHostView, RemoteShelf, RemoteViewAction } from "../shared/remote-types";
 import type { SessionIndicatorsUpdate, TerminalEvent } from "../shared/terminal-types";
 import type { UsageSnapshot } from "../shared/usage-types";
 import type { BoardMessage } from "../shared/board-types";
@@ -220,6 +220,11 @@ const api: MultiCliWorkApi = {
       ipcRenderer.on("shelves:move-requested", handler);
       return () => ipcRenderer.removeListener("shelves:move-requested", handler);
     },
+    onViewRequested(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, action: RemoteViewAction) => listener(action);
+      ipcRenderer.on("mirror:view-requested", handler);
+      return () => ipcRenderer.removeListener("mirror:view-requested", handler);
+    },
   },
   providers: {
     availability: () => ipcRenderer.invoke("providers:availability"),
@@ -304,6 +309,7 @@ const api: MultiCliWorkApi = {
     issuePairingCode: () => ipcRenderer.invoke("remote:issue-pairing-code"),
     listDevices: () => ipcRenderer.invoke("remote:list-devices"),
     revokeDevice: (deviceId) => ipcRenderer.invoke("remote:revoke-device", deviceId),
+    publishMirror: (mirror) => ipcRenderer.invoke("remote:publish-mirror", mirror),
   },
   remoteHosts: {
     list: () => ipcRenderer.invoke("remote-hosts:list"),

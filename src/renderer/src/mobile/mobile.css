@@ -133,5 +133,38 @@ select { min-height: 40px; }
 .m-new-session-actions { display: flex; gap: 6px; }
 .m-new-session-actions button { flex: 1 1 0; }
 .m-toast { position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 10; display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border: 1px solid var(--danger-line); border-radius: var(--m-radius); background: var(--surface-raised); color: var(--text); }
+.m-rename { flex: 1 1 auto; min-width: 0; margin: 0; }
+.m-rename input { min-height: 28px; padding: 2px 6px; font-size: 13px; }
+
+/* 프로젝트 트리: 메인 사이드바 아래쪽의 업무 프로젝트 → 폴더 → 메인/worktree → 세션. */
+.m-tree .m-tree-children { padding-left: 14px; }
+.m-tree-row { display: flex; align-items: center; border-radius: 4px; color: var(--muted); }
+.m-tree-row:hover { background: var(--surface-hover); color: var(--text); }
+.m-tree-row.current { background: var(--surface-hover); color: var(--text); box-shadow: inset 2px 0 0 var(--blue); }
+.m-tree-row .m-row-open:disabled { opacity: 1; cursor: default; }
+.m-tree-toggle { flex: 0 0 auto; min-width: 24px; padding: 0; border: 0; background: transparent; color: var(--quiet); }
+.m-tree-workspace .m-row-open { gap: 4px; }
+.m-tree-meta { flex: 0 0 auto; color: var(--quiet); font-size: 12px; white-space: nowrap; }
+.m-tree-session { display: flex; width: 100%; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; color: var(--muted); text-align: left; }
+.m-tree-session:hover, .m-tree-session.on-screen { color: var(--text); }
+.m-tree-session.on-screen { background: var(--surface-hover); }
+.m-wide .m-tree-row .m-row-open, .m-wide .m-tree-row .m-row-action, .m-wide .m-tree-session { min-height: 28px; }
+
+/* 호스트 화면 미러: 호스트 그리드와 같은 레이아웃·칸·페이지. */
+.m-mirror { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
+.m-mirror-bar { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 4px 8px; background: var(--header-bg); border-bottom: 1px solid var(--line); }
+.m-mirror-place { flex: 1 1 auto; min-width: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.m-mirror-pages { display: inline-flex; align-items: center; gap: 4px; font: 12px/1 var(--m-mono); color: var(--muted); }
+.m-mirror-pages button { min-width: 28px; padding: 0; }
+.m-mirror-layout { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.m-mirror-layout select { width: auto; min-height: 28px; padding: 2px 6px; }
+.m-mirror > .m-wide-placeholder { align-self: center; margin: auto; }
+.m-mirror-grid { flex: 1 1 0; height: auto; grid-auto-rows: auto; }
+.m-mirror-slot { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
+.m-mirror-slot > * { flex: 1 1 0; min-height: 0; }
+.m-mirror-placeholder > .m-bar { flex: 0 0 auto; gap: 6px; padding: 4px 8px; background: var(--sidebar); }
+.m-mirror-placeholder > .m-bar h1 { font-size: 13px; color: var(--muted); font-weight: 500; }
+.m-mirror-placeholder.m-pane-focused > .m-bar { box-shadow: inset 0 -2px 0 var(--blue); }
+.m-mirror-placeholder > .m-empty { margin: 0; text-align: center; }
 .m-toast span { flex: 1 1 auto; min-width: 0; }
 .m-toast button { flex: 0 0 auto; }

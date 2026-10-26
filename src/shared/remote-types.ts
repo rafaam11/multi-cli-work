@@ -57,6 +57,81 @@ export interface RemoteSessionSummary {
 /** 호스트 메인 창의 두 선반. 세션은 둘 중 하나에만 있다. */
 export type RemoteShelf = "active" | "hidden";
 
+/** 미러 트리의 worktree 줄. 세션은 id만 싣는다 — 이름·상태는 sessions 목록이 이미 갖고 있다. */
+export interface RemoteMirrorWorktree {
+  id: string;
+  /** 사이드바가 그 줄에 쓰는 이름 그대로(PR 리뷰면 "PR #n · 임시"). */
+  branch: string;
+  changedFileCount: number;
+  sessionIds: string[];
+}
+
+export interface RemoteMirrorFolder {
+  id: string;
+  name: string;
+  missing: boolean;
+  role?: "docs" | "repo";
+  /** 이 폴더(그 worktree 포함)의 모든 세션. 폴더 줄의 수와 대기 점이 여기서 나온다. */
+  sessionIds: string[];
+  /** git 폴더면 메인 줄. null이면 세션이 폴더 바로 아래에 선다. */
+  main: { branch: string; changedFileCount: number } | null;
+  /** 폴더 루트(git이면 메인)의 세션. */
+  rootSessionIds: string[];
+  worktrees: RemoteMirrorWorktree[];
+}
+
+export interface RemoteMirrorSection {
+  /** null이면 미분류다. */
+  workProject: { id: string; name: string } | null;
+  folders: RemoteMirrorFolder[];
+}
+
+/** 호스트 그리드가 보여 주는 곳. other는 홈·상세 페이지처럼 그리드가 아닌 화면이다. */
+export type RemoteMirrorPlace =
+  | { kind: "folder"; projectId: string; worktreeId: string | null }
+  | { kind: "shelf"; shelf: RemoteShelf }
+  | { kind: "other" };
+
+export type RemoteMirrorSlot = { kind: "session"; id: string } | { kind: "document"; id: string; label: string } | null;
+
+/** 호스트 그리드의 지금 페이지. 슬롯 번호는 이 페이지 안의 번호다 — 호스트 그리드와 같다. */
+export interface RemoteMirrorView {
+  place: RemoteMirrorPlace;
+  layoutId: string;
+  /** 그리는 모양. 자동이면 자동이 고른 열들이다. */
+  columnRows: number[];
+  page: number;
+  pages: number;
+  focusedPaneId: string | null;
+  slots: RemoteMirrorSlot[];
+}
+
+/** 호스트 메인 창이 보여 주는 것: 사이드바의 프로젝트 트리와 그리드. 창이 없으면 null로 온다. */
+export interface RemoteMirror {
+  tree: RemoteMirrorSection[];
+  view: RemoteMirrorView;
+}
+
+/** 원격이 호스트 그리드에 요청하는 조작. 슬롯은 지금 페이지 안의 번호다. */
+export type RemoteViewAction =
+  | { action: "select-folder"; projectId: string; worktreeId: string | null }
+  | { action: "select-shelf"; shelf: RemoteShelf }
+  | { action: "layout"; layoutId: string }
+  | { action: "split"; slot: number }
+  | { action: "merge"; slot: number }
+  | { action: "page"; page: number }
+  | { action: "focus"; paneId: string }
+  | { action: "close"; slot: number }
+  | { action: "move"; paneId: string; slot: number }
+  | { action: "open"; sessionId: string };
+
+/** 원격이 고를 수 있는 레이아웃: 자동, 또는 나누지 않은 1~6열. 나누기는 칸에서 한다. */
+const REMOTE_LAYOUT_ID = /^(auto|cols:1(-1){0,5})$/;
+/** 한 페이지의 칸 수 상한(6열 × 2행). */
+const MAX_REMOTE_SLOT = 12;
+/** 세션 이름 길이 상한. 메인 창의 IPC와 같다. */
+export const REMOTE_SESSION_NAME_MAX = 120;
+
 export type RemoteClientMessage =
   | { type: "hello"; token: string; protocolVersion: number; mode: "ui" }
   | { type: "list" }
@@ -72,7 +147,11 @@ export type RemoteClientMessage =
   | { type: "resume"; sessionId: string }
   | { type: "remove"; sessionId: string }
   // 호스트 메인 창에서 숨기거나 다시 표시한다. 바뀐 목록은 sessions로 다시 온다.
-  | { type: "shelf"; sessionId: string; shelf: RemoteShelf };
+  | { type: "shelf"; sessionId: string; shelf: RemoteShelf }
+  // 호스트 메인 창의 그리드를 바꾼다. 결과는 mirror로 다시 온다.
+  | ({ type: "view" } & RemoteViewAction)
+  // 빈 이름이면 사용자가 붙인 이름을 지운다.
+  | { type: "rename"; sessionId: string; name: string };
 
 /**
  * 새 세션을 어디에 무엇으로 띄울 수 있는지. 숨긴 폴더와 실행 파일이 없는 에이전트는 들어 있지 않다.
@@ -115,6 +194,8 @@ export type RemoteServerMessage =
   /** create·resume을 보낸 연결에만 간다 — 그 화면이 이 세션을 연다. */
   | { type: "started"; sessionId: string }
   | { type: "removed"; sessionId: string }
+  /** 접속 직후와 호스트 화면이 바뀔 때마다. 구버전 호스트는 보내지 않는다. */
+  | { type: "mirror"; mirror: RemoteMirror | null }
   | { type: "error"; code: RemoteErrorCode; message: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -127,6 +208,41 @@ function text(value: unknown): value is string {
 
 function dimension(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function slotIndex(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value < MAX_REMOTE_SLOT;
+}
+
+function parseViewAction(value: Record<string, unknown>): RemoteViewAction | null {
+  switch (value.action) {
+    case "select-folder":
+      if (!text(value.projectId)) return null;
+      if (value.worktreeId !== null && !text(value.worktreeId)) return null;
+      return { action: "select-folder", projectId: value.projectId, worktreeId: value.worktreeId };
+    case "select-shelf":
+      return value.shelf === "active" || value.shelf === "hidden" ? { action: "select-shelf", shelf: value.shelf } : null;
+    case "layout":
+      return typeof value.layoutId === "string" && REMOTE_LAYOUT_ID.test(value.layoutId)
+        ? { action: "layout", layoutId: value.layoutId }
+        : null;
+    case "split":
+    case "merge":
+    case "close":
+      return slotIndex(value.slot) ? { action: value.action, slot: value.slot } : null;
+    case "page":
+      return typeof value.page === "number" && Number.isInteger(value.page) && value.page >= 0
+        ? { action: "page", page: value.page }
+        : null;
+    case "focus":
+      return text(value.paneId) ? { action: "focus", paneId: value.paneId } : null;
+    case "move":
+      return text(value.paneId) && slotIndex(value.slot) ? { action: "move", paneId: value.paneId, slot: value.slot } : null;
+    case "open":
+      return text(value.sessionId) ? { action: "open", sessionId: value.sessionId } : null;
+    default:
+      return null;
+  }
 }
 
 /** 잘못된 입력은 null — 연결 하나의 나쁜 메시지가 서버를 던지게 두지 않는다. */
@@ -172,6 +288,14 @@ export function parseRemoteClientMessage(raw: string): RemoteClientMessage | nul
     case "shelf":
       return text(value.sessionId) && (value.shelf === "active" || value.shelf === "hidden")
         ? { type: "shelf", sessionId: value.sessionId, shelf: value.shelf }
+        : null;
+    case "view": {
+      const action = parseViewAction(value);
+      return action ? { type: "view", ...action } : null;
+    }
+    case "rename":
+      return text(value.sessionId) && typeof value.name === "string" && value.name.length <= REMOTE_SESSION_NAME_MAX
+        ? { type: "rename", sessionId: value.sessionId, name: value.name }
         : null;
     case "write":
       return text(value.sessionId) && typeof value.data === "string"

@@ -32,6 +32,7 @@ import {
   exportFileStem,
   exportTimestamp,
   validateRemoteHostAdd,
+  validateRemoteMirror,
   validateSettingsPatch,
   validatePullRequestQuery,
   validateReviewFinishRequest,
@@ -801,6 +802,9 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   ipc.handle("remote:list-devices", () => dependencies.remote.listDevices());
   ipc.handle("remote:revoke-device", (_event, deviceId: unknown) =>
     dependencies.remote.revokeDevice(nonEmptyString(deviceId, "Device id")),
+  );
+  ipc.handle("remote:publish-mirror", (_event, mirror: unknown) =>
+    dependencies.remote.publishMirror(validateRemoteMirror(mirror)),
   );
   ipc.handle("remote-hosts:list", () => dependencies.remoteHosts.list());
   // async라 잘못된 입력의 throw가 rejected invoke로 렌더러에 도달한다.

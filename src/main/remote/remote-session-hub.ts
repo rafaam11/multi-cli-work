@@ -8,9 +8,11 @@ import {
   type DesktopPresence,
   type RemoteCatalog,
   type RemoteClientMessage,
+  type RemoteMirror,
   type RemoteServerMessage,
   type RemoteSessionSummary,
   type RemoteShelf,
+  type RemoteViewAction,
   type ShellRelease,
 } from "../../shared/remote-types";
 import type { RemoteDevice } from "./device-store";
@@ -41,6 +43,14 @@ export interface RemoteHubGateway {
   onShelvesChanged?(listener: () => void): () => void;
   /** 메인 창에 그 세션을 다른 선반으로 옮겨 달라고 한다. 창이 없으면 던진다. */
   moveToShelf?(sessionId: string, shelf: RemoteShelf): Promise<void>;
+  /** 메인 창이 마지막으로 보낸 트리·그리드. 창이 없거나 아직 안 보냈으면 null. */
+  mirror?(): RemoteMirror | null;
+  /** 미러가 바뀌었다. 붙어 있는 화면에 다시 보낸다. */
+  onMirrorChanged?(listener: () => void): () => void;
+  /** 메인 창 그리드에 조작을 요청한다. 결과는 미러로 돌아온다. 창이 없으면 던진다. */
+  requestView?(action: RemoteViewAction): Promise<void>;
+  /** 빈 이름이면 사용자가 붙인 이름을 지운다. */
+  rename?(sessionId: string, name: string): Promise<void>;
 }
 
 export interface RemoteHubDevices {
@@ -125,6 +135,7 @@ export class RemoteSessionHub {
       options.gateway.onEvent((event) => this.forward(event)),
       options.sizes.onChange((sessionId, state) => this.broadcastSize(sessionId, state)),
       ...(options.gateway.onShelvesChanged ? [options.gateway.onShelvesChanged(() => this.broadcastSessions())] : []),
+      ...(options.gateway.onMirrorChanged ? [options.gateway.onMirrorChanged(() => this.broadcastMirror())] : []),
     ];
   }
 
@@ -274,6 +285,18 @@ export class RemoteSessionHub {
         if (!this.options.gateway.moveToShelf) throw new Error("이 호스트는 숨기기를 지원하지 않습니다");
         await this.options.gateway.moveToShelf(message.sessionId, message.shelf);
         return;
+      case "view": {
+        if (!this.options.gateway.requestView) throw new Error("이 호스트는 화면 따라가기를 지원하지 않습니다");
+        if (message.action === "open") this.requireSession(message.sessionId);
+        const { type: _type, ...action } = message;
+        await this.options.gateway.requestView(action);
+        return;
+      }
+      case "rename":
+        this.requireSession(message.sessionId);
+        if (!this.options.gateway.rename) throw new Error("이 호스트는 이름 변경을 지원하지 않습니다");
+        await this.options.gateway.rename(message.sessionId, message.name);
+        return;
     }
   }
 
@@ -315,6 +338,7 @@ export class RemoteSessionHub {
       shellLatest: this.options.shellLatest?.() ?? null,
     });
     client.connection.send({ type: "sessions", sessions: await this.summaries() });
+    if (this.options.gateway.mirror) client.connection.send({ type: "mirror", mirror: this.options.gateway.mirror() });
   }
 
   private requireAttached(client: Client, sessionId: string): boolean {
@@ -359,6 +383,11 @@ export class RemoteSessionHub {
     void this.summaries()
       .then((sessions) => this.broadcast({ type: "sessions", sessions }))
       .catch(() => undefined);
+  }
+
+  private broadcastMirror(): void {
+    if (!this.options.gateway.mirror) return;
+    this.broadcast({ type: "mirror", mirror: this.options.gateway.mirror() });
   }
 
   private async worktreeBranch(worktreeId: string | null | undefined): Promise<string | null> {
@@ -412,6 +441,10 @@ export class RemoteSessionHub {
           .catch(() => undefined);
         return;
       }
+      case "renamed":
+        // 목록의 이름은 summaries가 만든다 — 한 세션만 고치는 메시지가 따로 없으니 목록을 다시 보낸다.
+        this.broadcastSessions();
+        return;
       default:
         return;
     }

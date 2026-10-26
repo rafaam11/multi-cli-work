@@ -55,6 +55,8 @@ interface SessionListProps {
   onMoveShelf?(sessionId: string, shelf: RemoteShelf): void;
   /** 머리줄 아래에 그리는 것 — 새 세션 폼. */
   children?: ReactNode;
+  /** 숨김 선반 아래에 그리는 것 — 프로젝트 트리. */
+  footer?: ReactNode;
 }
 
 export function SessionList({
@@ -69,6 +71,7 @@ export function SessionList({
   onNewSession,
   onMoveShelf,
   children,
+  footer,
 }: SessionListProps) {
   const [waitingOnly, setWaitingOnly] = useState(loadWaitingOnly);
   const [hiddenOpen, setHiddenOpen] = useState(false);
@@ -208,6 +211,7 @@ export function SessionList({
           ) : null}
         </section>
       ) : null}
+      {footer}
     </main>
   );
 }

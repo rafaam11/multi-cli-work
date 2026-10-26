@@ -6,6 +6,7 @@ import { type FileExplorerTarget } from "@shared/file-explorer-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { SessionPreset } from "@shared/preset-types";
+import type { RemoteViewAction } from "@shared/remote-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
 import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
@@ -98,6 +99,8 @@ import {
   type WorktreeForceState,
   type DiffViewState,
 } from "./app/app-model";
+import { buildRemoteMirror } from "./app/remote-mirror";
+import { buildTreeSections } from "./sidebar-tree";
 import { useAppSettings } from "./app/use-app-settings";
 import { useAppShortcuts } from "./app/use-app-shortcuts";
 import { useSidebarLayout } from "./app/use-sidebar-layout";
@@ -241,6 +244,8 @@ export function App() {
   const revealSessionRef = useRef<(session: TerminalSessionView) => void>(() => undefined);
   /** The same for a remote screen's hide/show request. */
   const movePaneToShelfRef = useRef<(kind: ShelfKind, paneId: string) => void>(() => undefined);
+  /** And for a remote screen driving this window's grid (folder, layout, page, panes). */
+  const applyViewRequestRef = useRef<(action: RemoteViewAction, retried?: boolean) => void>(() => undefined);
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -971,6 +976,7 @@ export function App() {
   useEffect(() => {
     revealSessionRef.current = revealSession;
     movePaneToShelfRef.current = movePaneToShelf;
+    applyViewRequestRef.current = applyViewRequest;
   });
 
   const [presets, setPresets] = useState<SessionPreset[]>([]);
@@ -1048,6 +1054,130 @@ export function App() {
     setActionError(null);
     persistSelection(worktree.projectId, first);
   };
+
+  /**
+   * A remote screen asking for a change to what this window shows. Each one maps onto the same
+   * action a click here would run; the next mirror publish tells the remote what came of it.
+   * Grid edits only apply while a grid is on screen, and slot numbers are the drawn page's.
+   */
+  const applyViewRequest = (request: RemoteViewAction, retried = false) => {
+    const onGrid = activeView === "terminal" && (shelfKind !== null || selectedProjectId !== null);
+    const inPage = (slot: number) => slot < resolvedView.slots.length;
+    switch (request.action) {
+      case "select-folder": {
+        if (request.worktreeId === null) {
+          if (projects.some((project) => project.id === request.projectId)) selectProject(request.projectId);
+          return;
+        }
+        const worktree = worktrees.find(
+          (candidate) => candidate.id === request.worktreeId && candidate.projectId === request.projectId,
+        );
+        if (worktree) selectWorktree(worktree);
+        return;
+      }
+      case "select-shelf":
+        selectShelf(request.shelf);
+        return;
+      case "open": {
+        const session = sessions.find((candidate) => candidate.id === request.sessionId);
+        if (session) revealSession(session);
+        // A session the remote screen just created can be asked for before its "created" event lands
+        // here. Ask once more after the event has had time to arrive.
+        else if (!retried) window.setTimeout(() => applyViewRequestRef.current(request, true), 300);
+        return;
+      }
+    }
+    if (!onGrid) return;
+    switch (request.action) {
+      case "layout":
+        chooseLayout(request.layoutId);
+        return;
+      case "split":
+        if (inPage(request.slot)) splitColumn(request.slot);
+        return;
+      case "merge":
+        if (inPage(request.slot)) mergeColumn(request.slot);
+        return;
+      case "page":
+        setPage(clampPage(request.page, resolvedView.pages));
+        return;
+      case "focus":
+        if (resolvedView.slots.includes(request.paneId)) focusPane(request.paneId);
+        return;
+      case "close":
+        if (inPage(request.slot)) clearSlotAt(request.slot);
+        return;
+      case "move": {
+        const known =
+          sessions.some((session) => session.id === request.paneId) ||
+          documentPanes.some((pane) => pane.id === request.paneId);
+        if (known && inPage(request.slot)) dropPaneOnSlot(request.slot, request.paneId);
+        return;
+      }
+    }
+  };
+
+  useEffect(
+    () => window.multiCliWork.navigation.onViewRequested((action) => applyViewRequestRef.current(action)),
+    [],
+  );
+
+  // What this window shows, for remote screens to mirror. Rebuilt on every relevant change but sent
+  // only when it differs from the last one, and coalesced so a burst of state updates is one send.
+  const treeSections = useMemo(
+    () => buildTreeSections(workProjects, projects, projectMembership),
+    [workProjects, projects, projectMembership],
+  );
+  const missingRootProjectIds = snapshot?.missingRootProjectIds;
+  const remoteMirror = useMemo(
+    () =>
+      buildRemoteMirror({
+        sections: treeSections,
+        sessions,
+        worktrees,
+        workspaceViews,
+        activeReviews,
+        projectMembership,
+        missingRootProjectIds: missingRootProjectIds ?? [],
+        documentPanes,
+        activeView,
+        shelfKind,
+        selectedProjectId,
+        selectedWorktreeId,
+        layoutId: currentView.layoutId,
+        resolvedView,
+        focusedPaneId,
+      }),
+    [
+      treeSections,
+      sessions,
+      worktrees,
+      workspaceViews,
+      activeReviews,
+      projectMembership,
+      missingRootProjectIds,
+      documentPanes,
+      activeView,
+      shelfKind,
+      selectedProjectId,
+      selectedWorktreeId,
+      currentView.layoutId,
+      resolvedView,
+      focusedPaneId,
+    ],
+  );
+  const publishedMirrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const serialized = JSON.stringify(remoteMirror);
+      if (serialized === publishedMirrorRef.current) return;
+      publishedMirrorRef.current = serialized;
+      void window.multiCliWork.remote.publishMirror(remoteMirror).catch(() => {
+        publishedMirrorRef.current = null;
+      });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [remoteMirror]);
 
   const openHome = () => setActiveView("home");
 

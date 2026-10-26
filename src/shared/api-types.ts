@@ -45,8 +45,10 @@ import type {
   RemoteDeviceInfo,
   RemoteHostAddInput,
   RemoteHostView,
+  RemoteMirror,
   RemotePairingCode,
   RemoteShelf,
+  RemoteViewAction,
 } from "./remote-types";
 
 export interface ProjectMetadataPatch {
@@ -571,6 +573,8 @@ export interface MultiCliWorkApi {
     onSessionRequested(listener: (sessionId: string) => void): () => void;
     /** A remote screen asked to hide or show a session; the shelves live here, so this window moves it. */
     onShelfMoveRequested(listener: (sessionId: string, shelf: RemoteShelf) => void): () => void;
+    /** A remote screen asked to change the grid it mirrors; this window applies it like its own click. */
+    onViewRequested(listener: (action: RemoteViewAction) => void): () => void;
   };
   /** The native window actions the app's own title bar has to perform on the user's behalf. */
   window: {
@@ -640,6 +644,8 @@ export interface MultiCliWorkApi {
     issuePairingCode(): Promise<RemotePairingCode>;
     listDevices(): Promise<RemoteDeviceInfo[]>;
     revokeDevice(deviceId: string): Promise<void>;
+    /** 원격 창이 따라 그릴 이 창의 트리와 그리드. 바뀔 때마다 보낸다. */
+    publishMirror(mirror: RemoteMirror): Promise<void>;
   };
   /** 이 PC가 클라이언트로서 등록해 둔 다른 PC. 토큰은 main에만 있다. */
   remoteHosts: {

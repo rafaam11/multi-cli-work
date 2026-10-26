@@ -175,7 +175,9 @@ test.describe.serial("Remote PC window", () => {
     await expect(remote.getByLabel("페어링 코드")).toHaveCount(0);
     expect(await remote.evaluate(() => typeof (window as unknown as { multiCliWork?: unknown }).multiCliWork)).toBe("undefined");
 
-    const sessionButton = remote.locator(".m-row-open").first();
+    // 트리 행도 같은 모양이라 세션 목록 안에서만 센다.
+    const sessionRows = remote.getByRole("list", { name: "세션 목록" }).locator(".m-row-open");
+    const sessionButton = sessionRows.first();
     await sessionButton.click();
     await expect(sessionButton).toHaveAttribute("aria-current", "true");
     const remoteRows = remote.locator(".m-terminal .xterm-rows");
@@ -236,18 +238,20 @@ test.describe.serial("Remote PC window", () => {
     await remote.keyboard.press("Control+Shift+C");
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("MCW_PASTED");
 
-    // 세션 관리: 원격 창에서 새 세션을 띄우고 중지·재시작·삭제한다. 호스트 화면의 선택은 그대로다.
+    // 세션 관리: 원격 창에서 새 세션을 띄우고 중지·재시작·삭제한다. 원격 창은 호스트 그리드를 따라 그리므로
+    // 새 세션은 호스트 그리드에 열리고 양쪽에서 포커스를 받는다.
     const hostSessions = () => page.evaluate(() => window.multiCliWork.terminals.list());
     const hostSelection = () =>
       page.evaluate(() => window.multiCliWork.terminals.state().then((snapshot) => snapshot.state.selectedSessionId));
-    const selectedBefore = await hostSelection();
-    await remote.getByRole("button", { name: "새 세션" }).click();
+    const [firstSession] = await hostSessions();
+    await remote.getByRole("button", { name: "새 세션", exact: true }).click();
     await remote.getByLabel("폴더").selectOption({ label: "Sample Project" });
     await remote.getByLabel("에이전트").selectOption({ label: SHELL_LABEL });
     await remote.getByRole("button", { name: "시작" }).click();
-    await expect(remote.locator(".m-row-open")).toHaveCount(2);
+    await expect(sessionRows).toHaveCount(2);
     await expect.poll(async () => (await hostSessions()).length).toBe(2);
-    expect(await hostSelection()).toBe(selectedBefore);
+    const created = (await hostSessions()).find((session) => session.id !== firstSession!.id)!;
+    await expect.poll(hostSelection).toBe(created.id);
 
     // 넓은 화면에서는 새 세션이 옆 칸에 열리고 포커스를 받는다. 조작은 그 칸 안에서 한다.
     await expect(remote.locator(".m-pane")).toHaveCount(2);
@@ -274,7 +278,6 @@ test.describe.serial("Remote PC window", () => {
     await remote.keyboard.type(echo("MCW_AFTER_RESTART"));
     await remote.keyboard.press("Enter");
     await expect(paneRows).toContainText("MCW_AFTER_RESTART");
-    expect(await hostSelection()).toBe(selectedBefore);
 
     // 재시작을 요청하지 않은 화면도 이어 받는다: 이번에는 호스트 쪽에서 다시 시작한다.
     await pane.getByRole("button", { name: "중지" }).click();
@@ -293,7 +296,7 @@ test.describe.serial("Remote PC window", () => {
 
     await pane.getByRole("button", { name: "삭제" }).click();
     await pane.getByRole("button", { name: "정말 삭제" }).click();
-    await expect(remote.locator(".m-row-open")).toHaveCount(1);
+    await expect(sessionRows).toHaveCount(1);
     await expect.poll(async () => (await hostSessions()).length).toBe(1);
     // 지운 세션에서 떼어 나오는 것은 실패가 아니다 — 거절 알림이 뜨면 안 된다.
     await remote.waitForTimeout(500);
@@ -303,20 +306,41 @@ test.describe.serial("Remote PC window", () => {
     await expect
       .poll(() => page.evaluate(() => window.multiCliWork.worktrees.list().then((list) => list.map((worktree) => worktree.branch))))
       .toContain("feat/remote");
-    const selectedBeforeWorktree = await hostSelection();
-    await remote.getByRole("button", { name: "새 세션" }).click();
-    await remote.getByLabel("폴더").selectOption({ label: "Sample Project" });
-    await remote.getByLabel("작업 위치").selectOption({ label: "feat/remote" });
+    const remoteWorktreeId = (await page.evaluate(() => window.multiCliWork.worktrees.list())).find(
+      (worktree) => worktree.branch === "feat/remote",
+    )!.id;
+    // 이번에는 프로젝트 트리의 워크트리 행 "+"로 연다 — 폼이 그 폴더·워크트리를 골라 둔 채 열린다.
+    const tree = remote.getByRole("region", { name: "프로젝트" });
+    await tree.getByRole("button", { name: "Sample Project 펼치기" }).click();
+    await tree.getByRole("button", { name: "Sample Project feat/remote에서 새 세션" }).click();
+    await expect(remote.getByLabel("작업 위치")).toHaveValue(remoteWorktreeId);
     await remote.getByLabel("에이전트").selectOption({ label: SHELL_LABEL });
     await remote.getByRole("button", { name: "시작" }).click();
-    await expect(remote.locator(".m-row-open")).toHaveCount(2);
-    await expect(remote.locator(".m-row-open", { hasText: "feat/remote" })).toBeVisible();
+    await expect(sessionRows).toHaveCount(2);
+    await expect(sessionRows.filter({ hasText: "feat/remote" })).toBeVisible();
     const worktreeSession = (await hostSessions()).find((session) => session.worktreeId);
     const remoteWorktree = (await page.evaluate(() => window.multiCliWork.worktrees.list())).find(
       (worktree) => worktree.branch === "feat/remote",
     );
     expect(worktreeSession?.worktreeId).toBe(remoteWorktree?.id);
-    expect(await hostSelection()).toBe(selectedBeforeWorktree);
+    await expect.poll(hostSelection).toBe(worktreeSession?.id);
+
+    // 레이아웃: 원격에서 고르면 호스트 그리드가 바뀌고, 호스트에서 고르면 원격이 따라온다.
+    const mirrorView = remote.getByRole("region", { name: "호스트 화면" });
+    const remoteLayout = mirrorView.getByLabel("레이아웃");
+    await remoteLayout.selectOption({ label: "1열" });
+    await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "cols:1");
+    await page.locator(".layout-bar").getByRole("radio", { name: "2열", exact: true }).click();
+    await expect(remoteLayout).toHaveValue("cols:1-1");
+
+    // 트리에서 워크트리 행을 누르면 호스트가 그 워크트리로 옮겨 가고, 폴더 행을 누르면 폴더로 돌아온다.
+    const mirrorPlace = mirrorView.locator(".m-mirror-place");
+    await tree.getByRole("button", { name: "Sample Project feat/remote", exact: true }).click();
+    await expect(page.locator(".worktree-row.selected")).toContainText("feat/remote");
+    await expect(mirrorPlace).toHaveText("Sample Project · feat/remote");
+    await tree.getByRole("button", { name: "Sample Project", exact: true }).click();
+    await expect(page.locator(".worktree-row.selected")).not.toContainText("feat/remote");
+    await expect(mirrorPlace).toHaveText("Sample Project");
 
     // 호스트가 이 기기를 철회하면 원격 창이 닫히고 다시 페어링해야 한다.
     const closed = remote.waitForEvent("close");

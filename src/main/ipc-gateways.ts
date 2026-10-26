@@ -42,6 +42,7 @@ import type {
   RemoteDeviceInfo,
   RemoteHostAddInput,
   RemoteHostView,
+  RemoteMirror,
   RemotePairingCode,
 } from "../shared/remote-types";
 import type { ProjectRegistrySnapshot, ProjectRegistryV1, SharedProject } from "../shared/project-types";
@@ -133,6 +134,8 @@ export interface RemoteGateway {
   issuePairingCode(): Promise<RemotePairingCode>;
   listDevices(): Promise<RemoteDeviceInfo[]>;
   revokeDevice(deviceId: string): Promise<void>;
+  /** 메인 창이 보내는 트리·그리드 스냅숏. main은 들고 있다가 원격 창들에 그대로 전한다. */
+  publishMirror(mirror: RemoteMirror): void;
 }
 
 /** 이 PC가 클라이언트로서 붙는 다른 PC들. */

@@ -142,7 +142,7 @@ process.stdin.on("data", (data) => {
 
     await phone.getByLabel("페어링 코드").fill(pairing.code.toLowerCase());
     await phone.getByRole("button", { name: "연결" }).click();
-    const sessionButton = phone.locator(".m-row-open").first();
+    const sessionButton = phone.getByRole("list", { name: "세션 목록" }).locator(".m-row-open").first();
     await expect(sessionButton).toBeVisible();
     await expect(phone.locator(".m-row-place", { hasText: "Sample Project" }).first()).toBeVisible();
 
@@ -243,7 +243,7 @@ process.stdin.on("data", (data) => {
     await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_IN_TAB_B");
     await phone.goBack();
     await expect(phone.locator(".m-row-place", { hasText: "Sample Project" }).first()).toBeVisible();
-    await expect(phone.locator(".m-row-open")).toHaveCount(2);
+    await expect(phone.getByRole("list", { name: "세션 목록" }).locator(".m-row-open")).toHaveCount(2);
 
     // 철회하면 폰은 페어링 화면으로 돌아간다.
     const devices = await page.evaluate(() => window.multiCliWork.remote.listDevices());

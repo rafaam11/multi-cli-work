@@ -251,6 +251,7 @@ function setup(
     issuePairingCode: vi.fn(async () => ({ code: "ABCD-EFGH", expiresAt: "x", url: "u", pairUri: "p", installUrl: "i" })),
     listDevices: vi.fn(async () => []),
     revokeDevice: vi.fn(async (_deviceId: string) => undefined),
+    publishMirror: vi.fn(),
   };
   const remoteHostsGateway = {
     list: vi.fn(async () => []),
@@ -906,6 +907,14 @@ describe("main IPC boundary", () => {
     await handlers.get("remote:revoke-device")!({}, "d1");
     expect(remoteGateway.revokeDevice).toHaveBeenCalledWith("d1");
     expect(() => handlers.get("remote:revoke-device")!({}, "")).toThrow(/Device id/);
+  });
+
+  it("publishes the host mirror and rejects malformed snapshots", async () => {
+    const { handlers, remoteGateway } = setup();
+    const mirror = { tree: [], view: { place: { kind: "other" }, layoutId: "auto", columnRows: [], page: 0, pages: 1, focusedPaneId: null, slots: [] } };
+    await handlers.get("remote:publish-mirror")!({}, mirror);
+    expect(remoteGateway.publishMirror).toHaveBeenCalledWith(mirror);
+    expect(() => handlers.get("remote:publish-mirror")!({}, { tree: "x" })).toThrow();
   });
 
   it("validates remote host requests", async () => {

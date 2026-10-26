@@ -3,7 +3,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TerminalSessionView } from "../../shared/api-types";
 import type { TerminalEvent } from "../../shared/terminal-types";
-import { REMOTE_CLOSE, REMOTE_PROTOCOL_VERSION, type RemoteServerMessage } from "../../shared/remote-types";
+import {
+  REMOTE_CLOSE,
+  REMOTE_PROTOCOL_VERSION,
+  type RemoteMirror,
+  type RemoteServerMessage,
+  type RemoteViewAction,
+} from "../../shared/remote-types";
 import { RemoteSessionHub } from "./remote-session-hub";
 import { TerminalSizeArbiter } from "./size-arbiter";
 
@@ -533,5 +539,120 @@ describe("RemoteSessionHub shelves", () => {
     expect(shelfListeners.size).toBe(1);
     hub.dispose();
     expect(shelfListeners.size).toBe(0);
+  });
+});
+
+describe("RemoteSessionHub mirror", () => {
+  const mirrorOf = (layoutId: string): RemoteMirror => ({
+    tree: [],
+    view: {
+      place: { kind: "folder", projectId: "p1", worktreeId: null },
+      layoutId,
+      columnRows: [1],
+      page: 0,
+      pages: 1,
+      focusedPaneId: "s1",
+      slots: [{ kind: "session", id: "s1" }],
+    },
+  });
+
+  function withMirror() {
+    const mirrorListeners = new Set<() => void>();
+    let current: RemoteMirror | null = mirrorOf("auto");
+    const base = setup();
+    const gateway = {
+      ...base.gateway,
+      mirror: () => current,
+      onMirrorChanged: (listener: () => void) => {
+        mirrorListeners.add(listener);
+        return () => mirrorListeners.delete(listener);
+      },
+      requestView: vi.fn(async (_action: RemoteViewAction) => undefined),
+      rename: vi.fn(async (_sessionId: string, _name: string) => undefined),
+    };
+    const hub = new RemoteSessionHub({
+      gateway,
+      devices: base.devices,
+      sizes: new TerminalSizeArbiter(vi.fn(async () => undefined)),
+      hostId: async () => "host-1",
+      hostName: "PC",
+      shellLatest: () => null,
+    });
+    const sent: RemoteServerMessage[] = [];
+    const handle = hub.open({ send: (message) => sent.push(message), close: vi.fn() });
+    const hello = async () => {
+      handle.receive(JSON.stringify({ type: "hello", token: "good", protocolVersion: REMOTE_PROTOCOL_VERSION, mode: "ui" }));
+      await flush();
+      await flush();
+    };
+    const setMirror = (next: RemoteMirror | null) => {
+      current = next;
+      mirrorListeners.forEach((listener) => listener());
+    };
+    return { hub, handle, sent, gateway, hello, setMirror, mirrorListeners, emit: base.emit };
+  }
+
+  const mirrors = (sent: RemoteServerMessage[]) =>
+    sent.flatMap((message) => (message.type === "mirror" ? [message.mirror] : []));
+
+  it("sends the host's mirror on connect and again whenever it changes", async () => {
+    const { sent, hello, setMirror } = withMirror();
+    await hello();
+    expect(mirrors(sent)).toEqual([mirrorOf("auto")]);
+
+    setMirror(mirrorOf("cols:1-1"));
+    setMirror(null);
+    expect(mirrors(sent)).toEqual([mirrorOf("auto"), mirrorOf("cols:1-1"), null]);
+  });
+
+  it("does not send the mirror before the device is authenticated", async () => {
+    const { sent, setMirror } = withMirror();
+    setMirror(mirrorOf("cols:1"));
+    expect(mirrors(sent)).toEqual([]);
+  });
+
+  it("passes a view request to the host window without the message envelope", async () => {
+    const { handle, sent, gateway, hello } = withMirror();
+    await hello();
+    handle.receive('{"type":"view","action":"layout","layoutId":"cols:1-1"}');
+    await flush();
+    expect(gateway.requestView).toHaveBeenCalledWith({ action: "layout", layoutId: "cols:1-1" });
+
+    // Opening a session the host does not have is refused here rather than in the window.
+    handle.receive('{"type":"view","action":"open","sessionId":"gone"}');
+    await flush();
+    expect(gateway.requestView).toHaveBeenCalledTimes(1);
+    expect(sent.at(-1)?.type).toBe("error");
+  });
+
+  it("renames a session it has, and refuses one it does not", async () => {
+    const { handle, sent, gateway, hello } = withMirror();
+    await hello();
+    handle.receive('{"type":"rename","sessionId":"s1","name":"빌드"}');
+    await flush();
+    expect(gateway.rename).toHaveBeenCalledWith("s1", "빌드");
+
+    handle.receive('{"type":"rename","sessionId":"gone","name":"x"}');
+    await flush();
+    expect(gateway.rename).toHaveBeenCalledTimes(1);
+    expect(sent.at(-1)?.type).toBe("error");
+  });
+
+  it("sends the list again when a session is renamed", async () => {
+    const { sent, hello, emit, gateway } = withMirror();
+    await hello();
+    const before = sent.filter((message) => message.type === "sessions").length;
+    gateway.list.mockReturnValue([view("s1", { name: "빌드" })]);
+    emit({ type: "renamed", sessionId: "s1", session: view("s1", { name: "빌드" }) });
+    await flush();
+    await flush();
+    expect(sent.filter((message) => message.type === "sessions").length).toBe(before + 1);
+  });
+
+  it("stops listening for mirror changes when disposed", () => {
+    const { hub, mirrorListeners } = withMirror();
+    expect(mirrorListeners.size).toBe(1);
+    hub.dispose();
+    expect(mirrorListeners.size).toBe(0);
   });
 });

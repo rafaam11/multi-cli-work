@@ -1,8 +1,8 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { RemoteSessionSummary } from "@shared/remote-types";
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { REMOTE_SESSION_NAME_MAX, type RemoteSessionSummary } from "@shared/remote-types";
 import { createAutoFit, type AutoFit, type AutoFitState } from "./auto-fit";
 import { TERMINAL_FONT_INDEX, TERMINAL_FONT_SIZES, type TerminalSize } from "./initial-size";
 import type { RemoteClient } from "./remote-client";
@@ -32,6 +32,22 @@ interface SessionScreenProps {
   onClose?(): void;
   /** 그리드에서 이 칸을 누르면 포커스를 옮긴다. */
   onFocus?(): void;
+  /**
+   * 호스트 화면을 따라 그리는 그리드(칸이 많다). 포커스 칸만 PTY 크기를 이 창에 맞추고, 나머지는 호스트
+   * 크기 그대로 그린다 — 칸마다 맞추면 열두 칸이 서로 크기를 빼앗는다.
+   */
+  fitOnlyWhenFocused?: boolean;
+  /** 머리줄 ✕ 앞에 그리는 칸 조작(열 나누기·합치기). */
+  paneActions?: ReactNode;
+  /** 있으면 머리줄을 끌어 다른 칸으로 옮길 수 있다. */
+  onHeaderDragStart?(event: DragEvent<HTMLElement>): void;
+  /** 있으면 이름을 두 번 눌러 바꿀 수 있다. 빈 이름은 붙인 이름을 지운다. */
+  onRename?(name: string): void;
+  /**
+   * 바뀔 때마다 포커스 칸이 키보드 포커스를 다시 가져온다. 목록에서 이미 포커스인 세션을 누르면 칸은
+   * 그대로라 `focused`가 바뀌지 않는다 — 그때도 입력이 터미널로 가게.
+   */
+  focusRequest?: number;
 }
 
 const FONT_SIZES = TERMINAL_FONT_SIZES;
@@ -53,6 +69,11 @@ export function SessionScreen({
   focused = true,
   onClose,
   onFocus,
+  fitOnlyWhenFocused = false,
+  paneActions,
+  onHeaderDragStart,
+  onRename,
+  focusRequest,
 }: SessionScreenProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -68,6 +89,10 @@ export function SessionScreen({
   onMeasuredRef.current = onMeasured;
   const focusedRef = useRef(focused);
   focusedRef.current = focused;
+  const fitOnlyRef = useRef(fitOnlyWhenFocused);
+  fitOnlyRef.current = fitOnlyWhenFocused;
+  /** 이름을 고치는 중이면 입력 중인 글. */
+  const [renaming, setRenaming] = useState<string | null>(null);
   const resolvedTheme = useResolvedTheme();
   const [draft, setDraft] = useState("");
   /** 삭제는 되돌릴 수 없어서 두 번 묻는다. window.confirm은 Android WebView가 조용히 거절한다. */
@@ -127,6 +152,7 @@ export function SessionScreen({
             return dims ? { cols: dims.cols, rows: dims.rows } : null;
           },
           resize: (cols, rows) => {
+            if (fitOnlyRef.current && !focusedRef.current) return;
             client.send({ type: "resize", sessionId: session.id, cols, rows });
           },
           release: () => {
@@ -308,7 +334,14 @@ export function SessionScreen({
   // 그리드에서 이 칸이 포커스를 받으면 키보드 입력도 이리로 온다.
   useEffect(() => {
     if (wide && focused) terminalRef.current?.focus();
+    // 따라 그리는 그리드에서는 포커스를 받은 칸이 이제서야 크기를 가져온다.
+    const autoFit = autoFitRef.current;
+    if (fitOnlyRef.current && focused && autoFit && autoFit.state() !== "host") autoFit.refit();
   }, [wide, focused]);
+
+  useEffect(() => {
+    if (focusRequest !== undefined && wide && focusedRef.current) terminalRef.current?.focus();
+  }, [focusRequest, wide]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -348,14 +381,47 @@ export function SessionScreen({
         .join(" ")}
       onMouseDown={focused ? undefined : onFocus}
     >
-      <header className="m-bar">
+      <header
+        className="m-bar"
+        draggable={onHeaderDragStart && renaming === null ? true : undefined}
+        onDragStart={onHeaderDragStart}
+      >
         {onClose ? <span className={`m-dot m-dot-${session.status}`} aria-hidden="true" /> : null}
         {wide ? null : (
           <button type="button" onClick={onBack} aria-label="세션 목록으로">
             ←
           </button>
         )}
-        <h1>{session.label}</h1>
+        {renaming !== null && onRename ? (
+          <form
+            className="m-rename"
+            onSubmit={(event) => {
+              event.preventDefault();
+              // 그대로 두고 Enter면 바꾸지 않는다 — 자동 제목을 붙인 이름으로 굳히지 않게.
+              if (renaming.trim() !== session.label) onRename(renaming.trim());
+              setRenaming(null);
+            }}
+          >
+            <input
+              aria-label="세션 이름"
+              autoFocus
+              maxLength={REMOTE_SESSION_NAME_MAX}
+              value={renaming}
+              onChange={(event) => setRenaming(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setRenaming(null);
+              }}
+              onBlur={() => setRenaming(null)}
+            />
+          </form>
+        ) : (
+          <h1
+            title={onRename ? "두 번 눌러 이름 바꾸기" : undefined}
+            onDoubleClick={onRename ? () => setRenaming(session.label) : undefined}
+          >
+            {session.label}
+          </h1>
+        )}
         <span className={`m-status m-status-${session.status}`}>{STATUS_LABEL[session.status]}</span>
         {confirmingRemove ? null : running ? (
           <button type="button" onClick={() => client.send({ type: "stop", sessionId: session.id })}>
@@ -387,6 +453,7 @@ export function SessionScreen({
             삭제
           </button>
         )}
+        {paneActions}
         {onClose ? (
           <button type="button" className="m-pane-close" aria-label={`${session.label} 칸 닫기`} title="칸 닫기" onClick={onClose}>
             ✕

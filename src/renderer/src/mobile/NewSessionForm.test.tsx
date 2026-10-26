@@ -49,6 +49,23 @@ describe("NewSessionForm", () => {
     expect(onStart).toHaveBeenCalledWith("p2", "claude", "w2");
   });
 
+  it("opens on the folder and worktree it was opened from, falling back to the root for a gone worktree", () => {
+    const onStart = vi.fn();
+    const { rerender } = render(
+      <NewSessionForm catalog={null} initial={{ projectId: "p2", worktreeId: "w2" }} onStart={onStart} onCancel={vi.fn()} />,
+    );
+    // The catalog arrives after the form opens.
+    rerender(<NewSessionForm catalog={CATALOG} initial={{ projectId: "p2", worktreeId: "w2" }} onStart={onStart} onCancel={vi.fn()} />);
+    expect(screen.getByLabelText("폴더")).toHaveValue("p2");
+    expect(screen.getByLabelText("작업 위치")).toHaveValue("w2");
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    expect(onStart).toHaveBeenCalledWith("p2", "claude", "w2");
+
+    cleanup();
+    render(<NewSessionForm catalog={CATALOG} initial={{ projectId: "p2", worktreeId: "gone" }} onStart={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByLabelText("작업 위치")).toHaveValue("");
+  });
+
   it("goes back to the folder root when another folder is chosen", () => {
     render(<NewSessionForm catalog={CATALOG} onStart={vi.fn()} onCancel={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("폴더"), { target: { value: "p2" } });

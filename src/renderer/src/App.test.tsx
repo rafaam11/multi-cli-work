@@ -9,6 +9,7 @@ import type { ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import type { TerminalEvent } from "@shared/terminal-types";
+import type { RemoteViewAction } from "@shared/remote-types";
 import { DEFAULT_SETTINGS, mergeSettingsPatch, type AppSettings, type AppSettingsPatch } from "@shared/settings-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -294,6 +295,7 @@ function createApi(options?: {
   const attentionListeners = new Set<(unread: Record<string, "input" | "approval">) => void>();
   const navigationListeners = new Set<(sessionId: string) => void>();
   const shelfMoveListeners = new Set<(sessionId: string, shelf: "active" | "hidden") => void>();
+  const viewListeners = new Set<(action: RemoteViewAction) => void>();
   const windowStateListeners = new Set<(state: WindowChromeState) => void>();
   const workspaceListeners = new Set<() => void>();
   const projects = options?.projects ?? [atlas];
@@ -436,6 +438,7 @@ function createApi(options?: {
       issuePairingCode: vi.fn(),
       listDevices: vi.fn().mockResolvedValue([]),
       revokeDevice: vi.fn().mockResolvedValue(undefined),
+      publishMirror: vi.fn().mockResolvedValue(undefined),
     },
     remoteHosts: {
       list: vi.fn().mockResolvedValue([]),
@@ -576,6 +579,10 @@ function createApi(options?: {
         shelfMoveListeners.add(listener);
         return () => shelfMoveListeners.delete(listener);
       }),
+      onViewRequested: vi.fn((listener) => {
+        viewListeners.add(listener);
+        return () => viewListeners.delete(listener);
+      }),
     },
     window: {
       minimize: vi.fn().mockResolvedValue(undefined),
@@ -688,6 +695,9 @@ function createApi(options?: {
     },
     requestShelfMove(sessionId: string, shelf: "active" | "hidden") {
       for (const listener of shelfMoveListeners) listener(sessionId, shelf);
+    },
+    requestView(action: RemoteViewAction) {
+      for (const listener of viewListeners) listener(action);
     },
   };
 }
@@ -2706,6 +2716,46 @@ describe("notification navigation", () => {
     act(() => harness.requestShelfMove("session-unknown", "hidden"));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(harness.api.terminals.setSlotViews).not.toHaveBeenCalled();
+  });
+
+  it("publishes what the grid shows and follows a remote screen's layout, focus and close", async () => {
+    const harness = createApi({ sessions: [powershellSession, claudeSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "PowerShell" });
+    const lastMirror = () => vi.mocked(harness.api.remote.publishMirror).mock.lastCall?.[0];
+
+    await waitFor(() =>
+      expect(lastMirror()?.view).toMatchObject({
+        place: { kind: "folder", projectId: atlas.id, worktreeId: null },
+        layoutId: "auto",
+        slots: [
+          { kind: "session", id: claudeSession.id },
+          { kind: "session", id: powershellSession.id },
+        ],
+      }),
+    );
+    expect(lastMirror()?.tree.flatMap((section) => section.folders.map((folder) => folder.id))).toContain(atlas.id);
+
+    act(() => harness.requestView({ action: "layout", layoutId: "cols:1" }));
+    await waitFor(() => expect(lastMirror()?.view).toMatchObject({ layoutId: "cols:1", pages: 2 }));
+
+    act(() => harness.requestView({ action: "page", page: 1 }));
+    await waitFor(() =>
+      expect(lastMirror()?.view).toMatchObject({ page: 1, slots: [{ kind: "session", id: powershellSession.id }] }),
+    );
+
+    act(() => harness.requestView({ action: "focus", paneId: powershellSession.id }));
+    await waitFor(() => expect(lastMirror()?.view.focusedPaneId).toBe(powershellSession.id));
+
+    act(() => harness.requestView({ action: "close", slot: 0 }));
+    await waitFor(() => expect(lastMirror()?.view).toMatchObject({ pages: 1, page: 0 }));
+
+    // A slot past the drawn page is ignored rather than growing the grid.
+    const before = vi.mocked(harness.api.remote.publishMirror).mock.calls.length;
+    act(() => harness.requestView({ action: "close", slot: 5 }));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(vi.mocked(harness.api.remote.publishMirror).mock.calls.length).toBe(before);
   });
 
   it("jumps to the waiting session with Ctrl+Shift+U and with the title bar mark", async () => {

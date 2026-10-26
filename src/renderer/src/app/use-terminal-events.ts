@@ -49,7 +49,7 @@ export function useTerminalEvents(targets: TerminalEventTargets): void {
         if (event.type === "data") return;
         // A session the renderer did not start itself — a lazy auto-resume in the other pane, a
         // jk-coding-cli spawn — still has to appear in the list.
-        if (event.type === "created") {
+        if (event.type === "created" || event.type === "renamed") {
           setSessions((current) => replaceSession(current, event.session));
           return;
         }

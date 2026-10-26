@@ -109,6 +109,8 @@ export type TerminalEvent =
   // The session is gone for good — removed here, from a folder teardown, or by a remote client.
   | { type: "removed"; sessionId: string }
   | { type: "workspace"; sessionId: string; session: TerminalSessionView }
+  // The user's name for the session changed — here, or from a remote screen.
+  | { type: "renamed"; sessionId: string; session: TerminalSessionView }
   // No paths on this one — the renderer never handles absolute paths; it re-fetches the changed set.
   | { type: "agent-edits"; sessionId: string };
 

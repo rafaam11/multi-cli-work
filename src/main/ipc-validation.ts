@@ -40,7 +40,7 @@ import type {
   PullRequestReviewAnnotationInput,
   PullRequestReviewFinishRequest,
 } from "../shared/github-types";
-import type { RemoteHostAddInput } from "../shared/remote-types";
+import type { RemoteHostAddInput, RemoteMirror } from "../shared/remote-types";
 import type { ProjectRegistryV1, SharedProject } from "../shared/project-types";
 import type { WorkProjectRole } from "../shared/work-project-types";
 import type { WorktreeCreateRequest } from "../shared/worktree-types";
@@ -350,6 +350,26 @@ export function validateRemoteHostAdd(value: unknown): RemoteHostAddInput {
   const raw = value as Record<string, unknown>;
   if (raw.uri !== undefined) return { uri: nonEmptyString(raw.uri, "Pairing link") };
   return { address: nonEmptyString(raw.address, "Host address"), code: nonEmptyString(raw.code, "Pairing code") };
+}
+
+/** 미러 스냅숏 상한. 폴더 수백 개짜리 트리도 수십 KB라 넉넉하다. */
+const MAX_REMOTE_MIRROR_BYTES = 1024 * 1024;
+
+/**
+ * 미러는 main이 읽지 않고 원격 창에 그대로 전하는 값이라 모양만 본다 — 객체인지, 트리가 배열이고
+ * 뷰가 객체인지, 그리고 크기.
+ */
+export function validateRemoteMirror(value: unknown): RemoteMirror {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Remote mirror must be an object");
+  }
+  const raw = value as Record<string, unknown>;
+  if (!Array.isArray(raw.tree)) throw new Error("Remote mirror tree must be an array");
+  if (typeof raw.view !== "object" || raw.view === null || Array.isArray(raw.view)) {
+    throw new Error("Remote mirror view must be an object");
+  }
+  if (JSON.stringify(value).length > MAX_REMOTE_MIRROR_BYTES) throw new Error("Remote mirror is too large");
+  return value as RemoteMirror;
 }
 
 export function validateSettingsPatch(value: unknown): AppSettingsPatch {

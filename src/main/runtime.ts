@@ -130,6 +130,7 @@ import { RemoteAccess } from "./remote/remote-access";
 import { RemoteDeviceStore } from "./remote/device-store";
 import { PairingCodes } from "./remote/pairing-codes";
 import { RemoteSessionHub } from "./remote/remote-session-hub";
+import type { RemoteMirror } from "../shared/remote-types";
 import { readShellArtifact } from "./remote/shell-artifact";
 import { TerminalSizeArbiter } from "./remote/size-arbiter";
 import { UNKNOWN_DEVICE_NAME, watchSizeOwners } from "./remote/size-owner-events";
@@ -626,6 +627,13 @@ export async function createDesktopRuntime(
     deviceName: remoteDeviceName,
     send: (owner) => sendToMainWindow(host.getMainWindow(), "terminals:size-owner", owner),
   });
+  // 원격 창이 따라 그리는 메인 창의 트리·그리드. 메인 창 렌더러가 바뀔 때마다 보낸다.
+  let remoteMirror: RemoteMirror | null = null;
+  const remoteMirrorListeners = new Set<() => void>();
+  const liveMainWindow = () => {
+    const window = host.getMainWindow();
+    return window && !window.isDestroyed() ? window : null;
+  };
   const remoteHub = new RemoteSessionHub({
     gateway: {
       list: () => coordinator.list(),
@@ -663,6 +671,20 @@ export async function createDesktopRuntime(
         const window = host.getMainWindow();
         if (!window || window.isDestroyed()) throw new Error("호스트 창이 열려 있지 않습니다");
         sendToMainWindow(window, "shelves:move-requested", { sessionId, shelf });
+      },
+      // 창이 사라졌으면 들고 있던 스냅숏은 아무것도 비추지 않는다 — 원격은 자체 그리드로 돌아간다.
+      mirror: () => (liveMainWindow() ? remoteMirror : null),
+      onMirrorChanged: (listener) => {
+        remoteMirrorListeners.add(listener);
+        return () => remoteMirrorListeners.delete(listener);
+      },
+      requestView: async (action) => {
+        const window = liveMainWindow();
+        if (!window) throw new Error("호스트 창이 열려 있지 않습니다");
+        sendToMainWindow(window, "mirror:view-requested", action);
+      },
+      rename: async (sessionId, name) => {
+        await coordinator.rename(sessionId, name);
       },
     },
     devices: remoteDevices,
@@ -824,6 +846,10 @@ export async function createDesktopRuntime(
       issuePairingCode: () => remoteAccess.issuePairingCode(),
       listDevices: () => remoteAccess.listDevices(),
       revokeDevice: (deviceId) => remoteAccess.revokeDevice(deviceId),
+      publishMirror: (mirror) => {
+        remoteMirror = mirror;
+        for (const listener of remoteMirrorListeners) listener();
+      },
     },
     remoteHosts: {
       list: () => remoteHosts.list(),

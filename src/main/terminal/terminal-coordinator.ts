@@ -1091,6 +1091,8 @@ export class TerminalCoordinator {
     view.name = trimmed && trimmed.length > 0 ? trimmed : null;
     view.updatedAt = this.options.now();
     await this.persistView(view);
+    // Every list on screen labels the session by this name — the main window and remote screens alike.
+    if (!this.removedSessionIds.has(sessionId)) this.publish({ type: "renamed", sessionId, session: { ...view } });
     return { ...view };
   }
 

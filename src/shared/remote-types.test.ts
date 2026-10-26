@@ -109,4 +109,52 @@ describe("parseRemoteClientMessage", () => {
       expect(parseRemoteClientMessage(raw), raw).toBeNull();
     }
   });
+
+  it("accepts every view action and the rename message", () => {
+    for (const action of [
+      { action: "select-folder", projectId: "p1", worktreeId: null },
+      { action: "select-folder", projectId: "p1", worktreeId: "w1" },
+      { action: "select-shelf", shelf: "hidden" },
+      { action: "layout", layoutId: "auto" },
+      { action: "layout", layoutId: "cols:1-1-1-1-1-1" },
+      { action: "split", slot: 0 },
+      { action: "merge", slot: 11 },
+      { action: "close", slot: 3 },
+      { action: "page", page: 2 },
+      { action: "focus", paneId: "s1" },
+      { action: "move", paneId: "s1", slot: 1 },
+      { action: "open", sessionId: "s1" },
+    ]) {
+      expect(parseRemoteClientMessage(JSON.stringify({ type: "view", ...action, extra: 1 }))).toEqual({ type: "view", ...action });
+    }
+    expect(parseRemoteClientMessage('{"type":"rename","sessionId":"s","name":""}')).toEqual({
+      type: "rename",
+      sessionId: "s",
+      name: "",
+    });
+  });
+
+  it("rejects view actions and renames it cannot act on", () => {
+    for (const raw of [
+      '{"type":"view"}',
+      '{"type":"view","action":"zoom"}',
+      '{"type":"view","action":"select-folder","projectId":"p1"}',
+      '{"type":"view","action":"select-folder","projectId":"","worktreeId":null}',
+      '{"type":"view","action":"select-shelf","shelf":"workspace"}',
+      // Split columns are made from a pane, not chosen whole; and seven columns do not exist.
+      '{"type":"view","action":"layout","layoutId":"cols:2-1"}',
+      '{"type":"view","action":"layout","layoutId":"cols:1-1-1-1-1-1-1"}',
+      '{"type":"view","action":"split","slot":12}',
+      '{"type":"view","action":"close","slot":-1}',
+      '{"type":"view","action":"merge","slot":1.5}',
+      '{"type":"view","action":"page","page":-1}',
+      '{"type":"view","action":"focus","paneId":""}',
+      '{"type":"view","action":"move","paneId":"s1"}',
+      '{"type":"view","action":"open"}',
+      '{"type":"rename","sessionId":"s"}',
+      `{"type":"rename","sessionId":"s","name":"${"a".repeat(121)}"}`,
+    ]) {
+      expect(parseRemoteClientMessage(raw), raw).toBeNull();
+    }
+  });
 });
