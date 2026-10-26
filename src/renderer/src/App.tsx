@@ -51,6 +51,7 @@ import { neighbourSlot, resolveLayout, type FocusDirection } from "./grid-layout
 import { SESSION_SIGNAL_MS, SessionSignalsContext, sessionSignalFor, type SessionSignal } from "./session-signals";
 import { DriveRootContext, type DriveRootInfo } from "./drive-root-context";
 import { showToast, Toaster } from "./toast";
+import { repoSyncNoticeToast } from "./WorkProjectRepoSyncCard";
 import { useTransientSet } from "./use-transient-set";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
 import { recentProjects } from "./recent-folders";
@@ -1148,6 +1149,16 @@ export function App() {
     expandWorkProject(workProjectId);
     setActionError(null);
   };
+  // 세션 시작 최신화에서 건너뛰거나 실패한 레포 — 누르면 그 업무 프로젝트의 레포 최신화 카드로 간다.
+  const selectWorkProjectRef = useRef(selectWorkProject);
+  selectWorkProjectRef.current = selectWorkProject;
+  useEffect(
+    () =>
+      window.multiCliWork.workProjects.onRepoSyncNotice((notice) =>
+        showToast(repoSyncNoticeToast(notice, () => selectWorkProjectRef.current(notice.workProjectId))),
+      ),
+    [],
+  );
 
   // 이름(구분 코드 접두어)과 드라이브 폴더를 함께 정해야 해서 대화상자로 받는다.
   const createWorkProject = () => {

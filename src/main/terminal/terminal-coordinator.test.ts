@@ -325,7 +325,7 @@ describe("TerminalCoordinator", () => {
 
     await instance.create({ projectId: "project-1", kind: "claude", cols: 90, rows: 30 });
 
-    expect(getWorkProjectBrief).toHaveBeenCalledWith(project.id);
+    expect(getWorkProjectBrief).toHaveBeenCalledWith(project.id, { sessionId: "session-1", agentId: "claude" });
     expect(worker.create).toHaveBeenCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({

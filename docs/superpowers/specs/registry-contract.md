@@ -16,6 +16,8 @@
 
 따라서 **스키마는 우리가 단독으로 소유한다.** 다른 앱과의 lock-step 배포 의무는 없다. 대신 8절의 다운그레이드 함정이 그 자리를 대신한다.
 
+> HM과 지금 공유하는 계약은 레포 일괄 최신화 하나뿐이고, 이 레지스트리와 별개다 — 출처는 harness-manager `docs/contracts/repo-sync.md`. mcw는 업무 프로젝트를 레포 경로 목록으로 풀어 넘기기만 하고(`src/main/repo-sync/`), HM이 없는 PC용 대체 엔진 `src/main/repo-sync/engine/`은 HM 코드의 복사본이라 HM 쪽이 바뀌면 같이 고친다.
+
 ## 1. 파일
 
 - 본 파일: `~/.multi-cli-work/projects.json`

@@ -387,6 +387,9 @@ function createApi(options?: {
       revealLocalFolder: vi.fn().mockResolvedValue(undefined),
       chooseTeamsSyncRoot: vi.fn().mockResolvedValue(null),
       clearTeamsSyncRoot: vi.fn().mockResolvedValue(workProjectRegistry),
+      syncRepos: vi.fn().mockResolvedValue(null),
+      lastRepoSync: vi.fn().mockResolvedValue(null),
+      onRepoSyncNotice: vi.fn(() => () => undefined),
     },
     pcRoots: {
       get: vi.fn().mockResolvedValue(pcRootsInfo),

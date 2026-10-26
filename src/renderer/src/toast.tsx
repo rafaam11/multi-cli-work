@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
-import { CircleCheck, CircleX } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX } from "lucide-react";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { motionDuration, motionEase } from "./motion-tokens";
 
-export type ToastTone = "success" | "error";
+export type ToastTone = "success" | "warning" | "error";
 
 export interface ToastInput {
   tone: ToastTone;
@@ -71,7 +71,7 @@ function ToastItem({ toast }: { toast: Toast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const Icon = toast.tone === "success" ? CircleCheck : CircleX;
+  const Icon = toast.tone === "success" ? CircleCheck : toast.tone === "warning" ? AlertTriangle : CircleX;
   return (
     <motion.li
       layout="position"

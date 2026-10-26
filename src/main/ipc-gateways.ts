@@ -30,6 +30,7 @@ import type { PcRootsInfo } from "../shared/pc-roots-types";
 import type { ProfileGateway } from "./profile/profile-gateway";
 import type { FileExplorerTarget, FileTreeEntry, WorkspaceChangedPaths, WorkspaceFileContent } from "../shared/file-explorer-types";
 import type { EditorPosition } from "./providers/provider-launch";
+import type { RepoSyncService } from "./repo-sync/repo-sync-service";
 import type {
   ActivePullRequestReview, GitHubIntegrationStatus, GitHubRemote, PullRequestDetail,
   PullRequestDiffFile, PullRequestListPage, PullRequestListQuery, PullRequestReviewAgent,
@@ -325,6 +326,7 @@ export interface MainIpcDependencies {
   projectService: ProjectServiceGateway;
   workProjectService: WorkProjectServiceGateway;
   readWorkProjectRegistry(): Promise<WorkProjectRegistryV1>;
+  repoSync: RepoSyncService;
   workspace: WorkspaceGateway;
   projectTags: ProjectTagsGateway;
   coordinator: TerminalCoordinatorGateway;

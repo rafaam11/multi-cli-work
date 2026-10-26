@@ -22,7 +22,14 @@ import {
   splitFrontmatter,
   workspacePathKey,
   type ChannelLetter,
+  type WorkspacePathStyle,
 } from "../../shared/workspace-path";
+
+/** 셸 `repos:`의 이름이 사는 dev 폴더. 셸이 속한 루트의 `dev`이고, 루트를 못 찾으면 셸의 루트다. */
+export function shellDevPath(roots: readonly WorkspaceRoot[], shellRoot: string, style: WorkspacePathStyle): string {
+  const key = workspacePathKey(shellRoot, style);
+  return roots.find((root) => workspacePathKey(root.work, style) === key)?.dev ?? shellRoot;
+}
 
 /**
  * 레포 → 셸 역인덱스. 루트 CLAUDE.md §3이 셸 프론트매터의 `repos:`를 SSOT로 못박았으므로,
@@ -448,9 +455,8 @@ export class WorkspaceIndex {
      */
     const repoClaims = new Map<string, string[]>();
     const pathClaims = new Map<string, { display: string; refs: string[] }>();
-    const devRootOf = new Map(registry.roots.map((root) => [workspacePathKey(root.work, style), root.dev]));
     for (const shell of shells) {
-      const devPath = devRootOf.get(workspacePathKey(shell.root, style)) ?? shell.root;
+      const devPath = shellDevPath(registry.roots, shell.root, style);
       for (const repo of shell.repos) {
         repoOwners[workspacePathKey(path.join(devPath, repo), style)] = shell.ref;
         // 휴면 레포는 _archive/ 아래로 옮겨져도 같은 프로젝트 소속이다(루트 §10).

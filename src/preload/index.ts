@@ -10,6 +10,7 @@ import type {
 import type { RemoteHostView, RemoteShelf, RemoteViewAction } from "../shared/remote-types";
 import type { SessionIndicatorsUpdate, TerminalEvent } from "../shared/terminal-types";
 import type { UsageSnapshot } from "../shared/usage-types";
+import type { RepoSyncSessionNotice } from "../shared/repo-sync-types";
 import type { BoardMessage } from "../shared/board-types";
 import type { SessionPreset } from "../shared/preset-types";
 
@@ -50,6 +51,13 @@ const api: MultiCliWorkApi = {
       ipcRenderer.invoke("work-projects:reveal-local-folder", workProjectId, folderPath),
     chooseTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:choose-teams-root"),
     clearTeamsSyncRoot: () => ipcRenderer.invoke("work-projects:clear-teams-root"),
+    syncRepos: (workProjectId) => ipcRenderer.invoke("work-projects:sync-repos", workProjectId),
+    lastRepoSync: (workProjectId) => ipcRenderer.invoke("work-projects:last-repo-sync", workProjectId),
+    onRepoSyncNotice(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, notice: RepoSyncSessionNotice) => listener(notice);
+      ipcRenderer.on("repo-sync:session-notice", handler);
+      return () => ipcRenderer.removeListener("repo-sync:session-notice", handler);
+    },
   },
   pcRoots: {
     get: () => ipcRenderer.invoke("pc-roots:get"),

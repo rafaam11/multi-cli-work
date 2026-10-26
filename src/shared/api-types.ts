@@ -16,6 +16,7 @@ import type {
 } from "./file-explorer-types";
 import type { ProjectRegistrySnapshot, ProjectStatus, ProjectTrack, SharedProject } from "./project-types";
 import type { ProjectTagsV1 } from "./project-tags-types";
+import type { RepoSyncSessionNotice, WorkProjectRepoSync } from "./repo-sync-types";
 import type { SessionIndicatorsUpdate, TerminalEvent, TerminalKind, TerminalStatus, ToolCommand } from "./terminal-types";
 import type { UsageSnapshot } from "./usage-types";
 import type {
@@ -382,6 +383,12 @@ export interface MultiCliWorkApi {
     /** Opens the folder dialog and stores the choice; `clear` resets it. Null when cancelled. */
     chooseTeamsSyncRoot(): Promise<WorkProjectRegistryV1 | null>;
     clearTeamsSyncRoot(): Promise<WorkProjectRegistryV1>;
+    /** 업무 프로젝트의 레포를 모두 fast-forward로 최신화한다(쿨다운 무시). 레포가 없으면 null. */
+    syncRepos(workProjectId: string): Promise<WorkProjectRepoSync | null>;
+    /** 네트워크 없이 마지막 최신화 기록. 레포가 없으면 null. */
+    lastRepoSync(workProjectId: string): Promise<WorkProjectRepoSync | null>;
+    /** 세션 시작 최신화에서 건너뛰거나 실패한 레포가 있을 때. 같은 내용은 10분에 한 번만 온다. */
+    onRepoSyncNotice(listener: (notice: RepoSyncSessionNotice) => void): () => void;
   };
   /** 이 PC의 dev·data·work·drive 루트. 지정값은 settings.json `pcRoots`에 산다. */
   pcRoots: {

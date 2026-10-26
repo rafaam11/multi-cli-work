@@ -115,8 +115,9 @@ interface TerminalCoordinatorOptions {
    * Path of the work-project brief for a folder's owning 업무 프로젝트, or null when the folder is
    * 미분류. Written fresh per launch by the provider; the coordinator only forwards the path via
    * the MULTI_CLI_WORK_PROJECT_BRIEF env variable. Absent in tests without work projects.
+   * `launch` says which session and agent asked — the provider only syncs repos for Claude·Codex.
    */
-  getWorkProjectBrief?(projectId: string): Promise<string | null>;
+  getWorkProjectBrief?(projectId: string, launch: { sessionId: string; agentId: AgentId }): Promise<string | null>;
   /** Arguments the app adds to an agent session's launch — the jk MCP server's config. */
   extraLaunchArgs?(agent: AgentDefinition, sessionId: string): Promise<string[]>;
   /** Null when a session names an agent the user has since removed from `agents.json`. */
@@ -811,7 +812,9 @@ export class TerminalCoordinator {
     // A brief failure must never block the launch itself — the session just starts without context.
     const briefPath =
       input.projectId !== null && this.options.getWorkProjectBrief
-        ? await this.options.getWorkProjectBrief(input.projectId).catch(() => null)
+        ? await this.options
+            .getWorkProjectBrief(input.projectId, { sessionId: input.sessionId, agentId: input.kind })
+            .catch(() => null)
         : null;
     // Replacing an exited record discards its replay: first make its pending output durable.
     while (this.pendingLogChunks.has(input.sessionId) || this.logWrites.has(input.sessionId)) {

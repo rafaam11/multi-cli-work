@@ -231,6 +231,13 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     return dependencies.workProjectService.setTeamsSyncRoot(rootPath);
   });
   ipc.handle("work-projects:clear-teams-root", () => dependencies.workProjectService.setTeamsSyncRoot(null));
+  // 레포 일괄 최신화(HM 계약 docs/contracts/repo-sync.md). 버튼은 쿨다운을 무시하고, 기록 조회는 네트워크를 쓰지 않는다.
+  ipc.handle("work-projects:sync-repos", async (_event, workProjectId: unknown) =>
+    dependencies.repoSync.sync(nonEmptyString(workProjectId, "Work project id"), { force: true }),
+  );
+  ipc.handle("work-projects:last-repo-sync", async (_event, workProjectId: unknown) =>
+    dependencies.repoSync.last(nonEmptyString(workProjectId, "Work project id")),
+  );
 
   // ── 이 PC의 루트 ──────────────────────────────────────────────────────────────────────────
   const rootKey = (value: unknown): PcRootKey => {
