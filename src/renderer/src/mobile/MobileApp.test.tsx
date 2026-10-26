@@ -12,22 +12,40 @@ vi.mock("./SessionScreen", () => ({
     onMeasured,
     onBack,
     tabs,
+    focused = true,
+    onClose,
+    onFocus,
   }: {
     session: RemoteSessionSummary;
     wide?: boolean;
     onMeasured?(size: { cols: number; rows: number }): void;
     onBack(): void;
     tabs?: ReactNode;
+    focused?: boolean;
+    onClose?(): void;
+    onFocus?(): void;
   }) => (
-    <div data-testid="screen" data-wide={String(Boolean(wide))}>
+    <div data-testid="screen" data-wide={String(Boolean(wide))} data-focused={String(focused)}>
       <span data-testid="screen-label">{session.label}</span>
+      {onFocus ? (
+        <button type="button" onClick={onFocus}>
+          {session.label} 칸 고르기
+        </button>
+      ) : null}
+      {onClose ? (
+        <button type="button" onClick={onClose}>
+          {session.label} 칸 닫기
+        </button>
+      ) : null}
       <button type="button" onClick={onBack}>
         세션 목록으로
       </button>
       {tabs}
-      <button type="button" onClick={() => onMeasured?.({ cols: 150, rows: 40 })}>
-        재기
-      </button>
+      {onMeasured ? (
+        <button type="button" onClick={() => onMeasured({ cols: 150, rows: 40 })}>
+          재기
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -73,6 +91,7 @@ function connect() {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.stubGlobal("WebSocket", FakeSocket);
   (window as unknown as { McwShell: unknown }).McwShell = {
     bridgeVersion: () => 1,
@@ -89,24 +108,35 @@ afterEach(() => {
   window.history.replaceState(null, "", window.location.pathname);
 });
 
+function focusedLabel() {
+  return screen
+    .getAllByTestId("screen")
+    .find((element) => element.dataset.focused === "true")
+    ?.querySelector("[data-testid=screen-label]")?.textContent;
+}
+
+function screenLabels() {
+  return screen.queryAllByTestId("screen-label").map((element) => element.textContent);
+}
+
 describe("MobileApp", () => {
   it("keeps the list beside the open session on a wide screen", () => {
     useScreen(true);
     render(<MobileApp />);
     connect();
     expect(screen.getByText("왼쪽에서 세션을 고르세요")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     expect(screen.getByTestId("screen")).toHaveTextContent("리팩터");
     expect(screen.getByTestId("screen")).toHaveAttribute("data-wide", "true");
-    expect(screen.getByRole("button", { name: /테스트/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /리팩터/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: "테스트, 대기" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "리팩터, 작업 중" })).toHaveAttribute("aria-current", "true");
   });
 
   it("replaces the list with the session on a narrow screen", () => {
     useScreen(false);
     render(<MobileApp />);
     connect();
-    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     expect(screen.getByTestId("screen")).toHaveAttribute("data-wide", "false");
     expect(screen.queryByRole("heading", { name: "회사PC" })).not.toBeInTheDocument();
   });
@@ -116,7 +146,7 @@ describe("MobileApp", () => {
     render(<MobileApp />);
     connect();
     const before = window.history.length;
-    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     expect(window.location.hash).toBe("#session=s1");
     expect(window.history.length).toBe(before + 1);
     fireEvent.click(screen.getByRole("button", { name: "테스트, 대기" }));
@@ -132,7 +162,7 @@ describe("MobileApp", () => {
     useScreen(false);
     render(<MobileApp />);
     connect();
-    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     act(() => window.history.back());
     await waitFor(() => expect(screen.getByRole("heading", { name: "회사PC" })).toBeInTheDocument());
   });
@@ -152,7 +182,7 @@ describe("MobileApp", () => {
     useScreen(false);
     render(<MobileApp />);
     connect();
-    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "회사PC" })).toBeInTheDocument());
     expect(screen.getByText("불러오는 중…")).toBeInTheDocument();
@@ -163,7 +193,7 @@ describe("MobileApp", () => {
     useScreen(true);
     render(<MobileApp />);
     connect();
-    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     expect(screen.queryByRole("navigation", { name: "세션 탭" })).not.toBeInTheDocument();
   });
 
@@ -177,7 +207,7 @@ describe("MobileApp", () => {
       window.location.hash = "#session=s1";
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
-    expect(screen.getByTestId("screen")).toHaveTextContent("리팩터");
+    expect(focusedLabel()).toBe("리팩터");
   });
 
   it("asks for the catalog and starts a session", () => {
@@ -259,12 +289,12 @@ describe("MobileApp", () => {
     useScreen(false);
     render(<MobileApp />);
     connect();
-    fireEvent.click(screen.getByRole("button", { name: /리팩터/ }));
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     expect(screen.getByTestId("screen")).toBeInTheDocument();
     act(() => FakeSocket.last!.receive({ type: "removed", sessionId: "s1" }));
     expect(screen.queryByTestId("screen")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /테스트/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /리팩터/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "테스트, 대기" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "리팩터, 작업 중" })).not.toBeInTheDocument();
   });
 
   it("shows the list when the linked session does not exist", () => {
@@ -273,6 +303,67 @@ describe("MobileApp", () => {
     render(<MobileApp />);
     connect();
     expect(screen.queryByTestId("screen")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /리팩터/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "리팩터, 작업 중" })).toBeInTheDocument();
+  });
+
+  it("opens sessions side by side on a wide screen, and moves the focus between them", () => {
+    useScreen(true);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
+    fireEvent.click(screen.getByRole("button", { name: "테스트, 대기" }));
+    expect(screenLabels()).toEqual(["리팩터", "테스트"]);
+    expect(focusedLabel()).toBe("테스트");
+    expect(window.location.hash).toBe("#session=s2");
+    fireEvent.click(screen.getByRole("button", { name: "리팩터 칸 고르기" }));
+    expect(focusedLabel()).toBe("리팩터");
+    expect(window.location.hash).toBe("#session=s1");
+    // 이미 떠 있는 세션을 목록에서 고르면 칸을 늘리지 않고 포커스만 옮긴다.
+    fireEvent.click(screen.getByRole("button", { name: "테스트, 대기" }));
+    expect(screenLabels()).toEqual(["리팩터", "테스트"]);
+    expect(focusedLabel()).toBe("테스트");
+  });
+
+  it("replaces the focused pane once four are open", () => {
+    useScreen(true);
+    render(<MobileApp />);
+    act(() => {
+      FakeSocket.last!.onopen?.();
+      FakeSocket.last!.receive({ type: "welcome", hostId: "h", hostName: "회사PC", deviceId: "d", protocolVersion: 1, shellLatest: null });
+      FakeSocket.last!.receive({
+        type: "sessions",
+        sessions: ["a", "b", "c", "d", "e"].map((id) => ({ ...SESSIONS[0]!, id, label: id, updatedAt: id })),
+      });
+    });
+    for (const id of ["a", "b", "c", "d"]) fireEvent.click(screen.getByRole("button", { name: `${id}, 작업 중` }));
+    fireEvent.click(screen.getByRole("button", { name: "b 칸 고르기" }));
+    fireEvent.click(screen.getByRole("button", { name: "e, 작업 중" }));
+    expect(screenLabels()).toEqual(["a", "e", "c", "d"]);
+    expect(focusedLabel()).toBe("e");
+  });
+
+  it("closes a pane and hands the focus to its neighbour, keeping the panes for next time", () => {
+    useScreen(true);
+    const { unmount } = render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
+    fireEvent.click(screen.getByRole("button", { name: "테스트, 대기" }));
+    fireEvent.click(screen.getByRole("button", { name: "테스트 칸 닫기" }));
+    expect(screenLabels()).toEqual(["리팩터"]);
+    expect(focusedLabel()).toBe("리팩터");
+    expect(window.location.hash).toBe("#session=s1");
+    unmount();
+    window.history.replaceState(null, "", window.location.pathname);
+    render(<MobileApp />);
+    connect();
+    expect(screenLabels()).toEqual(["리팩터"]);
+  });
+
+  it("asks the host to hide a session and to show it again", () => {
+    useScreen(true);
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "리팩터 작업공간에서 숨기기" }));
+    expect(FakeSocket.last!.sent).toContainEqual({ type: "shelf", sessionId: "s1", shelf: "hidden" });
   });
 });

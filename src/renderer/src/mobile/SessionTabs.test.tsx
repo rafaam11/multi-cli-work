@@ -88,4 +88,16 @@ describe("SessionTabs", () => {
     fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
     expect(onNewSession).toHaveBeenCalled();
   });
+
+  it("leaves hidden sessions out, unless that is the one open", () => {
+    render(
+      <SessionTabs
+        sessions={[s("a"), s("h", { hidden: true }), s("o", { hidden: true })]}
+        activeSessionId="o"
+        onSelect={vi.fn()}
+        onNewSession={vi.fn()}
+      />,
+    );
+    expect(tabNames()).toEqual(["a, 작업 중", "o, 작업 중", "새 세션"]);
+  });
 });

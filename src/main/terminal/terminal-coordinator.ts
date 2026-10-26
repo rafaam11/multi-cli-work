@@ -221,6 +221,9 @@ export class TerminalCoordinator {
   private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
+  /** Sessions on the renderer's 숨김 shelf, as of its last save. The remote list shows them apart. */
+  private hiddenIds = new Set<string>();
+  private readonly shelfListeners = new Set<() => void>();
 
   constructor(private readonly options: TerminalCoordinatorOptions) {
     options.worker.onEvent((event) => {
@@ -238,6 +241,7 @@ export class TerminalCoordinator {
     );
     const snapshot = await readAppState({ statePath: this.options.statePath });
     for (const session of Object.values(snapshot.state.sessions)) this.views.set(session.id, exitedView(session));
+    this.hiddenIds = this.knownSessionIds(snapshot.state.hiddenPanes?.slots ?? []);
     if (this.options.statusDir) {
       await cleanupProviderStatusFiles(this.options.statusDir, new Set(this.views.keys())).catch((error) =>
         this.reportAsyncError("Provider status cleanup failed", error),
@@ -639,7 +643,28 @@ export class TerminalCoordinator {
       }),
       { statePath: this.options.statePath },
     );
+    this.updateHidden(this.knownSessionIds(input.hiddenPanes.slots));
     return { state, source: "primary" as const, writable: true };
+  }
+
+  hiddenSessionIds(): ReadonlySet<string> {
+    return this.hiddenIds;
+  }
+
+  /** Fires when the set of hidden sessions changes — not on every layout or page save. */
+  onShelvesChanged(listener: () => void): () => void {
+    this.shelfListeners.add(listener);
+    return () => this.shelfListeners.delete(listener);
+  }
+
+  private knownSessionIds(slots: readonly (string | null)[]): Set<string> {
+    return new Set(slots.filter((id): id is string => id !== null && this.views.has(id)));
+  }
+
+  private updateHidden(next: Set<string>): void {
+    if (next.size === this.hiddenIds.size && [...next].every((id) => this.hiddenIds.has(id))) return;
+    this.hiddenIds = next;
+    for (const listener of this.shelfListeners) listener();
   }
 
   onEvent(listener: (event: TerminalEvent) => void): () => void {

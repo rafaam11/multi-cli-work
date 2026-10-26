@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { RemoteSessionSummary } from "@shared/remote-types";
-import { STATUS_LABEL } from "./SessionList";
+import { statusLabels as STATUS_LABEL } from "../session-labels";
 import { awaitingCount, isAwaiting, nextAwaiting } from "./session-list-model";
 
 interface SessionTabsProps {
@@ -12,7 +12,9 @@ interface SessionTabsProps {
 }
 
 /** 좁은 화면의 세션 화면 위에 두는 가로 칩 줄. 목록에 나가지 않고 다른 세션으로 옮긴다. */
-export function SessionTabs({ sessions, activeSessionId, onSelect, onNewSession }: SessionTabsProps) {
+export function SessionTabs({ sessions: all, activeSessionId, onSelect, onNewSession }: SessionTabsProps) {
+  // 숨긴 세션은 칩에 두지 않는다 — 숨김 칸에서 직접 연 세션이면 그것만 남긴다.
+  const sessions = all.filter((session) => !session.hidden || session.id === activeSessionId);
   const activeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     activeRef.current?.scrollIntoView?.({ inline: "nearest", block: "nearest" });

@@ -3,10 +3,11 @@ import type { RemoteSessionSummary } from "@shared/remote-types";
 import {
   applySessionMessage,
   awaitingCount,
-  groupSessions,
   isAwaiting,
   nextAwaiting,
-  splitAwaiting,
+  placeOf,
+  sortSessions,
+  splitShelves,
 } from "./session-list-model";
 
 const s = (id: string, overrides: Partial<RemoteSessionSummary> = {}): RemoteSessionSummary => ({
@@ -56,19 +57,38 @@ describe("applySessionMessage", () => {
   });
 });
 
-describe("groupSessions", () => {
-  it("groups by project, newest first, with folderless sessions last", () => {
-    const groups = groupSessions([
-      s("old", { projectName: "B", updatedAt: "2026-09-29T00:00:00.000Z" }),
-      s("tool", { projectId: null, projectName: null }),
-      s("new", { projectName: "B", updatedAt: "2026-09-30T01:00:00.000Z" }),
-      s("a", { projectName: "A" }),
+describe("sortSessions", () => {
+  it("puts waiting sessions first, then working, then the rest — newest first within a rank", () => {
+    const sorted = sortSessions([
+      s("idle-old", { status: "idle", updatedAt: "2026-09-29T00:00:00.000Z" }),
+      s("work", { status: "working" }),
+      s("input", { status: "awaiting-input" }),
+      s("idle-new", { status: "idle", updatedAt: "2026-09-30T01:00:00.000Z" }),
+      s("approval", { status: "awaiting-approval" }),
+      s("exited", { status: "exited", updatedAt: "2026-09-30T02:00:00.000Z" }),
     ]);
-    expect(groups.map((group) => [group.projectName, group.sessions.map((entry) => entry.id)])).toEqual([
-      ["A", ["a"]],
-      ["B", ["new", "old"]],
-      ["폴더 없음", ["tool"]],
+    expect(sorted.map((entry) => entry.id)).toEqual(["approval", "input", "work", "exited", "idle-new", "idle-old"]);
+  });
+});
+
+describe("splitShelves", () => {
+  it("keeps sessions hidden on the host apart, each sorted", () => {
+    const { active, hidden } = splitShelves([
+      s("h1", { hidden: true, status: "idle" }),
+      s("a1", { status: "idle" }),
+      s("a2", { status: "awaiting-input" }),
+      s("h2", { hidden: true, status: "working" }),
     ]);
+    expect(active.map((entry) => entry.id)).toEqual(["a2", "a1"]);
+    expect(hidden.map((entry) => entry.id)).toEqual(["h2", "h1"]);
+  });
+});
+
+describe("placeOf", () => {
+  it("tells rows apart by folder and branch", () => {
+    expect(placeOf(s("1"))).toBe(placeOf(s("2")));
+    expect(placeOf(s("1"))).not.toBe(placeOf(s("2", { worktreeBranch: "feat" })));
+    expect(placeOf(s("1"))).not.toBe(placeOf(s("2", { projectName: null })));
   });
 });
 
@@ -98,18 +118,5 @@ describe("waiting sessions", () => {
   it("skips the current session and gives null when nothing else waits", () => {
     expect(nextAwaiting([s("1", { status: "awaiting-input" }), s("2")], "1")).toBeNull();
     expect(nextAwaiting([], null)).toBeNull();
-  });
-
-  it("pulls waiting sessions out of their folders", () => {
-    const { awaiting, groups } = splitAwaiting([
-      s("w", { projectName: "B", status: "awaiting-input" }),
-      s("a", { projectName: "A" }),
-      s("b", { projectName: "B" }),
-    ]);
-    expect(awaiting.map((entry) => entry.id)).toEqual(["w"]);
-    expect(groups.map((group) => [group.projectName, group.sessions.map((entry) => entry.id)])).toEqual([
-      ["A", ["a"]],
-      ["B", ["b"]],
-    ]);
   });
 });

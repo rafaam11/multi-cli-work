@@ -139,8 +139,11 @@ export function agentAccentClass(agent: AgentView | undefined): string | undefin
 }
 
 export interface AgentIconProps extends BrandIconProps {
-  /** Undefined when the session names an agent that is no longer in `agents.json`. */
-  agent: AgentView | undefined;
+  /**
+   * Undefined when the session names an agent that is no longer in `agents.json`. Only the fields
+   * the icon reads, so the remote screen can pass one built from a session's kind.
+   */
+  agent: Pick<AgentView, "id" | "label" | "icon" | "accentColor"> | undefined;
 }
 
 export function AgentIcon({ agent, size = 24, className }: AgentIconProps) {

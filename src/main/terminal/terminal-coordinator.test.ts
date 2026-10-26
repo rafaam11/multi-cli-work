@@ -1822,6 +1822,45 @@ describe("worktree sessions", () => {
     expect(afterRemoval.workspace?.slots).toEqual([null, second.id]);
   });
 
+  it("keeps the hidden shelf's sessions in memory and tells listeners only when that set changes", async () => {
+    const root = await tempRoot();
+    const { instance } = worktreeCoordinator(root);
+    await instance.initialize();
+    const first = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+    const second = await instance.create({ projectId: project.id, kind: "powershell", cols: 80, rows: 24 });
+    const changed = vi.fn();
+    instance.onShelvesChanged(changed);
+
+    await instance.setSlotViews({
+      folderViews: {},
+      workspace: { layoutId: "auto", slots: [first.id] },
+      hiddenPanes: { layoutId: "auto", slots: [second.id, "file:project:p:README.md", "missing"] },
+    });
+    expect([...instance.hiddenSessionIds()]).toEqual([second.id]);
+    expect(changed).toHaveBeenCalledTimes(1);
+
+    // A layout-only save leaves the hidden set as it was.
+    await instance.setSlotViews({
+      folderViews: {},
+      workspace: { layoutId: "2-col", slots: [first.id] },
+      hiddenPanes: { layoutId: "solo", slots: [second.id] },
+    });
+    expect(changed).toHaveBeenCalledTimes(1);
+
+    // A restart picks the set back up from state.json.
+    const { instance: restarted } = worktreeCoordinator(root);
+    await restarted.initialize();
+    expect([...restarted.hiddenSessionIds()]).toEqual([second.id]);
+
+    await instance.setSlotViews({
+      folderViews: {},
+      workspace: { layoutId: "auto", slots: [first.id, second.id] },
+      hiddenPanes: { layoutId: "auto", slots: [] },
+    });
+    expect(instance.hiddenSessionIds().size).toBe(0);
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
   it("removes only the worktree's sessions, leaving root sessions alone", async () => {
     const root = await tempRoot();
     const { instance } = worktreeCoordinator(root);

@@ -50,7 +50,12 @@ export interface RemoteSessionSummary {
   updatedAt: string;
   /** 워크트리에서 도는 세션이면 그 브랜치(v1.38.0 호스트부터). */
   worktreeBranch?: string;
+  /** 호스트 메인 창의 숨김 선반에 있는 세션이면 true. 없으면 작업공간 세션이다. */
+  hidden?: boolean;
 }
+
+/** 호스트 메인 창의 두 선반. 세션은 둘 중 하나에만 있다. */
+export type RemoteShelf = "active" | "hidden";
 
 export type RemoteClientMessage =
   | { type: "hello"; token: string; protocolVersion: number; mode: "ui" }
@@ -65,7 +70,9 @@ export type RemoteClientMessage =
   | { type: "create"; projectId: string; kind: TerminalKind; worktreeId?: string; cols?: number; rows?: number }
   | { type: "stop"; sessionId: string }
   | { type: "resume"; sessionId: string }
-  | { type: "remove"; sessionId: string };
+  | { type: "remove"; sessionId: string }
+  // 호스트 메인 창에서 숨기거나 다시 표시한다. 바뀐 목록은 sessions로 다시 온다.
+  | { type: "shelf"; sessionId: string; shelf: RemoteShelf };
 
 /**
  * 새 세션을 어디에 무엇으로 띄울 수 있는지. 숨긴 폴더와 실행 파일이 없는 에이전트는 들어 있지 않다.
@@ -162,6 +169,10 @@ export function parseRemoteClientMessage(raw: string): RemoteClientMessage | nul
       return text(value.sessionId) ? { type: "resume", sessionId: value.sessionId } : null;
     case "remove":
       return text(value.sessionId) ? { type: "remove", sessionId: value.sessionId } : null;
+    case "shelf":
+      return text(value.sessionId) && (value.shelf === "active" || value.shelf === "hidden")
+        ? { type: "shelf", sessionId: value.sessionId, shelf: value.shelf }
+        : null;
     case "write":
       return text(value.sessionId) && typeof value.data === "string"
         ? { type: "write", sessionId: value.sessionId, data: value.data }

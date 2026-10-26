@@ -7,7 +7,7 @@ import type {
   UpdaterStatus,
   WindowChromeState,
 } from "../shared/api-types";
-import type { RemoteHostView } from "../shared/remote-types";
+import type { RemoteHostView, RemoteShelf } from "../shared/remote-types";
 import type { SessionIndicatorsUpdate, TerminalEvent } from "../shared/terminal-types";
 import type { UsageSnapshot } from "../shared/usage-types";
 import type { BoardMessage } from "../shared/board-types";
@@ -213,6 +213,12 @@ const api: MultiCliWorkApi = {
         listener(request.sessionId);
       ipcRenderer.on("navigation:session-requested", handler);
       return () => ipcRenderer.removeListener("navigation:session-requested", handler);
+    },
+    onShelfMoveRequested(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, request: { sessionId: string; shelf: RemoteShelf }) =>
+        listener(request.sessionId, request.shelf);
+      ipcRenderer.on("shelves:move-requested", handler);
+      return () => ipcRenderer.removeListener("shelves:move-requested", handler);
     },
   },
   providers: {

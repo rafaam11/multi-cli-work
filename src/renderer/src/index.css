@@ -23,55 +23,6 @@
   font-family: var(--font-family-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --bg: #161918;
-  --sidebar: #1c201f;
-  --surface: #202524;
-  --surface-raised: #252b29;
-  --surface-hover: #2a302e;
-  --line: #343b38;
-  --line-strong: #46504c;
-  --text: #e7ebe8;
-  --muted: #9aa49f;
-  --quiet: #717b76;
-  --teal: #4fb7a4;
-  --amber: #d8a24a;
-  --blue: #6ea8d8;
-  --red: #d46a6a;
-  --green: #73b987;
-  --violet: #aa8ccc;
-  --brand-powershell: #5391fe;
-  --brand-vscode: #007acc;
-  --brand-claude: #d97757;
-  --brand-teams: #6264a7;
-  --brand-gdrive: #1fa463;
-  /*
-   * 업무 프로젝트 구분. Deliberately separate tokens rather than reusing --red/--green/--blue:
-   * those carry state (--red is a missing folder or an error), and a category tinted with them
-   * would read as "something is wrong here". Each value clears 4.5:1 as the sidebar's icon and
-   * rail against --sidebar, and as chip text over the 12% wash .category-chip puts behind it on
-   * --surface; --quiet was too dim for the grey (3.7:1), hence its own value.
-   */
-  --category-government: #e07a72;
-  --category-outsourcing: #6fc08a;
-  --category-research: #e08ac0;
-  --category-product: #6aa6e0;
-  --category-etc: #9aa49f;
-  /* 태그·구분 공용 팔레트의 6·7번째 색 — 5개짜리 구분 팔레트에는 없는 두 계열(청록·보라)이다. */
-  --accent-6: #4fb8ac;
-  --accent-7: #b088d4;
-  /* Surfaces and state colours that used to be written out by hand; the light theme swaps them. */
-  --header-bg: #191d1c;
-  --surface-accent: #242a28;
-  --surface-accent-soft: #1b201e;
-  --wash: rgb(255 255 255 / 8%);
-  --danger-text: #f09595;
-  --danger-line: #7a3b3b;
-  --warning-text: #d9b36f;
-  --gh-green: #3fb950;
-  --gh-red: #f85149;
-  --gh-purple: #a371f7;
-  --gh-yellow: #d29922;
-  --gh-blue: #58a6ff;
   /*
    * Motion scale, mirrored in motion-tokens.ts for motion/react props. Interaction feedback stays
    * at fast/base; signal is for one-shot "something just happened" fades, which must outlast a glance.
@@ -85,50 +36,6 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-}
-
-/*
- * Light theme. Same token names, so every rule above and below follows without change. Text tokens
- * keep at least 4.5:1 on --bg and --surface; state colours are darkened for the same reason (the dark
- * theme's pastel reds and ambers wash out on white).
- */
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #f7f8f7;
-  --sidebar: #eef1ef;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-hover: #e7ecea;
-  --line: #d5dbd8;
-  --line-strong: #b3bcb8;
-  --text: #1d2321;
-  --muted: #4f5a55;
-  --quiet: #66716c;
-  --teal: #1b7867;
-  --amber: #946410;
-  --blue: #2c6aa3;
-  --red: #b33a3a;
-  --green: #2d7a45;
-  --violet: #7450a0;
-  --category-government: #b3453c;
-  --category-outsourcing: #2b8049;
-  --category-research: #a4457b;
-  --category-product: #2c6aa3;
-  --category-etc: #5b6661;
-  --accent-6: #1c7e73;
-  --accent-7: #7650a4;
-  --header-bg: #f0f3f1;
-  --surface-accent: #e1eeea;
-  --surface-accent-soft: #edf3f1;
-  --wash: rgb(0 0 0 / 6%);
-  --danger-text: #b42318;
-  --danger-line: #e0a3a3;
-  --warning-text: #875800;
-  --gh-green: #1a7f37;
-  --gh-red: #cf222e;
-  --gh-purple: #8250df;
-  --gh-yellow: #9a6700;
-  --gh-blue: #0969da;
 }
 
 /*

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RemoteCatalog, RemoteSessionSummary } from "@shared/remote-types";
 import { startSize, type MeasuredSize } from "./initial-size";
 import { NewSessionForm } from "./NewSessionForm";
+import { closePane, gridColumns, loadPanes, placePane, savePanes } from "./pane-grid";
 import { PairScreen } from "./PairScreen";
 import {
   clearPairing,
@@ -54,10 +55,37 @@ export function MobileApp() {
   /** 세션 화면이 마지막으로 잰 터미널 크기. 새 세션을 이 화면에 맞는 크기로 띄우는 데 쓴다. */
   const measuredRef = useRef<MeasuredSize | null>(null);
 
+  /**
+   * 넓은 화면 그리드에 떠 있는 세션들. 포커스(키보드) 칸은 `openSessionId`이고, 해시도 그것만 따른다.
+   * 칸은 페어링마다 따로 저장하므로 어느 페어링의 칸인지(`owner`)를 함께 둔다.
+   */
+  const deviceId = pairing?.deviceId ?? null;
+  const [paneState, setPaneState] = useState(() => ({
+    owner: deviceId,
+    ids: deviceId ? loadPanes(storage(), deviceId) : [],
+  }));
+  if (paneState.owner !== deviceId) setPaneState({ owner: deviceId, ids: deviceId ? loadPanes(storage(), deviceId) : [] });
+  const panes = paneState.owner === deviceId ? paneState.ids : [];
+  const setPanes = (update: (current: string[]) => string[]) =>
+    setPaneState((state) => ({ owner: state.owner, ids: update(state.ids) }));
+  useEffect(() => {
+    if (paneState.owner) savePanes(storage(), paneState.owner, paneState.ids);
+  }, [paneState]);
+
   const openSessionIdRef = useRef(openSessionId);
   openSessionIdRef.current = openSessionId;
   const wideRef = useRef(wide);
   wideRef.current = wide;
+
+  // 포커스로 온 세션이 칸에 없으면 놓는다 — 목록·링크·새 세션 어디서 왔든. 가득 찼으면 직전 포커스 칸을 바꾼다.
+  const previousFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = previousFocusRef.current;
+    if (wide && openSessionId) {
+      setPanes((current) => (current.includes(openSessionId) ? current : placePane(current, previous, openSessionId)));
+    }
+    previousFocusRef.current = openSessionId;
+  }, [wide, openSessionId]);
 
   // 세션 화면은 history 항목 하나다 — Android 뒤로가기(WebView goBack)가 PC 목록이 아니라 세션 목록으로
   // 돌아오게. 링크(알림)로 바로 열었으면 목록 항목을 그 아래에 깔아 둔다.
@@ -110,6 +138,7 @@ export function MobileApp() {
     const next = new RemoteClient({ url: remoteSocketUrl(window.location), token: pairing.token });
     const offMessage = next.onMessage((message) => {
       setSessions((current) => applySessionMessage(current, message));
+      if (message.type === "removed") setPanes((current) => current.filter((id) => id !== message.sessionId));
       if (message.type === "catalog") setCatalog({ projects: message.projects, agents: message.agents });
       // 이 화면이 만들거나 다시 시작한 세션 — 바로 연다. 목록에는 created가 따로 실어 온다.
       else if (message.type === "started") {
@@ -166,6 +195,16 @@ export function MobileApp() {
     setNewSessionOpen(true);
     client.send({ type: "catalog" });
   };
+  const gridSessions = panes
+    .map((id) => sessions.find((session) => session.id === id))
+    .filter((session): session is RemoteSessionSummary => session !== undefined);
+  const closeGridPane = (sessionId: string) => {
+    const next = closePane(panes, openSessionId, sessionId);
+    setPanes(() => next.panes);
+    if (next.focusedId === openSessionId) return;
+    window.history.replaceState(window.history.state, "", next.focusedId ? sessionHash(next.focusedId) : listUrl());
+    setOpenSessionId(next.focusedId);
+  };
   const list = (
     <SessionList
       hostName={pairing.hostName}
@@ -173,6 +212,8 @@ export function MobileApp() {
       sessions={sessions}
       onOpen={(sessionId) => showSession(sessionId, "list")}
       activeSessionId={wide ? (openSession?.id ?? null) : null}
+      onScreenSessionIds={wide ? gridSessions.map((session) => session.id) : []}
+      onMoveShelf={(sessionId, shelf) => client.send({ type: "shelf", sessionId, shelf })}
       leaveLabel={bridge ? "호스트 목록" : "연결 해제"}
       onUnpair={() => {
         if (bridge) {
@@ -209,6 +250,9 @@ export function MobileApp() {
       </button>
     </p>
   ) : null;
+  const measured = (size: { cols: number; rows: number }) => {
+    measuredRef.current = { ...size, wide };
+  };
   const screen = openSession ? (
     <SessionScreen
       key={openSession.id}
@@ -217,9 +261,7 @@ export function MobileApp() {
       deviceId={pairing.deviceId}
       wide={wide}
       onBack={showList}
-      onMeasured={(size) => {
-        measuredRef.current = { ...size, wide };
-      }}
+      onMeasured={measured}
       tabs={
         wide ? undefined : (
           <SessionTabs
@@ -241,7 +283,33 @@ export function MobileApp() {
       <>
         <div className="m-wide">
           {list}
-          {screen ?? <p className="m-empty m-wide-placeholder">왼쪽에서 세션을 고르세요</p>}
+          {gridSessions.length > 0 ? (
+            <div
+              className="m-grid"
+              data-count={gridSessions.length}
+              style={{ gridTemplateColumns: `repeat(${gridColumns(gridSessions.length)}, minmax(0, 1fr))` }}
+            >
+              {gridSessions.map((session) => {
+                const focused = session.id === openSession?.id;
+                return (
+                  <SessionScreen
+                    key={session.id}
+                    client={client}
+                    session={session}
+                    deviceId={pairing.deviceId}
+                    wide
+                    focused={focused}
+                    onBack={showList}
+                    onMeasured={focused ? measured : undefined}
+                    onFocus={() => showSession(session.id, "session")}
+                    onClose={() => closeGridPane(session.id)}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <p className="m-empty m-wide-placeholder">왼쪽에서 세션을 고르세요</p>
+          )}
         </div>
         {toast}
       </>

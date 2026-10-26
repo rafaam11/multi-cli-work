@@ -46,6 +46,7 @@ import type {
   RemoteHostAddInput,
   RemoteHostView,
   RemotePairingCode,
+  RemoteShelf,
 } from "./remote-types";
 
 export interface ProjectMetadataPatch {
@@ -568,6 +569,8 @@ export interface MultiCliWorkApi {
   navigation: {
     /** Selects and reveals the session that originated an operating-system notification. */
     onSessionRequested(listener: (sessionId: string) => void): () => void;
+    /** A remote screen asked to hide or show a session; the shelves live here, so this window moves it. */
+    onShelfMoveRequested(listener: (sessionId: string, shelf: RemoteShelf) => void): () => void;
   };
   /** The native window actions the app's own title bar has to perform on the user's behalf. */
   window: {

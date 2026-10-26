@@ -293,6 +293,7 @@ function createApi(options?: {
   const listeners = new Set<(event: TerminalEvent) => void>();
   const attentionListeners = new Set<(unread: Record<string, "input" | "approval">) => void>();
   const navigationListeners = new Set<(sessionId: string) => void>();
+  const shelfMoveListeners = new Set<(sessionId: string, shelf: "active" | "hidden") => void>();
   const windowStateListeners = new Set<(state: WindowChromeState) => void>();
   const workspaceListeners = new Set<() => void>();
   const projects = options?.projects ?? [atlas];
@@ -571,6 +572,10 @@ function createApi(options?: {
         navigationListeners.add(listener);
         return () => navigationListeners.delete(listener);
       }),
+      onShelfMoveRequested: vi.fn((listener) => {
+        shelfMoveListeners.add(listener);
+        return () => shelfMoveListeners.delete(listener);
+      }),
     },
     window: {
       minimize: vi.fn().mockResolvedValue(undefined),
@@ -680,6 +685,9 @@ function createApi(options?: {
     },
     requestSession(sessionId: string) {
       for (const listener of navigationListeners) listener(sessionId);
+    },
+    requestShelfMove(sessionId: string, shelf: "active" | "hidden") {
+      for (const listener of shelfMoveListeners) listener(sessionId, shelf);
     },
   };
 }
@@ -2660,6 +2668,44 @@ describe("notification navigation", () => {
 
     await waitFor(() => expect(harness.api.terminals.select).toHaveBeenLastCalledWith(atlas.id, claudeSession.id));
     expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code");
+  });
+
+  it("moves a session between shelves when a remote screen asks, and saves it", async () => {
+    const harness = createApi({
+      savedViews: {
+        workspace: { layoutId: "auto", slots: [powershellSession.id, claudeSession.id] },
+        hiddenPanes: { layoutId: "auto", slots: [] },
+      },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "PowerShell" });
+
+    act(() => harness.requestShelfMove(claudeSession.id, "hidden"));
+    await waitFor(() =>
+      expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          workspace: { layoutId: "auto", slots: [powershellSession.id] },
+          hiddenPanes: { layoutId: "auto", slots: [claudeSession.id] },
+        }),
+      ),
+    );
+
+    act(() => harness.requestShelfMove(claudeSession.id, "active"));
+    await waitFor(() =>
+      expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          workspace: { layoutId: "auto", slots: [powershellSession.id, claudeSession.id] },
+          hiddenPanes: { layoutId: "auto", slots: [] },
+        }),
+      ),
+    );
+
+    // An id this window does not know is ignored rather than becoming a phantom pane.
+    vi.mocked(harness.api.terminals.setSlotViews).mockClear();
+    act(() => harness.requestShelfMove("session-unknown", "hidden"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(harness.api.terminals.setSlotViews).not.toHaveBeenCalled();
   });
 
   it("jumps to the waiting session with Ctrl+Shift+U and with the title bar mark", async () => {

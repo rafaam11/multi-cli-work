@@ -1,83 +1,137 @@
+/*
+ * 원격 화면. 색은 메인 창과 같은 토큰(theme-colors.css)을 쓴다 — 같은 앱으로 읽히도록. 상태 색도
+ * 메인의 .status-dot 규칙과 같은 짝이다. 터치 대상은 폰에서 40px 이상으로 둔다.
+ */
 :root {
   color-scheme: dark;
-  --m-bg: #101214;
-  --m-surface: #1a1d21;
-  --m-text: #e6e6e6;
-  --m-muted: #8b9098;
-  --m-accent: #4c8dff;
-  --m-warn: #e0a526;
+  --m-font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --m-mono: "Cascadia Code", Consolas, ui-monospace, monospace;
+  --m-radius: 6px;
 }
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
-body { background: var(--m-bg); color: var(--m-text); font: 15px/1.4 system-ui, sans-serif; }
-button { font: inherit; color: inherit; background: var(--m-surface); border: 1px solid #2a2f36; border-radius: 8px; padding: 8px 12px; min-height: 40px; }
-input, textarea { font: inherit; color: inherit; background: var(--m-surface); border: 1px solid #2a2f36; border-radius: 8px; padding: 8px; width: 100%; }
-.m-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); }
-.m-bar h1 { flex: 1; font-size: 16px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body { background: var(--bg); color: var(--text); font: 15px/1.4 var(--m-font); }
+button { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: var(--m-radius); padding: 8px 12px; min-height: 40px; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--surface-hover); }
+button:disabled { opacity: 0.45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+input, textarea, select { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: var(--m-radius); padding: 8px; width: 100%; }
+select { min-height: 40px; }
+.m-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); background: var(--header-bg); border-bottom: 1px solid var(--line); }
+.m-bar h1 { flex: 1; font-size: 15px; font-weight: 600; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 머리줄의 버튼은 줄지 않고, 제목이 대신 줄어든다. 줄바꿈하면 넓은 화면에서 터미널 영역의 높이가 바뀐다. */
+.m-bar button { flex: 0 0 auto; white-space: nowrap; }
 .m-pair { display: grid; gap: 12px; padding: 24px 16px; max-width: 420px; margin: 0 auto; }
-.m-pair label { display: grid; gap: 4px; color: var(--m-muted); }
-.m-error { color: #ff6b6b; }
-.m-notice, .m-banner { color: var(--m-warn); padding: 0 12px; }
-.m-list section { padding: 0 12px 12px; }
-.m-list h2 { font-size: 13px; color: var(--m-muted); margin: 12px 0 6px; }
-.m-session { display: flex; width: 100%; align-items: center; gap: 10px; min-height: 48px; margin-bottom: 6px; text-align: left; }
-.m-session-text { display: grid; flex: 1 1 auto; min-width: 0; }
-.m-session-label, .m-session-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-session-meta { color: var(--m-muted); font-size: 12px; }
-.m-session-meta:empty { display: none; }
-/* 상태 점 — 탭 칩과 목록 행이 같은 색을 쓴다. 뜻은 aria-label·상태 글자가 따로 전한다. */
-.m-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--m-muted); }
-.m-dot-working, .m-dot-starting { background: var(--m-accent); }
-.m-dot-awaiting-input, .m-dot-awaiting-approval { background: var(--m-warn); width: 10px; height: 10px; }
-.m-dot-awaiting-approval { box-shadow: 0 0 0 2px rgba(224, 165, 38, 0.35); }
-.m-dot-exited, .m-dot-error { opacity: 0.4; }
-.m-dot-error { background: #ff6b6b; }
-.m-await-jump { border-color: var(--m-warn); color: var(--m-warn); }
-.m-awaiting-group h2 { color: var(--m-warn); }
-.m-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 0 12px 6px; scrollbar-width: none; }
+.m-pair label { display: grid; gap: 4px; color: var(--muted); }
+.m-error { color: var(--danger-text); }
+.m-notice, .m-banner { color: var(--warning-text); padding: 0 12px; }
+.m-empty { color: var(--quiet); padding: 24px 12px; list-style: none; }
+
+/* 상태 점 — 메인 창 .status-dot과 같은 색. 뜻은 aria-label·상태 글자가 따로 전한다. */
+.m-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--quiet); }
+.m-dot-starting { background: var(--blue); }
+.m-dot-working { background: var(--teal); }
+.m-dot-awaiting-input { background: var(--violet); }
+.m-dot-awaiting-approval { background: var(--amber); box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 35%, transparent); }
+.m-dot-idle { background: var(--quiet); }
+.m-dot-exited { background: var(--quiet); opacity: 0.6; }
+.m-dot-error { background: var(--red); }
+.m-status { flex: 0 0 auto; font: 12px/1 var(--m-mono); color: var(--quiet); white-space: nowrap; }
+.m-status-working { color: var(--teal); }
+.m-status-awaiting-input { color: var(--violet); }
+.m-status-awaiting-approval { color: var(--amber); }
+.m-status-error { color: var(--red); }
+
+/* 세션 목록 — 메인 사이드바의 세션 패널과 숨김 선반을 본뜬다. */
+.m-list { background: var(--sidebar); min-height: 100%; }
+.m-panel { padding: 4px 8px 8px; }
+.m-panel-heading { display: flex; align-items: center; gap: 6px; padding: 6px 4px; }
+.m-panel-heading h2 { flex: 1 1 auto; margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.m-await-jump { min-height: 28px; padding: 2px 8px; border-color: color-mix(in srgb, var(--amber) 55%, transparent); color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); font-size: 12px; }
+.m-scope { display: inline-flex; gap: 2px; }
+.m-scope button { min-height: 28px; padding: 2px 8px; background: transparent; color: var(--muted); font-size: 12px; }
+.m-scope button[aria-pressed="true"] { color: var(--text); background: var(--surface-hover); }
+.m-rows { margin: 0; padding: 0; list-style: none; }
+.m-row { display: flex; align-items: center; border-radius: 4px; color: var(--muted); }
+.m-row:hover, .m-row.current { background: var(--surface-hover); color: var(--text); }
+.m-row.current { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.m-row.on-screen { color: var(--text); }
+.m-row.status-working:not(.current):not(:hover) { background: color-mix(in srgb, var(--teal) 8%, transparent); }
+.m-row-open { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; text-align: left; }
+.m-row-open:hover:not(:disabled) { background: transparent; }
+.m-row-open > svg { flex: 0 0 auto; }
+.m-row-place, .m-row-branch { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--quiet); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.m-row-place { max-width: 40%; }
+.m-row-branch { display: inline-flex; align-items: center; gap: 2px; max-width: 30%; }
+.m-row-place::after, .m-row-branch::after { margin: 0 4px; content: "·"; }
+.m-row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+.m-row-action { flex: 0 0 auto; min-width: 40px; padding: 0; border: 0; background: transparent; color: var(--quiet); }
+.m-row-action:hover:not(:disabled) { color: var(--text); }
+/* 마우스가 있는 화면에서는 메인 창처럼 행에 올렸을 때만 보인다. 터치 화면은 늘 보인다. */
+@media (hover: hover) and (pointer: fine) {
+  .m-row-action { opacity: 0; }
+  .m-row:hover .m-row-action, .m-row-action:focus-visible { opacity: 1; }
+}
+.m-hidden-shelf { border-top: 1px solid var(--line); }
+.m-shelf-toggle { display: flex; width: 100%; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; color: var(--muted); text-align: left; }
+.m-shelf-name { flex: 1 1 auto; }
+.m-shelf-count { min-width: 18px; padding: 1px 6px; border-radius: 8px; color: var(--quiet); background: var(--surface); font-size: 12px; text-align: center; }
+
+/* 좁은 화면 세션 탭 */
+.m-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 6px 12px; scrollbar-width: none; }
 .m-tabs::-webkit-scrollbar { display: none; }
 .m-tabs button { flex: 0 0 auto; }
 .m-tab { display: flex; align-items: center; gap: 6px; max-width: 160px; padding: 6px 10px; }
 .m-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-tab[aria-current="true"] { border-color: var(--m-accent); background: #1f2a3d; }
-.m-tab-awaiting { border-color: var(--m-warn); }
+.m-tab[aria-current="true"] { border-color: var(--line-strong); background: var(--surface-hover); }
+.m-tab-awaiting { border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
 .m-tab-awaiting .m-dot { animation: m-pulse 1.6s ease-in-out infinite; }
 .m-tab-new { min-width: 40px; justify-content: center; }
 @keyframes m-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .m-tab-awaiting .m-dot { animation: none; } }
-.m-empty { color: var(--m-muted); padding: 24px 12px; }
-.m-status { font-size: 12px; color: var(--m-muted); white-space: nowrap; }
-.m-status-awaiting-input, .m-status-awaiting-approval { color: var(--m-warn); }
-.m-status-working { color: var(--m-accent); }
-.m-session-screen { display: grid; grid-template-rows: auto auto 1fr auto auto; height: 100%; }
-.m-session-screen.m-has-tabs { grid-template-rows: auto auto auto 1fr auto auto; }
-.m-tools { display: flex; gap: 6px; padding: 0 12px 6px; }
-.m-tools [aria-pressed="true"] { border-color: var(--m-accent); color: var(--m-accent); }
+
+/* 세션 화면. 줄 수가 경우마다 달라(탭·도구·입력) 그리드 대신 세로 flex로 터미널이 남은 높이를 갖는다. */
+.m-session-screen { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
+.m-session-screen > * { flex: 0 0 auto; }
+.m-session-screen > .m-terminal { flex: 1 1 0; }
+.m-tools { display: flex; gap: 6px; padding: 6px 12px; }
+.m-tools[hidden] { display: none; }
+.m-tools [aria-pressed="true"] { border-color: var(--line-strong); background: var(--surface-hover); color: var(--text); }
 .m-terminal { min-height: 0; overflow: auto; padding: 0 4px; }
 .m-keys { display: flex; gap: 4px; overflow-x: auto; padding: 6px 8px; }
 .m-keys button { flex: 0 0 auto; min-width: 44px; }
 .m-composer { display: flex; gap: 6px; padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
 .m-composer button { flex: 0 0 auto; }
-.m-session[aria-current="true"] { border-color: var(--m-accent); }
-.m-wide { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100%; }
-.m-wide .m-list { overflow-y: auto; border-right: 1px solid #2a2f36; }
+.m-danger { border-color: var(--danger-line); color: var(--danger-text); }
+
+/* 넓은 화면: 왼쪽 목록, 오른쪽 세션 그리드(최대 4칸). */
+.m-wide { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100%; }
+.m-wide .m-list { overflow-y: auto; border-right: 1px solid var(--line); }
+.m-wide .m-row-open, .m-wide .m-row-action, .m-wide .m-shelf-toggle { min-height: 32px; }
+.m-wide button { min-height: 32px; padding: 4px 10px; }
 .m-wide .m-session-screen { min-width: 0; }
 .m-wide-placeholder { align-self: center; justify-self: center; }
+.m-grid { display: grid; grid-auto-rows: minmax(0, 1fr); gap: 1px; min-width: 0; min-height: 0; height: 100%; background: var(--line); }
+.m-grid[data-count="3"] > :last-child { grid-column: 1 / -1; }
+.m-pane .m-bar { gap: 6px; padding: 4px 8px; }
+.m-pane .m-bar h1 { font-size: 13px; }
+.m-pane:not(.m-pane-focused) .m-bar { background: var(--sidebar); }
+.m-pane:not(.m-pane-focused) .m-bar h1 { color: var(--muted); font-weight: 500; }
+.m-pane-focused .m-bar { box-shadow: inset 0 -2px 0 var(--blue); }
+.m-pane-close { min-width: 32px; padding: 0; border: 0; background: transparent; color: var(--quiet); }
 /* 알림이 뜨고 사라질 때 도구 줄이 줄바꿈되면 터미널 영역의 높이가 바뀌어 자동 맞춤이 다시 돈다 — 한 줄로 둔다. */
 .m-wide .m-tools { align-items: center; flex-wrap: nowrap; }
 .m-wide .m-tools > button { flex: 0 0 auto; white-space: nowrap; }
-.m-fit-notice { display: flex; flex: 1 1 0; min-width: 0; align-items: center; gap: 6px; color: var(--m-warn); font-size: 13px; }
+.m-fit-notice { display: flex; flex: 1 1 0; min-width: 0; align-items: center; gap: 6px; color: var(--warning-text); font-size: 13px; }
 .m-fit-notice button { flex: 0 0 auto; white-space: nowrap; }
 .m-fit-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 머리줄의 버튼은 줄지 않고, 제목이 대신 줄어든다. 줄바꿈하면 넓은 화면에서 터미널 영역의 높이가 바뀐다. */
-.m-bar button { flex: 0 0 auto; white-space: nowrap; }
-.m-danger { border-color: #ff6b6b; color: #ff6b6b; }
-select { font: inherit; color: inherit; background: var(--m-surface); border: 1px solid #2a2f36; border-radius: 8px; padding: 8px; width: 100%; min-height: 40px; }
-.m-new-session { display: grid; gap: 8px; padding: 4px 12px 12px; }
-.m-new-session label { display: grid; gap: 4px; color: var(--m-muted); }
+
+.m-new-session { display: grid; gap: 8px; padding: 8px 12px 12px; border-bottom: 1px solid var(--line); }
+.m-new-session label { display: grid; gap: 4px; color: var(--muted); }
 .m-new-session .m-empty, .m-new-session .m-notice { padding: 0; margin: 0; }
 .m-new-session-actions { display: flex; gap: 6px; }
 .m-new-session-actions button { flex: 1 1 0; }
-.m-toast { position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 10; display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border: 1px solid #ff6b6b; border-radius: 8px; background: var(--m-surface); color: var(--m-text); }
+.m-toast { position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 10; display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border: 1px solid var(--danger-line); border-radius: var(--m-radius); background: var(--surface-raised); color: var(--text); }
 .m-toast span { flex: 1 1 auto; min-width: 0; }
 .m-toast button { flex: 0 0 auto; }

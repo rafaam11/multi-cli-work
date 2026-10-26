@@ -447,3 +447,91 @@ describe("RemoteSessionHub session management", () => {
     expect(sent.some((message) => message.type === "error")).toBe(false);
   });
 });
+
+describe("RemoteSessionHub shelves", () => {
+  function withShelves() {
+    const shelfListeners = new Set<() => void>();
+    let hidden = new Set<string>(["s2"]);
+    const base = setup();
+    const gateway = {
+      ...base.gateway,
+      list: vi.fn(() => [view("s1"), view("s2")]),
+      hiddenSessionIds: () => hidden,
+      onShelvesChanged: (listener: () => void) => {
+        shelfListeners.add(listener);
+        return () => shelfListeners.delete(listener);
+      },
+      moveToShelf: vi.fn(async (_sessionId: string, _shelf: "active" | "hidden") => undefined),
+    };
+    const devices = base.devices;
+    const hub = new RemoteSessionHub({
+      gateway,
+      devices,
+      sizes: new TerminalSizeArbiter(vi.fn(async () => undefined)),
+      hostId: async () => "host-1",
+      hostName: "PC",
+      shellLatest: () => null,
+    });
+    const sent: RemoteServerMessage[] = [];
+    const handle = hub.open({ send: (message) => sent.push(message), close: vi.fn() });
+    const hello = async () => {
+      handle.receive(JSON.stringify({ type: "hello", token: "good", protocolVersion: REMOTE_PROTOCOL_VERSION, mode: "ui" }));
+      await flush();
+      await flush();
+    };
+    const setHidden = (ids: string[]) => {
+      hidden = new Set(ids);
+      shelfListeners.forEach((listener) => listener());
+    };
+    return { hub, handle, sent, gateway, hello, setHidden, shelfListeners };
+  }
+
+  const hiddenFlags = (message: RemoteServerMessage | undefined) =>
+    message?.type === "sessions" ? message.sessions.map((session) => [session.id, session.hidden ?? false]) : null;
+
+  it("marks the sessions on the host's hidden shelf in the list", async () => {
+    const { sent, hello } = withShelves();
+    await hello();
+    expect(hiddenFlags(sent[1])).toEqual([["s1", false], ["s2", true]]);
+    // Workspace sessions carry no field at all, so older readers see the summary they always did.
+    expect(sent[1].type === "sessions" && "hidden" in sent[1].sessions[0]).toBe(false);
+  });
+
+  it("sends the list again when the hidden set changes", async () => {
+    const { sent, hello, setHidden } = withShelves();
+    await hello();
+    setHidden(["s1"]);
+    await flush();
+    await flush();
+    expect(hiddenFlags(sent.at(-1))).toEqual([["s1", true], ["s2", false]]);
+  });
+
+  it("passes a shelf request to the host window, and refuses one for a session it does not have", async () => {
+    const { handle, sent, gateway, hello } = withShelves();
+    await hello();
+    handle.receive('{"type":"shelf","sessionId":"s1","shelf":"hidden"}');
+    await flush();
+    expect(gateway.moveToShelf).toHaveBeenCalledWith("s1", "hidden");
+
+    handle.receive('{"type":"shelf","sessionId":"gone","shelf":"active"}');
+    await flush();
+    expect(gateway.moveToShelf).toHaveBeenCalledTimes(1);
+    expect(sent.at(-1)?.type).toBe("error");
+  });
+
+  it("says why when the host window is not there to move it", async () => {
+    const { handle, sent, gateway, hello } = withShelves();
+    await hello();
+    gateway.moveToShelf.mockRejectedValueOnce(new Error("호스트 창이 열려 있지 않습니다"));
+    handle.receive('{"type":"shelf","sessionId":"s1","shelf":"hidden"}');
+    await flush();
+    expect(sent.at(-1)).toEqual({ type: "error", code: "failed", message: "호스트 창이 열려 있지 않습니다" });
+  });
+
+  it("stops listening for shelf changes when disposed", async () => {
+    const { hub, shelfListeners } = withShelves();
+    expect(shelfListeners.size).toBe(1);
+    hub.dispose();
+    expect(shelfListeners.size).toBe(0);
+  });
+});

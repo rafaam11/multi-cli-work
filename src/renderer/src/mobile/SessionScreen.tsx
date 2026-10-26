@@ -6,7 +6,9 @@ import type { RemoteSessionSummary } from "@shared/remote-types";
 import { createAutoFit, type AutoFit, type AutoFitState } from "./auto-fit";
 import { TERMINAL_FONT_INDEX, TERMINAL_FONT_SIZES, type TerminalSize } from "./initial-size";
 import type { RemoteClient } from "./remote-client";
-import { STATUS_LABEL } from "./SessionList";
+import { statusLabels as STATUS_LABEL } from "../session-labels";
+import { terminalTheme } from "../terminal-themes";
+import { currentTheme, useResolvedTheme } from "../theme";
 import { clipboardKeyAction, createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
 import { planTouchScroll } from "./touch-scroll";
 
@@ -21,6 +23,15 @@ interface SessionScreenProps {
   onMeasured?(size: TerminalSize): void;
   /** 헤더 바로 아래에 그리는 세션 탭 줄(좁은 화면). */
   tabs?: ReactNode;
+  /**
+   * 넓은 화면 그리드에서 키보드 입력을 받는 칸인지. 포커스 칸만 터미널에 포커스를 주고 도구 줄을 보인다.
+   * 그리드가 아니면 늘 true다.
+   */
+  focused?: boolean;
+  /** 그리드 칸 — 머리줄을 줄이고 ✕로 칸을 닫는다. */
+  onClose?(): void;
+  /** 그리드에서 이 칸을 누르면 포커스를 옮긴다. */
+  onFocus?(): void;
 }
 
 const FONT_SIZES = TERMINAL_FONT_SIZES;
@@ -31,7 +42,18 @@ const AUTO_FIT_DEBOUNCE_MS = 150;
  * 켜면 이 화면 폭으로 PTY를 줄인다. 넓은 화면(PC)은 반대로 이 창 크기에 맞추는 것이 기본이다. 어느
  * 쪽이든 호스트가 크기를 되찾으면(입력·패인 크기 변경) 맞춤이 꺼지거나 멈춘다.
  */
-export function SessionScreen({ client, session, deviceId, onBack, wide = false, onMeasured, tabs }: SessionScreenProps) {
+export function SessionScreen({
+  client,
+  session,
+  deviceId,
+  onBack,
+  wide = false,
+  onMeasured,
+  tabs,
+  focused = true,
+  onClose,
+  onFocus,
+}: SessionScreenProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -44,6 +66,9 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
   const [fontIndex, setFontIndex] = useState(TERMINAL_FONT_INDEX);
   const onMeasuredRef = useRef(onMeasured);
   onMeasuredRef.current = onMeasured;
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
+  const resolvedTheme = useResolvedTheme();
   const [draft, setDraft] = useState("");
   /** 삭제는 되돌릴 수 없어서 두 번 묻는다. window.confirm은 Android WebView가 조용히 거절한다. */
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -67,7 +92,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
       fontFamily: 'ui-monospace, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace',
       scrollback: 5_000,
       cursorBlink: false,
-      theme: { background: "#101214" },
+      theme: terminalTheme(currentTheme()),
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -112,7 +137,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
       : null;
     autoFitRef.current = autoFit;
     setFitState("fitting");
-    if (wide) terminal.focus();
+    if (wide && focusedRef.current) terminal.focus();
 
     const gate = createReplayGate((data) => terminal.write(data));
     const applySize = (cols: number | null, rows: number | null) => {
@@ -277,6 +302,15 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
   }, [client, session.id, deviceId, wide]);
 
   useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = terminalTheme(resolvedTheme);
+  }, [resolvedTheme]);
+
+  // 그리드에서 이 칸이 포커스를 받으면 키보드 입력도 이리로 온다.
+  useEffect(() => {
+    if (wide && focused) terminalRef.current?.focus();
+  }, [wide, focused]);
+
+  useEffect(() => {
     const terminal = terminalRef.current;
     if (terminal) terminal.options.fontSize = FONT_SIZES[fontIndex];
     // 글자 크기가 바뀌면 같은 창에 들어가는 열·행 수가 달라진다.
@@ -302,8 +336,20 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
   const sendKeys = (data: string) => client.send({ type: "write", sessionId: session.id, data });
 
   return (
-    <main className={tabs ? "m-session-screen m-has-tabs" : "m-session-screen"}>
+    <main
+      className={[
+        "m-session-screen",
+        tabs ? "m-has-tabs" : "",
+        onClose ? "m-pane" : "",
+        onClose && focused ? "m-pane-focused" : "",
+        `status-${session.status}`,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onMouseDown={focused ? undefined : onFocus}
+    >
       <header className="m-bar">
+        {onClose ? <span className={`m-dot m-dot-${session.status}`} aria-hidden="true" /> : null}
         {wide ? null : (
           <button type="button" onClick={onBack} aria-label="세션 목록으로">
             ←
@@ -341,9 +387,14 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
             삭제
           </button>
         )}
+        {onClose ? (
+          <button type="button" className="m-pane-close" aria-label={`${session.label} 칸 닫기`} title="칸 닫기" onClick={onClose}>
+            ✕
+          </button>
+        ) : null}
       </header>
       {tabs}
-      <div className="m-tools">
+      <div className="m-tools" hidden={!focused}>
         {wide ? (
           <>
             <button
@@ -382,7 +433,7 @@ export function SessionScreen({ client, session, deviceId, onBack, wide = false,
         ) : null}
       </div>
       <div className="m-terminal" ref={hostRef} role="region" aria-label={`${session.label} 터미널`} />
-      {toolsOpen ? (
+      {toolsOpen && focused ? (
         <>
           <div className="m-keys">
             {QUICK_KEYS.map((key) => (

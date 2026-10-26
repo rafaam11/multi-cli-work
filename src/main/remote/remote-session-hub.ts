@@ -10,6 +10,7 @@ import {
   type RemoteClientMessage,
   type RemoteServerMessage,
   type RemoteSessionSummary,
+  type RemoteShelf,
   type ShellRelease,
 } from "../../shared/remote-types";
 import type { RemoteDevice } from "./device-store";
@@ -34,6 +35,12 @@ export interface RemoteHubGateway {
   remove(sessionId: string): Promise<void>;
   /** 호스트 PC 앞에 사람이 있는지. 상태가 바뀔 때마다 함께 보낸다 — 폰이 알림을 생략할지 정한다. */
   presence?(): DesktopPresence;
+  /** 호스트 메인 창의 숨김 선반에 있는 세션들. 선반은 그 창의 렌더러가 갖고, main은 저장된 것을 안다. */
+  hiddenSessionIds?(): ReadonlySet<string>;
+  /** 숨김 집합이 바뀌었다. 목록을 다시 보낸다. */
+  onShelvesChanged?(listener: () => void): () => void;
+  /** 메인 창에 그 세션을 다른 선반으로 옮겨 달라고 한다. 창이 없으면 던진다. */
+  moveToShelf?(sessionId: string, shelf: RemoteShelf): Promise<void>;
 }
 
 export interface RemoteHubDevices {
@@ -86,6 +93,7 @@ export function toSessionSummary(
   view: TerminalSessionView,
   projectName: string | null,
   worktreeBranch: string | null = null,
+  hidden = false,
 ): RemoteSessionSummary {
   return {
     id: view.id,
@@ -96,6 +104,7 @@ export function toSessionSummary(
     status: view.status,
     updatedAt: view.updatedAt,
     ...(worktreeBranch ? { worktreeBranch } : {}),
+    ...(hidden ? { hidden } : {}),
   };
 }
 
@@ -115,6 +124,7 @@ export class RemoteSessionHub {
     this.unsubscribes = [
       options.gateway.onEvent((event) => this.forward(event)),
       options.sizes.onChange((sessionId, state) => this.broadcastSize(sessionId, state)),
+      ...(options.gateway.onShelvesChanged ? [options.gateway.onShelvesChanged(() => this.broadcastSessions())] : []),
     ];
   }
 
@@ -259,6 +269,11 @@ export class RemoteSessionHub {
       case "remove":
         await this.options.gateway.remove(message.sessionId);
         return;
+      case "shelf":
+        this.requireSession(message.sessionId);
+        if (!this.options.gateway.moveToShelf) throw new Error("이 호스트는 숨기기를 지원하지 않습니다");
+        await this.options.gateway.moveToShelf(message.sessionId, message.shelf);
+        return;
     }
   }
 
@@ -327,13 +342,23 @@ export class RemoteSessionHub {
     for (const worktreeId of new Set(views.map((view) => view.worktreeId))) {
       if (worktreeId) branches.set(worktreeId, await this.worktreeBranch(worktreeId));
     }
+    const hidden = this.options.gateway.hiddenSessionIds?.() ?? new Set<string>();
     return views.map((view) =>
       toSessionSummary(
         view,
         view.projectId === null ? null : names.get(view.projectId) ?? null,
         view.worktreeId ? branches.get(view.worktreeId) ?? null : null,
+        hidden.has(view.id),
       ),
     );
+  }
+
+  /** 목록 전체가 바뀌는 변화(선반 이동)를 붙어 있는 모든 화면에 알린다. */
+  private broadcastSessions(): void {
+    if (this.authenticated().length === 0) return;
+    void this.summaries()
+      .then((sessions) => this.broadcast({ type: "sessions", sessions }))
+      .catch(() => undefined);
   }
 
   private async worktreeBranch(worktreeId: string | null | undefined): Promise<string | null> {

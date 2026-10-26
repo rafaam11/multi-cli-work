@@ -239,6 +239,8 @@ export function App() {
   const terminalCommands = useRef(new Map<string, TerminalCommands>());
   /** Tray navigation subscribes once, so it reaches the current reveal through a ref. */
   const revealSessionRef = useRef<(session: TerminalSessionView) => void>(() => undefined);
+  /** The same for a remote screen's hide/show request. */
+  const movePaneToShelfRef = useRef<(kind: ShelfKind, paneId: string) => void>(() => undefined);
 
   const projects = useMemo(() => {
     if (!snapshot) return [];
@@ -968,6 +970,7 @@ export function App() {
 
   useEffect(() => {
     revealSessionRef.current = revealSession;
+    movePaneToShelfRef.current = movePaneToShelf;
   });
 
   const [presets, setPresets] = useState<SessionPreset[]>([]);
@@ -1013,6 +1016,15 @@ export function App() {
       window.multiCliWork.navigation.onSessionRequested((sessionId) => {
         const session = sessionsRef.current.find((candidate) => candidate.id === sessionId);
         if (session) revealSessionRef.current(session);
+      }),
+    [],
+  );
+
+  // A remote screen's hide/show. The move saves through setSlotViews, which tells the remote list.
+  useEffect(
+    () =>
+      window.multiCliWork.navigation.onShelfMoveRequested((sessionId, shelf) => {
+        if (sessionsRef.current.some((candidate) => candidate.id === sessionId)) movePaneToShelfRef.current(shelf, sessionId);
       }),
     [],
   );

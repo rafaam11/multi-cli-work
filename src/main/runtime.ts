@@ -656,6 +656,14 @@ export async function createDesktopRuntime(
           mainWindowState(host.getMainWindow()),
           powerMonitor.getSystemIdleState(PRESENCE_IDLE_THRESHOLD_SECONDS),
         ),
+      hiddenSessionIds: () => coordinator.hiddenSessionIds(),
+      onShelvesChanged: (listener) => coordinator.onShelvesChanged(listener),
+      // 선반은 메인 창 렌더러가 갖는다. 옮긴 결과는 setSlotViews를 거쳐 onShelvesChanged로 돌아온다.
+      moveToShelf: async (sessionId, shelf) => {
+        const window = host.getMainWindow();
+        if (!window || window.isDestroyed()) throw new Error("호스트 창이 열려 있지 않습니다");
+        sendToMainWindow(window, "shelves:move-requested", { sessionId, shelf });
+      },
     },
     devices: remoteDevices,
     sizes,

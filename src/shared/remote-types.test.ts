@@ -77,6 +77,16 @@ describe("parseRemoteClientMessage", () => {
     expect(parseRemoteClientMessage('{"type":"stop","sessionId":"s"}')).toEqual({ type: "stop", sessionId: "s" });
     expect(parseRemoteClientMessage('{"type":"resume","sessionId":"s","rows":9}')).toEqual({ type: "resume", sessionId: "s" });
     expect(parseRemoteClientMessage('{"type":"remove","sessionId":"s"}')).toEqual({ type: "remove", sessionId: "s" });
+    expect(parseRemoteClientMessage('{"type":"shelf","sessionId":"s","shelf":"hidden"}')).toEqual({
+      type: "shelf",
+      sessionId: "s",
+      shelf: "hidden",
+    });
+    expect(parseRemoteClientMessage('{"type":"shelf","sessionId":"s","shelf":"active"}')).toEqual({
+      type: "shelf",
+      sessionId: "s",
+      shelf: "active",
+    });
   });
 
   it("rejects session management messages it cannot act on", () => {
@@ -92,6 +102,9 @@ describe("parseRemoteClientMessage", () => {
       '{"type":"stop"}',
       '{"type":"resume","sessionId":""}',
       '{"type":"remove","sessionId":7}',
+      '{"type":"shelf","sessionId":"s"}',
+      '{"type":"shelf","sessionId":"s","shelf":"workspace"}',
+      '{"type":"shelf","sessionId":"","shelf":"hidden"}',
     ]) {
       expect(parseRemoteClientMessage(raw), raw).toBeNull();
     }

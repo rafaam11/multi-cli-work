@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { MotionConfig } from "motion/react";
 import { App } from "./App";
 import { applyStoredTheme } from "./theme";
+import "./theme-colors.css";
 import "./index.css";
 
 applyStoredTheme();
