@@ -23,7 +23,11 @@ export function UpdateBadge() {
       <RefreshCw size={12} className={busy ? "spinning" : undefined} aria-hidden="true" />
       <span className="app-version">{version ? `v${version}` : ""}</span>
       <span className={`update-status ${status.state}`}>{updaterStatusLabel(status)}</span>
-      {status.state === "error" ? (
+      {status.state === "installFailed" ? (
+        <button type="button" title="자동 설치가 적용되지 않았습니다 — 릴리스 페이지에서 Setup.exe를 받아 실행하세요" onClick={() => void window.multiCliWork.updates.openReleases()}>
+          수동 설치
+        </button>
+      ) : status.state === "error" ? (
         <button type="button" onClick={() => void window.multiCliWork.updates.openReleases()}>
           릴리스
         </button>

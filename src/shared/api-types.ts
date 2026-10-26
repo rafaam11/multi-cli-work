@@ -304,6 +304,8 @@ export type UpdaterStatus =
   | { state: "available"; version: string }
   | { state: "downloading"; percent: number }
   | { state: "downloaded"; version: string }
+  /** The last restart-to-install left this version running — the silent installer gave up. */
+  | { state: "installFailed"; version: string }
   | { state: "error"; message: string };
 
 export interface MultiCliWorkApi {

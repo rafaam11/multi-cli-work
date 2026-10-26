@@ -70,6 +70,8 @@ export function updaterStatusLabel(status: UpdaterStatus): string {
       return `다운로드 중 ${status.percent}%`;
     case "downloaded":
       return `${status.version} 업데이트 설치 준비 완료`;
+    case "installFailed":
+      return `${status.version} 설치 실패`;
     case "error":
       return "업데이트 확인 실패";
     default:

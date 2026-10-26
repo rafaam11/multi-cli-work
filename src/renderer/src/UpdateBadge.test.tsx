@@ -50,6 +50,17 @@ describe("update badge", () => {
     expect(screen.getByRole("button", { name: "재시작" })).toBeInTheDocument();
   });
 
+  it("points to a manual install when the last restart left the old version running", async () => {
+    const harness = createUpdatesApi({ state: "installFailed", version: "1.1.0" });
+
+    render(<UpdateBadge />);
+
+    expect(await screen.findByText("1.1.0 설치 실패")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "재시작" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "수동 설치" }));
+    expect(harness.updates.openReleases).toHaveBeenCalledOnce();
+  });
+
   it("checks on demand and follows the download through to the restart prompt", async () => {
     const harness = createUpdatesApi();
 
