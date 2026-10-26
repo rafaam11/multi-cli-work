@@ -103,7 +103,11 @@ if ($eventName -eq "SessionStart") {
       $brief = [IO.File]::ReadAllText($briefPath, [Text.UTF8Encoding]::new($false))
       if (-not [string]::IsNullOrWhiteSpace($brief)) {
         $hookOutput = @{ hookSpecificOutput = @{ hookEventName = "SessionStart"; additionalContext = $brief } }
-        [Console]::Out.Write(($hookOutput | ConvertTo-Json -Compress -Depth 4))
+        # Windows PowerShell 5.1 leaves Korean unescaped and the console writes it in the ANSI code page
+        # (CP949), which Claude then reads as broken UTF-8. Escaping to \uXXXX keeps stdout pure ASCII.
+        $json = $hookOutput | ConvertTo-Json -Compress -Depth 4
+        $json = [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+        [Console]::Out.Write($json)
       }
     } catch { }
   }

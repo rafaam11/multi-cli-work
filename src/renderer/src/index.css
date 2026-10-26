@@ -4731,6 +4731,10 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   --toast-accent: var(--red);
 }
 
+.toast-warning {
+  --toast-accent: var(--amber);
+}
+
 .toast-body {
   display: grid;
   grid-template-columns: 15px minmax(0, 1fr);
@@ -7396,6 +7400,55 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 레포 최신화 카드 — 줄 모양은 구성 폴더 목록(.member-*)을 따른다. */
+.repo-sync-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.repo-sync-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+}
+
+.repo-sync-status {
+  flex: 0 0 auto;
+  font-size: var(--type-caption-size);
+  white-space: nowrap;
+}
+
+.repo-sync-ok {
+  color: var(--green);
+}
+
+.repo-sync-quiet {
+  color: var(--quiet);
+}
+
+.repo-sync-warn {
+  color: var(--warning-text);
+}
+
+.repo-sync-danger {
+  color: var(--danger-text);
+}
+
+.repo-sync-meta {
+  margin: 0;
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
 }
 
 .work-project-teams-root {

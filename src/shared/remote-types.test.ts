@@ -120,10 +120,13 @@ describe("parseRemoteClientMessage", () => {
       { action: "split", slot: 0 },
       { action: "merge", slot: 11 },
       { action: "close", slot: 3 },
+      { action: "close", slot: 3, paneId: "s1" },
       { action: "page", page: 2 },
       { action: "focus", paneId: "s1" },
       { action: "move", paneId: "s1", slot: 1 },
       { action: "open", sessionId: "s1" },
+      { action: "zoom", paneId: "s1" },
+      { action: "zoom", paneId: null },
     ]) {
       expect(parseRemoteClientMessage(JSON.stringify({ type: "view", ...action, extra: 1 }))).toEqual({ type: "view", ...action });
     }
@@ -138,6 +141,7 @@ describe("parseRemoteClientMessage", () => {
     for (const raw of [
       '{"type":"view"}',
       '{"type":"view","action":"zoom"}',
+      '{"type":"view","action":"zoom","paneId":""}',
       '{"type":"view","action":"select-folder","projectId":"p1"}',
       '{"type":"view","action":"select-folder","projectId":"","worktreeId":null}',
       '{"type":"view","action":"select-shelf","shelf":"workspace"}',
@@ -146,6 +150,7 @@ describe("parseRemoteClientMessage", () => {
       '{"type":"view","action":"layout","layoutId":"cols:1-1-1-1-1-1-1"}',
       '{"type":"view","action":"split","slot":12}',
       '{"type":"view","action":"close","slot":-1}',
+      '{"type":"view","action":"close","slot":0,"paneId":""}',
       '{"type":"view","action":"merge","slot":1.5}',
       '{"type":"view","action":"page","page":-1}',
       '{"type":"view","action":"focus","paneId":""}',

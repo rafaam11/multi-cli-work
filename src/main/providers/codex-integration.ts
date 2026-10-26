@@ -10,32 +10,47 @@ const path = require("node:path");
 let input = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => { input += chunk; });
-process.stdin.on("end", () => {
+function writeStatus(event) {
+  const sessionId = process.env.MULTI_CLI_WORK_SESSION_ID;
+  const statusDir = process.env.MULTI_CLI_WORK_STATUS_DIR;
+  if (!sessionId || !/^[a-zA-Z0-9-]+$/.test(sessionId) || !statusDir) return;
+  if (typeof event.session_id !== "string") return;
+  const target = path.join(statusDir, sessionId + ".json");
+  const temporary = target + "." + process.pid + "." + Date.now() + ".tmp";
+  fs.mkdirSync(statusDir, { recursive: true });
   try {
-    const event = JSON.parse(input);
-    const sessionId = process.env.MULTI_CLI_WORK_SESSION_ID;
-    const statusDir = process.env.MULTI_CLI_WORK_STATUS_DIR;
-    if (!sessionId || !/^[a-zA-Z0-9-]+$/.test(sessionId) || !statusDir) process.exit(0);
-    if (event.hook_event_name !== "SessionStart" || typeof event.session_id !== "string") process.exit(0);
-    const target = path.join(statusDir, sessionId + ".json");
-    const temporary = target + "." + process.pid + "." + Date.now() + ".tmp";
-    fs.mkdirSync(statusDir, { recursive: true });
-    try {
-    fs.writeFileSync(temporary, JSON.stringify({
-      sessionId,
-      status: "working",
-      event: "SessionStart",
-      at: new Date().toISOString(),
-      providerConversationId: event.session_id,
-      provider: "codex",
-      ...(process.env.MULTI_CLI_WORK_GENERATION ? { generation: process.env.MULTI_CLI_WORK_GENERATION } : {}),
-      ...(typeof event.cwd === "string" && event.cwd ? { cwd: event.cwd } : {}),
-      ...(typeof event.transcript_path === "string" ? { transcriptPath: event.transcript_path } : {}),
-    }) + "\\n", "utf8");
-    fs.rmSync(target, { force: true });
-    fs.renameSync(temporary, target);
-    } finally { fs.rmSync(temporary, { force: true }); }
-  } catch { process.exitCode = 0; }
+  fs.writeFileSync(temporary, JSON.stringify({
+    sessionId,
+    status: "working",
+    event: "SessionStart",
+    at: new Date().toISOString(),
+    providerConversationId: event.session_id,
+    provider: "codex",
+    ...(process.env.MULTI_CLI_WORK_GENERATION ? { generation: process.env.MULTI_CLI_WORK_GENERATION } : {}),
+    ...(typeof event.cwd === "string" && event.cwd ? { cwd: event.cwd } : {}),
+    ...(typeof event.transcript_path === "string" ? { transcriptPath: event.transcript_path } : {}),
+  }) + "\\n", "utf8");
+  fs.rmSync(target, { force: true });
+  fs.renameSync(temporary, target);
+  } finally { fs.rmSync(temporary, { force: true }); }
+}
+// The work-project brief, in the same SessionStart shape the Claude hook prints. Non-ASCII goes out as
+// \\uXXXX so the console code page cannot mangle Korean on the way to Codex.
+function emitBrief() {
+  const briefPath = process.env.MULTI_CLI_WORK_PROJECT_BRIEF;
+  if (!briefPath) return;
+  const brief = fs.readFileSync(briefPath, "utf8");
+  if (!brief.trim()) return;
+  const json = JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: brief } });
+  process.stdout.write(json.replace(/[\\u007f-\\uffff]/g, (c) => "\\\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")));
+}
+// No process.exit: it can cut stdout short before Codex has read the brief.
+process.stdin.on("end", () => {
+  let event;
+  try { event = JSON.parse(input); } catch { return; }
+  if (!event || event.hook_event_name !== "SessionStart") return;
+  try { writeStatus(event); } catch {}
+  try { emitBrief(); } catch {}
 });
 `;
 

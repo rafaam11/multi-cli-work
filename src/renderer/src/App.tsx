@@ -14,7 +14,7 @@ import { pathStyleFor, resolveShellRefForPath, shellLinkKey } from "@shared/work
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import { FolderX, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
 import { MotionConfig } from "motion/react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
 import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
@@ -51,6 +51,7 @@ import { neighbourSlot, resolveLayout, type FocusDirection } from "./grid-layout
 import { SESSION_SIGNAL_MS, SessionSignalsContext, sessionSignalFor, type SessionSignal } from "./session-signals";
 import { DriveRootContext, type DriveRootInfo } from "./drive-root-context";
 import { showToast, Toaster } from "./toast";
+import { repoSyncNoticeToast } from "./WorkProjectRepoSyncCard";
 import { useTransientSet } from "./use-transient-set";
 import { paneContextOf, paneContextOfOwner, type PaneContext } from "./pane-context";
 import { recentProjects } from "./recent-folders";
@@ -127,6 +128,7 @@ import { createSessionActions } from "./app/session-actions";
 import { createWorktreeActions } from "./app/worktree-actions";
 import { LAST_WORKSPACE_KEY, planRestore } from "./app/restore-plan";
 import { useTerminalEvents } from "./app/use-terminal-events";
+import { useResolvedTheme } from "./theme";
 
 // Monaco rides along with the diff pane, so it only loads the first time a diff actually opens.
 const GitDiffPane = lazy(() => import("./GitDiffPane").then((module) => ({ default: module.GitDiffPane })));
@@ -973,7 +975,8 @@ export function App() {
     focusPane,
   });
 
-  useEffect(() => {
+  // Layout effect, so a remote request that lands right after a render already sees that render's view.
+  useLayoutEffect(() => {
     revealSessionRef.current = revealSession;
     movePaneToShelfRef.current = movePaneToShelf;
     applyViewRequestRef.current = applyViewRequest;
@@ -1101,17 +1104,32 @@ export function App() {
       case "page":
         setPage(clampPage(request.page, resolvedView.pages));
         return;
+      // Only the focus moves: focusPane would also select the session's folder, and a worktree
+      // session sitting on the main grid would swap the whole grid under the remote's next action.
       case "focus":
-        if (resolvedView.slots.includes(request.paneId)) focusPane(request.paneId);
+        if (resolvedView.slots.includes(request.paneId)) setFocusedPaneId(request.paneId);
+        return;
+      case "zoom":
+        if (request.paneId === null) clearZoom();
+        else if (resolvedView.slots.includes(request.paneId)) {
+          setFocusedPaneId(request.paneId);
+          if (zoomedPaneId !== request.paneId) toggleZoom(request.paneId);
+        }
         return;
       case "close":
-        if (inPage(request.slot)) clearSlotAt(request.slot);
+        // Pressed twice before the first close came back, the slot would hold the next pane by now.
+        if (!inPage(request.slot)) return;
+        if (request.paneId !== undefined && resolvedView.slots[request.slot] !== request.paneId) return;
+        clearSlotAt(request.slot);
         return;
       case "move": {
         const known =
           sessions.some((session) => session.id === request.paneId) ||
           documentPanes.some((pane) => pane.id === request.paneId);
-        if (known && inPage(request.slot)) dropPaneOnSlot(request.slot, request.paneId);
+        // Already there: a repeated move would otherwise reorder around the pane once more.
+        if (known && inPage(request.slot) && resolvedView.slots[request.slot] !== request.paneId) {
+          dropPaneOnSlot(request.slot, request.paneId);
+        }
         return;
       }
     }
@@ -1122,63 +1140,6 @@ export function App() {
     [],
   );
 
-  // What this window shows, for remote screens to mirror. Rebuilt on every relevant change but sent
-  // only when it differs from the last one, and coalesced so a burst of state updates is one send.
-  const treeSections = useMemo(
-    () => buildTreeSections(workProjects, projects, projectMembership),
-    [workProjects, projects, projectMembership],
-  );
-  const missingRootProjectIds = snapshot?.missingRootProjectIds;
-  const remoteMirror = useMemo(
-    () =>
-      buildRemoteMirror({
-        sections: treeSections,
-        sessions,
-        worktrees,
-        workspaceViews,
-        activeReviews,
-        projectMembership,
-        missingRootProjectIds: missingRootProjectIds ?? [],
-        documentPanes,
-        activeView,
-        shelfKind,
-        selectedProjectId,
-        selectedWorktreeId,
-        layoutId: currentView.layoutId,
-        resolvedView,
-        focusedPaneId,
-      }),
-    [
-      treeSections,
-      sessions,
-      worktrees,
-      workspaceViews,
-      activeReviews,
-      projectMembership,
-      missingRootProjectIds,
-      documentPanes,
-      activeView,
-      shelfKind,
-      selectedProjectId,
-      selectedWorktreeId,
-      currentView.layoutId,
-      resolvedView,
-      focusedPaneId,
-    ],
-  );
-  const publishedMirrorRef = useRef<string | null>(null);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const serialized = JSON.stringify(remoteMirror);
-      if (serialized === publishedMirrorRef.current) return;
-      publishedMirrorRef.current = serialized;
-      void window.multiCliWork.remote.publishMirror(remoteMirror).catch(() => {
-        publishedMirrorRef.current = null;
-      });
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [remoteMirror]);
-
   const openHome = () => setActiveView("home");
 
   const selectWorkProject = (workProjectId: string) => {
@@ -1188,6 +1149,16 @@ export function App() {
     expandWorkProject(workProjectId);
     setActionError(null);
   };
+  // 세션 시작 최신화에서 건너뛰거나 실패한 레포 — 누르면 그 업무 프로젝트의 레포 최신화 카드로 간다.
+  const selectWorkProjectRef = useRef(selectWorkProject);
+  selectWorkProjectRef.current = selectWorkProject;
+  useEffect(
+    () =>
+      window.multiCliWork.workProjects.onRepoSyncNotice((notice) =>
+        showToast(repoSyncNoticeToast(notice, () => selectWorkProjectRef.current(notice.workProjectId))),
+      ),
+    [],
+  );
 
   // 이름(구분 코드 접두어)과 드라이브 폴더를 함께 정해야 해서 대화상자로 받는다.
   const createWorkProject = () => {
@@ -1963,6 +1934,71 @@ export function App() {
     void window.multiCliWork.terminals.setExposedSessions(JSON.parse(exposedSessionKey) as string[]).catch(error => setActionError(errorMessage(error)));
   }, [exposedSessionKey]);
   useEffect(() => () => { void window.multiCliWork.terminals.setExposedSessions([]).catch(() => undefined); }, []);
+  // What this window shows, for remote screens to mirror. Rebuilt on every relevant change but sent
+  // only when it differs from the last one, and coalesced so a burst of state updates is one send.
+  const treeSections = useMemo(
+    () => buildTreeSections(workProjects, projects, projectMembership),
+    [workProjects, projects, projectMembership],
+  );
+  const missingRootProjectIds = snapshot?.missingRootProjectIds;
+  const resolvedTheme = useResolvedTheme();
+  const remoteMirror = useMemo(
+    () =>
+      buildRemoteMirror({
+        sections: treeSections,
+        sessions,
+        worktrees,
+        workspaceViews,
+        activeReviews,
+        projectMembership,
+        missingRootProjectIds: missingRootProjectIds ?? [],
+        documentPanes,
+        activeView,
+        shelfKind,
+        selectedProjectId,
+        selectedWorktreeId,
+        layoutId: currentView.layoutId,
+        resolvedView,
+        focusedPaneId,
+        showsGrid,
+        zoomedPaneId,
+        agents,
+        theme: resolvedTheme,
+      }),
+    [
+      treeSections,
+      sessions,
+      worktrees,
+      workspaceViews,
+      activeReviews,
+      projectMembership,
+      missingRootProjectIds,
+      documentPanes,
+      activeView,
+      shelfKind,
+      selectedProjectId,
+      selectedWorktreeId,
+      currentView.layoutId,
+      resolvedView,
+      focusedPaneId,
+      showsGrid,
+      zoomedPaneId,
+      agents,
+      resolvedTheme,
+    ],
+  );
+  const publishedMirrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const serialized = JSON.stringify(remoteMirror);
+      if (serialized === publishedMirrorRef.current) return;
+      publishedMirrorRef.current = serialized;
+      void window.multiCliWork.remote.publishMirror(remoteMirror).catch(() => {
+        publishedMirrorRef.current = null;
+      });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [remoteMirror]);
 
   /** Ctrl+Alt+방향키: 그리드에서 이웃 패인으로. 빈 슬롯은 건너뛰고, 확대 중이면 먼저 푼다. */
   const moveFocus = (direction: FocusDirection) => {

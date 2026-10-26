@@ -19,6 +19,7 @@ import { SHELF_TEXT } from "../shelves";
 import { SessionList } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
 import { applySessionMessage } from "./session-list-model";
+import { setHostTheme } from "./color-scheme";
 import { readShellBridge } from "./shell-bridge";
 import { SessionTabs } from "./SessionTabs";
 import { SessionDrawer } from "./SessionDrawer";
@@ -117,6 +118,10 @@ export function MobileApp() {
   const mirroringRef = useRef(mirroring);
   mirroringRef.current = mirroring;
 
+  // 호스트 창과 같은 테마로 — 호스트가 알려 주지 않으면 이 기기 설정을 따른다.
+  const hostTheme = mirror?.theme ?? null;
+  useEffect(() => setHostTheme(hostTheme), [hostTheme]);
+
   // 포커스로 온 세션이 칸에 없으면 놓는다 — 목록·링크·새 세션 어디서 왔든. 가득 찼으면 직전 포커스 칸을 바꾼다.
   const previousFocusRef = useRef<string | null>(null);
   useEffect(() => {
@@ -180,8 +185,19 @@ export function MobileApp() {
 
   const [client, setClient] = useState<RemoteClient | null>(null);
   const drawer = useSessionDrawer();
-  const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
-  const viewedId = mirroring ? mirrorFocusId : wide && !panes.includes(openSessionId ?? "") ? null : openSessionId;
+  // Use the host's numbered labels consistently in tabs, the drawer, and the mirrored grid.
+  const labels = mirror?.labels;
+  const named = labels ? sessions.map(session => {
+    const label = labels[session.id];
+    return label && label !== session.label ? { ...session, label } : session;
+  }) : sessions;
+  const openSession = named.find((session) => session.id === openSessionId) ?? null;
+  const mirrorViewedId = mirror?.view.zoomedPaneId ?? mirrorFocusId;
+  const mirrorShowsSession = mirror?.view.place.kind !== "other" && mirror?.view.slots.some(slot =>
+    slot?.kind === "session" && slot.id === mirrorViewedId,
+  );
+  const viewedId = mirroring ? (mirrorShowsSession ? mirrorViewedId : null)
+    : wide && !panes.includes(openSessionId ?? "") ? null : openSessionId;
   const viewedSession = sessions.find(session => session.id === viewedId) ?? null;
   useSessionViewing(client, bridge, viewedSession, connection === "open" && !!viewedId && readySessionIds.has(viewedId),
     drawer.isOpen, seenCapable);
@@ -262,7 +278,7 @@ export function MobileApp() {
     client.send({ type: "catalog" });
   };
   const gridSessions = panes
-    .map((id) => sessions.find((session) => session.id === id))
+    .map((id) => named.find((session) => session.id === id))
     .filter((session): session is RemoteSessionSummary => session !== undefined);
   const closeGridPane = (sessionId: string) => {
     const next = closePane(panes, openSessionId, sessionId);
@@ -287,7 +303,7 @@ export function MobileApp() {
   const tree = mirror ? (
     <ProjectTree
       tree={mirror.tree}
-      sessions={sessions}
+      sessions={named}
       place={mirror.view.place}
       onScreenSessionIds={wide ? mirrorSessionIds : []}
       disabled={disabled}
@@ -302,7 +318,7 @@ export function MobileApp() {
     <SessionList
       hostName={pairing.hostName}
       connection={connection}
-      sessions={sessions}
+      sessions={named}
       onOpen={openFromList}
       activeSessionId={wide ? (mirroring ? mirrorFocusId : (openSession?.id ?? null)) : null}
       onScreenSessionIds={wide ? (mirroring ? mirrorSessionIds : gridSessions.map((session) => session.id)) : []}
@@ -363,7 +379,7 @@ export function MobileApp() {
       tabs={
         wide ? undefined : (
           <SessionTabs
-            sessions={sessions}
+            sessions={named}
             activeSessionId={openSession.id}
             onSelect={(sessionId) => showSession(sessionId, "session")}
             onNewSession={() => {
@@ -384,9 +400,13 @@ export function MobileApp() {
           <MirrorGrid
             view={mirror.view}
             placeLabel={mirrorPlaceLabel(mirror)}
-            sessions={sessions}
+            sessions={named}
             disabled={disabled}
             onView={sendView}
+            onNewSession={() => {
+              const place = mirror.view.place;
+              openNewSessionForm(place.kind === "folder" ? { projectId: place.projectId, worktreeId: place.worktreeId } : null);
+            }}
             renderPane={(pane) => (
               <SessionScreen
                 key={pane.session.id}
@@ -401,6 +421,8 @@ export function MobileApp() {
                 onMeasured={pane.focused ? measured : undefined}
                 onFocus={pane.onFocus}
                 onClose={pane.onClose}
+                zoomed={pane.zoomed}
+                onToggleZoom={pane.onToggleZoom}
                 paneActions={pane.actions}
                 onHeaderDragStart={pane.onDragStart}
                 onRename={rename(pane.session.id)}
@@ -458,7 +480,7 @@ export function MobileApp() {
         {openSession && <SessionContext key={openSession.id} session={openSession} onOpen={drawer.open} />}
         <div className="m-phone-body">{screen ?? list}</div>
       </div>
-      {drawer.isOpen && <SessionDrawer hostId={hostId} hostName={pairing.hostName} sessions={sessions} activeId={openSession?.id ?? null} onClose={() => drawer.close()} onSelect={id => drawer.close(() => showSession(id, openSession ? "session" : "list"))} />}
+      {drawer.isOpen && <SessionDrawer hostId={hostId} hostName={pairing.hostName} sessions={named} activeId={openSession?.id ?? null} onClose={() => drawer.close()} onSelect={id => drawer.close(() => showSession(id, openSession ? "session" : "list"))} />}
       {toast}
     </>
   );

@@ -3,7 +3,7 @@ import { sessionIdFromHash, WIDE_LAYOUT_QUERY } from "./wide-layout";
 
 describe("wide layout", () => {
   it("is for a wide screen with a mouse", () => {
-    expect(WIDE_LAYOUT_QUERY).toBe("(min-width: 900px) and (pointer: fine)");
+    expect(WIDE_LAYOUT_QUERY).toBe("(min-width: 760px) and (pointer: fine)");
   });
 
   it("reads the session a link points at", () => {

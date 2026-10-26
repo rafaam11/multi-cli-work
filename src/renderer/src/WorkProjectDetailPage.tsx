@@ -18,6 +18,7 @@ import { withCategoryPrefix, prefixMismatch } from "@shared/category-code";
 import { GitHubIcon, TeamsIcon } from "./brand-icons";
 import { DocsFolderIcon } from "./docs-folder-icon";
 import { WorkProjectDriveCard } from "./WorkProjectDriveCard";
+import { WorkProjectRepoSyncCard } from "./WorkProjectRepoSyncCard";
 import { subscribeNotionTokenStatus } from "./notion-token-status";
 import { projectName, relativeTime, sessionLabel, statusLabels } from "./session-labels";
 import { TagEditor } from "./TagEditor";
@@ -554,6 +555,8 @@ export function WorkProjectDetailPage({
             </p>
           ) : null}
         </section>
+
+        <WorkProjectRepoSyncCard workProjectId={workProject.id} />
 
         <section className="detail-card" aria-label="노션">
           <h2 id={`wp-notion-${workProject.id}`}>노션 페이지</h2>

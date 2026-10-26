@@ -156,10 +156,16 @@ describe("MobileApp", () => {
     act(() => FakeSocket.last!.receive({ type: "mirror", mirror: { ...mirror, view: { ...mirror.view, focusedPaneId: "s2" } } }));
     expect(FakeSocket.last!.sent.filter(message => message.type === "seen")).toHaveLength(2);
     act(() => {
-      FakeSocket.last!.receive({ type: "mirror", mirror: { ...mirror, view: { ...mirror.view, focusedPaneId: "doc", slots: [{ kind: "document", id: "doc", label: "README" }] } } });
+      FakeSocket.last!.receive({ type: "mirror", mirror: { ...mirror, view: { ...mirror.view, focusedPaneId: "s2", zoomedPaneId: "s1" } } });
       FakeSocket.last!.receive({ type: "sessions", sessions: SESSIONS.map(session => ({ ...session, attention: { generation: 2, seenThrough: 0 } })) });
     });
-    expect(FakeSocket.last!.sent.filter(message => message.type === "seen")).toHaveLength(2);
+    expect(FakeSocket.last!.sent.filter(message => message.type === "seen").at(-1)).toEqual({ type: "seen", sessionId: "s1", generation: 2 });
+    const seenBeforeDocument = FakeSocket.last!.sent.filter(message => message.type === "seen").length;
+    act(() => {
+      FakeSocket.last!.receive({ type: "mirror", mirror: { ...mirror, view: { ...mirror.view, focusedPaneId: "doc", slots: [{ kind: "document", id: "doc", label: "README" }] } } });
+      FakeSocket.last!.receive({ type: "sessions", sessions: SESSIONS.map(session => ({ ...session, attention: { generation: 3, seenThrough: 0 } })) });
+    });
+    expect(FakeSocket.last!.sent.filter(message => message.type === "seen")).toHaveLength(seenBeforeDocument);
   });
 
   it("selects a drawer session and preserves one session history entry", async () => {
@@ -489,7 +495,7 @@ describe("MobileApp following the host screen", () => {
     // The hash follows the host's focus.
     expect(window.location.hash).toBe("#session=s2");
 
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "cols:1-1-1" } });
+    fireEvent.click(screen.getByRole("radio", { name: "3열" }));
     fireEvent.click(screen.getByRole("button", { name: "리팩터 칸 고르기" }));
     fireEvent.click(screen.getByRole("button", { name: "리팩터 칸 닫기" }));
     fireEvent.click(screen.getByRole("button", { name: "다음 페이지" }));
@@ -497,7 +503,7 @@ describe("MobileApp following the host screen", () => {
     expect(views()).toEqual([
       { type: "view", action: "layout", layoutId: "cols:1-1-1" },
       { type: "view", action: "focus", paneId: "s1" },
-      { type: "view", action: "close", slot: 0 },
+      { type: "view", action: "close", slot: 0, paneId: "s1" },
       { type: "view", action: "page", page: 1 },
       { type: "view", action: "split", slot: 0 },
     ]);
@@ -512,7 +518,7 @@ describe("MobileApp following the host screen", () => {
     receiveMirror({ ...MIRROR, view: { ...MIRROR.view, slots: [{ kind: "session", id: "s1" }, null] } });
     fireEvent.click(screen.getByRole("button", { name: /^테스트, / }));
     expect(views()).toContainEqual({ type: "view", action: "open", sessionId: "s2" });
-    expect(screen.getByText("빈 칸")).toBeInTheDocument();
+    expect(screen.getByLabelText("빈 칸")).toBeInTheDocument();
   });
 
   it("moves the host to a folder or worktree picked in the tree", () => {

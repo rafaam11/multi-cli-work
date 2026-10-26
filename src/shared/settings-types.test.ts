@@ -34,6 +34,7 @@ describe("parseSettings", () => {
       taskbarProgress: true,
       reduceMotion: false,
       jkMcp: true,
+      repoSyncOnSessionStart: true,
     });
     expect(DEFAULT_SETTINGS.notifications).toEqual({
       desktop: true,

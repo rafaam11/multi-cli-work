@@ -37,6 +37,11 @@ export interface GeneralSettings {
   reduceMotion: boolean;
   /** Claude·Codex 세션에 jk(세션 제어·팀 보드)를 MCP 도구로 붙인다. 새로 시작하는 세션부터 적용된다. */
   jkMcp: boolean;
+  /**
+   * 업무 프로젝트의 Claude·Codex 세션을 띄울 때 그 프로젝트 레포를 fast-forward로 최신화하고 요약을 브리프에
+   * 싣는다(최대 3초 대기). 꺼도 업무 프로젝트 화면의 "모든 레포 최신화" 버튼은 동작한다.
+   */
+  repoSyncOnSessionStart: boolean;
 }
 
 export interface TerminalSettings {
@@ -232,7 +237,7 @@ const MAX_FILE_OPEN_WITH_ENTRIES = 200;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "ko",
-  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null, taskbarProgress: true, reduceMotion: false, jkMcp: true },
+  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null, taskbarProgress: true, reduceMotion: false, jkMcp: true, repoSyncOnSessionStart: true },
   terminal: {
     fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -456,6 +461,7 @@ export function parseSettings(value: unknown): AppSettings {
       autoCheckUpdates: readBoolean(general.autoCheckUpdates, defaults.general.autoCheckUpdates),
       taskbarProgress: readBoolean(general.taskbarProgress, defaults.general.taskbarProgress),
       jkMcp: readBoolean(general.jkMcp, defaults.general.jkMcp),
+      repoSyncOnSessionStart: readBoolean(general.repoSyncOnSessionStart, defaults.general.repoSyncOnSessionStart),
       summonShortcut:
         typeof general.summonShortcut === "string" &&
         general.summonShortcut.length > 0 &&

@@ -45,6 +45,8 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // 원격 창이 보낸 그리드 조작은 이 렌더러가 처리한다 — 창이 가려져 있어도 늦지 않게.
+      backgroundThrottling: false,
     },
   });
 

@@ -183,7 +183,7 @@ test.describe.serial("Remote PC window", () => {
     const remoteRows = remote.locator(".m-terminal .xterm-rows");
     await expect(remoteRows).toBeVisible();
     // 넓은 화면에서는 입력창이 접혀 있고 키보드가 터미널로 바로 간다.
-    await expect(remote.getByLabel("입력")).toHaveCount(0);
+    await expect(remote.getByLabel("입력", { exact: true })).toHaveCount(0);
     await remote.keyboard.type(echo("MCW_FROM_PC"));
     await remote.keyboard.press("Enter");
     await expect(remoteRows).toContainText("MCW_FROM_PC");
@@ -327,11 +327,11 @@ test.describe.serial("Remote PC window", () => {
 
     // 레이아웃: 원격에서 고르면 호스트 그리드가 바뀌고, 호스트에서 고르면 원격이 따라온다.
     const mirrorView = remote.getByRole("region", { name: "호스트 화면" });
-    const remoteLayout = mirrorView.getByLabel("레이아웃");
-    await remoteLayout.selectOption({ label: "1열" });
+    const remoteLayout = mirrorView.getByRole("radiogroup", { name: "레이아웃 선택" });
+    await remoteLayout.getByRole("radio", { name: "1열", exact: true }).click();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "cols:1");
     await page.locator(".layout-bar").getByRole("radio", { name: "2열", exact: true }).click();
-    await expect(remoteLayout).toHaveValue("cols:1-1");
+    await expect(remoteLayout.getByRole("radio", { name: "2열", exact: true })).toHaveAttribute("aria-checked", "true");
 
     // 트리에서 워크트리 행을 누르면 호스트가 그 워크트리로 옮겨 가고, 폴더 행을 누르면 폴더로 돌아온다.
     const mirrorPlace = mirrorView.locator(".m-mirror-place");

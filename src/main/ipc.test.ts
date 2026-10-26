@@ -282,10 +282,12 @@ function setup(
     previewImport: vi.fn(async () => null),
     applyImport: vi.fn(async () => ({ addedWorkProjects: 0, updatedWorkProjects: 0, addedFolders: 0, missingFolders: [], backupDir: "x" })),
   };
+  const repoSync = { sync: vi.fn(async () => null), last: vi.fn(async () => null) };
   registerMainIpc(ipc, {
     projectService,
     workProjectService,
     readWorkProjectRegistry: vi.fn(async () => workProjectRegistry),
+    repoSync,
     workspace: workspaceGateway,
     projectTags: projectTagsGateway,
     coordinator,
@@ -327,6 +329,7 @@ function setup(
   });
   return {
     handlers,
+    repoSync,
     remoteGateway,
     remoteHostsGateway,
     sizesGateway,
@@ -637,6 +640,18 @@ describe("main IPC boundary", () => {
 
     chooseDirectory.mockResolvedValueOnce(null);
     await expect(handlers.get("work-projects:choose-teams-root")!({})).resolves.toBeNull();
+  });
+
+  it("syncs a work project's repos with force from the button and reads the last record without network", async () => {
+    const { handlers, repoSync } = setup();
+
+    await handlers.get("work-projects:sync-repos")!({}, "wp-1");
+    expect(repoSync.sync).toHaveBeenCalledWith("wp-1", { force: true });
+    await handlers.get("work-projects:last-repo-sync")!({}, "wp-1");
+    expect(repoSync.last).toHaveBeenCalledWith("wp-1");
+
+    await expect(handlers.get("work-projects:sync-repos")!({}, "")).rejects.toThrow(/Work project id/);
+    await expect(handlers.get("work-projects:last-repo-sync")!({}, 3)).rejects.toThrow(/Work project id/);
   });
 
   it("reads project tags from the gateway and forwards a validated set, rejecting bad input", async () => {
@@ -973,6 +988,11 @@ describe("main IPC boundary", () => {
     await handlers.get("settings:update")!({}, { general: { taskbarProgress: false } });
     expect(settingsGateway.update).toHaveBeenCalledWith({ general: { taskbarProgress: false } });
     expect(() => handlers.get("settings:update")!({}, { general: { taskbarProgress: "off" } })).toThrow(/taskbarProgress/);
+    await handlers.get("settings:update")!({}, { general: { repoSyncOnSessionStart: false } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({ general: { repoSyncOnSessionStart: false } });
+    expect(() => handlers.get("settings:update")!({}, { general: { repoSyncOnSessionStart: "off" } })).toThrow(
+      /repoSyncOnSessionStart/,
+    );
   });
 
   it("accepts quiet hours and a snooze, and rejects malformed ones", async () => {

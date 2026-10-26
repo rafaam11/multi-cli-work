@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 /** 키보드와 마우스가 있는 큰 화면. 셸 여부와 무관해서 PC 브라우저도 같은 화면을 얻는다. */
-export const WIDE_LAYOUT_QUERY = "(min-width: 900px) and (pointer: fine)";
+export const WIDE_LAYOUT_QUERY = "(min-width: 760px) and (pointer: fine)";
 
 export function useWideLayout(): boolean {
   const [wide, setWide] = useState(

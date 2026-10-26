@@ -1,3 +1,4 @@
+import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { ActivePullRequestReview } from "@shared/github-types";
 import type {
@@ -11,10 +12,11 @@ import type { WorkProjectRole } from "@shared/work-project-types";
 import { isWorkingWorktree } from "@shared/working-branches";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import type { DocumentPane } from "../pane-items";
-import { projectName } from "../session-labels";
+import { projectName, sessionLabel } from "../session-labels";
 import type { ShelfKind } from "../shelves";
 import type { TreeSection } from "../sidebar-tree";
 import type { ResolvedView } from "../slot-view";
+import type { ResolvedTheme } from "../theme";
 import type { ActiveView } from "./app-model";
 
 /** 원격 창이 호스트 화면을 따라 그리는 데 필요한 것. 모두 App이 이미 가진 값이다. */
@@ -35,6 +37,11 @@ export interface RemoteMirrorSources {
   layoutId: string;
   resolvedView: ResolvedView;
   focusedPaneId: string | null;
+  /** 그리드가 화면에 나와 있는지(App의 showsGrid). 아니면 시작 화면이 떠 있다. */
+  showsGrid: boolean;
+  zoomedPaneId: string | null;
+  agents: readonly AgentView[];
+  theme: ResolvedTheme;
 }
 
 /** 사이드바와 같은 순서: 만든 순서대로. */
@@ -118,27 +125,38 @@ export function buildRemoteMirror(sources: RemoteMirrorSources): RemoteMirror {
     folders: section.projects.map((project) => mirrorFolder(project, sources)),
   }));
   const place = mirrorPlace(sources);
-  const labels = new Map(sources.documentPanes.map((pane) => [pane.id, pane.label]));
+  const documents = new Map(sources.documentPanes.map((pane) => [pane.id, pane.label]));
+  const sessionIds = new Set(sources.sessions.map((session) => session.id));
   const { resolvedView } = sources;
-  const slots: RemoteMirrorSlot[] =
-    place.kind === "other"
-      ? []
-      : resolvedView.slots.map((id) => {
-          if (id === null) return null;
-          const label = labels.get(id);
-          // 아직 목록에 오지 않은 세션도 자리는 지킨다 — 원격이 sessions를 받으면 채운다.
-          return label !== undefined ? { kind: "document", id, label } : { kind: "session", id };
-        });
+  // 호스트에 시작 화면이 떠 있으면 원격도 그리드를 그리지 않는다.
+  const grid = place.kind !== "other" && sources.showsGrid;
+  const slots: RemoteMirrorSlot[] = grid
+    ? resolvedView.slots.map((id) => {
+        if (id === null) return null;
+        const label = documents.get(id);
+        if (label !== undefined) return { kind: "document", id, label };
+        // 지워진 세션의 id는 배치가 따라잡을 때까지 남는다 — 호스트처럼 빈 칸으로 그린다.
+        return sessionIds.has(id) ? { kind: "session", id } : null;
+      })
+    : [];
+  const labels: Record<string, string> = {};
+  for (const session of sources.sessions) {
+    const peers = sources.sessions.filter((peer) => peer.projectId === session.projectId);
+    labels[session.id] = sessionLabel(session, peers, sources.agents);
+  }
   return {
     tree,
     view: {
       place,
       layoutId: sources.layoutId,
-      columnRows: place.kind === "other" ? [] : [...resolvedView.layout.columnRows],
+      columnRows: grid ? [...resolvedView.layout.columnRows] : [],
       page: resolvedView.page,
       pages: resolvedView.pages,
       focusedPaneId: sources.focusedPaneId,
+      zoomedPaneId: grid ? sources.zoomedPaneId : null,
       slots,
     },
+    theme: sources.theme,
+    labels,
   };
 }

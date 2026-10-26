@@ -387,6 +387,9 @@ function createApi(options?: {
       revealLocalFolder: vi.fn().mockResolvedValue(undefined),
       chooseTeamsSyncRoot: vi.fn().mockResolvedValue(null),
       clearTeamsSyncRoot: vi.fn().mockResolvedValue(workProjectRegistry),
+      syncRepos: vi.fn().mockResolvedValue(null),
+      lastRepoSync: vi.fn().mockResolvedValue(null),
+      onRepoSyncNotice: vi.fn(() => () => undefined),
     },
     pcRoots: {
       get: vi.fn().mockResolvedValue(pcRootsInfo),
@@ -2749,8 +2752,11 @@ describe("notification navigation", () => {
     act(() => harness.requestView({ action: "focus", paneId: powershellSession.id }));
     await waitFor(() => expect(lastMirror()?.view.focusedPaneId).toBe(powershellSession.id));
 
-    act(() => harness.requestView({ action: "close", slot: 0 }));
+    // A close naming another pane than the slot holds — a repeat, or a late one — changes nothing.
+    act(() => harness.requestView({ action: "close", slot: 0, paneId: "someone-else" }));
+    act(() => harness.requestView({ action: "close", slot: 0, paneId: powershellSession.id }));
     await waitFor(() => expect(lastMirror()?.view).toMatchObject({ pages: 1, page: 0 }));
+    expect(lastMirror()?.view.slots).not.toContainEqual({ kind: "session", id: powershellSession.id });
 
     // A slot past the drawn page is ignored rather than growing the grid.
     const before = vi.mocked(harness.api.remote.publishMirror).mock.calls.length;

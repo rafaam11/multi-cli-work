@@ -7,6 +7,7 @@ import {
   clearSlot,
   mergeColumnAt,
   normalizeSlots,
+  pageAfterColumnChange,
   pageCount,
   pageOfSession,
   pagePaneIds,
@@ -243,6 +244,27 @@ describe("setLayout", () => {
       layoutId: "auto",
       slots: ["a", "c"],
     });
+  });
+});
+
+describe("pageAfterColumnChange", () => {
+  it("follows the pane that split its column onto the page it lands on", () => {
+    const layout = buildLayout([1, 1]);
+    const before = { layoutId: layout.id, slots: ["a", "b", "c", "d"] };
+    // Page 1 shows c and d. Splitting c grows a page to three slots, so c is now on page 0.
+    const after = splitColumnAt(before, layout, 1, 0);
+    expect(pageAfterColumnChange(before, after, layout, 1, 0)).toBe(0);
+    expect(resolveView(after, 0).slots).toContain("c");
+  });
+
+  it("keeps the column's top pane in sight after a merge shrinks the page", () => {
+    const layout = buildLayout([2, 1]);
+    const before = { layoutId: layout.id, slots: ["a", "b", "c", "d", "e", "f"] };
+    // Page 1 shows d, e, f; merging the lower pane (e) leaves d at slot 3 of a two-slot page.
+    const after = mergeColumnAt(before, layout, 1, 1);
+    const page = pageAfterColumnChange(before, after, layout, 1, 1);
+    expect(page).toBe(1);
+    expect(resolveView(after, page).slots).toContain("d");
   });
 });
 

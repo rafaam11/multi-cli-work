@@ -30,6 +30,9 @@ vi.mock("@xterm/xterm", () => ({
     onData(): { dispose(): void } {
       return { dispose: () => undefined };
     }
+    onResize(): { dispose(): void } {
+      return { dispose: () => undefined };
+    }
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
       keyHandlers.push(handler);
     }
@@ -157,6 +160,50 @@ describe("SessionScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "삭제" }));
     fireEvent.click(screen.getByRole("button", { name: "정말 삭제" }));
     expect(sentOf("remove")).toEqual([{ type: "remove", sessionId: "s1" }]);
+  });
+
+  it("is an icon header in a grid pane whose buttons do not move the focus first", () => {
+    const { client, sentOf } = fakeClient();
+    const onFocus = vi.fn();
+    const onClose = vi.fn();
+    const onToggleZoom = vi.fn();
+    const pane = (focused: boolean) => (
+      <SessionScreen
+        wide
+        focused={focused}
+        client={client}
+        session={SESSION}
+        deviceId="d"
+        onBack={vi.fn()}
+        onFocus={onFocus}
+        onClose={onClose}
+        onToggleZoom={onToggleZoom}
+      />
+    );
+    const { rerender } = render(pane(false));
+    // 포커스가 아닌 칸에는 크기·글자 도구가 없다.
+    expect(screen.queryByRole("button", { name: "호스트 크기 유지" })).not.toBeInTheDocument();
+    const close = screen.getByRole("button", { name: `${SESSION.label} 칸 닫기` });
+    fireEvent.mouseDown(close);
+    fireEvent.click(close);
+    fireEvent.mouseDown(screen.getByRole("button", { name: "패인 확대" }));
+    fireEvent.click(screen.getByRole("button", { name: "패인 확대" }));
+    fireEvent.mouseDown(screen.getByRole("button", { name: "중지" }));
+    fireEvent.click(screen.getByRole("button", { name: "중지" }));
+    expect(onFocus).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onToggleZoom).toHaveBeenCalledOnce();
+    expect(sentOf("stop")).toHaveLength(1);
+    // 칸 자체를 누르면(눌렀다 떼면) 포커스를 옮긴다.
+    fireEvent.mouseDown(screen.getByRole("region", { name: `${SESSION.label} 터미널` }));
+    expect(onFocus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("region", { name: `${SESSION.label} 터미널` }));
+    expect(onFocus).toHaveBeenCalledOnce();
+
+    // 포커스 칸은 도구를 머리줄 안에 둔다 — 머리줄 높이가 포커스에 따라 바뀌지 않게.
+    rerender(pane(true));
+    expect(screen.getByRole("button", { name: "호스트 크기 유지" }).closest("header")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "글자 크게" }).closest("header")).not.toBeNull();
   });
 
   it("attaches again when its session starts running again, whoever restarted it", () => {

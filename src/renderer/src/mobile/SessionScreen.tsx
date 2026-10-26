@@ -1,7 +1,8 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { AArrowDown, AArrowUp, CircleStop, Keyboard, Maximize2, Minimize2, Pin, RotateCcw, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { REMOTE_SESSION_NAME_MAX, type RemoteSessionSummary } from "@shared/remote-types";
 import { DEFAULT_SETTINGS } from "@shared/settings-types";
 import { createTerminalOutputFilter } from "../terminal-output-filter";
@@ -41,6 +42,10 @@ interface SessionScreenProps {
   fitOnlyWhenFocused?: boolean;
   /** 머리줄 ✕ 앞에 그리는 칸 조작(열 나누기·합치기). */
   paneActions?: ReactNode;
+  /** 호스트가 이 칸을 확대해 보이는 중인지. */
+  zoomed?: boolean;
+  /** 있으면 머리줄에 확대·확대 해제 버튼을 둔다. */
+  onToggleZoom?(): void;
   /** 있으면 머리줄을 끌어 다른 칸으로 옮길 수 있다. */
   onHeaderDragStart?(event: DragEvent<HTMLElement>): void;
   /** 있으면 이름을 두 번 눌러 바꿀 수 있다. 빈 이름은 붙인 이름을 지운다. */
@@ -62,9 +67,24 @@ const AUTO_FIT_DEBOUNCE_MS = 150;
  * 쪽이든 호스트가 크기를 되찾으면(입력·패인 크기 변경) 맞춤이 꺼지거나 멈춘다.
  */
 export function SessionScreen({
-  client, session, deviceId, onBack, wide = false, onMeasured, tabs,
-  focused = true, onClose, onFocus, fitOnlyWhenFocused = false, paneActions,
-  onHeaderDragStart, onRename, focusRequest, onReady,
+  client,
+  session,
+  deviceId,
+  onBack,
+  wide = false,
+  onMeasured,
+  tabs,
+  focused = true,
+  onClose,
+  onFocus,
+  fitOnlyWhenFocused = false,
+  paneActions,
+  zoomed = false,
+  onToggleZoom,
+  onHeaderDragStart,
+  onRename,
+  focusRequest,
+  onReady,
 }: SessionScreenProps) {
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -92,7 +112,10 @@ export function SessionScreen({
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const running = session.status !== "exited" && session.status !== "error";
   const reattachRef = useRef<(() => void) | null>(null);
+  const rescaleRef = useRef<(() => void) | null>(null);
   const wasRunning = useRef(running);
+  /** 그리드 칸 — 머리줄은 호스트 패인처럼 아이콘 버튼 한 줄이다. */
+  const pane = onClose !== undefined;
 
   // 끝났던 세션이 다시 돌기 시작했다 — 이 화면에서든, 다른 기기에서든, 호스트에서든. 새 프로세스의
   // 출력은 sequence를 처음부터 세므로, 문을 비우고 새로 붙어야 이전 번호에 밀려 버려지지 않는다.
@@ -167,6 +190,54 @@ export function SessionScreen({
       const filtered = outputFilter.write(data);
       if (filtered) terminal.write(filtered);
     });
+    // 따라 그리는 그리드의 포커스 없는 칸은 호스트 PTY 크기 그대로 그리고, 칸에 들어가게 줄인다 — 넘쳐서
+    // 잘리거나 스크롤바가 생기지 않게. 포커스 칸은 크기를 가져와 맞추므로 그대로 둔다.
+    let scaleFrame = 0;
+    let scale = 1;
+    const rescale = () => {
+      scaleFrame = 0;
+      const element = terminal.element;
+      const screen = element?.querySelector<HTMLElement>(".xterm-screen");
+      if (!element) return;
+      const width = screen?.offsetWidth ?? 0;
+      const height = screen?.offsetHeight ?? 0;
+      if (!fitOnlyRef.current || focusedRef.current || width === 0 || height === 0 || host.clientWidth === 0) {
+        scale = 1;
+        element.style.transform = "";
+        host.classList.remove("m-scaled");
+        return;
+      }
+      scale = Math.min(host.clientWidth / width, host.clientHeight / height, 2);
+      element.style.transformOrigin = "0 0";
+      element.style.transform = `scale(${scale})`;
+      host.classList.add("m-scaled");
+    };
+
+    // xterm은 마우스 위치를 화면 요소의 왼쪽 위에서 잰 거리로 칸을 정하고 CSS 축소는 모른다 — 줄인 칸에서
+    // 끌어 고르면 다른 줄이 잡힌다. 그 칸에서 시작한 마우스 동작만 축소를 되돌린 위치로 바꿔 xterm에 넘긴다.
+    let pointerInside = false;
+    const unscalePointer = (event: MouseEvent) => {
+      if (event.type === "mousedown") pointerInside = host.contains(event.target as Node);
+      if (!pointerInside || scale === 1) return;
+      const screen = terminal.element?.querySelector<HTMLElement>(".xterm-screen");
+      if (!screen) return;
+      const rect = screen.getBoundingClientRect();
+      Object.defineProperty(event, "clientX", { value: rect.left + (event.clientX - rect.left) / scale });
+      Object.defineProperty(event, "clientY", { value: rect.top + (event.clientY - rect.top) / scale });
+    };
+    const releasePointer = () => {
+      pointerInside = false;
+    };
+    window.addEventListener("mousedown", unscalePointer, true);
+    window.addEventListener("mousemove", unscalePointer, true);
+    window.addEventListener("mouseup", unscalePointer, true);
+    window.addEventListener("mouseup", releasePointer);
+    const scheduleScale = () => {
+      if (scaleFrame === 0) scaleFrame = requestAnimationFrame(rescale);
+    };
+    rescaleRef.current = scheduleScale;
+    const offResize = terminal.onResize(scheduleScale);
+
     const applySize = (cols: number | null, rows: number | null) => {
       if (cols !== null && rows !== null && (terminal.cols !== cols || terminal.rows !== rows)) terminal.resize(cols, rows);
     };
@@ -233,7 +304,13 @@ export function SessionScreen({
       scheduleFit();
       reportSize();
     };
-    const observer = autoFit && typeof ResizeObserver === "function" ? new ResizeObserver(scheduleFit) : null;
+    const observer =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(() => {
+            scheduleFit();
+            scheduleScale();
+          })
+        : null;
     observer?.observe(host);
     window.addEventListener("resize", onWindowResize);
 
@@ -320,6 +397,13 @@ export function SessionScreen({
       offState();
       input.dispose();
       reattachRef.current = null;
+      rescaleRef.current = null;
+      offResize.dispose();
+      if (scaleFrame !== 0) cancelAnimationFrame(scaleFrame);
+      window.removeEventListener("mousedown", unscalePointer, true);
+      window.removeEventListener("mousemove", unscalePointer, true);
+      window.removeEventListener("mouseup", unscalePointer, true);
+      window.removeEventListener("mouseup", releasePointer);
       observer?.disconnect();
       window.removeEventListener("resize", onWindowResize);
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -348,6 +432,7 @@ export function SessionScreen({
     // 따라 그리는 그리드에서는 포커스를 받은 칸이 이제서야 크기를 가져온다.
     const autoFit = autoFitRef.current;
     if (fitOnlyRef.current && focused && autoFit && autoFit.state() !== "host") autoFit.refit();
+    rescaleRef.current?.();
   }, [wide, focused]);
 
   useEffect(() => {
@@ -361,6 +446,7 @@ export function SessionScreen({
     autoFitRef.current?.areaChanged();
     const dims = fitRef.current?.proposeDimensions();
     if (dims && dims.cols >= 2 && dims.rows >= 1) onMeasuredRef.current?.({ cols: dims.cols, rows: dims.rows });
+    rescaleRef.current?.();
   }, [fontIndex]);
 
   const togglePhoneSize = () => {
@@ -379,6 +465,18 @@ export function SessionScreen({
 
   const sendKeys = (data: string) => client.send({ type: "write", sessionId: session.id, data });
 
+  // 포커스는 누르기를 마친 뒤에 옮긴다. 끌어서 글을 골랐으면 옮기지 않는다 — 포커스를 받은 칸은 크기를
+  // 다시 맞추고, 크기가 바뀌면 xterm이 고른 것을 지우기 때문이다. 고른 칸에 키보드를 줘 Ctrl+C가 닿게 한다.
+  const focusOnClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if ((event.target as Element).closest("button, input, form")) return;
+    const terminal = terminalRef.current;
+    if (terminal?.hasSelection()) {
+      terminal.focus();
+      return;
+    }
+    onFocus?.();
+  };
+
   return (
     <main
       className={[
@@ -390,7 +488,7 @@ export function SessionScreen({
       ]
         .filter(Boolean)
         .join(" ")}
-      onMouseDown={focused ? undefined : onFocus}
+      onClick={focused || !onFocus ? undefined : focusOnClick}
     >
       <header
         className="m-bar"
@@ -434,7 +532,120 @@ export function SessionScreen({
           </h1>
         )}
         <span className={`m-status m-status-${session.status}`}>{STATUS_LABEL[session.status]}</span>
-        {confirmingRemove ? null : running ? (
+        {pane ? (
+          // 버튼을 눌러도 칸 포커스 요청이 먼저 가지 않게 — 호스트에서 그리드가 바뀌어 엉뚱한 칸에 닿는다.
+          <span className="m-pane-actions" onMouseDown={(event) => event.stopPropagation()}>
+            {wide && focused ? (
+              <span className="m-pane-tools">
+                <button
+                  type="button"
+                  className={`m-icon-button ${fitState === "host" ? "active" : ""}`.trim()}
+                  aria-label="호스트 크기 유지"
+                  aria-pressed={fitState === "host"}
+                  title="호스트 크기 유지 — 이 창에 맞추지 않기"
+                  onClick={() => autoFitRef.current?.keepHost(fitState !== "host")}
+                >
+                  <Pin size={13} />
+                </button>
+                <button
+                  type="button"
+                  className={`m-icon-button ${toolsOpen ? "active" : ""}`.trim()}
+                  aria-label="입력 도구"
+                  aria-pressed={toolsOpen}
+                  title="입력 도구"
+                  onClick={() => setToolsOpen((open) => !open)}
+                >
+                  <Keyboard size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="m-icon-button"
+                  aria-label="글자 작게"
+                  title="글자 작게"
+                  onClick={() => setFontIndex((index) => Math.max(0, index - 1))}
+                >
+                  <AArrowDown size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="m-icon-button"
+                  aria-label="글자 크게"
+                  title="글자 크게"
+                  onClick={() => setFontIndex((index) => Math.min(FONT_SIZES.length - 1, index + 1))}
+                >
+                  <AArrowUp size={13} />
+                </button>
+                <span className="m-bar-divider" aria-hidden="true" />
+              </span>
+            ) : null}
+            {onToggleZoom ? (
+              <button
+                type="button"
+                className={`m-icon-button ${zoomed ? "active" : ""}`.trim()}
+                aria-label={zoomed ? "확대 해제" : "패인 확대"}
+                aria-pressed={zoomed}
+                title={zoomed ? "확대 해제 — 다른 칸 다시 보기" : "패인 확대 — 그리드 전체로 잠시 키우기"}
+                onClick={onToggleZoom}
+              >
+                {zoomed ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              </button>
+            ) : null}
+            {paneActions}
+            {confirmingRemove ? (
+              <>
+                <button
+                  type="button"
+                  className="m-text-button m-danger"
+                  onClick={() => {
+                    client.send({ type: "remove", sessionId: session.id });
+                    setConfirmingRemove(false);
+                  }}
+                >
+                  정말 삭제
+                </button>
+                <button type="button" className="m-text-button" onClick={() => setConfirmingRemove(false)}>
+                  취소
+                </button>
+              </>
+            ) : (
+              <span className="m-pane-life">
+                {running ? (
+                  <button
+                    type="button"
+                    className="m-icon-button"
+                    aria-label="중지"
+                    title="세션 중지"
+                    onClick={() => client.send({ type: "stop", sessionId: session.id })}
+                  >
+                    <CircleStop size={13} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="m-icon-button"
+                    aria-label="재시작"
+                    title="세션 재시작"
+                    onClick={() => client.send({ type: "resume", sessionId: session.id })}
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="m-icon-button m-icon-danger"
+                  aria-label="삭제"
+                  title="세션 삭제 (스크롤백까지)"
+                  onClick={() => setConfirmingRemove(true)}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </span>
+            )}
+            <button type="button" className="m-icon-button" aria-label={`${session.label} 칸 닫기`} title="칸 닫기" onClick={onClose}>
+              <X size={13} />
+            </button>
+          </span>
+        ) : confirmingRemove ? null : running ? (
           <button type="button" onClick={() => client.send({ type: "stop", sessionId: session.id })}>
             중지
           </button>
@@ -443,7 +654,7 @@ export function SessionScreen({
             재시작
           </button>
         )}
-        {confirmingRemove ? (
+        {pane ? null : confirmingRemove ? (
           <>
             <button
               type="button"
@@ -464,15 +675,9 @@ export function SessionScreen({
             삭제
           </button>
         )}
-        {paneActions}
-        {onClose ? (
-          <button type="button" className="m-pane-close" aria-label={`${session.label} 칸 닫기`} title="칸 닫기" onClick={onClose}>
-            ✕
-          </button>
-        ) : null}
       </header>
       {tabs}
-      <div className="m-tools" hidden={!focused}>
+      <div className="m-tools" hidden={!focused || pane}>
         {wide ? (
           <>
             <button
@@ -501,7 +706,7 @@ export function SessionScreen({
         >
           A+
         </button>
-        {wide && fitState === "paused" ? (
+        {wide && !pane && fitState === "paused" ? (
           <span className="m-fit-notice" role="status">
             <button type="button" onClick={() => autoFitRef.current?.refit()}>
               다시 맞추기
@@ -510,7 +715,17 @@ export function SessionScreen({
           </span>
         ) : null}
       </div>
-      <div className="m-terminal" ref={hostRef} role="region" aria-label={`${session.label} 터미널`} />
+      <div className="m-terminal" role="region" aria-label={`${session.label} 터미널`}>
+        <div className="m-terminal-host" ref={hostRef} />
+        {pane && wide && focused && fitState === "paused" ? (
+          <span className="m-fit-notice m-fit-overlay" role="status">
+            <span>호스트가 크기를 가져갔습니다</span>
+            <button type="button" className="m-text-button" onClick={() => autoFitRef.current?.refit()}>
+              다시 맞추기
+            </button>
+          </span>
+        ) : null}
+      </div>
       {toolsOpen && focused ? (
         <>
           <div className="m-keys">

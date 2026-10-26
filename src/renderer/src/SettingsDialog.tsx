@@ -1234,6 +1234,12 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
                 settings.general.jkMcp,
                 (next) => ({ general: { jkMcp: next } }),
               )}
+              {checkboxRow(
+                "업무 프로젝트의 Claude·Codex 세션을 시작할 때 레포 최신화 (fast-forward만)",
+                "settings-repo-sync-on-start",
+                settings.general.repoSyncOnSessionStart,
+                (next) => ({ general: { repoSyncOnSessionStart: next } }),
+              )}
               <div className="settings-row">
                 <span>창 불러오기 단축키</span>
                 <span className="settings-key-controls">

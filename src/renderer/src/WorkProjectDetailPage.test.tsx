@@ -71,7 +71,7 @@ function installApi(
     ...driveOptions.api,
   };
   window.multiCliWork = {
-    workProjects: { update, chooseLocalFolder },
+    workProjects: { update, chooseLocalFolder, lastRepoSync: vi.fn().mockResolvedValue(null), syncRepos: vi.fn() },
     drive: driveApi,
     notion: { status, setToken: vi.fn(), clearToken: vi.fn(), inspectLink },
     projectTags: { list: vi.fn().mockResolvedValue(tagRegistry), set: setTags },

@@ -82,6 +82,10 @@ import {
 } from "./projects/work-project-brief";
 import { buildWorkspaceBrief } from "./projects/workspace-brief";
 import { WorkspaceIndex, resolveWorkspaceRoots } from "./projects/workspace-index";
+import { createRepoSyncService } from "./repo-sync/repo-sync-service";
+import { repoSyncForSession } from "./repo-sync/repo-sync-brief";
+import { createNoticeGate, sessionNotice } from "./repo-sync/repo-sync-notice";
+import { resolveWorkProjectRepoPaths } from "./repo-sync/work-project-repos";
 import {
   addWorkspaceRoot,
   readWorkspaceRegistry,
@@ -258,6 +262,24 @@ export async function createDesktopRuntime(
   const workspaceRegistryOptions = workspaceRegistryPath ? { registryPath: workspaceRegistryPath } : {};
   const workspaceSnapshot = async () =>
     workspaceIndex.snapshot(await readWorkspaceRegistry(workspaceRegistryOptions));
+  // 업무 프로젝트 레포 일괄 최신화. 엔진·정책은 harness-manager 것이고(설치돼 있으면 그 CLI를 부른다),
+  // 업무 프로젝트 → 레포 경로 풀기만 여기서 한다.
+  const passRepoSyncNotice = createNoticeGate();
+  const repoSync = createRepoSyncService({
+    resolve: async (workProjectId) => {
+      const workProject = (
+        await readWorkProjectRegistry({ ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}) })
+      ).workProjects[workProjectId];
+      if (!workProject) return null;
+      const { registry } = await readProjectRegistry({ registryPath });
+      const workspaceRegistry = await readWorkspaceRegistry(workspaceRegistryOptions);
+      const snapshot = workspaceRegistry.roots.length > 0 ? await workspaceIndex.snapshot(workspaceRegistry) : null;
+      return {
+        label: workProject.name,
+        paths: resolveWorkProjectRepoPaths(workProject, registry, snapshot, process.platform),
+      };
+    },
+  });
   /**
    * 등록해 둔 dev·data 위치를 다시 찾는다. 워크스페이스 배치는 옮겨질 수 있고(형제 루트로의 이전
    * 같은), 그때 저장된 경로가 낡으면 레포가 자기 셸을 잃는다. 실제로 바뀐 루트만 다시 쓴다 —
@@ -356,7 +378,7 @@ export async function createDesktopRuntime(
      * 파일 이름은 업무 프로젝트가 아니라 **폴더** 기준이다 — 같은 업무 프로젝트의 두 폴더도
      * 워크스페이스 절(형제 레포·데이터셋)이 다르기 때문.
      */
-    getWorkProjectBrief: async (projectId) => {
+    getWorkProjectBrief: async (projectId, launch) => {
       const { registry } = await readProjectRegistry({ registryPath });
       const workProjectRegistry = await readWorkProjectRegistry({
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
@@ -364,6 +386,22 @@ export async function createDesktopRuntime(
       const workProject = Object.values(workProjectRegistry.workProjects).find((candidate) =>
         candidate.members.some((member) => member.projectId === projectId),
       );
+      // Claude·Codex 세션을 띄우는 김에 그 업무 프로젝트의 레포를 최신화한다. 최대 3초만 기다리고 그때까지의
+      // 요약을 브리프에 싣는다 — 남은 레포는 뒤에서 마저 돈다. 실패·지연은 세션 시작을 막지 않는다(계약 §7).
+      // 건너뜀·실패는 앱 알림으로도 띄운다. 나머지 절을 만드는 동안 함께 돈다.
+      const syncRepos =
+        workProject !== undefined &&
+        (launch.agentId === "claude" || launch.agentId === "codex") &&
+        settingsService.current().general.repoSyncOnSessionStart;
+      const repoSyncSection = syncRepos
+        ? repoSyncForSession(repoSync, workProject.id).then(({ section, report }) => {
+            const notice = report ? sessionNotice(workProject.id, launch.sessionId, report) : null;
+            if (notice && passRepoSyncNotice(notice, Date.now())) {
+              sendToMainWindow(host.getMainWindow(), "repo-sync:session-notice", notice);
+            }
+            return section;
+          })
+        : Promise.resolve(null);
       const tags = workProject ? tagsOf(await readProjectTags(projectTagsOptions), workProject.id) : [];
       const workProjectSection = workProject
         ? renderWorkProjectBrief(
@@ -392,6 +430,7 @@ export async function createDesktopRuntime(
           : null;
       return writeSessionBrief(path.join(userData, "project-briefs"), projectId, [
         workProjectSection,
+        await repoSyncSection,
         workspaceSection,
       ]);
     },
@@ -632,6 +671,11 @@ export async function createDesktopRuntime(
   // 원격 창이 따라 그리는 메인 창의 트리·그리드. 메인 창 렌더러가 바뀔 때마다 보낸다.
   let remoteMirror: RemoteMirror | null = null;
   const remoteMirrorListeners = new Set<() => void>();
+  const notifyMirror = () => {
+    for (const listener of remoteMirrorListeners) listener();
+  };
+  // 창이 닫히면 원격도 곧바로 알아야 한다 — 다음 publish가 오지 않으니 오래된 배치가 남는다.
+  let mirrorWindow: BrowserWindow | null = null;
   const liveMainWindow = () => {
     const window = host.getMainWindow();
     return window && !window.isDestroyed() ? window : null;
@@ -813,6 +857,7 @@ export async function createDesktopRuntime(
       readWorkProjectRegistry({
         ...(workProjectRegistryPath ? { registryPath: workProjectRegistryPath } : {}),
       }),
+    repoSync,
     projectTags: {
       list: () => readProjectTags(projectTagsOptions),
       set: (workProjectId, tags) => setProjectTags(workProjectId, tags, projectTagsOptions),
@@ -860,7 +905,17 @@ export async function createDesktopRuntime(
       revokeDevice: (deviceId) => remoteAccess.revokeDevice(deviceId),
       publishMirror: (mirror) => {
         remoteMirror = mirror;
-        for (const listener of remoteMirrorListeners) listener();
+        const window = liveMainWindow();
+        if (window && window !== mirrorWindow) {
+          mirrorWindow = window;
+          window.once("closed", () => {
+            if (mirrorWindow !== window) return;
+            mirrorWindow = null;
+            remoteMirror = null;
+            notifyMirror();
+          });
+        }
+        notifyMirror();
       },
     },
     remoteHosts: {

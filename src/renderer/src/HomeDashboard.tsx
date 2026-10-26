@@ -238,15 +238,21 @@ export function HomeDashboard({
           </div>
           <div className="app-update-row">
             <span className={`update-status ${updaterStatus.state}`}>{updaterStatusLabel(updaterStatus)}</span>
-            <button
-              type="button"
-              disabled={updaterBusy}
-              onClick={() =>
-                void (updaterDownloaded ? window.multiCliWork.updates.install() : window.multiCliWork.updates.check())
-              }
-            >
-              {updaterDownloaded ? "재시작" : "확인"}
-            </button>
+            {updaterStatus.state === "installFailed" ? (
+              <button type="button" title="자동 설치가 적용되지 않았습니다 — 릴리스 페이지에서 Setup.exe를 받아 실행하세요" onClick={() => void window.multiCliWork.updates.openReleases()}>
+                수동 설치
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={updaterBusy}
+                onClick={() =>
+                  void (updaterDownloaded ? window.multiCliWork.updates.install() : window.multiCliWork.updates.check())
+                }
+              >
+                {updaterDownloaded ? "재시작" : "확인"}
+              </button>
+            )}
           </div>
         </section>
 
