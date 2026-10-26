@@ -175,7 +175,7 @@ test.describe.serial("Remote PC window", () => {
     await expect(remote.getByLabel("페어링 코드")).toHaveCount(0);
     expect(await remote.evaluate(() => typeof (window as unknown as { multiCliWork?: unknown }).multiCliWork)).toBe("undefined");
 
-    const sessionButton = remote.locator(".m-session").first();
+    const sessionButton = remote.locator(".m-row-open").first();
     await sessionButton.click();
     await expect(sessionButton).toHaveAttribute("aria-current", "true");
     const remoteRows = remote.locator(".m-terminal .xterm-rows");
@@ -245,50 +245,55 @@ test.describe.serial("Remote PC window", () => {
     await remote.getByLabel("폴더").selectOption({ label: "Sample Project" });
     await remote.getByLabel("에이전트").selectOption({ label: SHELL_LABEL });
     await remote.getByRole("button", { name: "시작" }).click();
-    await expect(remote.locator(".m-session")).toHaveCount(2);
+    await expect(remote.locator(".m-row-open")).toHaveCount(2);
     await expect.poll(async () => (await hostSessions()).length).toBe(2);
     expect(await hostSelection()).toBe(selectedBefore);
 
+    // 넓은 화면에서는 새 세션이 옆 칸에 열리고 포커스를 받는다. 조작은 그 칸 안에서 한다.
+    await expect(remote.locator(".m-pane")).toHaveCount(2);
+    const pane = remote.locator(".m-pane-focused");
+    const paneRows = pane.locator(".m-terminal .xterm-rows");
+
     // 만든 쪽에서 바로 열린다.
-    const screenStatus = remote.locator(".m-session-screen .m-bar .m-status");
-    await expect(remote.getByRole("button", { name: "중지" })).toBeVisible();
-    await remote.locator(".m-terminal").click();
+    const screenStatus = pane.locator(".m-bar .m-status");
+    await expect(pane.getByRole("button", { name: "중지" })).toBeVisible();
+    await pane.locator(".m-terminal").click();
     await remote.keyboard.type(echo("MCW_NEW_SESSION"));
     await remote.keyboard.press("Enter");
-    await expect(remoteRows).toContainText("MCW_NEW_SESSION");
+    await expect(paneRows).toContainText("MCW_NEW_SESSION");
 
-    await remote.getByRole("button", { name: "중지" }).click();
-    await expect(remote.getByRole("button", { name: "재시작" })).toBeVisible();
+    await pane.getByRole("button", { name: "중지" }).click();
+    await expect(pane.getByRole("button", { name: "재시작" })).toBeVisible();
     await expect(screenStatus).toHaveText("종료됨");
     await expect.poll(async () => (await hostSessions()).filter((session) => session.status === "exited").length).toBe(1);
 
     // 다시 시작한 프로세스의 출력이 이 화면에 이어서 나온다(다시 붙었다는 뜻).
-    await remote.getByRole("button", { name: "재시작" }).click();
-    await expect(remote.getByRole("button", { name: "중지" })).toBeVisible();
-    await remote.locator(".m-terminal").click();
+    await pane.getByRole("button", { name: "재시작" }).click();
+    await expect(pane.getByRole("button", { name: "중지" })).toBeVisible();
+    await pane.locator(".m-terminal").click();
     await remote.keyboard.type(echo("MCW_AFTER_RESTART"));
     await remote.keyboard.press("Enter");
-    await expect(remoteRows).toContainText("MCW_AFTER_RESTART");
+    await expect(paneRows).toContainText("MCW_AFTER_RESTART");
     expect(await hostSelection()).toBe(selectedBefore);
 
     // 재시작을 요청하지 않은 화면도 이어 받는다: 이번에는 호스트 쪽에서 다시 시작한다.
-    await remote.getByRole("button", { name: "중지" }).click();
-    await expect(remote.getByRole("button", { name: "재시작" })).toBeVisible();
+    await pane.getByRole("button", { name: "중지" }).click();
+    await expect(pane.getByRole("button", { name: "재시작" })).toBeVisible();
     const stopped = (await hostSessions()).find((session) => session.status === "exited");
     if (!stopped) throw new Error("the stopped session is missing on the host");
     await page.evaluate(
       (sessionId) => window.multiCliWork.terminals.resume({ sessionId, cols: 80, rows: 24 }),
       stopped.id,
     );
-    await expect(remote.getByRole("button", { name: "중지" })).toBeVisible();
-    await remote.locator(".m-terminal").click();
+    await expect(pane.getByRole("button", { name: "중지" })).toBeVisible();
+    await pane.locator(".m-terminal").click();
     await remote.keyboard.type(echo("MCW_HOST_RESTARTED"));
     await remote.keyboard.press("Enter");
-    await expect(remoteRows).toContainText("MCW_HOST_RESTARTED");
+    await expect(paneRows).toContainText("MCW_HOST_RESTARTED");
 
-    await remote.getByRole("button", { name: "삭제" }).click();
-    await remote.getByRole("button", { name: "정말 삭제" }).click();
-    await expect(remote.locator(".m-session")).toHaveCount(1);
+    await pane.getByRole("button", { name: "삭제" }).click();
+    await pane.getByRole("button", { name: "정말 삭제" }).click();
+    await expect(remote.locator(".m-row-open")).toHaveCount(1);
     await expect.poll(async () => (await hostSessions()).length).toBe(1);
     // 지운 세션에서 떼어 나오는 것은 실패가 아니다 — 거절 알림이 뜨면 안 된다.
     await remote.waitForTimeout(500);
@@ -304,8 +309,8 @@ test.describe.serial("Remote PC window", () => {
     await remote.getByLabel("작업 위치").selectOption({ label: "feat/remote" });
     await remote.getByLabel("에이전트").selectOption({ label: SHELL_LABEL });
     await remote.getByRole("button", { name: "시작" }).click();
-    await expect(remote.locator(".m-session")).toHaveCount(2);
-    await expect(remote.locator(".m-session", { hasText: "feat/remote" })).toBeVisible();
+    await expect(remote.locator(".m-row-open")).toHaveCount(2);
+    await expect(remote.locator(".m-row-open", { hasText: "feat/remote" })).toBeVisible();
     const worktreeSession = (await hostSessions()).find((session) => session.worktreeId);
     const remoteWorktree = (await page.evaluate(() => window.multiCliWork.worktrees.list())).find(
       (worktree) => worktree.branch === "feat/remote",
