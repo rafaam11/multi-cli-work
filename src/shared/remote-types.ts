@@ -103,6 +103,8 @@ export interface RemoteMirrorView {
   page: number;
   pages: number;
   focusedPaneId: string | null;
+  /** 호스트가 칸 하나를 확대해 보이는 중이면 그 칸. v1.53.0 호스트부터 싣는다. */
+  zoomedPaneId?: string | null;
   slots: RemoteMirrorSlot[];
 }
 
@@ -110,6 +112,10 @@ export interface RemoteMirrorView {
 export interface RemoteMirror {
   tree: RemoteMirrorSection[];
   view: RemoteMirrorView;
+  /** 호스트 창의 테마. 원격 창이 같은 색으로 그린다. v1.53.0 호스트부터 싣는다. */
+  theme?: "dark" | "light";
+  /** 세션 id → 호스트 사이드바·머리줄이 보이는 이름. 번호 붙은 기본 이름까지 호스트와 같다. */
+  labels?: Record<string, string>;
 }
 
 /** 원격이 호스트 그리드에 요청하는 조작. 슬롯은 지금 페이지 안의 번호다. */
@@ -121,9 +127,11 @@ export type RemoteViewAction =
   | { action: "merge"; slot: number }
   | { action: "page"; page: number }
   | { action: "focus"; paneId: string }
-  | { action: "close"; slot: number }
+  /** `paneId` is what the remote saw there — a repeated or late close then leaves another pane alone. */
+  | { action: "close"; slot: number; paneId?: string }
   | { action: "move"; paneId: string; slot: number }
-  | { action: "open"; sessionId: string };
+  | { action: "open"; sessionId: string }
+  | { action: "zoom"; paneId: string | null };
 
 /** 원격이 고를 수 있는 레이아웃: 자동, 또는 나누지 않은 1~6열. 나누기는 칸에서 한다. */
 const REMOTE_LAYOUT_ID = /^(auto|cols:1(-1){0,5})$/;
@@ -228,8 +236,11 @@ function parseViewAction(value: Record<string, unknown>): RemoteViewAction | nul
         : null;
     case "split":
     case "merge":
-    case "close":
       return slotIndex(value.slot) ? { action: value.action, slot: value.slot } : null;
+    case "close":
+      if (!slotIndex(value.slot)) return null;
+      if (value.paneId === undefined) return { action: "close", slot: value.slot };
+      return text(value.paneId) ? { action: "close", slot: value.slot, paneId: value.paneId } : null;
     case "page":
       return typeof value.page === "number" && Number.isInteger(value.page) && value.page >= 0
         ? { action: "page", page: value.page }
@@ -240,6 +251,8 @@ function parseViewAction(value: Record<string, unknown>): RemoteViewAction | nul
       return text(value.paneId) && slotIndex(value.slot) ? { action: "move", paneId: value.paneId, slot: value.slot } : null;
     case "open":
       return text(value.sessionId) ? { action: "open", sessionId: value.sessionId } : null;
+    case "zoom":
+      return value.paneId === null || text(value.paneId) ? { action: "zoom", paneId: value.paneId } : null;
     default:
       return null;
   }

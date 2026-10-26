@@ -274,6 +274,21 @@ export function mergeColumnAt(
 }
 
 /**
+ * The page to show after a split or merge. Either one changes how many slots a page holds, so the
+ * page that was on screen now draws other panes; this is the page holding the column's top pane.
+ */
+export function pageAfterColumnChange(
+  before: SlotViewState,
+  after: SlotViewState,
+  layout: GridLayout,
+  page: number,
+  slotIndex: number,
+): number {
+  const start = columnOfSlot(layout.columnRows, slotIndex)?.start ?? slotIndex;
+  return Math.floor(absoluteSlotOf(before, page, start) / Math.max(viewPageSize(after), 1));
+}
+
+/**
  * How many slots one page holds. A preset says so itself; 자동 has no fixed answer, so it takes the
  * ceiling and lets the page's own session count choose the arrangement. That ceiling is the column
  * cap, not the slot cap — 자동 draws plain columns and never splits one, so it cannot reach twelve.

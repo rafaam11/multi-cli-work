@@ -7,6 +7,7 @@ import {
   appendSession,
   clearSlot,
   mergeColumnAt,
+  pageAfterColumnChange,
   pageOfSession,
   placeInSlot,
   placePaneRelative,
@@ -164,13 +165,21 @@ export function createGridActions(context: GridContext) {
    * on 자동 that is a shape nothing has stored yet — so the slot index means the same thing on both
    * sides. A split pins a 자동 view to that shape; 자동 has no room for a stacked pair.
    */
-  const splitColumn = (index: number) => {
-    updateCurrentView((view) => splitColumnAt(view, resolvedView.layout, resolvedView.page, index));
+  /** Split and merge resize every page, so the page follows the column that changed. */
+  const changeColumn = (
+    index: number,
+    change: (view: SlotViewState, layout: ResolvedView["layout"], page: number, index: number) => SlotViewState,
+  ) => {
+    const { layout, page } = resolvedView;
+    const next = change(currentView, layout, page, index);
+    if (next === currentView) return;
+    updateCurrentView((view) => change(view, layout, page, index));
+    setPage(pageAfterColumnChange(currentView, next, layout, page, index));
   };
 
-  const mergeColumn = (index: number) => {
-    updateCurrentView((view) => mergeColumnAt(view, resolvedView.layout, resolvedView.page, index));
-  };
+  const splitColumn = (index: number) => changeColumn(index, splitColumnAt);
+
+  const mergeColumn = (index: number) => changeColumn(index, mergeColumnAt);
 
   /**
    * A pane dragged to an edge or a corner. The zone names the arrangement that draws that region,

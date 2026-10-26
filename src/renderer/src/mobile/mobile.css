@@ -4,9 +4,20 @@
  */
 :root {
   color-scheme: dark;
-  --m-font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --m-font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   --m-mono: "Cascadia Code", Consolas, ui-monospace, monospace;
   --m-radius: 6px;
+  /* 메인 창 index.css의 같은 이름 글자 토큰 — 넓은 화면과, 메인에서 가져온 LayoutPicker가 쓴다. */
+  --font-family-ui: var(--m-font);
+  --type-page-title-size: 16px;
+  --type-ui-size: 13px;
+  --type-secondary-size: 12px;
+  --type-caption-size: 11px;
+  --type-ui: 400 13px/18px var(--font-family-ui);
+  --type-ui-semibold: 600 13px/18px var(--font-family-ui);
+  --type-secondary: 400 12px/16px var(--font-family-ui);
+  --type-caption: 400 11px/14px var(--font-family-ui);
+  --type-panel-title: 600 14px/20px var(--font-family-ui);
 }
 :root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
@@ -98,34 +109,78 @@ select { min-height: 40px; }
 .m-tools { display: flex; gap: 6px; padding: 6px 12px; }
 .m-tools[hidden] { display: none; }
 .m-tools [aria-pressed="true"] { border-color: var(--line-strong); background: var(--surface-hover); color: var(--text); }
-.m-terminal { min-height: 0; overflow: auto; padding: 0 4px; }
+/*
+ * 터미널은 틀(.m-terminal) 안의 절대 위치 상자에 연다 — FitAddon은 부모의 padding을 빼지 않아서, 틀에
+ * padding을 주면 열이 넘쳐 가로 스크롤바가 생긴다(메인 창 index.css의 같은 주석).
+ */
+.m-terminal { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.m-terminal-host { position: absolute; inset: 2px 0 0 4px; overflow: auto; }
+/* 칸에 맞게 줄여 그리는 동안은 넘칠 것이 없다 — 줄인 뒤에 남는 스크롤바를 지운다. */
+.m-terminal-host.m-scaled { overflow: hidden; }
 .m-keys { display: flex; gap: 4px; overflow-x: auto; padding: 6px 8px; }
 .m-keys button { flex: 0 0 auto; min-width: 44px; }
 .m-composer { display: flex; gap: 6px; padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
 .m-composer button { flex: 0 0 auto; }
 .m-danger { border-color: var(--danger-line); color: var(--danger-text); }
 
-/* 넓은 화면: 왼쪽 목록, 오른쪽 세션 그리드(최대 4칸). */
-.m-wide { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100%; }
+/* 넓은 화면: 왼쪽 목록, 오른쪽 세션 그리드. 글자·버튼은 메인 창의 크기를 쓴다. */
+.m-wide { display: grid; grid-template-columns: clamp(220px, 22vw, 300px) minmax(0, 1fr); height: 100%; font: var(--type-ui); }
 .m-wide .m-list { overflow-y: auto; border-right: 1px solid var(--line); }
-.m-wide .m-row-open, .m-wide .m-row-action, .m-wide .m-shelf-toggle { min-height: 32px; }
-.m-wide button { min-height: 32px; padding: 4px 10px; }
+.m-wide .m-row-open, .m-wide .m-row-action, .m-wide .m-shelf-toggle { min-height: 34px; }
+.m-wide button { min-height: 28px; padding: 3px 10px; font: var(--type-ui); white-space: nowrap; }
 .m-wide .m-session-screen { min-width: 0; }
 .m-wide-placeholder { align-self: center; justify-self: center; }
+.m-wide .m-panel-heading h2 { font: var(--type-secondary); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+.m-wide .m-row { position: relative; }
+.m-wide .m-row.current { box-shadow: none; }
+.m-wide .m-row.current::before, .m-wide .m-tree-row.current::before { position: absolute; top: 4px; bottom: 4px; left: 0; width: 2px; border-radius: 1px; background: var(--teal); content: ""; }
+.m-wide .m-row-place, .m-wide .m-row-branch, .m-wide .m-status { font: var(--type-caption); }
 .m-grid { display: grid; grid-auto-rows: minmax(0, 1fr); gap: 1px; min-width: 0; min-height: 0; height: 100%; background: var(--line); }
 .m-grid[data-count="3"] > :last-child { grid-column: 1 / -1; }
-.m-pane .m-bar { gap: 6px; padding: 4px 8px; }
-.m-pane .m-bar h1 { font-size: 13px; }
-.m-pane:not(.m-pane-focused) .m-bar { background: var(--sidebar); }
-.m-pane:not(.m-pane-focused) .m-bar h1 { color: var(--muted); font-weight: 500; }
-.m-pane-focused .m-bar { box-shadow: inset 0 -2px 0 var(--blue); }
-.m-pane-close { min-width: 32px; padding: 0; border: 0; background: transparent; color: var(--quiet); }
+
+/* 그리드 칸 — 메인 창 .grid-pane과 .pane-header를 본뜬다. */
+.m-pane { position: relative; min-width: 0; min-height: 0; }
+.m-pane .m-bar { flex: 0 0 auto; gap: 6px; min-height: 28px; padding: 2px 4px 2px 8px; border-left: 2px solid transparent; background: var(--header-bg); color: var(--muted); cursor: grab; font: var(--type-ui); }
+.m-pane .m-bar h1 { flex: 1 1 auto; min-width: 0; font: var(--type-ui-semibold); color: var(--text); }
+.m-pane:not(.m-pane-focused) .m-bar h1 { color: var(--muted); }
+.m-pane.status-working > .m-bar { background: color-mix(in srgb, var(--teal) 10%, var(--bg)); }
+.m-pane .m-status { font: var(--type-caption); }
+.m-pane .m-rename input { cursor: text; }
+.m-pane-actions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 1px; margin-left: auto; cursor: default; }
+.m-pane-tools, .m-pane-life { display: contents; }
+/* 칸이 좁으면 제목이 밀려나지 않게 덜 쓰는 것부터 숨긴다: 입력 도구 → 상태 글자 → 중지·삭제. */
+.m-wide .m-pane { container-type: inline-size; }
+@container (max-width: 420px) {
+  .m-pane-tools { display: none; }
+}
+@container (max-width: 300px) {
+  .m-pane .m-bar > .m-status { display: none; }
+  .m-fit-overlay > span { display: none; }
+}
+@container (max-width: 210px) {
+  .m-pane-life { display: none; }
+}
+.m-wide .m-icon-button, .m-icon-button { display: grid; width: 22px; height: 22px; min-height: 0; flex: 0 0 22px; padding: 0; place-items: center; border: 0; border-radius: 4px; color: var(--muted); background: transparent; }
+.m-icon-button:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
+.m-icon-button.active { color: var(--teal); }
+.m-icon-danger:hover:not(:disabled) { color: var(--danger-text); background: rgb(212 106 106 / 11%); }
+.m-wide .m-text-button, .m-text-button { min-height: 22px; padding: 0 8px; border-radius: 4px; font: var(--type-secondary); }
+.m-bar-divider { width: 1px; height: 14px; margin: 0 3px; background: var(--line); }
+/* 포커스 링은 터미널 위에 겹친 틀로 그린다 — 터미널 바탕이 칸의 그림자를 덮기 때문(메인과 같다). */
+.m-grid:not([data-count="1"]):not([data-slots="1"]):not([data-zoomed]) .m-pane-focused::after { position: absolute; z-index: 2; inset: 0; border: 2px solid var(--teal); box-shadow: inset 0 0 9px color-mix(in srgb, var(--teal) 20%, transparent); content: ""; pointer-events: none; }
+.m-grid[data-zoomed] .m-pane-focused::after { position: absolute; z-index: 2; inset: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--teal) 55%, transparent); content: ""; pointer-events: none; }
+.m-pane.status-awaiting-input { --session-accent: var(--violet); }
+.m-pane.status-awaiting-approval { --session-accent: var(--amber); }
+.m-pane.status-error { --session-accent: var(--red); }
+.m-pane.status-awaiting-input::before, .m-pane.status-awaiting-approval::before, .m-pane.status-error::before { position: absolute; z-index: 1; inset: 0; border: 2px solid var(--session-accent); box-shadow: inset 0 0 12px color-mix(in srgb, var(--session-accent) 22%, transparent); content: ""; pointer-events: none; }
 /* 알림이 뜨고 사라질 때 도구 줄이 줄바꿈되면 터미널 영역의 높이가 바뀌어 자동 맞춤이 다시 돈다 — 한 줄로 둔다. */
 .m-wide .m-tools { align-items: center; flex-wrap: nowrap; }
 .m-wide .m-tools > button { flex: 0 0 auto; white-space: nowrap; }
 .m-fit-notice { display: flex; flex: 1 1 0; min-width: 0; align-items: center; gap: 6px; color: var(--warning-text); font-size: 13px; }
 .m-fit-notice button { flex: 0 0 auto; white-space: nowrap; }
 .m-fit-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 칸 머리줄 높이를 바꾸지 않게, 크기 알림은 터미널 위에 띄운다. */
+.m-fit-overlay { position: absolute; z-index: 3; top: 6px; right: 10px; max-width: calc(100% - 20px); padding: 4px 4px 4px 10px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-raised); font: var(--type-secondary); }
 
 .m-new-session { display: grid; gap: 8px; padding: 8px 12px 12px; border-bottom: 1px solid var(--line); }
 .m-new-session label { display: grid; gap: 4px; color: var(--muted); }
@@ -138,33 +193,60 @@ select { min-height: 40px; }
 
 /* 프로젝트 트리: 메인 사이드바 아래쪽의 업무 프로젝트 → 폴더 → 메인/worktree → 세션. */
 .m-tree .m-tree-children { padding-left: 14px; }
-.m-tree-row { display: flex; align-items: center; border-radius: 4px; color: var(--muted); }
+.m-tree-row { position: relative; display: flex; align-items: center; border-radius: 4px; color: var(--muted); }
 .m-tree-row:hover { background: var(--surface-hover); color: var(--text); }
-.m-tree-row.current { background: var(--surface-hover); color: var(--text); box-shadow: inset 2px 0 0 var(--blue); }
+.m-tree-row.current { background: var(--surface-hover); color: var(--text); box-shadow: inset 2px 0 0 var(--teal); }
+.m-wide .m-tree-row.current { box-shadow: none; }
 .m-tree-row .m-row-open:disabled { opacity: 1; cursor: default; }
 .m-tree-toggle { flex: 0 0 auto; min-width: 24px; padding: 0; border: 0; background: transparent; color: var(--quiet); }
 .m-tree-workspace .m-row-open { gap: 4px; }
 .m-tree-meta { flex: 0 0 auto; color: var(--quiet); font-size: 12px; white-space: nowrap; }
+.m-wide .m-tree-meta { min-width: 18px; padding: 0 6px; border-radius: 8px; background: var(--surface); font: var(--type-caption); text-align: center; }
 .m-tree-session { display: flex; width: 100%; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; color: var(--muted); text-align: left; }
 .m-tree-session:hover, .m-tree-session.on-screen { color: var(--text); }
 .m-tree-session.on-screen { background: var(--surface-hover); }
-.m-wide .m-tree-row .m-row-open, .m-wide .m-tree-row .m-row-action, .m-wide .m-tree-session { min-height: 28px; }
+.m-wide .m-tree-row .m-row-open, .m-wide .m-tree-row .m-row-action, .m-wide .m-tree-session { min-height: 30px; }
+.m-wide .m-tree-row .m-tree-toggle { min-width: 22px; min-height: 30px; padding: 0; border: 0; background: transparent; }
 
-/* 호스트 화면 미러: 호스트 그리드와 같은 레이아웃·칸·페이지. */
+/* 호스트 화면 미러: 호스트 그리드와 같은 레이아웃·칸·페이지. 도구줄은 메인 창 작업 머리줄을 본뜬다. */
 .m-mirror { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
-.m-mirror-bar { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 4px 8px; background: var(--header-bg); border-bottom: 1px solid var(--line); }
-.m-mirror-place { flex: 1 1 auto; min-width: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.m-mirror-pages { display: inline-flex; align-items: center; gap: 4px; font: 12px/1 var(--m-mono); color: var(--muted); }
-.m-mirror-pages button { min-width: 28px; padding: 0; }
-.m-mirror-layout { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
-.m-mirror-layout select { width: auto; min-height: 28px; padding: 2px 6px; }
-.m-mirror > .m-wide-placeholder { align-self: center; margin: auto; }
-.m-mirror-grid { flex: 1 1 0; height: auto; grid-auto-rows: auto; }
+.m-mirror-bar { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 40px; padding: 4px 8px 4px 12px; background: var(--header-bg); border-bottom: 1px solid var(--line); }
+.m-mirror-place { flex: 1 1 auto; min-width: 0; overflow: hidden; font: var(--type-panel-title); text-overflow: ellipsis; white-space: nowrap; }
+.m-mirror-pages { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; font: var(--type-secondary); color: var(--muted); }
+.m-mirror-grid { flex: 1 1 0; height: auto; }
+.m-grid[data-zoomed] { grid-template-areas: none; }
 .m-mirror-slot { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
 .m-mirror-slot > * { flex: 1 1 0; min-height: 0; }
-.m-mirror-placeholder > .m-bar { flex: 0 0 auto; gap: 6px; padding: 4px 8px; background: var(--sidebar); }
-.m-mirror-placeholder > .m-bar h1 { font-size: 13px; color: var(--muted); font-weight: 500; }
-.m-mirror-placeholder.m-pane-focused > .m-bar { box-shadow: inset 0 -2px 0 var(--blue); }
-.m-mirror-placeholder > .m-empty { margin: 0; text-align: center; }
+.m-mirror-slot.m-parked { display: none; }
+/* 빈 칸 — 메인 창 .grid-slot.empty. 끌어 놓을 자리라 비어 보이지 않게 그렇다고 말한다. */
+.m-mirror-slot.m-slot-empty { align-items: center; justify-content: center; gap: 6px; border: 1px dashed var(--line-strong); color: var(--quiet); font: var(--type-secondary); }
+.m-mirror-slot.m-slot-empty > * { flex: 0 0 auto; }
+.m-slot-number { font: 16px/1 var(--m-mono); }
+.m-wide .m-slot-new { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text); background: var(--surface-raised); }
+.m-wide .m-slot-new:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); background: var(--surface-raised); }
+.m-mirror-placeholder > .m-bar { flex: 0 0 auto; }
+.m-mirror-placeholder > .m-bar > svg { flex: 0 0 auto; color: var(--quiet); }
+/* 시작 화면·문서 자리 — 메인 창 .terminal-empty / .empty-glyph. */
+.m-terminal-empty { display: grid; flex: 1 1 0; min-width: 0; min-height: 0; align-content: center; justify-items: center; padding: 24px; color: var(--muted); text-align: center; }
+.m-terminal-empty p { max-width: min(100%, 420px); margin: 0; font: var(--type-ui); }
+.m-empty-glyph { display: grid; width: 72px; height: 48px; margin-bottom: 16px; place-items: center; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-accent-soft); box-shadow: inset 3px 0 0 var(--teal); }
+.m-empty-glyph span { color: var(--teal); font: 16px/1 var(--m-mono); }
 .m-toast span { flex: 1 1 auto; min-width: 0; }
 .m-toast button { flex: 0 0 auto; }
+
+/* 메인 창 LayoutPicker(.layout-*)의 규칙 — 타일 하나하나가 그리드의 미리보기다. */
+/* 창이 좁으면 칸 그리드 대신 타일 줄이 가로로 스크롤된다 — 창 전체가 넘치지 않게. */
+.layout-bar { display: flex; flex: 0 1 auto; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.layout-bar-divider { width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
+.m-wide .layout-option { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; min-height: 0; padding: 3px; border: 1px solid transparent; border-radius: 3px; background: none; }
+.m-wide .layout-option:hover:not(:disabled) { background: var(--surface-hover); }
+.m-wide .layout-option.current { border-color: var(--accent); background: var(--surface-hover); }
+.layout-preview { display: grid; width: 44px; height: 24px; gap: 1px; }
+.layout-preview > span { display: flex; align-items: center; justify-content: center; border: 1px solid var(--line-strong); border-radius: 1px; color: transparent; background: var(--bg); font-size: var(--type-caption-size); line-height: 1; }
+.layout-option.current .layout-preview > span { border-color: var(--accent); }
+.layout-option-label { overflow: hidden; padding-right: 2px; color: var(--muted); font-size: var(--type-secondary-size); text-overflow: ellipsis; white-space: nowrap; }
+.layout-option.current .layout-option-label { color: var(--text); }
+/* 좁은 넓은 화면에서는 타일이 줄어든다 — 도구줄이 줄바꿈하면 그리드 높이가 흔들린다. */
+@media (max-width: 1100px) {
+  .layout-preview { width: 30px; height: 18px; }
+}

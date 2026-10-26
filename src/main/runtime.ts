@@ -630,6 +630,11 @@ export async function createDesktopRuntime(
   // 원격 창이 따라 그리는 메인 창의 트리·그리드. 메인 창 렌더러가 바뀔 때마다 보낸다.
   let remoteMirror: RemoteMirror | null = null;
   const remoteMirrorListeners = new Set<() => void>();
+  const notifyMirror = () => {
+    for (const listener of remoteMirrorListeners) listener();
+  };
+  // 창이 닫히면 원격도 곧바로 알아야 한다 — 다음 publish가 오지 않으니 오래된 배치가 남는다.
+  let mirrorWindow: BrowserWindow | null = null;
   const liveMainWindow = () => {
     const window = host.getMainWindow();
     return window && !window.isDestroyed() ? window : null;
@@ -848,7 +853,17 @@ export async function createDesktopRuntime(
       revokeDevice: (deviceId) => remoteAccess.revokeDevice(deviceId),
       publishMirror: (mirror) => {
         remoteMirror = mirror;
-        for (const listener of remoteMirrorListeners) listener();
+        const window = liveMainWindow();
+        if (window && window !== mirrorWindow) {
+          mirrorWindow = window;
+          window.once("closed", () => {
+            if (mirrorWindow !== window) return;
+            mirrorWindow = null;
+            remoteMirror = null;
+            notifyMirror();
+          });
+        }
+        notifyMirror();
       },
     },
     remoteHosts: {

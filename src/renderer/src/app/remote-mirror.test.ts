@@ -67,6 +67,10 @@ function sources(overrides: Partial<RemoteMirrorSources> = {}): RemoteMirrorSour
     layoutId: "auto",
     resolvedView: { layout: buildLayout([1, 1]), slots: ["s1", "doc:readme"], page: 0, pages: 1 },
     focusedPaneId: "s1",
+    showsGrid: true,
+    zoomedPaneId: null,
+    agents: [],
+    theme: "dark",
     ...overrides,
   };
 }
@@ -102,6 +106,7 @@ describe("buildRemoteMirror", () => {
       page: 0,
       pages: 1,
       focusedPaneId: "s1",
+      zoomedPaneId: null,
       slots: [
         { kind: "session", id: "s1" },
         { kind: "document", id: "doc:readme", label: "README.md" },
@@ -128,5 +133,37 @@ describe("buildRemoteMirror", () => {
       expect(view.slots).toEqual([]);
       expect(view.columnRows).toEqual([]);
     }
+  });
+
+  it("shows no grid while the host shows its start page", () => {
+    const view = buildRemoteMirror(sources({ showsGrid: false, zoomedPaneId: "s1" })).view;
+    expect(view.slots).toEqual([]);
+    expect(view.columnRows).toEqual([]);
+    expect(view.zoomedPaneId).toBeNull();
+  });
+
+  it("draws a slot whose session is gone as empty, as the host does", () => {
+    const view = buildRemoteMirror(
+      sources({ resolvedView: { layout: buildLayout([1, 1]), slots: ["gone", "s1"], page: 0, pages: 1 } }),
+    ).view;
+    expect(view.slots).toEqual([null, { kind: "session", id: "s1" }]);
+  });
+
+  it("carries the zoom, the theme and the host's session names", () => {
+    const mirror = buildRemoteMirror(
+      sources({
+        zoomedPaneId: "s1",
+        theme: "light",
+        sessions: [
+          { ...session("s1", "p1", "2026-01-01"), kind: "shell" },
+          { ...session("s2", "p1", "2026-01-02"), kind: "shell" },
+          { ...session("s3", "p1", "2026-01-03"), kind: "shell", name: "빌드" },
+        ] as TerminalSessionView[],
+        agents: [{ id: "shell", label: "PowerShell" }] as unknown as RemoteMirrorSources["agents"],
+      }),
+    );
+    expect(mirror.view.zoomedPaneId).toBe("s1");
+    expect(mirror.theme).toBe("light");
+    expect(mirror.labels).toEqual({ s1: "PowerShell 1", s2: "PowerShell 2", s3: "빌드" });
   });
 });
