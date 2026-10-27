@@ -95,6 +95,15 @@ describe("syncRepo (실제 git)", () => {
     expect(await sync(sub)).toMatchObject({ status: "skipped", reason: "not-a-repo" });
   });
 
+  // mcw: CI 러너의 임시 폴더는 8.3 짧은 경로(RUNNER~1)여서, git이 돌려주는 긴 최상위 경로와 문자열이 달라
+  // 모든 레포가 not-a-repo로 빠졌다. junction·심볼릭 링크로 연 레포도 같은 길이다.
+  it("링크나 짧은 이름으로 가리킨 레포도 최상위로 알아본다", async () => {
+    fx.pushFromOther(1);
+    const link = path.join(fx.root, "work-link");
+    fs.symlinkSync(fx.work, link, process.platform === "win32" ? "junction" : "dir");
+    expect(await sync(link)).toMatchObject({ status: "updated", commits: 1 });
+  });
+
   it("클라우드 동기화 루트나 제외 경로 아래면 git을 부르지 않고 건너뛴다", async () => {
     const calls: string[][] = [];
     const git = async (_cwd: string, args: string[]) => {

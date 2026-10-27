@@ -4,7 +4,8 @@ import path from "node:path";
 import { REPO_FAIL_LABELS, REPO_SKIP_LABELS, type RepoResult } from "../../../shared/repo-sync-types";
 
 function repoName(repoPath: string): string {
-  return path.basename(repoPath) || repoPath;
+  // mcw: win32 규칙은 `\`와 `/`를 모두 구분자로 본다. posix의 basename은 Windows 경로를 통째로 돌려준다.
+  return path.win32.basename(repoPath) || repoPath;
 }
 
 function joinNames(results: RepoResult[], describe: (result: RepoResult) => string): string {

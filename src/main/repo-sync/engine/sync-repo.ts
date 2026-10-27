@@ -43,6 +43,15 @@ async function isDirectory(candidate: string): Promise<boolean> {
   }
 }
 
+/** 링크·짧은 이름을 푼 실제 경로. 못 풀면 받은 그대로 둔다(비교가 실패해 not-a-repo가 된다). */
+async function realPath(candidate: string): Promise<string> {
+  try {
+    return await fs.realpath(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
 function parseLeftRight(output: string): { ahead: number; behind: number } | null {
   const match = /^(\d+)\s+(\d+)\s*$/.exec(output.trim());
   return match ? { ahead: Number(match[1]), behind: Number(match[2]) } : null;
@@ -77,7 +86,11 @@ export async function syncRepo(repoPath: string, options: SyncRepoOptions = {}):
   try {
     const toplevel = (await git(resolved, ["rev-parse", "--show-toplevel"], QUERY_TIMEOUT_MS)).trim();
     // 레포 안의 하위 폴더를 받으면 엉뚱한 범위를 최신화하게 된다. 최상위만 받는다.
-    if (!toplevel || repoSyncKey(toplevel, platform) !== repoSyncKey(resolved, platform)) return skip("not-a-repo");
+    // mcw: 문자열이 아니라 실제 경로로 비교한다. 8.3 짧은 이름(RUNNER~1)이나 junction으로 연 레포는 git이
+    // 돌려주는 최상위와 표기가 달라 레포가 아니라고 잘못 판정됐다.
+    if (!toplevel || repoSyncKey(await realPath(toplevel), platform) !== repoSyncKey(await realPath(resolved), platform)) {
+      return skip("not-a-repo");
+    }
     gitDir = (await git(resolved, ["rev-parse", "--absolute-git-dir"], QUERY_TIMEOUT_MS)).trim();
   } catch {
     return skip("not-a-repo");
