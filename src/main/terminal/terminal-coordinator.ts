@@ -219,6 +219,7 @@ export class TerminalCoordinator {
   private readonly workspaceEventTimes = new Map<string, number>();
   private workspacePoll: Promise<void> | null = null;
   private readonly pendingProviderStarts = new Map<string, ProviderStatusEvent>();
+  private readonly pendingCodexStatuses = new Map<string, ProviderStatusEvent>();
   private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" }>>();
   private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
@@ -515,6 +516,7 @@ export class TerminalCoordinator {
     if (!view) return;
     this.removedSessionIds.add(sessionId);
     this.pendingProviderStarts.delete(sessionId);
+    this.pendingCodexStatuses.delete(sessionId);
     this.dropPendingLog(sessionId);
     // Drain lifecycle writes that began before removal claimed the session. Events from stop() and
     // later are rejected by removedSessionIds, so durable deletion remains the final state write.
@@ -686,6 +688,12 @@ export class TerminalCoordinator {
     const view = this.views.get(event.sessionId);
     if ((!view || this.launchingSessionIds.has(event.sessionId)) && typeof eventOrSessionId !== "string" && event.event === "SessionStart" && event.providerConversationId) {
       this.pendingProviderStarts.set(event.sessionId, event);
+      return;
+    }
+    if ((!view || this.launchingSessionIds.has(event.sessionId)) && event.provider === "codex" &&
+        event.generation && event.providerConversationId &&
+        ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt"].includes(event.event)) {
+      this.pendingCodexStatuses.set(event.sessionId, event);
       return;
     }
     const agent = view ? this.options.getAgent(view.kind) : null;
@@ -867,6 +875,8 @@ export class TerminalCoordinator {
       if (previousGeneration) this.generations.set(input.sessionId, previousGeneration);
       else this.generations.delete(input.sessionId);
       this.launchingSessionIds.delete(input.sessionId);
+      this.pendingProviderStarts.delete(input.sessionId);
+      this.pendingCodexStatuses.delete(input.sessionId);
       this.pendingWorkerEvents.delete(input.sessionId);
       throw error;
     }
@@ -898,6 +908,11 @@ export class TerminalCoordinator {
     if (pendingProviderStart) {
       this.pendingProviderStarts.delete(view.id);
       this.applyProviderStatus(pendingProviderStart);
+    }
+    const pendingCodexStatus = this.pendingCodexStatuses.get(view.id);
+    if (pendingCodexStatus) {
+      this.pendingCodexStatuses.delete(view.id);
+      this.applyProviderStatus(pendingCodexStatus);
     }
     this.startTitlePolling();
     return { ...view };

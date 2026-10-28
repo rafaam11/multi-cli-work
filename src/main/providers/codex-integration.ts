@@ -15,11 +15,8 @@ function writeStatus(event) {
   const statusDir = process.env.MULTI_CLI_WORK_STATUS_DIR;
   if (!sessionId || !/^[a-zA-Z0-9-]+$/.test(sessionId) || !statusDir) return;
   if (typeof event.session_id !== "string") return;
-  const target = path.join(statusDir, sessionId + ".json");
-  const temporary = target + "." + process.pid + "." + Date.now() + ".tmp";
   fs.mkdirSync(statusDir, { recursive: true });
-  try {
-  fs.writeFileSync(temporary, JSON.stringify({
+  const snapshot = JSON.stringify({
     sessionId,
     status: ["Stop", "Interrupt"].includes(event.hook_event_name) ? "awaiting-input" : "working",
     event: event.hook_event_name,
@@ -32,10 +29,17 @@ function writeStatus(event) {
     ...(process.env.MULTI_CLI_WORK_GENERATION ? { generation: process.env.MULTI_CLI_WORK_GENERATION } : {}),
     ...(typeof event.cwd === "string" && event.cwd ? { cwd: event.cwd } : {}),
     ...(typeof event.transcript_path === "string" ? { transcriptPath: event.transcript_path } : {}),
-  }) + "\\n", "utf8");
-  fs.rmSync(target, { force: true });
-  fs.renameSync(temporary, target);
-  } finally { fs.rmSync(temporary, { force: true }); }
+  }) + "\\n";
+  function writeSnapshot(target) {
+    const temporary = target + "." + process.pid + "." + Date.now() + ".tmp";
+    try {
+      fs.writeFileSync(temporary, snapshot, "utf8");
+      fs.renameSync(temporary, target);
+    } finally { fs.rmSync(temporary, { force: true }); }
+  }
+  // Watchers can coalesce startup and the first tool into one change. Preserve ownership first.
+  if (event.hook_event_name === "SessionStart") writeSnapshot(path.join(statusDir, sessionId + ".start.json"));
+  writeSnapshot(path.join(statusDir, sessionId + ".json"));
 }
 // The work-project brief, in the same SessionStart shape the Claude hook prints. Non-ASCII goes out as
 // \\uXXXX so the console code page cannot mangle Korean on the way to Codex.

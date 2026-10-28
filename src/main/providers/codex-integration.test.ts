@@ -6,10 +6,29 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { CODEX_APP_PROFILE, ensureCodexIntegration } from "./codex-integration";
+import { startProviderStatusWatcher, type ProviderStatusEvent } from "./provider-status";
 
 const roots: string[] = [];
 
 describe("ensureCodexIntegration", () => {
+  it("preserves SessionStart when the first tool replaces the latest snapshot before observation", async () => {
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-codex-hook-"));
+    roots.push(root);
+    const statusDir = path.join(root, "status");
+    const result = await ensureCodexIntegration({ userData: root, codexHome: path.join(root, "codex") });
+    for (const event of ["SessionStart", "PreToolUse"]) {
+      const child = promisify(execFile)(process.execPath, [result.hookScriptPath], { env: {
+        ...process.env, MULTI_CLI_WORK_SESSION_ID: "shell-1", MULTI_CLI_WORK_STATUS_DIR: statusDir, MULTI_CLI_WORK_GENERATION: "generation-1", MULTI_CLI_WORK_PROJECT_BRIEF: "",
+      } });
+      child.child.stdin?.end(JSON.stringify({ hook_event_name: event, session_id: "codex-1", model: "probe", tool_name: "Bash" }));
+      await child;
+    }
+    const events: ProviderStatusEvent[] = [];
+    const watcher = await startProviderStatusWatcher(statusDir, (event) => events.push(event));
+    try {
+      await expect.poll(() => events.map((event) => event.event)).toEqual(["SessionStart", "PreToolUse"]);
+    } finally { watcher.close(); }
+  });
   afterEach(async () => Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))));
 
   it("reports the owning terminal generation and Codex working directory from a real hook invocation", async () => {

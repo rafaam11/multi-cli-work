@@ -840,6 +840,22 @@ describe("TerminalCoordinator", () => {
     expect(instance.list()[0].providerConversationId).toBe("codex-early");
   });
 
+  it("keeps the first tool metadata that arrives before worker creation finishes", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const create = worker.create.getMockImplementation()!;
+    const { instance, onCodexStatus } = await coordinator(root, worker);
+    worker.create.mockImplementation(async (spec) => {
+      const base = { sessionId: spec.sessionId, provider: "codex" as const, generation: spec.generation, providerConversationId: "early", at: "2026-07-11T01:00:00.000Z", status: "working" as const };
+      instance.applyProviderStatus({ ...base, event: "SessionStart", model: "probe" });
+      instance.applyProviderStatus({ ...base, event: "PreToolUse", model: "probe", toolName: "Bash" });
+      return create(spec);
+    });
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await instance.flush();
+    expect(onCodexStatus).toHaveBeenLastCalledWith("session-1", expect.objectContaining({ event: "PreToolUse", toolName: "Bash" }));
+  });
+
   it("opens Codex's resume picker when neither a hook nor an exit footer linked the conversation", async () => {
     const root = await tempRoot();
     const first = await coordinator(root);
