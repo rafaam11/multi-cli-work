@@ -18,6 +18,12 @@ afterEach(async () => {
 });
 
 describe("provider status events", () => {
+  it("validates the optional Codex display metadata", () => {
+    const event = { sessionId: "s", status: "working", event: "PreToolUse", at: "2026-01-01T00:00:00Z", model: "test", permissionMode: "plan", toolName: "Bash" };
+    expect(parseProviderStatusEvent(event)).toMatchObject({ model: "test", permissionMode: "plan", toolName: "Bash" });
+    expect(() => parseProviderStatusEvent({ ...event, model: "test\u001b[31m" })).toThrow();
+    expect(() => parseProviderStatusEvent({ ...event, toolName: "x".repeat(201) })).toThrow();
+  });
   it("accepts hook events with unified states", () => {
     expect(
       parseProviderStatusEvent({

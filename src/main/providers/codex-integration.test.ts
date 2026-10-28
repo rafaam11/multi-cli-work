@@ -26,6 +26,25 @@ describe("ensureCodexIntegration", () => {
     });
   });
 
+  it("reports prompt and stop events without re-emitting the project brief", async () => {
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-codex-hook-"));
+    roots.push(root);
+    const result = await ensureCodexIntegration({ userData: root, codexHome: path.join(root, "codex") });
+    const profile = await fs.readFile(result.profilePath, "utf8");
+    expect(profile).toContain("[[hooks.UserPromptSubmit]]");
+    expect(profile).toContain("[[hooks.PreToolUse]]");
+    expect(profile).toContain("[[hooks.PostToolUse]]");
+    expect(profile).toContain("[[hooks.Stop]]");
+    for (const [event, status] of [["UserPromptSubmit", "working"], ["Stop", "awaiting-input"]] as const) {
+      const child = promisify(execFile)(process.execPath, [result.hookScriptPath], { env: {
+        ...process.env, MULTI_CLI_WORK_SESSION_ID: "shell-1", MULTI_CLI_WORK_STATUS_DIR: root, MULTI_CLI_WORK_GENERATION: "generation-1",
+      } });
+      child.child.stdin?.end(JSON.stringify({ hook_event_name: event, session_id: "codex-1", cwd: root }));
+      expect((await child).stdout).toBe(event === "Stop" ? "{}" : "");
+      expect(JSON.parse(await fs.readFile(path.join(root, "shell-1.json"), "utf8"))).toMatchObject({ event, status, providerConversationId: "codex-1", generation: "generation-1" });
+    }
+  });
+
   it("hands Codex the work-project brief as SessionStart context, ASCII-escaped, and still reports status", async () => {
     const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-codex-hook-"));
     roots.push(root);

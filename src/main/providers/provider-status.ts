@@ -23,6 +23,9 @@ export interface ProviderStatusEvent {
   provider?: "codex" | "claude" | "shell";
   generation?: string;
   cwd?: string;
+  model?: string;
+  permissionMode?: string;
+  toolName?: string;
 }
 
 export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
@@ -50,6 +53,11 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
       throw new Error(`Provider ${key} is invalid`);
     }
   }
+  for (const key of ["model", "permissionMode", "toolName"] as const) {
+    if (record[key] !== undefined && (typeof record[key] !== "string" || !(record[key] as string).length || (record[key] as string).length > 200 || /[\x00-\x1f\x7f]/.test(record[key] as string))) {
+      throw new Error(`Provider ${key} is invalid`);
+    }
+  }
   return {
     sessionId: record.sessionId,
     status: record.status as TerminalStatus,
@@ -60,6 +68,9 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
     ...(record.provider ? { provider: record.provider as ProviderStatusEvent["provider"] } : {}),
     ...(typeof record.generation === "string" ? { generation: record.generation } : {}),
     ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
+    ...(typeof record.model === "string" ? { model: record.model } : {}),
+    ...(typeof record.permissionMode === "string" ? { permissionMode: record.permissionMode } : {}),
+    ...(typeof record.toolName === "string" ? { toolName: record.toolName } : {}),
   };
 }
 

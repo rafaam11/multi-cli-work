@@ -21,11 +21,14 @@ function writeStatus(event) {
   try {
   fs.writeFileSync(temporary, JSON.stringify({
     sessionId,
-    status: "working",
-    event: "SessionStart",
+    status: ["Stop", "Interrupt"].includes(event.hook_event_name) ? "awaiting-input" : "working",
+    event: event.hook_event_name,
     at: new Date().toISOString(),
     providerConversationId: event.session_id,
     provider: "codex",
+    ...(typeof event.model === "string" ? { model: event.model } : {}),
+    ...(typeof event.permission_mode === "string" ? { permissionMode: event.permission_mode } : {}),
+    ...(typeof event.tool_name === "string" ? { toolName: event.tool_name } : {}),
     ...(process.env.MULTI_CLI_WORK_GENERATION ? { generation: process.env.MULTI_CLI_WORK_GENERATION } : {}),
     ...(typeof event.cwd === "string" && event.cwd ? { cwd: event.cwd } : {}),
     ...(typeof event.transcript_path === "string" ? { transcriptPath: event.transcript_path } : {}),
@@ -48,9 +51,10 @@ function emitBrief() {
 process.stdin.on("end", () => {
   let event;
   try { event = JSON.parse(input); } catch { return; }
-  if (!event || event.hook_event_name !== "SessionStart") return;
+  if (!event || !["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt"].includes(event.hook_event_name)) return;
   try { writeStatus(event); } catch {}
-  try { emitBrief(); } catch {}
+  if (event.hook_event_name === "SessionStart") { try { emitBrief(); } catch {} }
+  if (["Stop", "Interrupt"].includes(event.hook_event_name)) process.stdout.write("{}");
 });
 `;
 
@@ -116,7 +120,8 @@ export async function ensureCodexIntegration(options: CodexIntegrationOptions): 
   const command = `ELECTRON_RUN_AS_NODE=1 ${shellLiteral(executablePath)} ${shellLiteral(hookScriptPath)}`;
   const commandWindows = `cmd.exe /d /s /c ""${windowsHookRunnerPath.replaceAll("%", "%%")}""`;
   const trustState = await readHookTrustState(profilePath);
-  const profile = `[features]\nhooks = true\n\n[[hooks.SessionStart]]\nmatcher = "^(startup|resume)$"\n\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = ${tomlString(command)}\ncommand_windows = ${tomlString(commandWindows)}\ntimeout = 5\n${trustState}`;
+  const hook = (event: string, matcher = "") => `[[hooks.${event}]]\n${matcher}\n[[hooks.${event}.hooks]]\ntype = "command"\ncommand = ${tomlString(command)}\ncommand_windows = ${tomlString(commandWindows)}\ntimeout = ${event === "Interrupt" ? 3 : 5}\n`;
+  const profile = `[features]\nhooks = true\n\n${hook("SessionStart", 'matcher = "^(startup|resume)$"')}\n${hook("UserPromptSubmit")}\n${hook("PreToolUse")}\n${hook("PostToolUse")}\n${hook("Stop")}\n${hook("Interrupt")}\n${trustState}`;
   await fs.writeFile(profilePath, profile, "utf8");
   return { profileName: CODEX_APP_PROFILE, profilePath, hookScriptPath };
 }

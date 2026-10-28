@@ -1,3 +1,4 @@
+import { codexIndicatorUpdate } from "./providers/codex-indicators";
 import {
   app,
   globalShortcut,
@@ -354,7 +355,13 @@ export async function createDesktopRuntime(
     },
     controlCli.binDir,
   );
+  const indicators = new SessionIndicatorTracker();
   const coordinator: TerminalCoordinator = new TerminalCoordinator({
+    onCodexStatus: (sessionId, event) => {
+      const update = codexIndicatorUpdate(event);
+      if (update.clearTool) indicators.clearChips(sessionId, "codex-tool");
+      for (const chip of update.chips) indicators.setChip(sessionId, chip);
+    },
     worker,
     statePath,
     logDir: path.join(userData, "session-logs"),
@@ -640,7 +647,7 @@ export async function createDesktopRuntime(
     shellExecutable: async () => (await getExecutables()).agents[process.platform === "win32" ? "powershell" : "bash"] ?? null,
   });
   // 패인 머리줄의 진행률·상태 칩. 터미널 출력(OSC 9;4)과 jk에서 오고, 세션과 함께 사라진다.
-  const indicators = new SessionIndicatorTracker();
+
   let appliedTaskbarProgress = "";
   const applyTaskbarProgress = () => {
     const window = host.getMainWindow();

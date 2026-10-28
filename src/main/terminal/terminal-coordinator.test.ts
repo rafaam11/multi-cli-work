@@ -113,7 +113,9 @@ async function coordinator(
   statusDir?: string,
   hasProviderConversation?: (conversationId: string) => Promise<boolean>,
 ) {
+  const onCodexStatus = vi.fn();
   const instance = new TerminalCoordinator({
+    onCodexStatus,
     ...(hasProviderConversation
       ? { hasProviderConversation: (_session, _agent, conversationId) => hasProviderConversation(conversationId) }
       : {}),
@@ -136,7 +138,7 @@ async function coordinator(
     statusDir,
   });
   await instance.initialize();
-  return { instance, worker };
+  return { instance, worker, onCodexStatus };
 }
 
 describe("TerminalCoordinator", () => {
@@ -621,6 +623,31 @@ describe("TerminalCoordinator", () => {
     expect(instance.list()[0].providerConversationId).toBe("codex-created");
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions["session-1"].providerConversationId).toBe("codex-created");
+  });
+
+  it("updates Codex status only for the owned conversation and generation", async () => {
+    const root = await tempRoot();
+    const { instance, worker, onCodexStatus } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    const generation = worker.create.mock.calls[0][0].generation;
+    const base = { sessionId: "session-1", at: "2026-07-11T01:00:00.000Z", provider: "codex" as const, generation };
+    instance.applyProviderStatus({ ...base, event: "SessionStart", status: "working", providerConversationId: "owned" });
+    await instance.flush();
+    instance.applyProviderStatus({ ...base, event: "Stop", status: "awaiting-input", providerConversationId: "other" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("working");
+    expect(onCodexStatus).toHaveBeenCalledTimes(1);
+    instance.applyProviderStatus({ ...base, generation: "stale", event: "Stop", status: "awaiting-input", providerConversationId: "owned" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("working");
+    expect(onCodexStatus).toHaveBeenCalledTimes(1);
+    instance.applyProviderStatus({ ...base, event: "Stop", status: "awaiting-input", providerConversationId: "owned" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("awaiting-input");
+    instance.applyProviderStatus({ ...base, event: "UserPromptSubmit", status: "working", providerConversationId: "owned" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("working");
+    expect(onCodexStatus).toHaveBeenCalledTimes(3);
   });
 
   it("keeps main-owned Codex metadata when a worker attachment is stale", async () => {

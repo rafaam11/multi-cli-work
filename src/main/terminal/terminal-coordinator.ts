@@ -144,6 +144,7 @@ interface TerminalCoordinatorOptions {
    * whose transcripts we cannot locate, every conversation is taken to exist.
    */
   hasProviderConversation?(session: TerminalSessionView, agent: AgentDefinition, conversationId: string): Promise<boolean>;
+  onCodexStatus?(sessionId: string, event: ProviderStatusEvent): void;
 }
 
 const DEFAULT_TITLE_POLL_MS = 2_000;
@@ -692,12 +693,14 @@ export class TerminalCoordinator {
       this.enqueueEvent(() => this.applyWorkspaceStatus(event));
     }
     const ownsCodexSession = agent?.conversationId === "provider-assigned" && event.event === "SessionStart";
+    const codexStatusEvent = agent?.conversationId === "provider-assigned" && event.provider === "codex" &&
+      Boolean(event.generation && event.providerConversationId) && ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt"].includes(event.event);
     // Claude moves to a new conversation on /clear (or an in-app /resume) without a new process, and
     // its SessionStart names it. Only this launch's own hook may move the id a later resume uses.
     const movesClaudeConversation = agent?.conversationId === "app-generated" && agent.statusAdapter === "claude-hook" &&
       event.event === "SessionStart" && Boolean(event.generation && event.providerConversationId);
     if (
-      !view || !agent || (!ownsCodexSession && agent.statusAdapter !== "claude-hook") ||
+      !view || !agent || (!ownsCodexSession && !codexStatusEvent && agent.statusAdapter !== "claude-hook") ||
       event.status === "exited" || event.status === "error"
     ) return;
     this.enqueueEvent(async () => {
@@ -705,6 +708,8 @@ export class TerminalCoordinator {
       if (!current) return;
       if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
       const live = current.pid !== null && current.status !== "exited" && current.status !== "error";
+      // Later events only belong to the conversation established by the trusted SessionStart.
+      if (codexStatusEvent && current.providerConversationId !== event.providerConversationId) return;
       // A hook from this launch still proves ownership after its PTY exits. Retain the exact id
       // without reviving the process; unversioned events cannot claim an inactive session.
       if (!live && (!ownsCodexSession || !event.generation)) return;
@@ -731,6 +736,7 @@ export class TerminalCoordinator {
         else this.transcriptPaths.delete(current.id);
         metadataChanged = true;
       }
+      if (live && event.provider === "codex" && event.generation && (ownsCodexSession || codexStatusEvent)) this.options.onCodexStatus?.(current.id, event);
       const statusChanged = live && current.status !== event.status;
       if (!metadataChanged && !statusChanged) return;
       if (statusChanged) current.status = event.status;
