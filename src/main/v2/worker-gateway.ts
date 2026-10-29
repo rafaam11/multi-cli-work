@@ -7,7 +7,7 @@ import { observedTerminals, type ObservedTerminal } from "./observed-terminals";
 import type { RemoteHostObservation } from "../../shared/host-connection-types";
 
 export function hostSessionView(value:ObservedTerminal):TerminalSession {
-  const status = !value.connected ? "error" : value.status==="blocked" ? "awaiting-input" : value.status==="working" ? "working" : value.status==="exited" ? "exited" : ["idle","done"].includes(value.status) ? "idle" : "starting";
+  const status = !value.connected ? "error" : value.status==="blocked" ? "awaiting-input" : value.status==="working" ? "working" : value.status==="exited" ? "exited" : ["idle","done"].includes(value.status) ? "idle" : value.status==="starting" ? "starting" : "unknown";
   // Zero explicitly means a host-managed process; this GUI does not own or signal an OS PID.
   return {id:value.id,projectId:value.projectId,kind:value.kind,cwd:value.cwd,tool:null,providerConversationId:null,status,pid:0,createdAt:value.createdAt,updatedAt:value.observedAt?new Date(value.observedAt).toISOString():value.createdAt,exitCode:null,...(value.remote?{remote:value.remote}:{}),taskNotice:value.taskNotice??null};
 }

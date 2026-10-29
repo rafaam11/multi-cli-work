@@ -42,6 +42,7 @@ const STATUS_PRIORITY: Record<TerminalStatus, number> = {
   "awaiting-input": 1,
   working: 2,
   starting: 3,
+  unknown: 4,
   idle: 4,
   exited: 5,
   error: 5,
@@ -57,6 +58,7 @@ function sortedSessionMonitor(sessions: TerminalSessionView[]): TerminalSessionV
 
 const ACTIVE_SESSION_STATUSES = new Set<TerminalStatus>([
   "starting",
+  "unknown",
   "working",
   "awaiting-input",
   "awaiting-approval",

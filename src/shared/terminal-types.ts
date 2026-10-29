@@ -43,6 +43,7 @@ export interface SessionIndicatorsUpdate {
 
 export type TerminalStatus =
   | "starting"
+  | "unknown"
   | "working"
   | "awaiting-input"
   | "awaiting-approval"

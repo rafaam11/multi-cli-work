@@ -52,6 +52,7 @@ describe("sessionRank", () => {
     expect(sessionRank("awaiting-input", null)).toBe(1);
     expect(sessionRank("working", null)).toBe(2);
     expect(sessionRank("starting", null)).toBe(2);
+    expect(sessionRank("unknown", null)).toBe(3);
     expect(sessionRank("idle", null)).toBe(3);
     expect(sessionRank("exited", null)).toBe(3);
     expect(sessionRank("error", null)).toBe(3);
@@ -66,6 +67,9 @@ describe("sessionRank", () => {
 });
 
 describe("buildSessionPanelItems", () => {
+  it("keeps unobserved execution visible without manufacturing a waiting request",()=>{
+    expect(sessionPanelWaitCount(build({sessions:[session({id:"unobserved",status:"unknown"})]}))).toBe(0);
+  });
   it("승인 대기가 맨 위, 같은 등급은 updatedAt 내림차순, 동률은 id 오름차순이다", () => {
     const items = build({
       sessions: [

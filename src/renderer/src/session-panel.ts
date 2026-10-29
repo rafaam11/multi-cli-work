@@ -40,6 +40,7 @@ const STATUS_RANK: Record<TerminalStatus, number> = {
   "awaiting-input": 1,
   working: 2,
   starting: 2,
+  unknown: 3,
   idle: 3,
   exited: 3,
   error: 3,
