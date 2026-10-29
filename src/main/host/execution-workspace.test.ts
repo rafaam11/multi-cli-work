@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import { prepareTaskWorkspace } from "./execution-workspace";
 const exec = promisify(execFile);
@@ -42,6 +43,26 @@ it("isolates writing workers on unique MCW-owned branches from the verified base
   expect((await exec("git", ["-C", first.directory, "rev-parse", "HEAD"])).stdout.trim()).toBe(input.expectedHead);
   expect((await git("status", "--porcelain")).stdout).toContain("source.txt");
   expect(await prepareTaskWorkspace(input)).toEqual(first);
+});
+
+it("prepares a worker under a realistic long Windows application data root",async()=>{
+  const {input,directory}=await fixture();
+  const ownedRoot=path.join(directory,"Multi CLI Work Preview-v2","host","task-workspaces");
+  const workspace=await prepareTaskWorkspace({...input,ownedRoot});
+  expect(await readFile(path.join(workspace.directory,"source.txt"),"utf8")).toBe("base\n");
+  expect(await prepareTaskWorkspace({...input,ownedRoot})).toEqual(workspace);
+});
+
+it("reuses the full-length owned layout created by earlier previews without moving it",async()=>{
+  const {input}=await fixture();
+  const digest=(value:string)=>createHash("sha256").update(value).digest("hex");
+  const container=path.join(input.ownedRoot,digest(input.taskId),digest(input.participantId));
+  await mkdir(container,{recursive:true});
+  const workspace={directory:container,briefPath:path.join(container,"brief.md"),repositoryPath:input.repositoryPath,baseCommit:input.expectedHead,branch:null,provider:input.provider,profileId:input.profileId};
+  await writeFile(workspace.briefPath,input.brief);
+  await writeFile(path.join(container,"workspace.json"),JSON.stringify({...workspace,schemaVersion:1,status:"prepared",taskId:input.taskId,participantId:input.participantId,role:"lead",briefHash:digest(input.brief)}));
+  expect(await prepareTaskWorkspace({...input,role:"lead"})).toEqual(workspace);
+  expect(await readdir(input.ownedRoot)).toEqual([digest(input.taskId)]);
 });
 
 it("refuses wrong base, nested checkout, conflicting reused workspace and edited brief", async () => {

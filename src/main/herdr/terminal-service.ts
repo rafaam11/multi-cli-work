@@ -117,11 +117,20 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
     if(observationPromise) return observationPromise;
     observationPromise=(async()=>{do {
       observationDirty=false;
-      const types:Array<string|JsonObject>=["pane.created","pane.updated","pane.closed","pane.exited","tab.closed"];
-      for(const s of sessions.values()) if(s.paneId&&s.delivery==='delivered') types.push({type:'pane.agent_status_changed',pane_id:s.paneId});
-      const next=await runtime.api.subscribe(types,()=>{void refresh().catch(stale);},stale);
-      if(closed) {next();return;}
-      closeEvents?.();closeEvents=next;
+      const base=["pane.created","pane.updated","pane.closed","pane.exited","tab.closed"];
+      const replace=async(types:Array<string|JsonObject>)=>{
+        const next=await runtime.api.subscribe(types,()=>{void refresh().catch(stale);},stale);
+        if(closed){next();return;}closeEvents?.();closeEvents=next;
+      };
+      // Keep non-targeted lifecycle events active while replacing pane-specific
+      // subscriptions. A pane can exit between snapshot and subscription admission.
+      await replace(base);if(closed)return;await refresh();
+      const panes=Array.isArray(latestSnapshot.panes)?latestSnapshot.panes:[];
+      const targets=[...sessions.values()].filter(s=>s.paneId&&s.delivery==='delivered'&&s.status!=="exited"&&panes.some(p=>object(p)&&p.pane_id===s.paneId)).map(s=>({type:'pane.agent_status_changed',pane_id:s.paneId}));
+      if(targets.length)try{await replace([...base,...targets]);}catch(error){
+        if(!(error instanceof HerdrCommandError)||error.code!=="pane_not_found")throw error;
+        observationDirty=true; // Observation only; never repeat a launch command.
+      }
       await refresh();
     } while(observationDirty&&!closed);})().finally(()=>{observationPromise=undefined;});
     return observationPromise;
@@ -272,7 +281,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
           if(!layout?.tab_id||!layout.root?.pane_id) throw new HerdrDeliveryUnknownError(s.id,"Unexpected layout response");
           s.tabId=layout.tab_id;s.paneId=layout.root.pane_id;s.delivery="delivered";s.observedAt=Date.now();layoutConfirmed=true;
           s.geometry=tabGeometry(s.tabId)??{cols:80,rows:24,cellWidthPx:8,cellHeightPx:16};
-          await persist(); await observe(); return {...s};
+          await persist(); await observe().catch(stale); return {...s};
         } catch(error) {if(!layoutConfirmed) s.delivery=layoutAttempted&&!(error instanceof HerdrCommandError)?"unknown":"rejected";await persist();throw error;}
       } finally {finish();}
     },

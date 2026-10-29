@@ -37,6 +37,11 @@ it("launches selected profiles once in isolated directories with task-scoped MCP
   expect(commands.every(command => command.cwd !== repositoryPath)).toBe(true);
   expect(commands[0].cwd).not.toBe(commands[1].cwd);
   for (const command of commands) expect(command.args).toContain("--model=chosen-model");
+  const claudeArgs=commands[1].args as string[];
+  // Claude consumes all subsequent non-option arguments as MCP config files.
+  // The prompt must follow a real option boundary, including default profiles.
+  const configIndex=claudeArgs.indexOf("--mcp-config");
+  expect(claudeArgs[configIndex+2]).toBe("--strict-mcp-config");
   for (const [index, command] of commands.entries()) {
     const participant = task.participants[index];
     expect(command.env).toMatchObject({

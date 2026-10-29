@@ -73,13 +73,16 @@ describe("host bridge lifecycle", () => {
     expect(received).toHaveBeenCalled();expect((await service.list())[0].connected).toBe(true);
   });
   it("preserves delivered state when refresh fails after an acknowledged layout", async () => {
-    const {service}=await make([]);let snapshots=0;
+    const {service,root}=await make([]);let snapshots=0;
     request.mockImplementation(async(method:string)=>{
       if(method==="session.snapshot") {if(++snapshots>1) throw new Error("read failed after delivery");return {snapshot};}
       return {layout:{tab_id:"t",root:{pane_id:"p"}}};
     });
-    await expect(service.create({sessionId:"new",kind:"shell",cwd:roots[0],executable:"shell",args:[],env:{},projectId:null,createdAt:new Date().toISOString()})).rejects.toThrow();
-    expect((await service.list())[0].delivery).toBe("delivered");
+    const spec={sessionId:"new",kind:"shell",cwd:root,executable:"shell",args:[],env:{},projectId:null,createdAt:new Date().toISOString()};
+    await expect(service.create(spec)).resolves.toMatchObject({delivery:"delivered",connected:false});
+    expect(JSON.parse(await fs.readFile(path.join(root,"terminal-sessions.json"),"utf8")).sessions[0].delivery).toBe("delivered");
+    await expect(service.create(spec)).rejects.toThrow("already");
+    expect(request.mock.calls.filter(([method])=>method==="layout.apply")).toHaveLength(1);
   });
   it("marks an interrupted pending launch unknown on startup", async () => {
     const item={...stored(),delivery:"pending",tabId:null,paneId:null};const {service}=await make([item as any]);

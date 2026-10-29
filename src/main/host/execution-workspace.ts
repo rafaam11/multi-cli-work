@@ -51,8 +51,13 @@ export async function prepareTaskWorkspace(input: TaskWorkspaceInput): Promise<T
   const repositoryPath = await realpath(input.repositoryPath); await verifyRepository(repositoryPath, input.expectedHead);
   await mkdir(path.resolve(input.ownedRoot), { recursive: true });
   const ownedRoot = await realpath(input.ownedRoot);
-  const taskRoot = path.join(ownedRoot, digest(input.taskId)); await ownedDirectory(taskRoot);
-  const container = path.join(taskRoot, digest(input.participantId));
+  // Two full SHA-256 directory names exceed Git for Windows' administrative-path
+  // limit under ordinary AppData roots. Keep 128-bit names for new workspaces,
+  // and reuse earlier full-length owned locations without moving existing work.
+  const legacyTaskRoot=path.join(ownedRoot,digest(input.taskId));
+  const taskRoot = await exists(legacyTaskRoot)?legacyTaskRoot:path.join(ownedRoot,digest(input.taskId).slice(0,32)); await ownedDirectory(taskRoot);
+  const legacyContainer=path.join(taskRoot,digest(input.participantId));
+  const container = await exists(legacyContainer)?legacyContainer:path.join(taskRoot,digest(input.participantId).slice(0,32));
   const release = await lockfile.lock(container, { realpath: false, retries: { retries: 50, factor: 1, minTimeout: 100, maxTimeout: 100 } });
   try {
     // Recheck under the per-participant lock; never traverse a replaced task/container symlink.

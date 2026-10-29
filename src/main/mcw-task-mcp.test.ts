@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { afterEach, expect, it } from "vitest";
 import { TaskStore } from "./host/task-store";
-import { TaskMcpServer } from "./mcw-task-mcp";
+import { TaskMcpServer, TASK_MCP_TOOLS } from "./mcw-task-mcp";
 import type { TaskIdentity } from "../shared/host-types";
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
@@ -23,6 +23,13 @@ it("exposes semantic task tools and executes durable messages without shell or s
   expect(listed).toContain("task_submit"); expect(listed).not.toMatch(/terminal_exec|session_send|shell_exec/);
   expect(await call(lead, "task_message", { to: null, text: "Ready for review" })).toMatchObject({ result: { isError: false } });
   expect((await store.inspect(task.id)).events).toMatchObject([{ kind: "message", text: "Ready for review" }]);
+});
+
+it("describes task reads and bounded store mutations accurately for native client approvals",()=>{
+  const tools=TASK_MCP_TOOLS;
+  expect(tools.filter(t=>t.annotations?.readOnlyHint).map(t=>t.name)).toEqual(["task_inspect","task_wait"]);
+  expect(tools.every(t=>t.annotations?.openWorldHint===false&&t.annotations?.destructiveHint===false)).toBe(true);
+  expect(tools.filter(t=>t.annotations?.idempotentHint).map(t=>t.name)).toEqual(["task_inspect","task_wait"]);
 });
 
 it("rejects identity injection, invalid providers, extra fields, forged roles and worker assignment", async () => {
@@ -54,4 +61,16 @@ it("supports MCP initialization, rejects malformed JSON-RPC, and never mutates o
   expect(await lead.handle({ id: 1, method: "tools/list" })).toMatchObject({ error: { code: -32600 } });
   expect(await lead.handle({ jsonrpc: "2.0", method: "tools/call", params: { name: "task_cancel", arguments: {} } })).toBeNull();
   expect((await store.inspect(task.id)).cancellation).toBe("none");
+});
+
+it("accepts MCP request metadata without treating it as task authority or tool arguments",async()=>{
+  const {worker,store,task,identities}=await fixture();
+  const meta={progressToken:17,"client/example":{context:"test"},role:"lead",taskId:"other"};
+  expect(await worker.handle({jsonrpc:"2.0",id:1,method:"tools/list",params:{_meta:meta}})).toMatchObject({result:{tools:expect.any(Array)}});
+  expect(await worker.handle({jsonrpc:"2.0",id:2,method:"tools/call",params:{name:"task_inspect",arguments:{},_meta:meta}})).toMatchObject({result:{isError:false}});
+  expect(await worker.handle({jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"task_message",arguments:{text:"READY"},_meta:meta}})).toMatchObject({result:{isError:false}});
+  expect((await store.inspect(task.id)).events[0].from).toBe(identities[1].participantId);
+  expect(await worker.handle({jsonrpc:"2.0",id:4,method:"tools/call",params:{name:"task_cancel",arguments:{},_meta:meta}})).toMatchObject({result:{isError:true}});
+  expect((await store.inspect(task.id)).cancellation).toBe("none");
+  expect(await worker.handle({jsonrpc:"2.0",id:5,method:"tools/call",params:{name:"task_inspect",arguments:{},_meta:"invalid"}})).toMatchObject({error:{code:-32602}});
 });

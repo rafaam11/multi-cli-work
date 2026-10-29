@@ -47,6 +47,15 @@ The v2 package carries a separate `mcw-chips-v2` 0.2.0 mod, loaded only for MCW 
 
 Bootstrap now also creates `v1-mods-before-v2` before initializing v2 data. It preserves exact shared Claude settings/plugin registries, related installed and local-marketplace versions of mcw-chips/companion/HUD, and related persisted plugin data. Original paths, absent sources, file sizes and hashes are recorded; concurrent source changes, links, malformed registries or failed verification stop migration. Re-entry reports external differences without rewriting shared files or the fixed backup. A pre-existing v2 initialization without its original mod snapshot is refused instead of inventing an update-time backup. The standalone staged runner supports `verify-mods <directory>`; the actual Windows GUI fixture verifies it and the untouched v1 mod source. This companion archive is separate from automatic directory activation: shared configuration restoration still needs the production rollback controller and conflict handling. Installer round trips remain pending.
 
+The opt-in real-provider probe now exercises one Claude lead, one Claude worker and one Codex worker through the actual pinned Herdr/bridge, host gateway and stdio task MCP. On Windows it passed peer-to-peer messages, three separately attributed unintegrated results, and a later user message waking all three participants without duplicate results. See [the bounded evidence report](evidence/v2/2026-10-30-windows-provider-cooperation.md). It creates its own repository/worktrees; Claude uses disposable credential/config copies with only read/task-tool permissions, and Codex uses a read-only sandbox and a process-local trust table for that fixture. Credential copies are removed at teardown. Existing CLI authentication is required; the probe consumes the configured models and is skipped in ordinary CI. It does not establish remote execution, physical terminal behavior, all mod compatibility, installer rollback or Android support.
+
+```powershell
+$env:MCW_PROVIDER_PROBE='1'
+node node_modules/vitest/vitest.mjs run src/main/host/provider-cooperation.test.ts --maxWorkers=1 --reporter=verbose
+```
+
+Real-provider failures also produced regressions for Windows worktree path length, Claude's variadic `--mcp-config` boundary, MCP request `_meta`, and subscriptions targeting closed panes. New owned workspace paths use 128-bit hash names; existing full-length owned directories remain in place. An acknowledged launch remains delivered when a subsequent observation fails, with disconnected state exposed and no command replay. MCP tool annotations describe reads and bounded task-store mutations; transport metadata cannot change task identity or permissions.
+
 ```powershell
 node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release/v2-preview
 ```

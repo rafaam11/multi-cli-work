@@ -10,16 +10,25 @@ function fields(value: unknown, allowed: string[], required: string[] = []): Rec
   if (Object.keys(args).some(key => !allowed.includes(key)) || required.some(key => !Object.hasOwn(args, key))) throw new Error("Invalid operation arguments");
   return args;
 }
+function requestParams(value:unknown,allowed:string[],required:string[]=[]):RecordValue {
+  const params=fields(value,[...allowed,"_meta"],required);
+  // MCP clients may attach progress/extension metadata. It is transport data,
+  // never task identity and never forwarded into the operation's arguments.
+  if(params._meta!==undefined)record(params._meta);
+  return params;
+}
 const stringSchema = { type: "string", minLength: 1, maxLength: 20000 };
 const arraySchema = { type: "array", items: stringSchema, maxItems: 1000 };
-function tool(name: string, description: string, properties: RecordValue, required: string[] = []) {
-  return { name, description, inputSchema: { type: "object", properties, required, additionalProperties: false } };
+function tool(name: string, description: string, properties: RecordValue, required: string[] = [], readOnly=false) {
+  // These tools access only the authenticated task store. Mutation tools append
+  // task data/requests; none executes commands, edits a checkout or kills work.
+  return { name, description, inputSchema: { type: "object", properties, required, additionalProperties: false },annotations:{readOnlyHint:readOnly,destructiveHint:false,idempotentHint:readOnly,openWorldHint:false} };
 }
 export const TASK_MCP_TOOLS = [
-  tool("task_inspect", "Inspect this task, participants, questions, messages and unintegrated results.", {}),
+  tool("task_inspect", "Inspect this task, participants, questions, messages and unintegrated results.", {},[],true),
   tool("task_assign", "Lead assigns a worker using the user-selected provider and profile. At most three workers.", { provider: { enum: ["claude", "codex"] }, profileId: stringSchema, hostId: stringSchema }, ["provider", "profileId"]),
   tool("task_message", "Durably message another participant or broadcast; ask a question/approval or answer a viewed event.", { kind: { enum: ["message", "question", "approval", "answer"] }, to: { anyOf: [stringSchema, { type: "null" }] }, text: stringSchema, eventId: stringSchema }, ["text"]),
-  tool("task_wait", "Receive events after a cursor, waiting for a message, question, result or cancellation.", { cursor: { type: "integer", minimum: 0 }, timeoutMs: { type: "integer", minimum: 0, maximum: 60000 } }),
+  tool("task_wait", "Receive events after a cursor, waiting for a message, question, result or cancellation.", { cursor: { type: "integer", minimum: 0 }, timeoutMs: { type: "integer", minimum: 0, maximum: 60000 } },[],true),
   tool("task_submit", "Submit evidence for user review; does not integrate code or declare terminal idle complete.", { summary: stringSchema, changes: arraySchema, verification: arraySchema, artifacts: arraySchema, issues: arraySchema }, ["summary", "changes", "verification", "artifacts", "issues"]),
   tool("task_cancel", "Lead requests cancellation. This never kills a process.", {}),
 ];
@@ -61,9 +70,9 @@ export class TaskMcpServer {
         return response({ protocolVersion: supported.includes(params.protocolVersion as string) ? params.protocolVersion : "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "mcw-task", version: "2" } });
       }
       if (request.method === "ping") return response({});
-      if (request.method === "tools/list") { if (request.params !== undefined) fields(request.params, []); return response({ tools: TASK_MCP_TOOLS }); }
+      if (request.method === "tools/list") { if (request.params !== undefined) requestParams(request.params, []); return response({ tools: TASK_MCP_TOOLS }); }
       if (request.method === "tools/call") {
-        const params = fields(request.params, ["name", "arguments"], ["name"]); if (typeof params.name !== "string") throw new Error("Tool name required");
+        const params = requestParams(request.params, ["name", "arguments"], ["name"]); if (typeof params.name !== "string") throw new Error("Tool name required");
         try { const value = await this.dispatch(params.name, params.arguments === undefined ? {} : params.arguments); return response({ content: [{ type: "text", text: JSON.stringify(value) }], isError: false }); }
         catch (error) { return response({ content: [{ type: "text", text: (error as Error).message }], isError: true }); }
       }
