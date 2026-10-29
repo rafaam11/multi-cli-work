@@ -22,6 +22,8 @@ Observed result: **1 test passed in 58.01 seconds**. The earlier peer/result-onl
 
 The final stored task had 13 events and 3 results before fixture cancellation. Request-shape diagnostics confirmed Claude sends `claudecode/toolUseId` and `progressToken` inside `_meta`; no credentials or request content are included in those diagnostics. Raw fixture logs/transcripts remain local and are not release assets.
 
+A follow-up run passed the same peer/result/wake assertions in 48.57 seconds after moving task capabilities into per-attempt private connection files. Neither provider's launch arguments nor the Herdr launch specification contain the token. Both stdio clients load the connection file; a valid selected file takes precedence over inherited task environment variables. This run used the same limited fixture permissions and cleanup.
+
 Fixture isolation: Claude uses separate config directories with copied existing authentication and model settings, read/task-tool permissions, and trust for this test's own paths. Authentication/settings copies are removed during teardown. Codex receives a process-local trust table for the test repository and worktrees, a read-only sandbox, and the existing authenticated CLI profile. No trust or approval dialog is accepted by UI automation. The host still enforces task/participant/attempt/generation authority independently of client tool annotations.
 
 Limits: one PC, one selected team, and one simple read-only task. This does not verify remote dispatch, disconnected result delivery, writing/merging changes, physical IME/mouse/images, 15-session performance, installed companion/HUD compatibility, offline installer rollback, or Android. Stable/latest remains unchanged.

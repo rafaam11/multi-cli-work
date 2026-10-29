@@ -56,7 +56,13 @@ it("launches selected profiles once in isolated directories with task-scoped MCP
     expect((command.args as string[]).some(arg => arg.includes("task_wait"))).toBe(true);
   }
   expect(JSON.stringify(commands)).not.toMatch(/jk-mcp|MULTI_CLI_WORK_CONTROL/);
-  expect(JSON.parse(await readFile(path.join(directory, "task-mcp", `${task.participants[1].attempt.id}.json`), "utf8")).mcpServers.mcw_task.env.MCW_TASK_TOKEN).toBe("private-capability");
+  expect(JSON.stringify(commands)).not.toContain("private-capability");
+  for (const member of task.participants) {
+    const config=JSON.parse(await readFile(path.join(directory,"task-mcp",`${member.attempt.id}.json`),"utf8")).mcpServers.mcw_task;
+    expect(config.env).not.toHaveProperty("MCW_TASK_TOKEN");
+    const connectionFile=config.args[config.args.indexOf("--connection-file")+1];
+    expect(JSON.parse(await readFile(connectionFile,"utf8"))).toEqual({endpoint:"http://127.0.0.1:12345/mcp",token:"private-capability"});
+  }
   expect((await store.inspect(task.id)).participants.every(member => member.attempt.delivery === "delivered")).toBe(true);
   expect((await git("rev-parse", "HEAD")).stdout.trim()).toBe(input.expectedHead);
   expect(await readFile(path.join(repositoryPath, "source.txt"), "utf8")).toBe("user edit\n");

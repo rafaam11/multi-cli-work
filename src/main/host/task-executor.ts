@@ -50,8 +50,12 @@ export class TaskExecutor {
       const terminals: unknown[] = [];
       for (const { participant, workspace } of prepared) {
         const scope = identity(task, participant); const token = await this.options.issueTaskToken(scope);
-        const env = { MCW_TASK_URL: `${this.options.gatewayUrl()}/mcp`, MCW_TASK_TOKEN: token, ...(this.options.mcpElectron ? { ELECTRON_RUN_AS_NODE: "1" } : {}) };
-        const mcp = { command: this.options.mcpExecutable ?? process.execPath, args: [this.options.mcpClientPath, "--task-mcp-client"], env };
+        // A process command line (including Herdr's saved layout) must never
+        // contain task capabilities. Both providers receive only a private path.
+        const connectionFile=path.join(this.options.directory,"task-mcp",`${participant.attempt.id}.connection.json`);
+        await writePrivateJson(connectionFile,{endpoint:`${this.options.gatewayUrl()}/mcp`,token});
+        const env = this.options.mcpElectron ? { ELECTRON_RUN_AS_NODE: "1" } : {};
+        const mcp = { command: this.options.mcpExecutable ?? process.execPath, args: [this.options.mcpClientPath, "--task-mcp-client", "--connection-file", connectionFile], env };
         const configPath = path.join(this.options.directory, "task-mcp", `${participant.attempt.id}.json`);
         await writePrivateJson(configPath, { mcpServers: { mcw_task: { type: "stdio", ...mcp } } });
         const selection = input.profiles.find(profile => profile.participantId === participant.id)!;
