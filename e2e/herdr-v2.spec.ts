@@ -35,7 +35,14 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await expect.poll(()=>page.evaluate(()=>window.mcwV2?.version)).toBe(2);
     const descriptor=JSON.parse(await fs.readFile(path.join(`${userData}-v2`,"host/mcw-host.json"),"utf8")); client=new HostClient(descriptor);
     await page.getByRole("menuitem",{name:"설정",exact:true}).click();
-    const settings=page.getByRole("dialog",{name:"설정",exact:true});await settings.getByRole("button",{name:"원격",exact:true}).click();
+    const settings=page.getByRole("dialog",{name:"설정",exact:true});
+    await expect(settings.getByLabel(/jk 도구/)).toHaveCount(0);
+    const shipped=await page.evaluate(()=>window.multiCliWork.presets.list());expect(JSON.stringify(shipped)).not.toMatch(/\bjk\b/);
+    await page.evaluate(()=>window.multiCliWork.presets.save({id:"custom-v1",name:"내 프리셋",members:[{agentId:"claude",name:"대표",prompt:"jk post 원문 보존"}]}));
+    const refused=await page.evaluate(async projectId=>{try{await window.multiCliWork.presets.launch({presetId:"custom-v1",projectId});return "unexpected launch";}catch(error){return String(error);}},projectId);
+    expect(refused).toContain("이관 필요");expect(await client.tasks()).toEqual([]);expect(await client.terminals()).toEqual([]);
+    await settings.getByRole("button",{name:"팀 프리셋",exact:true}).click();await expect(settings.getByText(/이관 필요: 역할 프롬프트/)).toBeVisible();await page.screenshot({path:info.outputPath("preset-migration.png")});
+    await settings.getByRole("button",{name:"원격",exact:true}).click();
     await expect(settings.getByText(`이 PC: ${descriptor.hostId}`)).toBeVisible();
     const connectionInfo=await page.evaluate(()=>window.mcwV2!.localConnection!());expect(connectionInfo.hostId).toBe(descriptor.hostId);expect(connectionInfo).not.toHaveProperty("token");
     await settings.getByLabel("SSH 주소",{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath("host-settings.png")});

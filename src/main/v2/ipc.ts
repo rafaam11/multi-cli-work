@@ -6,6 +6,10 @@ import type { LaunchProfile } from "../../shared/launch-profile";
 import type { McwV2Api, V2HostState } from "../../shared/v2-api";
 import type { HostClient, HostTerminalSocket } from "../host/host-client";
 const exec = promisify(execFile);
+export async function readV2RepositoryHead(directory:string):Promise<string>{
+  if(typeof directory!=="string"||!path.isAbsolute(directory)||directory.includes("\0"))throw new Error("저장소 절대 경로가 필요합니다.");
+  return (await exec("git",["-C",directory,"rev-parse","--verify","HEAD"],{windowsHide:true,timeout:10000,maxBuffer:4096})).stdout.trim();
+}
 
 export interface V2IpcOptions {
   ipc: Pick<IpcMain, "handle" | "removeHandler">;
@@ -73,10 +77,7 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
     const result = await options.client.startTask(id, { ...input, profiles, projectId });
     await options.reconcile(); return result;
   });
-  handle("repository-head", async (directory: string) => {
-    if (typeof directory !== "string" || !path.isAbsolute(directory) || directory.includes("\0")) throw new Error("저장소 절대 경로가 필요합니다.");
-    return (await exec("git", ["-C", directory, "rev-parse", "--verify", "HEAD"], { windowsHide: true, timeout: 10000, maxBuffer: 4096 })).stdout.trim();
-  });
+  handle("repository-head",readV2RepositoryHead);
   handle("terminals", () => options.client.terminals());
   handle("terminal-create", async input => { const result = await options.client.createTerminal(input); await options.reconcile(); return result; });
   handle("terminal-subscribe", (id: string, reference: string) => {

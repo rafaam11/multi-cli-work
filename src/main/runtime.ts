@@ -47,7 +47,10 @@ import { ActivityJournal } from "./workbench/activity-journal";
 import { UsageHistoryStore } from "./usage/usage-history";
 import { BoardService } from "./board/board-service";
 import { BoardStore } from "./board/board-store";
-import { readSessionPresets, removeSessionPreset, saveSessionPreset } from "./presets/preset-registry";
+import { BUILTIN_PRESETS, readSessionPresets, removeSessionPreset, saveSessionPreset } from "./presets/preset-registry";
+import { projectV2Presets } from "../shared/v2-presets";
+import { launchV2Preset } from "./v2/preset-launch";
+import { readV2RepositoryHead } from "./v2/ipc";
 import { launchPreset } from "./presets/preset-service";
 import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
@@ -569,15 +572,17 @@ export async function createDesktopRuntime(
   });
   if (controlServer) sessionEnvironment[CONTROL_ENDPOINT_ENV] = controlServer.endpoint;
   await coordinator.initialize();
+  const v2Configuration = async () => {
+    const state=(await workbench.state()).state;
+    const defaults=["codex","claude"].map(agentId=>({id:`mcw-default-${agentId}`,name:agentId==="codex"?"Codex 기본":"Claude Code 기본",agentId:agentId as "codex"|"claude",model:null,effort:null}));
+    return {launchProfiles:[...defaults,...(state.launchProfiles??[])],defaultLaunchProfiles:{codex:"mcw-default-codex",claude:"mcw-default-claude",...state.defaultLaunchProfiles}};
+  };
+  const viewPresets=(presets:Awaited<ReturnType<typeof readSessionPresets>>)=>host.v2?projectV2Presets(presets,BUILTIN_PRESETS):presets;
   const disposeV2Ipc = host.v2 ? registerV2Ipc({
     ipc: ipcMain, authorize: event => isMainWindowSender(host.getMainWindow(), event),
     send: (channel, ...args) => { const window = host.getMainWindow(); if (window && !window.isDestroyed()) window.webContents.send(channel, ...args); },
     ...host.v2,
-    configuration: async () => {
-      const state = (await workbench.state()).state;
-      const defaults = ["codex", "claude"].map(agentId => ({ id: `mcw-default-${agentId}`, name: agentId === "codex" ? "Codex 기본" : "Claude Code 기본", agentId: agentId as "codex" | "claude", model: null, effort: null }));
-      return {launchProfiles:[...defaults,...(state.launchProfiles ?? [])],defaultLaunchProfiles:{codex:"mcw-default-codex",claude:"mcw-default-claude",...state.defaultLaunchProfiles}};
-    },
+    configuration:v2Configuration,
     executable: async provider => (await getExecutables()).agents[provider] ?? null,
     repositoryProjectId: async directory => Object.values((await readProjectRegistry({registryPath})).registry.projects).find(project=>normalizeForCompare(project.rootPath,process.platform)===normalizeForCompare(directory,process.platform))?.id??null,
     reconcile: () => coordinator.reconcileHostSessions(),
@@ -1010,21 +1015,34 @@ export async function createDesktopRuntime(
       recordDirect: (record) => board.recordDirect(record, undefined, { kind: "user" }),
     },
     presets: {
-      list: () => readSessionPresets(presetOptions),
+      list: async () => viewPresets(await readSessionPresets(presetOptions)),
       // Settings may be its own window: the main window hears of every change to keep its menus current.
       save: async (preset) => {
-        const next = await saveSessionPreset(preset, presetOptions);
+        const next = viewPresets(await saveSessionPreset(preset, presetOptions));
         sendToMainWindow(host.getMainWindow(), "presets:changed", next);
         return next;
       },
       remove: async (presetId) => {
-        const next = await removeSessionPreset(presetId, presetOptions);
+        const next = viewPresets(await removeSessionPreset(presetId, presetOptions));
         sendToMainWindow(host.getMainWindow(), "presets:changed", next);
         return next;
       },
       // Placing the panes is the renderer's job; the sessions start without taking the selection.
-      launch: (request) =>
-        launchPreset(request, {
+      launch: (request) => host.v2 ? launchV2Preset(request,{
+        presets:async()=>viewPresets(await readSessionPresets(presetOptions)),client:host.v2.client,
+        configuration:async()=>({hostId:host.v2!.hostId,...await v2Configuration()}),
+        executable:async provider=>(await getExecutables()).agents[provider]??null,
+        repository:async input=>{
+          const project=await getProject(input.projectId);if(!project)throw Error("프리셋의 저장소를 찾을 수 없습니다.");
+          const worktree=input.worktreeId?await worktrees.get(input.worktreeId):null;
+          if(input.worktreeId&&(!worktree||worktree.projectId!==input.projectId))throw Error("프리셋의 worktree를 확인하세요.");
+          const directory=worktree?.path??project.rootPath,head=await readV2RepositoryHead(directory);
+          const workProject=Object.values((await readWorkProjectRegistry({...(workProjectRegistryPath?{registryPath:workProjectRegistryPath}:{})})).workProjects).find(item=>item.members.some(member=>member.projectId===input.projectId));
+          const {registry}=await readProjectRegistry({registryPath});
+          const projectBrief=workProject?renderWorkProjectBrief(workProject,workProject.members.map(member=>({project:registry.projects[member.projectId]??null,role:member.role})).filter((member):member is WorkProjectBriefMember=>member.project!==null),tagsOf(await readProjectTags(projectTagsOptions),workProject.id)):project.displayName;
+          return {directory,head,projectBrief:projectBrief??project.rootPath,...(workProject?{workProjectId:workProject.id}:{})};
+        },reconcile:()=>coordinator.reconcileHostSessions(),sessions:()=>coordinator.list(),
+      }):launchPreset(request, {
           presets: () => readSessionPresets(presetOptions),
           create: (input) => coordinator.create(input, { updateSelection: false }),
           delivery,
