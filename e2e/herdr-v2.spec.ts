@@ -2,6 +2,8 @@ import { _electron as electron, expect, test, type ElectronApplication } from "@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
 import { HostClient } from "../src/main/host/host-client";
 import { HerdrApiClient } from "../src/main/herdr/api-client";
 import { resolveHerdrPaths } from "../src/main/herdr/runtime";
@@ -15,6 +17,12 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mcw-v2-ui-"));
   const registry = path.join(directory,"registry"), userData = path.join(directory,"user-data"), rootPath=path.join(directory,"project");
   await fs.mkdir(registry); await fs.mkdir(userData); await fs.mkdir(rootPath);
+  const claudeConfig=path.join(directory,"claude"),v1Mod=path.join(claudeConfig,"plugins/cache/jinmin/mcw-chips/0.1.0");
+  await fs.mkdir(path.join(v1Mod,".claude-plugin"),{recursive:true});
+  await fs.writeFile(path.join(v1Mod,".claude-plugin/plugin.json"),'{"name":"mcw-chips","version":"0.1.0"}');
+  await fs.writeFile(path.join(v1Mod,"v1-source.txt"),"v1 mod original\r\n");
+  await fs.writeFile(path.join(claudeConfig,"settings.json"),'{"enabledPlugins":{"mcw-chips@jinmin":true}}');
+  await fs.writeFile(path.join(claudeConfig,"plugins/installed_plugins.json"),JSON.stringify({plugins:{"mcw-chips@jinmin":[{installPath:v1Mod}]}}));
   const projectId="11111111-1111-4111-8111-111111111111", now=new Date().toISOString();
   await fs.writeFile(path.join(registry,"projects.json"),JSON.stringify({schemaVersion:1,updatedAt:now,projects:{[projectId]:{id:projectId,rootPath,displayName:"Herdr 검증",sources:["manual"],providerRefs:{claude:[],codex:[]},status:"진행중",memo:"",tracks:[],hidden:false,order:0,createdAt:now,updatedAt:now}}}));
   const env={...process.env,MCW_RUNTIME:"v2-preview",MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:path.join(directory,"recovery"),MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,"codex"),MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,"claude")};
@@ -34,6 +42,10 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     page.on("pageerror",error=>errors.push(`renderer: ${error.message}`));
     await expect.poll(()=>page.evaluate(()=>window.mcwV2?.version)).toBe(2);
     const descriptor=JSON.parse(await fs.readFile(path.join(`${userData}-v2`,"host/mcw-host.json"),"utf8")); client=new HostClient(descriptor);
+    const recovery=path.join(directory,"recovery/v1.55.1-recovery"),modBackup=path.join(directory,"recovery/v1-mods-before-v2");
+    const proof=await promisify(execFile)(path.join(recovery,process.platform==="win32"?"recovery-node.exe":"recovery-node"),[path.join(recovery,"recover.mjs"),"verify-mods",modBackup],{windowsHide:true,timeout:10000});
+    expect(JSON.parse(proof.stdout).entries.some((entry:{path:string})=>entry.path.endsWith("/v1-source.txt"))).toBe(true);
+    expect(await fs.readFile(path.join(v1Mod,"v1-source.txt"),"utf8")).toBe("v1 mod original\r\n");
     await page.getByRole("menuitem",{name:"설정",exact:true}).click();
     const settings=page.getByRole("dialog",{name:"설정",exact:true});
     await expect(settings.getByLabel(/jk 도구/)).toHaveCount(0);
@@ -54,6 +66,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     });
     await expect.poll(()=>client!.terminals()).toHaveLength(1);
     const row=page.locator(".session-row").first(); await expect(row).toBeVisible(); await row.click();
+    await expect(row).toContainText("상태 미확인");
     await expect(page.getByRole("img",{name:"터미널 화면"})).toBeVisible();
     await page.getByRole("button",{name:"제어 요청",exact:true}).click();
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","false");

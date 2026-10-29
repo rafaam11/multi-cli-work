@@ -158,6 +158,58 @@ export function assertRollbackHosts({ hosts, expectedHostIds, now = Date.now(), 
     seen.add(host.hostId);
   }
 }
+
+function modSources(sources) {
+  if(!sources||typeof sources!=='object'||Array.isArray(sources))throw new Error('Invalid mod backup sources');
+  const entries=Object.entries(sources).sort(([a],[b])=>a.localeCompare(b));
+  if(entries.length>64||entries.some(([id,source])=>!/^[a-zA-Z0-9_-]{1,100}$/.test(id)||typeof source!=='string'||!path.isAbsolute(source)))throw new Error('Invalid mod backup source path/count');
+  return entries;
+}
+async function modSnapshot(sources,destination) {
+  const entries=[];
+  for(const [id,source] of modSources(sources)) {
+    await noLinks(source,true);
+    const info=await lstat(source).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+    const target=destination&&path.join(destination,id);
+    if(!info)entries.push({path:id,type:'missing'});
+    else if(info.isDirectory()) {
+      entries.push({path:id,type:'directory'});if(target)await mkdir(target,{mode:0o700});
+      entries.push(...await scan(source,id,target));
+    } else if(info.isFile()) {
+      const bytes=await stableRead(source);entries.push({path:id,type:'file',size:bytes.length,sha256:sha(bytes)});
+      if(target)await writeExclusive(target,bytes);
+    } else throw new Error('Unsupported mod backup source');
+  }
+  return entries;
+}
+/** An immutable companion backup; shared files never become automatic directory restore targets. */
+export async function createModBackup({destination,sources,assertStopped}) {
+  requireStopped(assertStopped);
+  for(const [,source] of modSources(sources))disjoint(destination,source);
+  await assertStopped();await freshDirectory(destination);await mkdir(path.join(destination,'data'),{mode:0o700});
+  const entries=await modSnapshot(sources,path.join(destination,'data'));
+  await assertStopped();if(json(entries)!==json(await modSnapshot(sources)))throw new Error('Mod sources changed during backup; snapshot is incomplete');
+  const manifest={schema:1,kind:'mcw-v1-mod-backup',version:'1.55.1',createdAt:new Date().toISOString(),sources,entries};
+  await publishManifest(destination,manifest);return verifyModBackup(destination);
+}
+export async function verifyModBackup(directory) {
+  await noLinks(directory);await absent(path.join(directory,'.incomplete'));
+  const bytes=await stableRead(path.join(directory,'manifest.json'));
+  if(sha(bytes)!==(await stableRead(path.join(directory,'manifest.sha256'))).toString('utf8').trim())throw new Error('Mod manifest integrity failure');
+  const manifest=JSON.parse(bytes.toString('utf8'));
+  if(manifest.schema!==1||manifest.kind!=='mcw-v1-mod-backup'||manifest.version!=='1.55.1'||!Array.isArray(manifest.entries))throw new Error('Invalid mod backup manifest');
+  const sources=modSources(manifest.sources),copies=Object.fromEntries(sources.map(([id])=>[id,path.join(directory,'data',id)]));
+  const actual=await modSnapshot(copies);
+  const names=(await readdir(path.join(directory,'data'))).sort();
+  const expected=actual.filter(entry=>!entry.path.includes('/')&&entry.type!=='missing').map(entry=>entry.path).sort();
+  if(json(actual)!==json(manifest.entries)||json(names)!==json(expected))throw new Error('Mod backup data integrity failure');
+  return manifest;
+}
+export async function compareModBackup(directory,currentSources={}) {
+  const manifest=await verifyModBackup(directory),current=await modSnapshot({...manifest.sources,...currentSources});
+  const before=new Map(manifest.entries.map(entry=>[entry.path,entry])),after=new Map(current.map(entry=>[entry.path,entry]));
+  return {added:[...after.keys()].filter(key=>!before.has(key)),removed:[...before.keys()].filter(key=>!after.has(key)),changed:[...after.keys()].filter(key=>before.has(key)&&json(before.get(key))!==json(after.get(key)))};
+}
 export async function prepareRollback(options) {
   const { backupDirectory, destination, preserveV2Sources, assertStopped } = options;
   requireStopped(assertStopped); assertRollbackHosts({ hosts: options.hosts, expectedHostIds: options.expectedHostIds }); await assertStopped();

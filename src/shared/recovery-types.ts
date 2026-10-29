@@ -9,6 +9,10 @@ export interface V1BackupManifest {
   sources: V1RecoverySources; entries: RecoveryEntry[];
   excluded?: {path:string;reason:'electron-process-singleton'}[];
 }
+export interface V1ModBackupManifest {
+  schema:1;kind:'mcw-v1-mod-backup';version:'1.55.1';createdAt:string;
+  sources:Record<string,string>;entries:(RecoveryEntry|{path:string;type:'missing'})[];
+}
 export interface RecoveryHostObservation {
   hostId: string; state: 'stopped' | 'completed' | 'running' | 'unknown'; observedAt: number;
 }

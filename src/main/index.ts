@@ -253,7 +253,7 @@ if (!hasSingleInstanceLock) {
     try {
       if (v2Enabled) {
         const v1UserData = app.getPath("userData");
-        const prepared = await prepareV2Data({v1UserData, v1Registry: process.env.MCW_V1_REGISTRY ?? path.join(os.homedir(), ".multi-cli-work"), recoveryRoot: process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`,
+        const prepared = await prepareV2Data({v1UserData, v1Registry: process.env.MCW_V1_REGISTRY ?? path.join(os.homedir(), ".multi-cli-work"), v1ClaudeConfig:process.env.MULTI_CLI_WORK_CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(),".claude"), recoveryRoot: process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`,
           assertStopped: async () => {if (!hasSingleInstanceLock || runtime) throw new Error("v1 종료를 확인하지 못했습니다.");}});
         app.setPath("userData", prepared.userData);
         Object.assign(process.env, v2RegistryEnvironment(prepared.registry));

@@ -3,6 +3,9 @@ export const ORIGINAL_INSTALLERS: Readonly<Record<RecoveryInstallerPlatform, Rea
 export function getV2DataLayout(options: { v1UserData: string; v1Registry: string; recoveryRoot: string }): { userData: string; registry: string; recoveryRoot: string };
 export function createV1Backup(options: { destination: string; sources: V1RecoverySources; assertStopped(): Promise<void> }): Promise<V1BackupManifest>;
 export function verifyV1Backup(directory: string): Promise<V1BackupManifest>;
+export function createModBackup(options:{destination:string;sources:Record<string,string>;assertStopped():Promise<void>}):Promise<import('../../src/shared/recovery-types').V1ModBackupManifest>;
+export function verifyModBackup(directory:string):Promise<import('../../src/shared/recovery-types').V1ModBackupManifest>;
+export function compareModBackup(directory:string,currentSources?:Record<string,string>):Promise<{added:string[];removed:string[];changed:string[]}>;
 export function assertRollbackHosts(options: RollbackHostInventory & { now?: number; maxObservationAgeMs?: number }): void;
 export function prepareRollback(options: PrepareRollbackOptions): Promise<PreparedRollbackReceipt>;
 export function verifyPreparedRollback(directory: string): Promise<PreparedRollbackReceipt>;

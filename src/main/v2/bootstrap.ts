@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createV1Backup, verifyV1Backup, getV2DataLayout, compareV1WithBackup } from "../recovery";
+import { createV1Backup, verifyV1Backup, getV2DataLayout, compareV1WithBackup, createModBackup,verifyModBackup,compareModBackup } from "../recovery";
+import {discoverV1ModSources} from "../recovery/mod-sources";
 
-export interface V2BootstrapOptions {v1UserData:string;v1Registry:string;recoveryRoot:string;assertStopped:()=>Promise<void>}
+export interface V2BootstrapOptions {v1UserData:string;v1Registry:string;v1ClaudeConfig?:string;recoveryRoot:string;assertStopped:()=>Promise<void>}
 const exists=async(file:string)=>{try{await fs.lstat(file);return true;}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return false;throw error;}};
 async function writableTree(directory:string):Promise<void>{for(const entry of await fs.readdir(directory,{withFileTypes:true})){const file=path.join(directory,entry.name);if(entry.isDirectory())await writableTree(file);else if(entry.isFile())await fs.chmod(file,0o600);}}
 /** Called while the v1 userData single-instance lock is held and before registry modules load. */
@@ -14,9 +15,23 @@ export async function prepareV2Data(options:V2BootstrapOptions){
  if(await exists(backupDirectory)) await verifyV1Backup(backupDirectory);
  else {await fs.mkdir(options.v1UserData,{recursive:true});await fs.mkdir(options.v1Registry,{recursive:true});await createV1Backup({destination:backupDirectory,sources,assertStopped:options.assertStopped});}
  const marker=path.join(layout.userData,"v2-initialized.json");
+ const modBackupDirectory=options.v1ClaudeConfig?path.join(layout.recoveryRoot,"v1-mods-before-v2"):null;
+ if(modBackupDirectory&&options.v1ClaudeConfig) {
+  const modSources=await discoverV1ModSources(options.v1ClaudeConfig);
+  if(await exists(modBackupDirectory))await verifyModBackup(modBackupDirectory);
+  else {
+   if(await exists(marker))throw new Error("업데이트 전 v1 mod 백업이 없습니다. 현재 상태를 원본으로 간주하지 않고 보존합니다.");
+   const sameSources=(a:Record<string,string>,b:Record<string,string>)=>JSON.stringify(Object.entries(a).sort())===JSON.stringify(Object.entries(b).sort());
+   await createModBackup({destination:modBackupDirectory,sources:modSources,assertStopped:async()=>{
+    await options.assertStopped();
+    if(!sameSources(modSources,await discoverV1ModSources(options.v1ClaudeConfig!)))throw new Error("Mod registry changed during backup; migration stopped");
+   }});
+  }
+  await fs.writeFile(path.join(layout.recoveryRoot,"v1-mod-differences.json"),JSON.stringify(await compareModBackup(modBackupDirectory,modSources),null,2),{mode:0o600});
+ }
  if(await exists(marker)) {
   await fs.writeFile(path.join(layout.recoveryRoot,"v1-differences.json"),JSON.stringify(await compareV1WithBackup({backupDirectory,sources}),null,2),{mode:0o600});
-  return {...layout,backupDirectory};
+  return {...layout,backupDirectory,modBackupDirectory};
  }
  if(await exists(layout.userData)||await exists(layout.registry))throw new Error("v2 초기 복사본이 불완전합니다. 보존된 폴더를 확인한 후 복구해야 합니다.");
  await options.assertStopped();
@@ -29,7 +44,7 @@ export async function prepareV2Data(options:V2BootstrapOptions){
  settings.general={...settings.general,autoResumeSessions:false,repoSyncOnSessionStart:false,autoCheckUpdates:false,jkMcp:false};
  await fs.writeFile(settingsPath,JSON.stringify(settings,null,2),{mode:0o600});
  await fs.writeFile(marker,JSON.stringify({schemaVersion:2,backupDirectory,createdAt:new Date().toISOString()}),{flag:"wx",mode:0o600});
- return {...layout,backupDirectory};
+ return {...layout,backupDirectory,modBackupDirectory};
 }
 export function v2RegistryEnvironment(registry:string):Record<string,string>{
  return {MCW_REGISTRY_ROOT:registry,...Object.fromEntries(Object.entries({
