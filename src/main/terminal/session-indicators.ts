@@ -64,6 +64,15 @@ export class SessionIndicatorTracker {
     this.emit(sessionId);
   }
 
+  /** Host metadata is a complete display snapshot, independent of provider execution state. */
+  replace(sessionId:string, indicators:SessionIndicators):void {
+    this.scanners.delete(sessionId);
+    this.reported.delete(sessionId);
+    if(indicators.progress)this.pinned.set(sessionId,{...indicators.progress});else this.pinned.delete(sessionId);
+    if(indicators.chips.length)this.chips.set(sessionId,indicators.chips.map(chip=>({...chip})));else this.chips.delete(sessionId);
+    this.emit(sessionId);
+  }
+
   setChip(sessionId: string, chip: StatusChip): void {
     const current = this.chips.get(sessionId) ?? [];
     const index = current.findIndex((candidate) => candidate.key === chip.key);

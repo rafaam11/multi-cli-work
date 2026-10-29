@@ -1,4 +1,5 @@
 import { codexIndicatorUpdate } from "./providers/codex-indicators";
+import { indicatorsFromMetadata } from "../shared/herdr-metadata";
 import { observeHost } from "./v2/host-observer";
 import { observedTerminals,observedTaskNotices } from "./v2/observed-terminals";
 import { hostSessionView } from "./v2/worker-gateway";
@@ -590,7 +591,11 @@ export async function createDesktopRuntime(
   }) : undefined;
   let onTaskState = () => {};
   const v2Watcher = host.v2 ? observeHost({ ...host.v2, state: state => {
-    void coordinator.reconcileHostSessions(observedTerminals(state).map(value => ({ ...hostSessionView(value), generation: value.generation }))).catch(error => console.error("Host state reconciliation failed", error));
+    const terminals=observedTerminals(state);
+    void coordinator.reconcileHostSessions(terminals.map(value => ({ ...hostSessionView(value), generation: value.generation }))).catch(error => console.error("Host state reconciliation failed", error));
+    const ids=new Set(terminals.map(terminal=>terminal.id));
+    for(const previous of indicators.snapshot())if(!ids.has(previous.sessionId))indicators.replace(previous.sessionId,{chips:[],progress:null});
+    for(const terminal of terminals)indicators.replace(terminal.id,indicatorsFromMetadata(terminal.tokens??{}));
     sendToMainWindow(host.getMainWindow(), "v2:state", state);
     onTaskState();
   } }) : undefined;

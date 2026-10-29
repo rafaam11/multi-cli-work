@@ -9,11 +9,13 @@ import { readJsonStore, updateJsonStore, type JsonStoreSpec } from "../storage/j
 import { startHerdrRuntime, type HerdrRuntimeOptions } from "./runtime";
 import { HerdrCommandError, HerdrDeliveryUnknownError } from "./api-client";
 import { applySurfaceEvent } from "../../shared/herdr-surface-model";
+import { parseMetadataTokens } from "../../shared/herdr-metadata";
+import { configureProviderMods } from "../v2/provider-mods";
 
 type JsonObject = Record<string, unknown>;
 type Launch = {sessionId:string; kind:string; cwd:string; executable:string; args:string[]; env:Record<string,string>; projectId:string|null; createdAt:string; generation?:string};
 interface Geometry {cols:number;rows:number;cellWidthPx:number;cellHeightPx:number}
-export interface ManagedSession {id:string; kind:string; cwd:string; projectId:string|null; createdAt:string; generation:string; tabId:string|null; paneId:string|null; delivery:"pending"|"delivered"|"unknown"|"rejected"; status:string; observedAt:number|null; connected:boolean;geometry?:Geometry|null}
+export interface ManagedSession {id:string; kind:string; cwd:string; projectId:string|null; createdAt:string; generation:string; tabId:string|null; paneId:string|null; delivery:"pending"|"delivered"|"unknown"|"rejected"; status:string; observedAt:number|null; connected:boolean;geometry?:Geometry|null;tokens?:Record<string,string>}
 interface Registry {version:2; sessions:ManagedSession[]}
 const object = (value: unknown): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 class RegistryContentError extends Error {}
@@ -25,6 +27,7 @@ export function parseHerdrSessionRegistry(value:unknown,platform:NodeJS.Platform
   const paths=platform==="win32"?path.win32:path.posix;
   for(const s of value.sessions) {
     if(!object(s)||!validText(s.id,128)||!/^[\w-]+$/.test(s.id)||ids.has(s.id)||!validText(s.generation,128)||!validText(s.cwd,32768)||!paths.isAbsolute(s.cwd)||!validText(s.kind,128)||!validText(s.createdAt,128)||!Number.isFinite(Date.parse(s.createdAt))||(s.projectId!==null&&!validText(s.projectId))||(s.tabId!==null&&!validText(s.tabId))||(s.paneId!==null&&!validText(s.paneId))||!['pending','delivered','unknown','rejected'].includes(String(s.delivery))||!validText(s.status,128)||typeof s.connected!=="boolean"||(s.observedAt!==null&&(!Number.isSafeInteger(s.observedAt)||Number(s.observedAt)<0))||(s.geometry!==undefined&&s.geometry!==null&&!validGeometry(s.geometry))||(s.delivery==='delivered'&&(!s.tabId||!s.paneId))) throw new RegistryContentError("Invalid Herdr session record");
+    if(s.tokens!==undefined)try {parseMetadataTokens(s.tokens);}catch {throw new RegistryContentError("Invalid Herdr session metadata tokens");}
     ids.add(s.id);
   }
   return value as unknown as Registry;
@@ -40,7 +43,7 @@ export function parseLaunchSpec(value: JsonObject): Launch {
   if(typeof value.executable!=="string"||!value.executable||value.executable.includes("\0")) throw new Error("Invalid executable");
   if(!Array.isArray(value.args)||value.args.length>256||value.args.some(arg=>typeof arg!=="string"||arg.includes("\0"))) throw new Error("Invalid launch arguments");
   if(!object(value.env)||Object.entries(value.env).some(([key,v])=>!key||key.length>32767||/[=\x00-\x1f]/.test(key)||typeof v!=="string"||v.includes("\0"))) throw new Error("Invalid environment");
-  if(Object.keys(value.env).some(key=>/^HERDR_|^MULTI_CLI_WORK_CONTROL_|^JK_/i.test(key))) throw new Error("Launch environment contains reserved control variables");
+  if(Object.keys(value.env).some(key=>/^HERDR_|^MCW_HERDR_|^MULTI_CLI_WORK_CONTROL_|^JK_/i.test(key))) throw new Error("Launch environment contains reserved control variables");
   if(typeof value.kind!=="string"||typeof value.createdAt!=="string"||!Number.isFinite(Date.parse(value.createdAt))) throw new Error("Invalid session metadata");
   if(value.projectId!==null&&typeof value.projectId!=="string") throw new Error("Invalid project id");
   if(value.generation!==undefined&&typeof value.generation!=="string") throw new Error("Invalid generation");
@@ -49,7 +52,11 @@ export function parseLaunchSpec(value: JsonObject): Launch {
 }
 
 interface Bridge {child:ChildProcessWithoutNullStreams; surface:PaneSurfaceFrame|null; owner:string|null; bootId:string|null; focused:boolean; disposed:boolean;ready:boolean;fail:(error:Error)=>void;startupTimer?:ReturnType<typeof setTimeout>;listeners:Set<(frame:unknown)=>void>; pending:Map<string,{resolve:(value:unknown)=>void;reject:(error:Error)=>void;chunks:Buffer[];bytes:number;timer:ReturnType<typeof setTimeout>}>}
-export async function createHerdrTerminalService(options: HerdrRuntimeOptions & {bridgePath:string}) {
+export async function createHerdrTerminalService(options: HerdrRuntimeOptions & {bridgePath:string;modsDirectory?:string}) {
+  if(options.modsDirectory) {
+    if(!path.isAbsolute(options.modsDirectory))throw new Error("Managed mods directory must be absolute");
+    await fs.access(path.join(options.modsDirectory,"mcw-chips-v2/hooks/register.ts"));
+  }
   const file = path.join(options.root,"terminal-sessions.json");
   const initial = await readJsonStore(sessionSpec,file);
   if(!initial.writable) throw new Error(initial.warning ?? "Herdr registry is read only");
@@ -94,8 +101,10 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
           const pane=snapshot.panes.find(p=>p.pane_id===s.paneId);
           // connected means the observation is current, including a confirmed absent/exited pane.
           s.connected=true; s.observedAt=Date.now();
-          if(pane) s.status=String(pane.agent_status ?? "unknown");
-          else if(s.delivery==="delivered") s.status="exited";
+          if(pane) {
+            s.status=String(pane.agent_status ?? "unknown");
+            try {s.tokens=parseMetadataTokens(pane.tokens??{});}catch {s.tokens={};}
+          } else if(s.delivery==="delivered") {s.status="exited";s.tokens={};}
         }
       } while(refreshDirty&&!closed);
       reconcileBridges();
@@ -257,7 +266,8 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
           let workspace=snapshot.snapshot.workspaces.find(w=>w.label==="MCW managed sessions");
           if(!workspace) {const created=await runtime.api.request("workspace.create",{cwd:spec.cwd,label:"MCW managed sessions",focus:false});workspace=created.workspace as JsonObject;}
           layoutAttempted=true;
-          const result=await runtime.api.request("layout.apply",{workspace_id:workspace.workspace_id,tab_label:s.id,focus:false,root:{type:"pane",cwd:spec.cwd,command:[spec.executable,...spec.args],env:spec.env}});
+          const launch=configureProviderMods({...spec,generation:s.generation},options.binaryPath,options.modsDirectory);
+          const result=await runtime.api.request("layout.apply",{workspace_id:workspace.workspace_id,tab_label:s.id,focus:false,root:{type:"pane",cwd:spec.cwd,command:[spec.executable,...launch.args],env:launch.env}});
           const layout=result.layout as {tab_id:string;root:{pane_id:string}};
           if(!layout?.tab_id||!layout.root?.pane_id) throw new HerdrDeliveryUnknownError(s.id,"Unexpected layout response");
           s.tabId=layout.tab_id;s.paneId=layout.root.pane_id;s.delivery="delivered";s.observedAt=Date.now();layoutConfirmed=true;
@@ -266,7 +276,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
         } catch(error) {if(!layoutConfirmed) s.delivery=layoutAttempted&&!(error instanceof HerdrCommandError)?"unknown":"rejected";await persist();throw error;}
       } finally {finish();}
     },
-    async stop(id:string) {const s=session(id);if(!s.tabId) throw new Error("Cannot stop an unconfirmed terminal");await runtime.api.request("tab.close",{tab_id:s.tabId});s.status="exited";s.connected=true;s.observedAt=Date.now();await persist();changed();bridges.get(id)?.child.stdin.end();},
+    async stop(id:string) {const s=session(id);if(!s.tabId) throw new Error("Cannot stop an unconfirmed terminal");await runtime.api.request("tab.close",{tab_id:s.tabId});s.status="exited";s.tokens={};s.connected=true;s.observedAt=Date.now();await persist();changed();bridges.get(id)?.child.stdin.end();},
     async snapshot(id:string):Promise<{type:"surface";surface:PaneSurfaceFrame}> {
       const bridge=existingBridge(id); if(bridge.surface) return {type:"surface",surface:bridge.surface};
       return new Promise((resolve,reject)=>{

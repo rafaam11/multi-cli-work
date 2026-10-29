@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { HerdrApiClient } from "./api-client";
+import { isolatedHostEnvironment } from "../v2/provider-mods";
 
 export function resolveHerdrPaths(root: string, platform: NodeJS.Platform = process.platform) {
   const p = platform === "win32" ? path.win32 : path.posix;
@@ -47,7 +48,7 @@ export async function startHerdrRuntime(options: HerdrRuntimeOptions) {
     let spawnError: Error | undefined;
     const child = spawn(options.binaryPath,["--session","mcw-v2","server"],{
       cwd:root,detached:true,windowsHide:true,stdio:["ignore",log.fd,log.fd],
-      env:{...process.env,XDG_CONFIG_HOME:paths.config,XDG_STATE_HOME:paths.state,HERDR_CONFIG_PATH:configPath,HERDR_SOCKET_PATH:undefined,HERDR_CLIENT_SOCKET_PATH:undefined,HERDR_SESSION:undefined},
+      env:{...isolatedHostEnvironment(process.env),XDG_CONFIG_HOME:paths.config,XDG_STATE_HOME:paths.state,HERDR_CONFIG_PATH:configPath},
     });
     child.once("error", error => { spawnError = error; });
     child.unref();

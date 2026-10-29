@@ -30,7 +30,7 @@ export class HostWorkerGateway implements TerminalWorkerGateway {
     return observedTerminals({tasks,terminals,hosts}).map(s=>({...hostSessionView(s),generation:s.generation}));
   }
   async create(spec:TerminalLaunchSpec) {
-    const env=Object.fromEntries(Object.entries(spec.env).filter(([key])=>!/^HERDR_|^MULTI_CLI_WORK_CONTROL_|^JK_/i.test(key)));
+    const env=Object.fromEntries(Object.entries(spec.env).filter(([key])=>!/^HERDR_|^MCW_HERDR_|^MULTI_CLI_WORK_CONTROL_|^JK_/i.test(key)));
     return hostSessionView(await this.client.createTerminal({...spec,env}) as V2TerminalSummary);
   }
   async attach(id:string):Promise<TerminalAttachment> {

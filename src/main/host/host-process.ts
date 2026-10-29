@@ -5,10 +5,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import lockfile from "proper-lockfile";
 import { hostDescriptorPath, type HostDescriptor } from "./gateway";
 import { HostClient } from "./host-client";
+import { isolatedHostEnvironment } from "../v2/provider-mods";
 
 export interface HostProcessOptions {
   directory: string; hostId: string; entryPath: string; executablePath?: string; electronExecutable?: boolean;
-  terminalConfig: { binaryPath: string; binarySha256: string; bridgePath: string };
+  terminalConfig: { binaryPath: string; binarySha256: string; bridgePath: string; modsDirectory?:string };
   bindAddress?: string; allowRemote?: boolean; advertisedHost?: string; startupTimeoutMs?: number;
 }
 export async function readHostDescriptor(directory: string): Promise<HostDescriptor | null> {
@@ -42,7 +43,7 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
     let launchError: Error | undefined;
     const launch = () => {
       const executable = options.executablePath ?? process.execPath;
-      const env = { ...process.env };
+      const env = isolatedHostEnvironment(process.env);
       const electron = options.electronExecutable ?? (executable === process.execPath && !!process.versions.electron);
       if (electron) env.ELECTRON_RUN_AS_NODE = "1"; else delete env.ELECTRON_RUN_AS_NODE;
       const args = [options.entryPath, "--mcw-host", "--data-root", path.resolve(options.directory), "--host-id", options.hostId, "--terminal-config", JSON.stringify(options.terminalConfig)];

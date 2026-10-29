@@ -3,8 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { createHerdrTerminalService, parseLaunchSpec } from "./terminal-service";
+import { HerdrApiClient } from "./api-client";
+import { resolveHerdrPaths } from "./runtime";
+import { encodeChipsMetadata } from "../../shared/herdr-metadata";
+import { metadataArgv } from "../../../mods/mcw-chips-v2/hooks/metadata";
 
 describe("Herdr session admission", () => {
   it("rejects relative workspaces and control environment injection", () => {
@@ -28,6 +34,17 @@ describe.skipIf(!process.env.MCW_HERDR_TEST_BINARY || !process.env.MCW_BRIDGE_TE
       const spec = {sessionId:"session-1",kind:"powershell",cwd:root,executable:process.platform==="win32"?"powershell.exe":"bash",args:process.platform==="win32"?["-NoLogo","-NoProfile","-NoExit"]:[],env:{},projectId:null,createdAt:new Date().toISOString()};
       const session = await service.create(spec);
       expect(session.paneId).toBeTruthy();
+      const api=new HerdrApiClient(resolveHerdrPaths(path.join(root,"herdr")).endpoint);
+      const tokens=encodeChipsMetadata({chips:[{key:"test",text:"테스트 완료 ✓",color:"green"}],progress:null},["test"]);
+      const statusBefore=(await service.list())[0].status;
+      await api.request("pane.report_metadata",{pane_id:session.paneId,source:"mcw-chips-v2",tokens,ttl_ms:60_000});
+      await expect.poll(async()=>(await service.list())[0].tokens).toEqual({"mcw-test":"green|테스트 완료 ✓"});
+      expect((await service.list())[0].status).toBe(statusBefore);
+      await api.request("pane.report_metadata",{pane_id:session.paneId,source:"mcw-chips-v2",tokens:{"mcw-test":null}});
+      await expect.poll(async()=>(await service.list())[0].tokens).toEqual({});
+      const native=metadataArgv(binaryPath,session.paneId!,{chips:{test:{text:'한글 $(literal); "quote"',color:"blue"}},progress:{kind:"value",value:50}});
+      await promisify(execFile)(native[0],native.slice(1),{windowsHide:true,timeout:10000,env:{...process.env,HERDR_SOCKET_PATH:resolveHerdrPaths(path.join(root,"herdr")).apiPath}});
+      await expect.poll(async()=>(await service.list())[0].tokens).toEqual({"mcw-test":'blue|한글 $(literal); "quote"',"mcw-progress":"normal|50"});
       const snapshot = await service.snapshot("session-1");
       expect(snapshot.type).toBe("surface");
       await expect(service.resize("session-1","observer",40,10)).rejects.toThrow("control");

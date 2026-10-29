@@ -63,9 +63,14 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await page.screenshot({path:info.outputPath("canvas.png")});
     const before=await client.terminals() as {id:string;paneId:string}[];
     expect(before[0].id).toBe(session.id);
+    const herdrApi=new HerdrApiClient(resolveHerdrPaths(path.join(`${userData}-v2`,"host/herdr")).endpoint);
+    await herdrApi.request("pane.report_metadata",{pane_id:before[0].paneId,source:"mcw-chips-v2",tokens:{"mcw-test":"green|검증 완료","mcw-progress":"normal|40"},ttl_ms:60000});
+    await expect(page.getByTestId("pane-chip").filter({hasText:"검증 완료"})).toBeVisible();
+    await page.screenshot({path:info.outputPath("herdr-metadata.png")});
     const firstProcess=app.process(); await app.evaluate(({app})=>app.quit()); await expect.poll(()=>firstProcess.exitCode).not.toBe(null); app=undefined;
     expect((await client.terminals() as {id:string}[])[0].id).toBe(session.id);
     app=await launch();page=await app.firstWindow();
+    await expect(page.getByTestId("pane-chip").filter({hasText:"검증 완료"})).toBeVisible();
     await expect.poll(()=>page.evaluate(()=>window.multiCliWork.terminals.list())).toEqual(expect.arrayContaining([expect.objectContaining({id:session.id,pid:0})]));
     const after=await client.terminals() as {id:string;paneId:string}[];expect(after).toHaveLength(1);expect(after[0].paneId).toBe(before[0].paneId);
     // Crash only the authenticated host created inside this test fixture. Herdr and the shell

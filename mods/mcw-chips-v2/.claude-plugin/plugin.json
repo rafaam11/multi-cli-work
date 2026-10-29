@@ -1,0 +1,35 @@
+{
+  "name": "mcw-chips-v2",
+  "version": "0.2.0",
+  "description": "MCW v2 Herdr display metadata for tasks, context, agents, tests and background work.",
+  "author": {
+    "name": "JinminKim"
+  },
+  "userConfig": {
+    "debounceMs": {
+      "type": "number",
+      "title": "전송 묶음 창(ms)",
+      "description": "첫 변경부터 이만큼 모아서 한 번에 보낸다",
+      "default": 750
+    },
+    "bgTickSeconds": {
+      "type": "number",
+      "title": "백그라운드 갱신 주기(초)",
+      "description": "백그라운드 작업·에이전트가 도는 동안 경과 시간과 에이전트 상태를 다시 보는 주기",
+      "default": 30
+    },
+    "doneLingerSeconds": {
+      "type": "number",
+      "title": "끝난 작업 표시 시간(초)",
+      "description": "✓ build 같은 끝난 작업 칩을 이만큼 보여 준 뒤 지운다",
+      "default": 60
+    },
+    "ctxStep": {
+      "type": "number",
+      "title": "컨텍스트 % 단위",
+      "description": "ctx 칩을 이 단위로 내림해 갱신 횟수를 줄인다(1이면 1%마다)",
+      "default": 1
+    }
+  },
+  "types": "./types/index.d.ts"
+}
