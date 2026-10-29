@@ -55,6 +55,9 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     expect(await fs.readFile(path.join(registry,"projects.json"),"utf8")).toContain("Herdr 검증");
     await expect(fs.access(path.join(directory,`recovery/v1.55.1-recovery/recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
     succeeded = true;
+  } catch (error) {
+    console.error("v2 Electron main stderr:", errors.join(""));
+    throw error;
   } finally {
     observer?.close();
     if(app){const child=app.process();await app.evaluate(({app})=>app.quit()).catch(()=>undefined);await expect.poll(()=>child.exitCode,{timeout:10000}).not.toBe(null);}

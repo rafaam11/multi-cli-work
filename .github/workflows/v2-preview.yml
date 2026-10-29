@@ -55,6 +55,7 @@ jobs:
       - run: npx electron-builder --config electron-builder.v2-preview.cjs --publish never
       - run: node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release-v2-preview
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: v2-preview-${{ runner.os }}
           path: |

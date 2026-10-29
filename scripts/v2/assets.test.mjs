@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -19,6 +21,12 @@ async function fixture(body, options = {}) {
   return { dir, dest: path.join(dir, 'asset.bin'), asset: { id: 'test', url: `http://127.0.0.1:${server.address().port}/asset`, bytes: body.length, sha256: createHash('sha256').update(body).digest('hex') } };
 }
 describe('verified asset acquisition', () => {
+  it('preserves official checksum bytes when Git checks out with Windows autocrlf', async () => {
+    const file = 'scripts/v2/node-v22.12.0-SHASUMS256.txt';
+    const { stdout } = await promisify(execFile)('git', ['-c', 'core.autocrlf=true', 'cat-file', '--filters', `HEAD:${file}`], { encoding: 'buffer' });
+    const manifest = JSON.parse(await readFile(new URL('./assets.json', import.meta.url), 'utf8'));
+    expect(createHash('sha256').update(stdout).digest('hex')).toBe(manifest.nodeChecksumsSha256);
+  });
   it('streams a verified resource to an atomic final file and rechecks cached content', async () => {
     const f = await fixture(Buffer.from('official installer fixture'));
     await downloadAsset(f.asset, f.dest);
