@@ -14,6 +14,8 @@ import type { HostConnections } from "./host-connections";
 import type { HostTerminalSocket } from "./host-client";
 import { resolveRemoteSession } from "../v2/observed-terminals";
 import { validateTaskSnapshot } from "./task-validation";
+import type {HostExecutionCatalog} from "./execution-catalog";
+import {parseExecutionCatalog} from "../../shared/execution-catalog";
 
 /** The independent daemon owns this service. Closing a viewer never stops a session. */
 export interface HostTerminalService {
@@ -39,6 +41,7 @@ export interface HostGatewayOptions {
   /** Runs after the singleton daemon lock, before routes/readiness become visible. */
   prepare?: () => Promise<void>;
   startTask?: (taskId: string, input: unknown) => Promise<unknown>;
+  executionCatalog?:Pick<HostExecutionCatalog,"read"|"inspectRepository"|"validateCreate"|"prepare">;
   hosts?: Pick<HostConnections,"snapshot"|"registrations"|"configure"|"remove"|"onChange"|"client">;
   connectionInfo?:()=>LocalHostConnection;
 }
@@ -176,7 +179,26 @@ export class HostGateway {
         if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.hosts)throw new HttpError(503,"Host connections unavailable");
         await this.options.hosts.configure(await body(request,this.limit) as HostRegistration);reply(response,200,{});return;
       }
-      const remoteTaskRoute=/^\/hosts\/([^/]+)\/tasks(?:\/([^/]+)(?:\/(acknowledge|answer|acknowledge-result|message|cancel))?)?$/.exec(url.pathname);
+      const catalogRoute=/^(?:\/hosts\/([^/]+))?\/execution-catalog(?:\/repositories\/([^/]+))?$/.exec(url.pathname);
+      if(catalogRoute&&method==="GET"){
+        const hostId=catalogRoute[1]?text(decodeURIComponent(catalogRoute[1])):undefined;
+        const repositoryId=catalogRoute[2]?text(decodeURIComponent(catalogRoute[2])):undefined;
+        if(hostId){
+          const observed=this.options.hosts?.snapshot().find(host=>host.hostId===hostId);
+          if(!observed?.enabled||!observed.connected)throw new HttpError(409,"Remote host is not observed");
+          const client=this.options.hosts!.client(hostId);
+          const catalog=parseExecutionCatalog(await client.request("/execution-catalog"),hostId);
+          if(!repositoryId){reply(response,200,catalog);return;}
+          const result=object(await client.request(`/execution-catalog/repositories/${encodeURIComponent(repositoryId)}`));
+          const repository=object(result.repository);
+          if(repository.id!==repositoryId||!catalog.repositories.some(repo=>repo.id===repositoryId)||typeof result.expectedHead!=="string"||!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(result.expectedHead))throw new HttpError(409,"Remote repository inspection changed");
+          const checked=parseExecutionCatalog({...catalog,repositories:[repository]},hostId).repositories[0];
+          reply(response,200,{repository:checked,expectedHead:result.expectedHead});return;
+        }
+        if(!this.options.executionCatalog)throw new HttpError(503,"Host execution catalog unavailable");
+        reply(response,200,repositoryId?await this.options.executionCatalog.inspectRepository(repositoryId):await this.options.executionCatalog.read());return;
+      }
+      const remoteTaskRoute=/^\/hosts\/([^/]+)\/tasks(?:\/([^/]+)(?:\/(acknowledge|answer|acknowledge-result|message|cancel|start))?)?$/.exec(url.pathname);
       if(remoteTaskRoute){
         const hostId=text(decodeURIComponent(remoteTaskRoute[1]));
         const observed=this.options.hosts?.snapshot().find(host=>host.hostId===hostId);
@@ -185,6 +207,16 @@ export class HostGateway {
         const remote=this.options.hosts!.client(hostId);
         const validate=(tasks:unknown)=>validateTaskSnapshot({schemaVersion:2,hostId,tasks,outbox:[]}).tasks;
         if(!remoteTaskRoute[2]&&method==="GET"){reply(response,200,validate(await remote.tasks()));return;}
+        if(!remoteTaskRoute[2]&&method==="POST"){
+          if(!this.accepting)throw new HttpError(409,"Host is draining");
+          const input=object(await body(request,this.limit));this.pendingCreates++;
+          try{
+            const created=await remote.request("/tasks/registered","POST",input);
+            reply(response,201,validate([created])[0]);
+          }catch{throw new HttpError(502,"원격 응답을 받지 못했습니다. 전달되었을 수 있으니 작업 기록을 확인한 뒤 다시 요청하세요.");}
+          finally{this.pendingCreates--;}
+          return;
+        }
         if(remoteTaskRoute[2]){
           const taskId=text(decodeURIComponent(remoteTaskRoute[2]));
           const task=validate([await remote.inspectTask(taskId)])[0];
@@ -194,9 +226,13 @@ export class HostGateway {
             // Owner actions are explicit and never queued/retried. A lost reply
             // must be reconciled by reading that owner's task, not replayed.
             const input=object(await body(request,this.limit));
-            try{await remote.request(`/tasks/${encodeURIComponent(taskId)}/${remoteTaskRoute[3]}`,"POST",input);}
+            const starting=remoteTaskRoute[3]==="start";
+            if(starting&&!this.accepting)throw new HttpError(409,"Host is draining");
+            if(starting)this.pendingCreates++;
+            try{const result=await remote.request(`/tasks/${encodeURIComponent(taskId)}/${starting?"start-registered":remoteTaskRoute[3]}`,"POST",input);reply(response,200,starting?result:{});}
             catch{throw new HttpError(502,"원격 응답을 받지 못했습니다. 전달되었을 수 있으니 작업 기록을 확인한 뒤 다시 요청하세요.");}
-            reply(response,200,{});return;
+            finally{if(starting)this.pendingCreates--;}
+            return;
           }
         }
         throw new HttpError(405,"Unsupported remote task operation");
@@ -211,17 +247,28 @@ export class HostGateway {
       if (url.pathname === "/shutdown" && method === "POST") { this.drain(); if (!await this.canShutdown()) throw new HttpError(409, "Active or unobserved work prevents shutdown"); reply(response, 200, { shutdown: true }); setImmediate(() => { void this.close().then(() => this.options.onShutdown?.()); }); return; }
       if (url.pathname === "/tasks" && method === "GET") { reply(response, 200, await this.options.store.list()); return; }
       if (url.pathname === "/tasks" && method === "POST") { if (!this.accepting) throw new HttpError(409, "Host is draining"); this.pendingCreates++; try { reply(response, 201, await this.options.store.createTask(await body(request, this.limit) as TaskCreateInput)); } finally { this.pendingCreates--; } return; }
-      const taskRoute = /^\/tasks\/([^/]+)(?:\/(start|message|cancel|capabilities|acknowledge|answer|acknowledge-result))?$/.exec(url.pathname);
+      if(url.pathname==="/tasks/registered"&&method==="POST"){
+        if(!this.accepting)throw new HttpError(409,"Host is draining");
+        if(!this.options.executionCatalog)throw new HttpError(503,"Host execution catalog unavailable");
+        this.pendingCreates++;
+        try{reply(response,201,await this.options.store.createTask(await this.options.executionCatalog.validateCreate(await body(request,this.limit))));}finally{this.pendingCreates--;}
+        return;
+      }
+      const taskRoute = /^\/tasks\/([^/]+)(?:\/(start|start-registered|message|cancel|capabilities|acknowledge|answer|acknowledge-result))?$/.exec(url.pathname);
       if (taskRoute) {
         const taskId = decodeURIComponent(taskRoute[1]);
         if (!taskRoute[2] && method === "GET") { reply(response, 200, await this.options.store.inspect(taskId)); return; }
         if (method === "POST") {
           const input = object(await body(request, this.limit));
-          if (taskRoute[2] === "start") {
+          if (taskRoute[2] === "start"||taskRoute[2]==="start-registered") {
             if (!this.accepting) throw new HttpError(409, "Host is draining");
             if (!this.options.startTask) throw new HttpError(503, "Task execution unavailable");
             this.pendingCreates++;
-            try { reply(response, 200, await this.options.startTask(taskId, input)); } finally { this.pendingCreates--; }
+            try {
+              if(taskRoute[2]==="start-registered"&&!this.options.executionCatalog)throw new HttpError(503,"Host execution catalog unavailable");
+              const selected=taskRoute[2]==="start-registered"?await this.options.executionCatalog!.prepare(await this.options.store.inspect(taskId),input):input;
+              reply(response, 200, await this.options.startTask(taskId, selected));
+            } finally { this.pendingCreates--; }
             return;
           }
           if (taskRoute[2] === "capabilities") { if (!this.accepting) throw new HttpError(409, "Host is draining"); reply(response, 201, { token: await this.issueTaskToken({ taskId, participantId: text(input.participantId), attemptId: text(input.attemptId), generation: integer(input.generation, 1, Number.MAX_SAFE_INTEGER) }) }); return; }

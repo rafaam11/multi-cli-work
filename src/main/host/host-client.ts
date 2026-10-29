@@ -50,7 +50,7 @@ export class HostClient {
     Object.assign(this.connection, candidate.connection);
   }
   tasks(hostId?:string): Promise<Task[]> { return this.request(ownerTaskRoute(undefined,hostId)); }
-  createTask(input: TaskCreateInput): Promise<Task> { return this.request("/tasks", "POST", input); }
+  createTask(input: TaskCreateInput,hostId?:string): Promise<Task> { return this.request(ownerTaskRoute(undefined,hostId), "POST", input); }
   inspectTask(id: string,hostId?:string): Promise<Task> { return this.request(ownerTaskRoute(id,hostId)); }
   startTask(id: string, input: unknown): Promise<unknown> { return this.request(`/tasks/${encodeURIComponent(id)}/start`, "POST", input); }
   watch(onEvent: (event: unknown) => void): HostTerminalSocket { return new HostTerminalSocket(this.connection, null, onEvent); }

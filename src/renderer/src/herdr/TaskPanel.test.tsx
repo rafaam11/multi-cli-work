@@ -14,6 +14,31 @@ function api() {
 }
 afterEach(cleanup);
 describe("v2 task dashboard", () => {
+  it("selects the remote host's profiles and registered checkout, and sends the inspected path and commit back only to that owner",async()=>{
+    const host=api(),remote=task();remote.id="new-remote";remote.title="Remote launch";remote.ownerHostId="remote";remote.projectId="remote-project";remote.participants[0].hostId="remote";remote.participants[0].profileId="remote-profile";
+    remote.participants[0].attempt={...remote.participants[0].attempt,delivery:"none",execution:"not_started",commandId:null};
+    const repository={id:"remote-repo",name:"Lab checkout",path:"/lab/repo",projectId:"remote-project",projectName:"Remote project"};
+    host.hostState=vi.fn(async()=>({tasks:[],terminals:[],connected:true,observedAt:2000,hosts:[{hostId:"remote",name:"Lab",enabled:true,connected:true,observedAt:2000,error:null,tasks:[],terminals:[]}]}));
+    host.executionCatalog=vi.fn(async():Promise<import("@shared/execution-catalog").ExecutionCatalog>=>({version:1,hostId:"remote",platform:"linux",launchProfiles:[{id:"remote-profile",name:"Remote choice",agentId:"codex",model:"remote-model",effort:null}],defaultLaunchProfiles:{codex:"remote-profile"},availableProviders:["codex"],repositories:[repository]}));
+    host.inspectHostRepository=vi.fn(async()=>({repository,expectedHead:"b".repeat(40)}));
+    host.startRegisteredTask=vi.fn(async()=>({terminals:[]}));
+    vi.mocked(host.listTasks).mockResolvedValue([]);vi.mocked(host.createTask).mockResolvedValue(remote);
+    render(<TaskPanel api={host} hostId="remote" hostName="Lab"/>);
+    await screen.findByRole("option",{name:/Remote choice/});
+    expect(screen.queryByRole("option",{name:"Codex 기본"})).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("작업 제목"),{target:{value:"Remote launch"}});fireEvent.change(screen.getByLabelText("작업 지시"),{target:{value:"Check remote"}});
+    fireEvent.change(screen.getByLabelText("작업 저장소"),{target:{value:"remote-repo"}});
+    fireEvent.click(screen.getByRole("button",{name:"작업 만들기"}));
+    await waitFor(()=>expect(host.createTask).toHaveBeenCalledWith(expect.objectContaining({projectId:"remote-project",lead:{hostId:"remote",provider:"codex",profileId:"remote-profile"}}),"remote"));
+    fireEvent.change(await screen.findByLabelText("실행 저장소"),{target:{value:"remote-repo"}});
+    fireEvent.click(screen.getByRole("button",{name:"기준 커밋 확인"}));
+    await waitFor(()=>expect(host.inspectHostRepository).toHaveBeenCalledWith("remote-repo","remote"));
+    await screen.findByText("/lab/repo");
+    vi.mocked(host.listTasks).mockResolvedValue([remote]);
+    fireEvent.click(screen.getByRole("button",{name:"선택한 구성으로 시작"}));
+    await waitFor(()=>expect(host.startRegisteredTask).toHaveBeenCalledWith("new-remote",{repositoryId:"remote-repo",expectedPath:"/lab/repo",expectedHead:"b".repeat(40)},"remote"));
+    expect(host.startTask).not.toHaveBeenCalled();expect(host.repositoryHead).not.toHaveBeenCalled();
+  });
   it("shows an offline owner's cached results without issuing a failing live read on entry",async()=>{
     const host=api(),remote=task();remote.ownerHostId="remote";remote.participants[0].hostId="remote";remote.title="Offline task";
     host.hostState=vi.fn(async()=>({tasks:[task()],terminals:[],connected:true,observedAt:2000,hosts:[{hostId:"remote",name:"Lab",enabled:false,connected:false,observedAt:1000,error:null,tasks:[remote],terminals:[]}]}));

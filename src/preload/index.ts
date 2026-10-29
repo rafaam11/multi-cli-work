@@ -387,7 +387,9 @@ let nextV2Reference = 0;
 if (process.argv.includes("--mcw-v2")) {
   const v2: import("../shared/v2-api").McwV2Api = {
     version: 2, enabled: () => ipcRenderer.invoke("v2:enabled"), configuration: () => ipcRenderer.invoke("v2:configuration"),
-    listTasks: hostId => ipcRenderer.invoke("v2:tasks",hostId), createTask: input => ipcRenderer.invoke("v2:task-create", input), inspectTask: (id,hostId) => ipcRenderer.invoke("v2:task-inspect", id,hostId),
+    listTasks: hostId => ipcRenderer.invoke("v2:tasks",hostId), createTask: (input,hostId) => ipcRenderer.invoke("v2:task-create", input,hostId), inspectTask: (id,hostId) => ipcRenderer.invoke("v2:task-inspect", id,hostId),
+    executionCatalog:hostId=>ipcRenderer.invoke("v2:execution-catalog",hostId),inspectHostRepository:(id,hostId)=>ipcRenderer.invoke("v2:host-repository",id,hostId),
+    startRegisteredTask:(id,input,hostId)=>ipcRenderer.invoke("v2:task-start-registered",id,input,hostId),
     taskAction: (id, action, input,hostId) => ipcRenderer.invoke("v2:task-action", id, action, input,hostId),
     terminalViewId: (sessionId,hostId) => ipcRenderer.invoke("v2:terminal-view-id",sessionId,hostId),
     onState: callback => {const listener=(_event:Electron.IpcRendererEvent,value:Parameters<typeof callback>[0])=>callback(value);ipcRenderer.on("v2:state",listener);return()=>ipcRenderer.removeListener("v2:state",listener);},

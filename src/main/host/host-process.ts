@@ -10,6 +10,7 @@ import { isolatedHostEnvironment } from "../v2/provider-mods";
 export interface HostProcessOptions {
   directory: string; hostId: string; entryPath: string; executablePath?: string; electronExecutable?: boolean;
   terminalConfig: { binaryPath: string; binarySha256: string; bridgePath: string; modsDirectory?:string };
+  catalogPaths?:import("./execution-catalog").HostCatalogPaths;
   bindAddress?: string; allowRemote?: boolean; advertisedHost?: string; startupTimeoutMs?: number;
 }
 export async function readHostDescriptor(directory: string): Promise<HostDescriptor | null> {
@@ -47,6 +48,7 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
       const electron = options.electronExecutable ?? (executable === process.execPath && !!process.versions.electron);
       if (electron) env.ELECTRON_RUN_AS_NODE = "1"; else delete env.ELECTRON_RUN_AS_NODE;
       const args = [options.entryPath, "--mcw-host", "--data-root", path.resolve(options.directory), "--host-id", options.hostId, "--terminal-config", JSON.stringify(options.terminalConfig)];
+      if(options.catalogPaths)args.push("--catalog-paths",JSON.stringify(options.catalogPaths));
       if (options.bindAddress) args.push("--bind-address", options.bindAddress);
       if (options.allowRemote) args.push("--allow-remote");
       if (options.advertisedHost) args.push("--advertised-host", options.advertisedHost);

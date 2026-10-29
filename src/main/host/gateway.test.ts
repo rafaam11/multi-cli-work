@@ -99,6 +99,35 @@ it("routes remote task reads and exact user actions to the owning host without l
   expect((await remote.store.inspect(task.id)).cancellation).toBe("requested");
   expect(remote.terminals.stop).not.toHaveBeenCalled();
 });
+it("uses the remote owner's catalog for explicit creation and checked startup, without forwarding local executables",async()=>{
+  const profile={id:"selected",name:"Remote",agentId:"codex" as const,model:null,effort:null};
+  const repository={id:"repo",name:"Remote repo",path:"/remote/repo",projectId:null,projectName:null};
+  const catalog={version:1 as const,hostId:"pc-b",platform:"linux" as const,launchProfiles:[profile],defaultLaunchProfiles:{codex:profile.id},availableProviders:["codex" as const],repositories:[repository]};
+  const head="a".repeat(40),resolved={repositoryPath:repository.path,expectedHead:head,profiles:[{participantId:"resolved",profile,executable:"/remote/codex"}]};
+  const executionCatalog={read:vi.fn(async()=>catalog),inspectRepository:vi.fn(async()=>({repository,expectedHead:head})),validateCreate:vi.fn(async(value:unknown)=>value as import("../../shared/host-types").TaskCreateInput),prepare:vi.fn(async()=>resolved)};
+  const startTask=vi.fn(async()=>({terminals:[{id:"remote-pane"}]}));
+  const remote=await setup({executionCatalog,startTask},"pc-b");
+  const observation={hostId:"pc-b",name:"Remote",enabled:true,connected:true,observedAt:12,error:null,tasks:[],terminals:[]};
+  const hosts={registrations:()=>[],snapshot:()=>[observation],configure:vi.fn(),remove:vi.fn(),onChange:()=>()=>{},client:vi.fn(()=>remote.client)};
+  const local=await setup({hosts});
+  expect(await local.client.request("/hosts/pc-b/execution-catalog")).toEqual(catalog);
+  expect(await local.client.request("/hosts/pc-b/execution-catalog/repositories/repo")).toEqual({repository,expectedHead:head});
+  const input={title:"Remote selected",brief:"Use checked checkout",lead:{hostId:"pc-b",provider:"codex" as const,profileId:profile.id},workers:[]};
+  const created=await local.client.request<import("../../shared/host-types").Task>("/hosts/pc-b/tasks","POST",input);
+  expect(created.ownerHostId).toBe("pc-b");expect(executionCatalog.validateCreate).toHaveBeenCalledExactlyOnceWith(input);
+  const selected={repositoryId:repository.id,expectedHead:head};
+  expect(await local.client.request(`/hosts/pc-b/tasks/${created.id}/start`,"POST",selected)).toEqual({terminals:[{id:"remote-pane"}]});
+  expect(executionCatalog.prepare).toHaveBeenCalledExactlyOnceWith(created,selected);
+  expect(startTask).toHaveBeenCalledExactlyOnceWith(created.id,resolved);
+  expect(await local.store.list()).toEqual([]);expect(local.terminals.create).not.toHaveBeenCalled();
+  observation.connected=false;
+  await expect(local.client.request(`/hosts/pc-b/tasks/${created.id}/start`,"POST",selected)).rejects.toThrow();
+  expect(startTask).toHaveBeenCalledTimes(1);
+  observation.connected=true;await local.client.drain();
+  await expect(local.client.request("/hosts/pc-b/tasks","POST",input)).rejects.toThrow();
+  await expect(local.client.request(`/hosts/pc-b/tasks/${created.id}/start`,"POST",selected)).rejects.toThrow();
+  expect(startTask).toHaveBeenCalledTimes(1);
+});
 it("exposes SSH registrations and non-secret local connection info only to the owner and freezes edits while draining",async()=>{
   const hosts={registrations:vi.fn(()=>[]),snapshot:vi.fn(()=>[]),configure:vi.fn(async()=>{}),remove:vi.fn(async()=>{}),onChange:vi.fn(()=>()=>{}),client:vi.fn()};
   const info={hostId:"pc-a",platform:"linux" as const,nodeExecutable:"/opt/node",hostEntrypoint:"/opt/mcw-host.js",dataRoot:"/home/me/mcw"};

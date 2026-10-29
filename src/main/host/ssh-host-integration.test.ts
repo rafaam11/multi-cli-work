@@ -12,6 +12,7 @@ import { connectSshHost } from "./ssh-host";
 import {HostConnections} from "./host-connections";
 import {HostClient,type HostTerminalSocket} from "./host-client";
 import {remoteSessionId} from "../v2/observed-terminals";
+import type {ExecutionCatalog} from "../../shared/execution-catalog";
 
 const exec=promisify(execFile);
 it.skipIf(process.platform!=="linux"||process.env.MCW_SSH_TEST!=="1")("discovers and observes a host through actual strict OpenSSH without owning its lifetime",async()=>{
@@ -31,7 +32,11 @@ it.skipIf(process.platform!=="linux"||process.env.MCW_SSH_TEST!=="1")("discovers
     await expect.poll(async()=>{if(sshd?.exitCode!==null)throw Error(diagnostic);return new Promise<boolean>(resolve=>{const socket=connect(port,"127.0.0.1");socket.once("connect",()=>{socket.destroy();resolve(true);});socket.once("error",()=>resolve(false));});},{timeout:10000}).toBe(true);
     const inputs:unknown[]=[],stops:string[]=[];
     const terminal={id:"fixture-session",kind:"codex",cwd:root,projectId:null,createdAt:new Date().toISOString(),generation:"g",tabId:"t",paneId:"p",delivery:"delivered",status:"idle",observedAt:Date.now(),connected:true};
-    const directory=path.join(root,"host"),remoteStore=new TaskStore({directory,hostId:"ssh-fixture"});gateway=new HostGateway({directory,store:remoteStore,terminals:{list:async()=>[terminal],create:async()=>{throw Error("No execution authorized");},stop:async id=>{stops.push(id);},snapshot:async()=>({surface:"fixture"}),subscribeFrames:()=>()=>{},input:async(_id,_viewer,data)=>{inputs.push(data);},resize:async()=>{},scroll:async()=>{},takeOwnership:async()=>{},releaseOwnership:async()=>{}}});
+    const directory=path.join(root,"host"),remoteStore=new TaskStore({directory,hostId:"ssh-fixture"});
+    const repository={id:"fixture-repo",name:"SSH repo",path:root,projectId:null,projectName:null};
+    const catalog:ExecutionCatalog={version:1,hostId:"ssh-fixture",platform:"linux",repositories:[repository],launchProfiles:[{id:"fixture",name:"Fixture",agentId:"codex",model:null,effort:null}],availableProviders:["codex"],defaultLaunchProfiles:{codex:"fixture"}};
+    const starts:unknown[]=[];
+    gateway=new HostGateway({directory,store:remoteStore,executionCatalog:{read:async()=>catalog,inspectRepository:async id=>{expect(id).toBe(repository.id);return {repository,expectedHead:"a".repeat(40)};},validateCreate:async input=>input as import("../../shared/host-types").TaskCreateInput,prepare:async(task,input)=>{expect(task.ownerHostId).toBe("ssh-fixture");expect(input).toEqual({repositoryId:repository.id,expectedHead:"a".repeat(40),expectedPath:root});return {repositoryPath:root,expectedHead:"a".repeat(40),profiles:[]};}},startTask:async(id,input)=>{starts.push({id,input});return {terminals:[]};},terminals:{list:async()=>[terminal],create:async()=>{throw Error("No execution authorized");},stop:async id=>{stops.push(id);},snapshot:async()=>({surface:"fixture"}),subscribeFrames:()=>()=>{},input:async(_id,_viewer,data)=>{inputs.push(data);},resize:async()=>{},scroll:async()=>{},takeOwnership:async()=>{},releaseOwnership:async()=>{}}});
     const descriptor=await gateway.start();
     const choice={hostId:"ssh-fixture",destination:"127.0.0.1",port,username:os.userInfo().username,identityFile:identity,knownHostsFile,platform:"linux" as const,nodeExecutable:process.execPath,hostEntrypoint:path.resolve("build/v2/host/mcw-host.js"),dataRoot:directory};
     ssh=await connectSshHost(choice);expect((await ssh.client.health()).instanceId).toBe(descriptor.instanceId);
@@ -44,7 +49,11 @@ it.skipIf(process.platform!=="linux"||process.env.MCW_SSH_TEST!=="1")("discovers
     const noTerminals={list:async()=>[],create:async()=>{throw Error("No local execution");},stop:async()=>{throw Error("No local stop");},snapshot:async()=>({}),subscribeFrames:()=>()=>{},input:async()=>{throw Error("No local input");},resize:async()=>{},scroll:async()=>{},takeOwnership:async()=>{},releaseOwnership:async()=>{}};
     observerGateway=new HostGateway({directory:observerDirectory,store:new TaskStore({directory:observerDirectory,hostId:"observer"}),hosts:manager,terminals:noTerminals});
     const observerClient=new HostClient(await observerGateway.start()),frames:Record<string,unknown>[]=[];
-    const task=await manager.client(choice.hostId).createTask({title:"SSH task",brief:"Preserve remote review",lead:{provider:"codex",profileId:"fixture",hostId:choice.hostId},workers:[]});
+    expect(await observerClient.request(`/hosts/${choice.hostId}/execution-catalog`)).toEqual(catalog);
+    expect(await observerClient.request(`/hosts/${choice.hostId}/execution-catalog/repositories/${repository.id}`)).toEqual({repository,expectedHead:"a".repeat(40)});
+    const task=await observerClient.createTask({title:"SSH task",brief:"Preserve remote review",lead:{provider:"codex",profileId:"fixture",hostId:choice.hostId},workers:[]},choice.hostId);
+    await observerClient.request(`/hosts/${choice.hostId}/tasks/${task.id}/start`,"POST",{repositoryId:repository.id,expectedHead:"a".repeat(40),expectedPath:root});
+    expect(starts).toEqual([{id:task.id,input:{repositoryPath:root,expectedHead:"a".repeat(40),profiles:[]}}]);
     const taskIdentity=await remoteStore.bind({taskId:task.id,participantId:task.participants[0].id,attemptId:task.participants[0].attempt.id,generation:1});
     const result=await remoteStore.submitResult(taskIdentity,{summary:"SSH result",changes:[],verification:["fixture"],artifacts:[],issues:[]});
     expect((await observerClient.tasks(choice.hostId))[0].id).toBe(task.id);

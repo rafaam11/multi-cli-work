@@ -5,6 +5,7 @@ import { createHerdrTerminalService } from "./herdr/terminal-service";
 import { TaskExecutor } from "./host/task-executor";
 import { readConnectionInfo } from "./host/connection-info";
 import { HostConnections } from "./host/host-connections";
+import {HostExecutionCatalog} from "./host/execution-catalog";
 
 /** Separate Node entrypoint. Importing it never starts a host or touches a user's data. */
 export async function startHost(options: HostGatewayOptions): Promise<HostGateway> {
@@ -21,6 +22,8 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   if (typeof config.binaryPath !== "string" || typeof config.bridgePath !== "string" || typeof config.binarySha256 !== "string" || !/^[a-fA-F0-9]{64}$/.test(config.binarySha256)) throw new Error("Invalid terminal runtime configuration");
   if(config.modsDirectory!==undefined&&(typeof config.modsDirectory!=="string"||!path.isAbsolute(config.modsDirectory)))throw new Error("Invalid managed mods directory");
   const store = new TaskStore({ directory, hostId });
+  const catalogPaths=option("--catalog-paths",false);
+  const executionCatalog=catalogPaths?new HostExecutionCatalog({...JSON.parse(catalogPaths),hostId}):undefined;
   // Recover execution observations, never replay or resend commands after a daemon restart.
   let terminals: Awaited<ReturnType<typeof createHerdrTerminalService>> | undefined;
   let executor: TaskExecutor | undefined;
@@ -36,7 +39,7 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   let gateway: HostGateway;
   const finish = async () => { stopObservation?.(); await hosts.close(); await terminals?.close(); process.exit(0); };
   try {
-    gateway = await startHost({ directory, store, terminals: service, hosts, connectionInfo:()=>({hostId,platform:process.platform as "win32"|"linux",nodeExecutable:process.execPath,hostEntrypoint:path.join(__dirname,"mcw-host.js"),dataRoot:directory}), bindAddress: option("--bind-address", false), allowRemote: argv.includes("--allow-remote"), advertisedHost: option("--advertised-host", false), onShutdown: finish, startTask: (taskId, input) => executor!.start(taskId, input), prepare: async () => {
+    gateway = await startHost({ directory, store, terminals: service, hosts, executionCatalog, connectionInfo:()=>({hostId,platform:process.platform as "win32"|"linux",nodeExecutable:process.execPath,hostEntrypoint:path.join(__dirname,"mcw-host.js"),dataRoot:directory}), bindAddress: option("--bind-address", false), allowRemote: argv.includes("--allow-remote"), advertisedHost: option("--advertised-host", false), onShutdown: finish, startTask: (taskId, input) => executor!.start(taskId, input), prepare: async () => {
       terminals = await createHerdrTerminalService({ root: directory, binaryPath: config.binaryPath as string, binarySha256: config.binarySha256 as string, bridgePath: config.bridgePath as string, modsDirectory:config.modsDirectory as string|undefined });
       await store.recover();
       await hosts.start();

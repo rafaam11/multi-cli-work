@@ -60,7 +60,17 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
   handle("host-remove",(hostId:string)=>{if(typeof hostId!=="string"||!/^[\w-]{1,128}$/.test(hostId))throw new Error("Invalid host ID");return options.client.request(`/hosts/${encodeURIComponent(hostId)}`,"DELETE");});
   handle("configuration", async () => ({ hostId: options.hostId, ...await options.configuration() }));
   handle("tasks", (hostId?:string) => {ownerTaskRoute(undefined,hostId);return options.client.tasks(hostId);});
-  handle("task-create", input => options.client.createTask(input));
+  handle("task-create", (input,hostId?:string) => {ownerTaskRoute(undefined,hostId);return options.client.createTask(input,hostId);});
+  handle("execution-catalog",(hostId:string)=>{const prefix=ownerTaskRoute(undefined,hostId).replace(/\/tasks$/,"/execution-catalog");return options.client.request(prefix);});
+  handle("host-repository",(repositoryId:string,hostId:string)=>{
+    if(typeof repositoryId!=="string"||!repositoryId||repositoryId.length>200||repositoryId.includes("\0"))throw new Error("Invalid repository ID");
+    const prefix=ownerTaskRoute(undefined,hostId).replace(/\/tasks$/,"/execution-catalog");return options.client.request(`${prefix}/repositories/${encodeURIComponent(repositoryId)}`);
+  });
+  handle("task-start-registered",async(id:string,input:Record<string,unknown>,hostId:string)=>{
+    const route=ownerTaskRoute(id,hostId);
+    if(!hostId||!input||typeof input!=="object"||Object.keys(input).some(key=>!["repositoryId","expectedHead","expectedPath"].includes(key))||[input.repositoryId,input.expectedHead,input.expectedPath].some(value=>typeof value!=="string"))throw new Error("원격 저장소와 기준 커밋을 확인하세요.");
+    const result=await options.client.request(`${route}/start`,"POST",input);await options.reconcile();return result;
+  });
   handle("task-inspect", (id:string,hostId?:string) => {ownerTaskRoute(id,hostId);return options.client.inspectTask(id,hostId);});
   handle("task-action", (id:string,action:string,input:Record<string,unknown>,hostId?:string)=>{
     if(!["acknowledge","answer","acknowledge-result","message","cancel"].includes(action))throw new Error("Unknown task action");

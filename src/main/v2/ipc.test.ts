@@ -52,6 +52,18 @@ it("forwards remote task operations with an explicit host scope and resolves onl
   expect(()=>call("terminal-view-id","attempt","unregistered")).toThrow();
   expect(client.startTask).not.toHaveBeenCalled();dispose();
 });
+it("passes only registered remote selection through IPC and never resolves a remote path on this PC",async()=>{
+  const {call,client,options,dispose}=setup();
+  options.executable=vi.fn();options.repositoryProjectId=vi.fn();
+  await call("execution-catalog","remote");expect(client.request).toHaveBeenLastCalledWith("/hosts/remote/execution-catalog");
+  await call("host-repository","repo","remote");expect(client.request).toHaveBeenLastCalledWith("/hosts/remote/execution-catalog/repositories/repo");
+  const input={repositoryId:"repo",expectedHead:"a".repeat(40),expectedPath:"/remote/repo"};
+  await call("task-start-registered","task",input,"remote");
+  expect(client.request).toHaveBeenLastCalledWith("/hosts/remote/tasks/task/start","POST",input);
+  await expect(call("task-start-registered","task",{...input,executable:"local.exe"},"remote")).rejects.toThrow();
+  expect(options.executable).not.toHaveBeenCalled();expect(options.repositoryProjectId).not.toHaveBeenCalled();
+  dispose();
+});
 it("reconnects a retained Canvas viewer without replaying input or taking control",async()=>{
   vi.useFakeTimers();
   const {client,call,options,dispose}=setup(),listeners:((event:unknown)=>void)[]=[],sockets:{send:ReturnType<typeof vi.fn>;close:ReturnType<typeof vi.fn>}[]=[];

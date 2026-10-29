@@ -17,7 +17,7 @@ export async function preserveRecoveryRuntime(resourcesDirectory: string, recove
   await stageRecoveryAssets({destination,installDirectory,installers,runtimeExecutable:path.join(resourcesDirectory,node.directory,runtime.output),runtimeSha256:runtime.sha256,scriptDirectory});
 }
 
-export interface DesktopHostOptions { userData: string; resourcesDirectory: string; bridgeDirectory: string; entryPath: string }
+export interface DesktopHostOptions { userData: string; registryRoot:string; resourcesDirectory: string; bridgeDirectory: string; entryPath: string }
 /** Resolve only digest-pinned packaged runtimes. Never use a user's PATH Herdr installation. */
 export async function startDesktopHost(options: DesktopHostOptions) {
   const manifest = JSON.parse(await fs.readFile(path.join(options.resourcesDirectory, "assets.json"), "utf8"));
@@ -39,7 +39,7 @@ export async function startDesktopHost(options: DesktopHostOptions) {
   if (!runtime) throw new Error("독립 호스트 런타임을 찾을 수 없습니다.");
   const executablePath = path.join(options.resourcesDirectory,node.directory,runtime.output);
   await verifyStandaloneNodeRuntime(executablePath,runtime.sha256);
-  const descriptor = await ensureHostProcess({ directory, hostId, entryPath: options.entryPath, executablePath, electronExecutable: false, terminalConfig: { binaryPath, binarySha256, bridgePath, modsDirectory:path.join(options.resourcesDirectory,"mods") } });
+  const descriptor = await ensureHostProcess({ directory, hostId, entryPath: options.entryPath, executablePath, electronExecutable: false, catalogPaths:{userData:options.userData,registryRoot:options.registryRoot},terminalConfig: { binaryPath, binarySha256, bridgePath, modsDirectory:path.join(options.resourcesDirectory,"mods") } });
   const client = new HostClient(descriptor);
   return { hostId, client, refresh: async () => {
     const next = await readHostDescriptor(directory);

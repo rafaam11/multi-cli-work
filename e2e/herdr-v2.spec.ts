@@ -18,6 +18,10 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mcw-v2-ui-"));
   const registry = path.join(directory,"registry"), userData = path.join(directory,"user-data"), rootPath=path.join(directory,"project");
   await fs.mkdir(registry); await fs.mkdir(userData); await fs.mkdir(rootPath);
+  const git=(...args:string[])=>promisify(execFile)("git",["-C",rootPath,...args],{windowsHide:true,timeout:10000});
+  await git("init");await fs.writeFile(path.join(rootPath,"fixture.txt"),"MCW isolated checkout\n");await git("add",".");
+  await git("-c","user.name=Fixture","-c","user.email=fixture@example.invalid","commit","-m","fixture");
+  const fixtureHead=(await git("rev-parse","HEAD")).stdout.trim();
   const claudeConfig=path.join(directory,"claude"),v1Mod=path.join(claudeConfig,"plugins/cache/jinmin/mcw-chips/0.1.0");
   await fs.mkdir(path.join(v1Mod,".claude-plugin"),{recursive:true});
   await fs.writeFile(path.join(v1Mod,".claude-plugin/plugin.json"),'{"name":"mcw-chips","version":"0.1.0"}');
@@ -43,6 +47,11 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     page.on("pageerror",error=>errors.push(`renderer: ${error.message}`));
     await expect.poll(()=>page.evaluate(()=>window.mcwV2?.version)).toBe(2);
     const descriptor=JSON.parse(await fs.readFile(path.join(`${userData}-v2`,"host/mcw-host.json"),"utf8")); client=new HostClient(descriptor);
+    const catalog=await client.request<import("../src/shared/execution-catalog").ExecutionCatalog>("/execution-catalog");
+    expect(catalog.hostId).toBe(descriptor.hostId);expect(catalog.repositories.find(repo=>repo.id===projectId)?.path).toBe(rootPath);
+    const inspected=await client.request<import("../src/shared/execution-catalog").RepositoryInspection>(`/execution-catalog/repositories/${projectId}`);
+    expect(inspected.expectedHead).toBe(fixtureHead);expect(inspected.repository.id).toBe(projectId);
+    expect((await git("status","--porcelain")).stdout.trim()).toBe("");
     const recovery=path.join(directory,"recovery/v1.55.1-recovery"),modBackup=path.join(directory,"recovery/v1-mods-before-v2");
     const proof=await promisify(execFile)(path.join(recovery,process.platform==="win32"?"recovery-node.exe":"recovery-node"),[path.join(recovery,"recover.mjs"),"verify-mods",modBackup],{windowsHide:true,timeout:10000});
     expect(JSON.parse(proof.stdout).entries.some((entry:{path:string})=>entry.path.endsWith("/v1-source.txt"))).toBe(true);
