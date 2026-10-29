@@ -6,11 +6,13 @@ import { parseHerdrSessionRegistry } from "../herdr/terminal-service";
 import { validateTaskSnapshot } from "./task-validation";
 import { connectSshHost, validateSshHostConfiguration } from "./ssh-host";
 import type { HostTerminalSocket } from "./host-client";
+import {observationCacheSpec,type CachedHostObservation} from "./observation-cache";
 
 class ConnectionRegistryError extends Error {}
 interface Registry {version:2;hosts:HostRegistration[]}
 interface Slot {
   registration:HostRegistration;state:RemoteHostObservation;epoch:number;
+  observedPlatform:"win32"|"linux";
   controller?:AbortController;
   connection?:Awaited<ReturnType<typeof connectSshHost>>;watcher?:HostTerminalSocket;retry?:ReturnType<typeof setTimeout>;
 }
@@ -18,6 +20,11 @@ export interface HostConnectionsOptions {directory:string;localHostId:string;con
 /** Lives in mcw-host. GUI lifetime never owns these links or the remote processes. */
 export class HostConnections {
   private readonly file:string;
+  private readonly cacheFile:string;
+  private cacheTimer?:ReturnType<typeof setTimeout>;
+  private cacheWrites=Promise.resolve();
+  private cacheWarning:string|null=null;
+  private cacheReady=false;
   private readonly changes=new EventEmitter();
   private readonly slots=new Map<string,Slot>();
   private closed=false;
@@ -25,6 +32,7 @@ export class HostConnections {
   private readonly spec:JsonStoreSpec<Registry>;
   constructor(private readonly options:HostConnectionsOptions){
     this.file=path.join(options.directory,"host-connections.json");
+    this.cacheFile=path.join(options.directory,"host-observations.json");
     this.spec={label:"host connections",displayName:"v2 호스트 연결",empty:()=>({version:2,hosts:[]}),parse:(value)=>{
       const data=value as Registry;
       if(!data||data.version!==2||!Array.isArray(data.hosts)||data.hosts.length>32||Object.keys(data).some(key=>!["version","hosts"].includes(key)))throw new ConnectionRegistryError("Invalid host connections");
@@ -47,7 +55,13 @@ export class HostConnections {
   async start():Promise<void>{
     const stored=await readJsonStore(this.spec,this.file);
     if(!stored.writable)throw new Error(stored.warning??"Host registry is read only");
-    for(const registration of stored.value.hosts)this.apply(registration);
+    let observations:CachedHostObservation[]=[];
+    try{
+      const cached=await readJsonStore(observationCacheSpec,this.cacheFile);observations=cached.value.observations;
+      if(!cached.writable)this.cacheWarning="마지막 관찰 기록은 백업에서 읽었습니다. 기존 파일을 보존합니다.";
+    }catch{this.cacheWarning="마지막 관찰 기록을 읽을 수 없습니다. 기존 파일을 보존합니다.";}
+    for(const registration of stored.value.hosts)this.apply(registration,observations.find(item=>item.hostId===registration.ssh.hostId));
+    this.cacheReady=true;
   }
   async configure(registration:HostRegistration):Promise<void>{
     if(this.closed)throw new Error("Host connections are closed");this.validate(registration);
@@ -58,7 +72,7 @@ export class HostConnections {
   async remove(hostId:string):Promise<void>{
     if(this.closed)throw new Error("Host connections are closed");
     await updateJsonStore(this.spec,this.file,current=>({version:2 as const,hosts:current.hosts.filter(host=>host.ssh.hostId!==hostId)}));
-    const slot=this.slots.get(hostId);if(slot)this.invalidate(slot);this.slots.delete(hostId);this.changes.emit("change");
+    const slot=this.slots.get(hostId);if(slot)this.invalidate(slot);this.slots.delete(hostId);this.changes.emit("change");this.scheduleCache();
   }
   private invalidate(slot:Slot):Promise<void>{
     slot.epoch++;slot.controller?.abort();slot.controller=undefined;clearTimeout(slot.retry);slot.retry=undefined;slot.watcher?.close();slot.watcher=undefined;
@@ -67,9 +81,9 @@ export class HostConnections {
     return this.track(connection?.close().catch(()=>undefined)??Promise.resolve());
   }
   private track<T>(operation:Promise<T>):Promise<T>{this.pending.add(operation);void operation.finally(()=>this.pending.delete(operation)).catch(()=>undefined);return operation;}
-  private apply(registration:HostRegistration):void{
+  private apply(registration:HostRegistration,cached?:CachedHostObservation):void{
     const previous=this.slots.get(registration.ssh.hostId);if(previous)this.invalidate(previous);
-    const slot:Slot={registration,epoch:0,state:{hostId:registration.ssh.hostId,name:registration.name,enabled:registration.enabled,connected:false,observedAt:previous?.state.observedAt??null,error:null,tasks:previous?.state.tasks??[],terminals:previous?.state.terminals??[]}};
+    const slot:Slot={registration,epoch:0,observedPlatform:previous?.observedPlatform??cached?.platform??registration.ssh.platform,state:{hostId:registration.ssh.hostId,name:registration.name,enabled:registration.enabled,connected:false,observedAt:previous?.state.observedAt??cached?.observedAt??null,error:this.cacheWarning,tasks:previous?.state.tasks??cached?.tasks??[],terminals:(previous?.state.terminals??cached?.terminals??[]).map(terminal=>({...terminal,connected:false}))}};
     this.slots.set(registration.ssh.hostId,slot);this.changes.emit("change");
     if(registration.enabled)void this.track(this.connect(slot));
   }
@@ -92,13 +106,34 @@ export class HostConnections {
         try{
           const tasks=validateTaskSnapshot({schemaVersion:2,hostId:slot.state.hostId,tasks:value.tasks,outbox:[]}).tasks;
           const terminals=parseHerdrSessionRegistry({version:2,sessions:value.terminals},slot.registration.ssh.platform).sessions;
-          slot.state={...slot.state,tasks,terminals,connected:true,observedAt:Date.now(),error:null};this.changes.emit("change");
+          slot.observedPlatform=slot.registration.ssh.platform;
+          slot.state={...slot.state,tasks,terminals,connected:true,observedAt:Date.now(),error:this.cacheWarning};this.changes.emit("change");this.scheduleCache();
         }catch{lost("원격 호스트 상태 형식이 올바르지 않습니다.");}
       });
     }catch{lost("SSH 연결을 확인하세요. 호스트 키·계정·MCW 실행 상태를 확인한 뒤 다시 연결합니다.");}
   }
+  private scheduleCache():void{
+    if(this.closed||this.cacheTimer)return;
+    this.cacheTimer=setTimeout(()=>{this.cacheTimer=undefined;void this.persistCache();},250);this.cacheTimer.unref();
+  }
+  private persistCache():Promise<void>{
+    if(!this.cacheReady)return Promise.resolve();
+    const observations=[...this.slots.values()].filter(slot=>slot.state.observedAt!==null).map(slot=>({hostId:slot.state.hostId,platform:slot.observedPlatform,observedAt:slot.state.observedAt!,tasks:slot.state.tasks,
+      terminals:parseHerdrSessionRegistry({version:2,sessions:slot.state.terminals},slot.observedPlatform).sessions}));
+    const snapshot=structuredClone(observations);
+    this.cacheWrites=this.cacheWrites.then(async()=>{
+      await updateJsonStore(observationCacheSpec,this.cacheFile,()=>({version:2,observations:snapshot}));
+    }).catch(()=>{
+      this.cacheWarning="마지막 관찰 기록을 저장하지 못했습니다. 기존 파일을 보존합니다.";
+      for(const slot of this.slots.values())slot.state.error=this.cacheWarning;
+      this.changes.emit("change");
+    });
+    return this.cacheWrites;
+  }
   async close():Promise<void>{
+    clearTimeout(this.cacheTimer);this.cacheTimer=undefined;
     this.closed=true;await Promise.allSettled([...this.slots.values()].map(slot=>this.invalidate(slot)));
     await Promise.allSettled([...this.pending]);
+    await this.persistCache();
   }
 }

@@ -56,3 +56,19 @@ it("cancels pending discovery and awaits transport cleanup before daemon shutdow
   await f.manager.configure(registration);await f.manager.close();
   expect(cancelled).toBe(true);expect(finished).toBe(true);expect(f.manager.snapshot()[0].connected).toBe(false);
 });
+it("restores last remote observations as disconnected after a daemon restart, without inventing an exit",async()=>{
+  const f=await setup();await f.manager.configure(registration);await vi.waitFor(()=>expect(f.listeners).toHaveLength(1));
+  const terminal={id:"s",kind:"codex",cwd:"/repo",projectId:null,createdAt:"2026-10-30T00:00:00Z",generation:"g",tabId:"t",paneId:"p",delivery:"delivered",status:"working",observedAt:12,connected:true};
+  f.listeners[0]({type:"state",tasks:[],terminals:[terminal]});const seen=f.manager.snapshot()[0].observedAt;
+  await f.manager.close();
+  const restarted=new HostConnections({directory:f.directory,localHostId:"local",connect:(async()=>{throw Error("offline");}) as never,retryMs:60000});managers.push(restarted);await restarted.start();
+  expect(restarted.snapshot()[0]).toMatchObject({connected:false,observedAt:seen,terminals:[{id:"s",status:"working",observedAt:12,connected:false}]});
+  expect(()=>restarted.client("remote")).toThrow(/observed/);
+});
+it("preserves corrupt observation files while allowing independent local work to start",async()=>{
+  const f=await setup();await f.manager.configure({...registration,enabled:false});await f.manager.close();
+  const file=path.join(f.directory,"host-observations.json");await writeFile(file,"broken primary");await writeFile(file+".bak","broken backup");
+  const restarted=new HostConnections({directory:f.directory,localHostId:"local"});managers.push(restarted);await restarted.start();
+  expect(restarted.snapshot()[0]).toMatchObject({connected:false,observedAt:null,error:expect.stringContaining("기존 파일")});
+  await restarted.close();expect(await readFile(file,"utf8")).toBe("broken primary");expect(await readFile(file+".bak","utf8")).toBe("broken backup");
+});
