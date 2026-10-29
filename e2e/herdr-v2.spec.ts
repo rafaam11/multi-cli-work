@@ -25,6 +25,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     const executablePath=process.env.MCW_V2_E2E_EXECUTABLE;
     const opened=await electron.launch({...(executablePath?{executablePath,args:[]}:{args:[path.resolve("out/main/index.js")]}),env,timeout:30000});
     opened.process().stderr?.on("data",data=>errors.push(String(data)));
+    opened.process().stdout?.on("data",data=>errors.push(String(data)));
     return opened;
   };
   try {
@@ -57,6 +58,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     succeeded = true;
   } catch (error) {
     console.error("v2 Electron main stderr:", errors.join(""));
+    console.error("v2 startup fixture entries:", await fs.readdir(userData).catch(()=>[]), await fs.readdir(`${userData}-v2`).catch(()=>[]), await fs.readdir(path.join(directory,"recovery")).catch(()=>[]));
     throw error;
   } finally {
     observer?.close();
