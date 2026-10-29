@@ -55,9 +55,8 @@ export class BoardStore {
     if (pending) return pending;
     const loading = this.read(projectId).then((messages) => {
       this.cache.set(projectId, messages);
-      this.loading.delete(projectId);
       return messages;
-    });
+    }).finally(() => this.loading.delete(projectId));
     this.loading.set(projectId, loading);
     return loading;
   }

@@ -93,7 +93,6 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   });
   ipc.handle("workbench:save-view", (_event, value: unknown) => workbenchService().saveView(value));
   ipc.handle("workbench:remove-view", (_event, id: unknown) => workbenchService().removeView(nonEmptyString(id, "View preset id")));
-  ipc.handle("workbench:toggle-pin", (_event, id: unknown) => workbenchService().togglePin(nonEmptyString(id, "Pane id")));
   ipc.handle("workbench:save-prompt", (_event, value: unknown) => workbenchService().savePrompt(value));
   ipc.handle("workbench:remove-prompt", (_event, id: unknown) => workbenchService().removePrompt(nonEmptyString(id, "Prompt id")));
   ipc.handle("workbench:import-prompts", (_event, json: unknown) => {
@@ -119,8 +118,15 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     return text;
   };
   ipc.handle("deliveries:list", () => deliveryService().list());
-  ipc.handle("deliveries:send", (_event, id: unknown, text: unknown) =>
-    deliveryService().enqueue({ to: nonEmptyString(id, "Session id"), text: deliveryText(text), raw: true }));
+  ipc.handle("deliveries:send", async (_event, id: unknown, text: unknown) => {
+    const record = await deliveryService().enqueue({ to: nonEmptyString(id, "Session id"), text: deliveryText(text), raw: true });
+    try { await dependencies.board.recordDirect(record); }
+    catch (cause) {
+      // A recording failure must not invite resending a prompt that is already queued.
+      return { ...record, recordingWarning: `전달 큐에는 등록됐지만 기록 저장에 실패했습니다: ${String(cause)}` };
+    }
+    return record;
+  });
   ipc.handle("deliveries:edit", (_event, id: unknown, text: unknown) =>
     deliveryService().edit(nonEmptyString(id, "Delivery id"), deliveryText(text)));
   ipc.handle("deliveries:drop", (_event, id: unknown) => deliveryService().drop(nonEmptyString(id, "Delivery id")));

@@ -77,11 +77,7 @@
 .prompt-library-list button { background: var(--surface-raised); color: var(--text); border: 1px solid var(--line); padding: 7px; border-radius: 6px; }
 .prompt-library-list li > button:first-child { flex: 1; text-align: left; min-width: 0; overflow-wrap: anywhere; }
 .prompt-library-list small { display: block; color: var(--muted); }
-.right-sidebar-tabs { flex-wrap: wrap; }
-.session-pin-button { flex: 0 0 18px; padding: 0; border: 0; color: var(--muted); background: transparent; }
-.session-pin-button[aria-pressed="true"] { color: var(--amber); }
-.session-panel-filters > button { color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
-.session-panel-filters > button[aria-pressed="true"] { border-color: var(--amber); }
+.right-sidebar-tabs { flex-wrap: nowrap; }
 :root[data-effects="rich"] .control-overview { box-shadow: 0 6px 24px color-mix(in srgb, var(--teal) 8%, transparent); }
 :root[data-effects="rich"] .control-signal:enabled:hover { box-shadow: 0 0 16px color-mix(in srgb, var(--signal) 18%, transparent); }
 :root[data-effects="rich"] .quick-open { box-shadow: 0 18px 64px color-mix(in srgb, var(--bg) 85%, transparent), 0 0 0 1px color-mix(in srgb, var(--teal) 30%, transparent); }
@@ -124,10 +120,6 @@
 .activity-timeline time, .activity-timeline span { font: var(--type-caption); color: var(--muted); }
 .activity-timeline button { text-align: left; background: transparent; color: var(--text); border: 0; padding: 0; }
 .delivery-actions button, .delivery-heading button { border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--surface-raised); color: var(--text); }
-.session-panel-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
-.session-panel-filters input { flex: 1 1 110px; min-width: 0; }
-.session-panel-filters select { flex: 0 1 100px; min-width: 0; }
-.session-panel-filters input, .session-panel-filters select { padding: 6px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font: var(--type-caption); }
 
 /*
  * 구분은 설정 목록의 색 번호로 아래 .accent-n을 받는다(work-project-accent.ts). 목록에 없는 구분만
@@ -1079,18 +1071,20 @@ body.sidebar-resizing {
   min-width: 0;
   align-items: center;
   gap: 2px;
-  padding-left: 10px;
+  padding-left: 6px;
 }
 
 .right-sidebar-tabs + .sidebar-collapse-toggle {
-  margin-right: 8px;
+  margin-right: 4px;
 }
 
 .right-sidebar-tab {
   display: flex;
+  flex-shrink: 0;
+  white-space: nowrap;
   align-items: center;
-  gap: 5px;
-  padding: 5px 9px;
+  gap: 4px;
+  padding: 5px 6px;
   border: 0;
   border-radius: 5px;
   color: var(--muted);
@@ -8652,3 +8646,46 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .saved-view-list li { display: flex; gap: 6px; }
 .saved-view-list li > button:first-child { display: grid; gap: 4px; flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; }
 .saved-view-list span { color: var(--muted); font: var(--type-caption); }
+
+.favorites-heading { width: 100%; cursor: pointer; border: 0; background: transparent; text-align: left; color: inherit; }
+.favorites-heading:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.favorites-count { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .65; }
+.project-favorites.is-collapsed { padding-bottom: 0; }
+
+.records-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 12px 14px; scrollbar-gutter: stable; }
+.records-panel[hidden], .auxiliary-tools-backdrop[hidden] { display: none; }
+.records-heading { display: flex; align-items: baseline; gap: 8px; padding: 12px 0 10px; min-width: 0; }
+.records-heading h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; font: var(--type-ui-semibold); }
+.records-heading > span, .records-footnote { color: var(--muted); font: var(--type-caption); }
+.records-disclosure { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; border-radius: 5px; padding: 8px 4px; background: transparent; color: var(--text); font: var(--type-ui-semibold); text-align: left; cursor: pointer; }
+.records-disclosure:hover { background: var(--surface-hover); }
+.records-disclosure > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: var(--type-caption); }
+.records-deliveries { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.records-deliveries ul, .record-recipients { list-style: none; padding: 0; margin: 0; }
+.records-deliveries li { padding: 8px 4px; border-top: 1px solid var(--line); }
+.records-deliveries li > span { display: block; color: var(--muted); font: var(--type-caption); }
+.records-deliveries pre, .record-message pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.records-manage { margin: 4px 0 10px; }
+.records-empty { padding: 12px 0; color: var(--muted); font: var(--type-ui); }
+.records-empty small { display: block; margin-top: 8px; line-height: 1.6; }
+.records-error { color: var(--red); overflow-wrap: anywhere; font: var(--type-caption); }
+.records-error button { display: block; margin-top: 6px; }
+.record-message { padding: 12px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.record-message > header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; font: var(--type-ui-semibold); }
+.record-message time { color: var(--muted); font: var(--type-caption); }
+.record-message-text { font: var(--type-ui); line-height: 1.65; }
+.record-message-text p { white-space: pre-wrap; margin: 8px 0; }
+.record-session-link { padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.record-session-link:not(:disabled):hover { text-decoration: underline; color: var(--teal); }
+.record-session-link:disabled { opacity: .65; cursor: default; }
+.record-recipients { color: var(--muted); font: var(--type-caption); }
+.record-recipients li > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.record-recipients summary { cursor: pointer; padding: 5px 0; }
+.record-event { color: var(--muted); }
+.records-activity { margin-top: 8px; }
+.records-activity .session-activity-panel { padding: 4px 0; overflow: visible; }
+.records-activity .activity-timeline { overflow: visible; max-height: none; }
+.records-footnote { margin: 14px 0 0; line-height: 1.6; }
+.auxiliary-tools-dialog { display: flex; flex-direction: column; width: min(680px, calc(100vw - 48px)); max-width: none; max-height: calc(100vh - 64px); padding: 16px; }
+.auxiliary-tools-dialog > .delivery-panel { flex: 1 1 auto; min-height: 0; }
+.auxiliary-tools-dialog > footer { flex-shrink: 0; padding-top: 12px; }

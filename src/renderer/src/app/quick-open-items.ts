@@ -78,7 +78,7 @@ export function buildQuickOpenItems(sources: QuickOpenSources): QuickOpenItem[] 
     { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
     { key: "command:prompts", kind: "command", label: "프롬프트 라이브러리 열기", detail: null },
     { key: "command:deliveries", kind: "command", label: "보류 메시지 관리", detail: null },
-    { key: "command:activity", kind: "command", label: "세션 활동 및 정보", detail: null },
+    { key: "command:records", kind: "command", label: "폴더 기록 열기", detail: null },
     { key: "command:settings", kind: "command", label: "설정 열기", detail: null },
   ];
   return [...sessionItems, ...workspaceItems, ...projectItems, ...workProjectItems, ...commandItems];

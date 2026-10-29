@@ -714,6 +714,71 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("button", { name: new RegExp(`${SHELL_LABEL}( \\d+)? 세션 보기`) }).first()).toBeVisible();
   });
 
+  test("@smoke keeps records scoped and sidebars compact at small window sizes", async () => {
+    await openFolder();
+    await page.evaluate(async projectId => {
+      await window.multiCliWork.board.post({ projectId, text: "검토 결과: 폴더별 기록과 전달 상태를 확인했습니다.\n긴 경로 C:/projects/example/src/renderer/components/records/RecordMessage.tsx", mentions: [] });
+    }, PROJECT_ID);
+    await page.getByRole("tab", { name: "기록", exact: true }).click();
+    await expect(page.getByRole("region", { name: "폴더 기록" })).toContainText("검토 결과:");
+    const tabs = page.getByRole("tablist", { name: "우측 사이드바 탭" });
+    await expect(tabs.getByRole("tab")).toHaveCount(3);
+    const favorite = page.getByRole("button", { name: "Sample Project 즐겨찾기 추가", exact: true });
+    if (await favorite.count()) await favorite.click();
+    const expand = page.getByRole("button", { name: "즐겨찾기 펼치기" });
+    if (await expand.count()) await expand.click();
+    const favorites = page.getByRole("region", { name: "즐겨찾기" });
+    const before = (await favorites.boundingBox())!.height;
+    await page.getByRole("button", { name: "즐겨찾기 접기" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Sample Project 즐겨찾기 열기" })).toBeHidden();
+    expect((await favorites.boundingBox())!.height).toBeLessThan(before - 15);
+    await expect(page.getByRole("textbox", { name: "세션·폴더·브랜치 검색" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /세션 고정/ })).toHaveCount(0);
+    try {
+      for (const size of [{ width: 1280, height: 720 }, { width: 1366, height: 768 }]) {
+        await page.setViewportSize(size);
+        const separator = page.locator(".right-sidebar-resizer");
+        const box = (await separator.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + 80);
+        await page.mouse.down();
+        await page.mouse.move(size.width - 100, box.y + 80);
+        await page.mouse.up();
+        const bounds = await tabs.getByRole("tab").evaluateAll(elements => elements.map(element => ({ y: element.getBoundingClientRect().y, right: element.getBoundingClientRect().right })));
+        expect(new Set(bounds.map(bound => bound.y)).size).toBe(1);
+        expect(Math.max(...bounds.map(bound => bound.right))).toBeLessThan(size.width - 20);
+        expect(await page.locator(".records-panel").evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+        await attachScreenshot(`records-compact-${size.width}x${size.height}`);
+      }
+    } finally {
+      await restoreDefaultWindowSize();
+      const box = (await page.locator(".right-sidebar-resizer").boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + 80); await page.mouse.down();
+      await page.mouse.move(DEFAULT_WINDOW.width - 320, box.y + 80); await page.mouse.up();
+      await page.getByRole("button", { name: "즐겨찾기 펼치기" }).click();
+      await page.getByRole("tab", { name: "파일", exact: true }).click();
+    }
+  });
+
+  test("@smoke records a prompt sent through the real delivery queue exactly once", async () => {
+    await openFolder();
+    const target = await page.evaluate(async ({ projectId, kind }) => window.multiCliWork.terminals.create({ projectId, kind, cols: 80, rows: 24, background: true, name: "Records target" }), { projectId: PROJECT_ID, kind: SHELL_ID });
+    try {
+      const result = await page.evaluate(async ({ id, text }) => window.multiCliWork.deliveries.send(id, text), { id: target.id, text: shellCommand("Write-Output MCW_RECORDS_DELIVERED", "echo MCW_RECORDS_DELIVERED") });
+      expect(result.projectId).toBe(PROJECT_ID);
+      expect(result.recordingWarning).toBeUndefined();
+      await expect.poll(() => page.evaluate(async id => (await window.multiCliWork.deliveries.list()).find(record => record.id === id)?.state, result.id)).toBe("delivered");
+      const entries = await page.evaluate(async ({ projectId, id }) => (await window.multiCliWork.board.list(projectId)).filter(message => message.to.some(recipient => recipient.deliveryId === id)), { projectId: PROJECT_ID, id: result.id });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ author: { kind: "user" }, to: [{ delivery: "delivered", deliveryText: result.text }] });
+      await page.getByRole("tab", { name: "기록", exact: true }).click();
+      await expect(page.getByRole("region", { name: "폴더 기록" })).toContainText("터미널 전달됨");
+    } finally {
+      await page.evaluate(async id => window.multiCliWork.terminals.remove(id), target.id);
+      await page.getByRole("tab", { name: "파일", exact: true }).click();
+    }
+  });
+
   test("@smoke manages the prompt library through the native workbench store", async () => {
     await page.keyboard.press("Control+Shift+P");
     const palette = page.getByRole("dialog", { name: "빠른 열기" });
@@ -721,15 +786,6 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await palette.getByRole("textbox").press("Enter");
     const library = page.getByRole("region", { name: "프롬프트 라이브러리" });
     await expect(library).toBeVisible();
-    const pin = page.getByRole("button", { name: /세션 고정/ }).first();
-    await expect(pin).toBeEnabled();
-    await pin.click();
-    await expect(pin).toHaveAttribute("aria-pressed", "true");
-    await page.getByRole("button", { name: "고정 세션만 보기" }).click();
-    await expect(page.getByRole("group", { name: "세션 목록", exact: true }).getByRole("button", { name: /세션 고정/ })).toHaveCount(1);
-    await page.getByRole("button", { name: "고정 세션만 보기" }).click();
-    await pin.click();
-    await expect(pin).toHaveAttribute("aria-pressed", "false");
     await library.getByLabel("프롬프트", { exact: true }).fill("Review the selected changes.");
     await library.locator("summary", { hasText: "라이브러리에 저장" }).click();
     await library.getByLabel("이름", { exact: true }).fill("E2E review template");
@@ -740,13 +796,19 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const overflow = await library.evaluate(element => element.scrollWidth - element.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
     await attachScreenshot("prompt-library-workbench");
-    await page.getByRole("tab", { name: "보류", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(library).toBeHidden();
+    await page.keyboard.press("Control+Shift+P");
+    await palette.getByRole("textbox").fill("보류 메시지 관리");
+    await palette.getByRole("textbox").press("Enter");
     await expect(page.getByRole("region", { name: "보류 메시지 관리" })).toBeVisible();
-    await page.getByRole("tab", { name: "활동", exact: true }).click();
-    await expect(page.getByRole("region", { name: "세션 활동 및 정보" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByRole("tab", { name: "기록", exact: true }).click();
+    await expect(page.getByRole("region", { name: "폴더 기록" })).toBeVisible();
     await page.getByRole("tab", { name: "파일", exact: true }).click();
   });
   test("@smoke saves a model profile and selects it as the next-session default", async () => {
+    await expect(page.getByRole("button", { name: "Sample Project 폴더 선택" })).toBeVisible();
     await page.keyboard.press("Control+,");
     const dialog = page.getByRole("dialog", { name: "설정", exact: true });
     await dialog.getByRole("button", { name: "시작 프로필", exact: true }).click();
@@ -759,6 +821,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const profile = await page.evaluate(async () => (await window.multiCliWork.workbench.state()).state.launchProfiles?.find(item => item.name === "E2E deep review"));
     expect(profile).toBeDefined();
     await dialog.getByLabel("Codex 기본 프로필", { exact: true }).selectOption(profile!.id);
+    await expect(dialog.getByLabel("Codex 기본 프로필", { exact: true })).toHaveValue(profile!.id);
     await expect.poll(() => page.evaluate(async () => (await window.multiCliWork.workbench.state()).state.defaultLaunchProfiles?.codex)).toBe(profile!.id);
     await attachScreenshot("launch-profile-settings");
     await dialog.getByLabel("Codex 기본 프로필", { exact: true }).selectOption("");
@@ -775,7 +838,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const before = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map(session => ({ id: session.id, pid: session.pid })));
     const layout = page.getByRole("radiogroup", { name: "레이아웃 선택" });
     await layout.getByRole("radio", { name: "2열", exact: true }).click();
-    await page.getByRole("tab", { name: "활동", exact: true }).click();
+    await page.getByRole("tab", { name: "기록", exact: true }).click();
     await page.getByRole("button", { name: "저장 배치", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "저장 배치", exact: true });
     await dialog.getByLabel("배치 이름", { exact: true }).fill("E2E review layout");
@@ -789,7 +852,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await dialog.getByRole("button", { name: /E2E review layout.*패널 상태 복원/ }).click();
     await expect(dialog).toBeHidden();
     await expect(layout.getByRole("radio", { name: "2열", exact: true })).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByRole("tab", { name: "활동", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "기록", exact: true })).toHaveAttribute("aria-selected", "true");
     const after = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map(session => ({ id: session.id, pid: session.pid })));
     expect(after).toEqual(before);
     await page.getByRole("button", { name: "저장 배치", exact: true }).click();

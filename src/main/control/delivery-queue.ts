@@ -118,6 +118,7 @@ export class DeliveryQueue {
       id: this.options.idFactory(),
       from: request.from ?? null,
       to: request.to,
+      projectId: this.options.sessions().find(session => session.id === request.to)?.projectId ?? null,
       text: request.text,
       state: "held",
       reason: null,

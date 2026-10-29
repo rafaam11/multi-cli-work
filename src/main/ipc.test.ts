@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from "../shared/settings-types";
 import { notionLinkCheck } from "../shared/notion-types";
 import type { PcRootsInfo } from "../shared/pc-roots-types";
 import { registerMainIpc, type IpcRegistrar } from "./ipc";
+import type { DeliveryRecord } from "../shared/delivery-types";
 
 function setup(
   options: {
@@ -283,6 +284,9 @@ function setup(
     applyImport: vi.fn(async () => ({ addedWorkProjects: 0, updatedWorkProjects: 0, addedFolders: 0, missingFolders: [], backupDir: "x" })),
   };
   const repoSync = { sync: vi.fn(async () => null), last: vi.fn(async () => null) };
+  const sentRecord: DeliveryRecord = { id: "d1", projectId: "project-1", from: null, to: "session-1", text: "request", state: "held", reason: "working", createdAt: 1, settledAt: null };
+  const deliveries = { enqueue: vi.fn(async () => sentRecord), list: vi.fn(() => [sentRecord]), edit: vi.fn(), drop: vi.fn(), sendNow: vi.fn(), move: vi.fn() };
+  const board = { list: vi.fn(async () => []), post: vi.fn(async () => { throw new Error("unused"); }), recordDirect: vi.fn(async (_record: DeliveryRecord) => undefined) };
   registerMainIpc(ipc, {
     projectService,
     workProjectService,
@@ -321,7 +325,8 @@ function setup(
     remoteHosts: remoteHostsGateway as never,
     sizes: sizesGateway,
     humanInput,
-    board: { list: vi.fn(async () => []), post: vi.fn(async () => { throw new Error("unused"); }) },
+    board,
+    deliveries,
     presets: { list: vi.fn(async () => []), save: vi.fn(async () => []), remove: vi.fn(async () => []), launch: vi.fn(async () => []) },
     indicators: { snapshot: () => [] },
     worktreeScripts: { get: vi.fn(async () => null), set: vi.fn(async () => undefined), forget: vi.fn(async () => undefined) },
@@ -329,6 +334,8 @@ function setup(
   });
   return {
     handlers,
+    deliveries,
+    board,
     repoSync,
     remoteGateway,
     remoteHostsGateway,
@@ -1408,4 +1415,16 @@ describe("설정 프로필 IPC", () => {
     expect(profileGateway.previewImport).toHaveBeenCalledOnce();
     expect(profileGateway.applyImport).toHaveBeenCalledWith();
   });
+});
+
+
+it("records prompt IPC sends once, retaining successful queue registration if recording fails", async () => {
+  const h = setup();
+  const result = await h.handlers.get("deliveries:send")!({}, "session-1", "request");
+  expect(h.deliveries.enqueue).toHaveBeenCalledExactlyOnceWith({ to: "session-1", text: "request", raw: true });
+  expect(h.board.recordDirect).toHaveBeenCalledExactlyOnceWith(result);
+  h.board.recordDirect.mockRejectedValueOnce(new Error("disk full"));
+  const next = await h.handlers.get("deliveries:send")!({}, "session-1", "request");
+  expect(next).toMatchObject({ id: "d1", state: "held", recordingWarning: expect.stringContaining("disk full") });
+  expect(h.deliveries.enqueue).toHaveBeenCalledTimes(2);
 });

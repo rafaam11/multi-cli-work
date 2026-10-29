@@ -23,6 +23,8 @@ export interface BoardRecipient {
   /** Why it is held, or why it failed. */
   reason?: string | null;
   deliveryId?: string;
+  /** Last observed message body for this recipient; absent on legacy records. */
+  deliveryText?: string;
 }
 
 export interface BoardMessage {

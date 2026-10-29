@@ -93,6 +93,17 @@ function harness(state: DeliveryRecord["state"] = "held") {
 }
 
 describe("BoardService.post", () => {
+  it("records per-recipient edits even when delivery state is unchanged without rewriting the post", async () => {
+    const h = harness();
+    await h.service.post({ projectId: "project-1", text: "original", mentions: ["reviewer", "elsewhere"], from: "builder" });
+    await h.deliver({ id: "d1", to: "reviewer", text: "revised", state: "held", reason: "working" });
+    const [stored] = await h.service.list("project-1");
+    expect(stored.text).toBe("original");
+    expect(stored.to[0]).toMatchObject({ deliveryText: "revised", delivery: "held" });
+    expect(stored.to[1]).toMatchObject({ deliveryText: "original" });
+    await h.deliver({ id: "d1", to: "reviewer", text: "revised", state: "delivered" });
+    expect((await h.service.list("project-1"))[0].to[0]).toMatchObject({ deliveryText: "revised", delivery: "delivered" });
+  });
   it("writes the post, types it into each mentioned session with a board label, and tracks delivery", async () => {
     const h = harness();
     const posted = await h.service.post({ projectId: "project-1", text: "  검토 부탁  ", mentions: ["reviewer"], from: "builder" });

@@ -5,7 +5,7 @@ import type { SavedViewPreset } from "@shared/workbench-types";
 import { SavedViewPicker } from "./SavedViewPicker";
 
 afterEach(cleanup);
-const current = { layoutId: "cols:1-2", sidebarCollapsed: true, rightSidebarCollapsed: false, rightSidebarTab: "activity" as const };
+const current = { layoutId: "cols:1-2", sidebarCollapsed: true, rightSidebarCollapsed: false, rightSidebarTab: "records" as const };
 it("saves panel and split settings, then applies the named layout without launching a terminal", async () => {
   const state = { schemaVersion: 1 as const, prompts: [], drafts: {}, savedViews: [] as SavedViewPreset[] };
   const saveView = vi.fn(async (view: SavedViewPreset) => ({ ...state, savedViews: [view] }));

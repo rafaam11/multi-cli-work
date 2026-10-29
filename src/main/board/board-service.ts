@@ -88,14 +88,14 @@ export class BoardService {
   }
 
   /** Puts a `jk send` on the board of the folders it crossed. */
-  async recordDirect(record: DeliveryRecord, note?: string): Promise<void> {
+  async recordDirect(record: DeliveryRecord, note?: string, authorOverride?: BoardAuthor): Promise<void> {
     const sessions = this.options.sessions();
     const target = sessions.find((session) => session.id === record.to);
     if (!target) return;
     const sender = record.from ? sessions.find((session) => session.id === record.from) : undefined;
     const projectIds = [...new Set([sender?.projectId, target.projectId].filter((id): id is string => Boolean(id)))];
     if (projectIds.length === 0) return;
-    const author = this.authorFor(record.from, sessions, true);
+    const author = authorOverride ?? this.authorFor(record.from, sessions, true);
     const text = note ? `${note}\n${record.text}` : record.text;
     const recipient: BoardRecipient = { ...recipientFor(target), delivery: record.state, reason: record.reason, deliveryId: record.id };
     const placed: Array<{ projectId: string; messageId: string }> = [];
@@ -145,11 +145,11 @@ export class BoardService {
       let changed = false;
       const to = message.to.map((recipient) => {
         if (recipient.sessionId !== record.to) return recipient;
-        if (recipient.delivery === record.state && recipient.reason === record.reason && recipient.deliveryId === record.id) {
+        if (recipient.delivery === record.state && recipient.reason === record.reason && recipient.deliveryId === record.id && recipient.deliveryText === record.text) {
           return recipient;
         }
         changed = true;
-        return { ...recipient, delivery: record.state, reason: record.reason, deliveryId: record.id };
+        return { ...recipient, delivery: record.state, reason: record.reason, deliveryId: record.id, deliveryText: record.text };
       });
       if (!changed) continue;
       const patched = await this.options.store.patch(projectId, messageId, to);

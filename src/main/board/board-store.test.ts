@@ -53,6 +53,16 @@ describe("BoardStore", () => {
     expect((await new BoardStore(directory).list("project-1")).map((entry) => entry.id)).toEqual(["a"]);
   });
 
+  it("retries a failed folder read instead of caching the rejected promise", async () => {
+    const file = path.join(directory, "project-1.jsonl");
+    await fs.mkdir(file);
+    const store = new BoardStore(directory);
+    await expect(store.list("project-1")).rejects.toThrow();
+    await fs.rmdir(file);
+    await fs.writeFile(file, JSON.stringify({ type: "message", message: message("retry") }) + "\n");
+    expect((await store.list("project-1"))[0].id).toBe("retry");
+  });
+
   it("keeps the last 500 messages and compacts a file that grew far past them", async () => {
     const lines = Array.from({ length: 2100 }, (_, index) => JSON.stringify({ type: "message", message: message(`m${index}`) }));
     await fs.writeFile(path.join(directory, "project-1.jsonl"), `${lines.join("\n")}\n`, "utf8");

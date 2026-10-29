@@ -1,21 +1,17 @@
 import type { GitChangeEntry } from "@shared/api-types";
 import type { FileExplorerTarget, FileTreeEntry } from "@shared/file-explorer-types";
 import type { PullRequestListItem } from "@shared/github-types";
-import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import type { SessionPreset } from "@shared/preset-types";
-import { Activity, BookOpen, Send, Files, GitBranch, MessagesSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Files, GitBranch, MessagesSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { FileExplorer } from "./FileExplorer";
 import { GitPanel, type GitWorktreeOption } from "./GitPanel";
-import { TeamBoard } from "./TeamBoard";
-import { DeliveryPanel } from "./DeliveryPanel";
-import { PromptWorkbench } from "./PromptWorkbench";
-import { SessionActivityPanel } from "./SessionActivityPanel";
+import { RecordsPanel } from "./RecordsPanel";
+import type { SavedViewPreset } from "@shared/workbench-types";
 import type { ActivityEntry } from "./HomeDashboard";
 import type { SessionIndicators } from "@shared/terminal-types";
 
-export type RightSidebarTab = "files" | "git" | "board" | "deliveries" | "prompts" | "activity";
+export type RightSidebarTab = SavedViewPreset["rightSidebarTab"];
 
 export interface RightSidebarProps {
   activityLog?: ActivityEntry[];
@@ -47,13 +43,11 @@ export interface RightSidebarProps {
   boardProjectId: string | null;
   boardProjectLabel: string | null;
   sessions: TerminalSessionView[];
-  agents: AgentView[];
   onFocusSession(session: TerminalSessionView): void;
-  presets: readonly SessionPreset[];
-  onStartPreset(presetId: string): void;
+  onManageDeliveries(): void;
 }
 
-const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git", board: "팀 보드", deliveries: "보류 메시지", prompts: "프롬프트 라이브러리", activity: "활동 및 정보" };
+const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git", records: "폴더 기록" };
 
 export function RightSidebar({
   activityLog = [], selectedSession = null, sessionIndicators = {},
@@ -81,14 +75,12 @@ export function RightSidebar({
   boardProjectId,
   boardProjectLabel,
   sessions,
-  agents,
   onFocusSession,
-  presets,
-  onStartPreset,
+  onManageDeliveries,
 }: RightSidebarProps) {
   const [boardUnread, setBoardUnread] = useState(0);
   const badge = (tab: RightSidebarTab) =>
-    tab === "board" && boardUnread > 0 ? (
+    tab === "records" && boardUnread > 0 ? (
       <span className="right-sidebar-badge" aria-label={`새 글 ${boardUnread}개`}>
         {boardUnread > 99 ? "99+" : boardUnread}
       </span>
@@ -114,6 +106,8 @@ export function RightSidebar({
     <button
       type="button"
       role="tab"
+      aria-label={label}
+      aria-description={tab === "records" && boardUnread > 0 ? `새 글 ${boardUnread}개` : undefined}
       aria-selected={activeTab === tab}
       className={`right-sidebar-tab ${activeTab === tab ? "active" : ""}`}
       onClick={() => onSelectTab(tab)}
@@ -132,10 +126,7 @@ export function RightSidebar({
           <div className="right-sidebar-tabs" role="tablist" aria-label="우측 사이드바 탭">
             {headerTab("files", <Files size={14} />, "파일")}
             {headerTab("git", <GitBranch size={14} />, "Git")}
-            {headerTab("board", <MessagesSquare size={14} />, "보드")}
-            {headerTab("deliveries", <Send size={14} />, "보류")}
-            {headerTab("prompts", <BookOpen size={14} />, "프롬프트")}
-            {headerTab("activity", <Activity size={14} />, "활동")}
+            {headerTab("records", <MessagesSquare size={14} />, "기록")}
           </div>
         )}
         <button
@@ -154,10 +145,7 @@ export function RightSidebar({
           <div className="right-sidebar-rail">
             {railTab("files", <Files size={16} />)}
             {railTab("git", <GitBranch size={16} />)}
-            {railTab("board", <MessagesSquare size={16} />)}
-            {railTab("deliveries", <Send size={16} />)}
-            {railTab("prompts", <BookOpen size={16} />)}
-            {railTab("activity", <Activity size={16} />)}
+            {railTab("records", <MessagesSquare size={16} />)}
           </div>
         ) : null}
         {/* Both panels stay mounted while hidden so the file tree's expansion state and the git
@@ -187,20 +175,18 @@ export function RightSidebar({
           selectedPullRequest={selectedPullRequest}
           onOpenPullRequest={onOpenPullRequest}
         />
-        <TeamBoard
-          hidden={collapsed || activeTab !== "board"}
+        <RecordsPanel
+          hidden={collapsed || activeTab !== "records"}
           projectId={boardProjectId}
           projectLabel={boardProjectLabel}
           sessions={sessions}
-          agents={agents}
+          selected={selectedSession}
+          indicators={sessionIndicators}
+          activityLog={activityLog}
           onFocusSession={onFocusSession}
           onUnreadChange={setBoardUnread}
-          presets={presets}
-          onStartPreset={onStartPreset}
+          onManageDeliveries={onManageDeliveries}
         />
-        <DeliveryPanel hidden={collapsed || activeTab !== "deliveries"} sessions={sessions} onFocusSession={onFocusSession} />
-        <PromptWorkbench hidden={collapsed || activeTab !== "prompts"} sessions={sessions} onFocusSession={onFocusSession} />
-        <SessionActivityPanel hidden={collapsed || activeTab !== "activity"} sessions={sessions} activity={activityLog} selected={selectedSession} indicators={sessionIndicators} onFocusSession={onFocusSession} />
       </div>
     </aside>
   );

@@ -22,6 +22,7 @@ import { ForkDialog } from "./ForkDialog";
 import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
 import { GitGraphEmbed } from "./GitGraphEmbed";
 import type { GitWorktreeOption } from "./GitPanel";
+import { AuxiliaryToolsDialog, type AuxiliaryTool } from "./AuxiliaryToolsDialog";
 import { RightSidebar, type RightSidebarTab } from "./RightSidebar";
 import { type OpenFileTab } from "./file-tabs";
 import { FileViewerPane } from "./FileViewerPane";
@@ -176,6 +177,7 @@ export function App() {
   const sessionIndicators = useSessionIndicators();
   const { usage, refresh: refreshUsage } = useUsage();
   const { keymap, handleMenuActionRef, keyActionEnabledRef } = useAppShortcuts(appSettings.keybindings);
+  const [auxiliaryTool, setAuxiliaryTool] = useState<AuxiliaryTool | null>(null);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>("files");
   /** Diffs, commit graphs and pull requests on the grid. Files live in `openFileTabs` instead. */
   const [documents, setDocuments] = useState<OpenDocument[]>([]);
@@ -1015,7 +1017,7 @@ export function App() {
       }
       const first = created[0];
       if (first) requestAnimationFrame(() => setTimeout(() => revealSessionRef.current(first), 0));
-      setRightSidebarTab("board");
+      setRightSidebarTab("records");
       setRightSidebarCollapsed(false);
     } catch (error) {
       showToast({
@@ -1553,8 +1555,12 @@ export function App() {
 
   const handleQuickOpenSelect = (item: QuickOpenItem) => {
     setQuickOpenVisible(false);
-    if (["command:prompts", "command:deliveries", "command:activity"].includes(item.key)) {
-      setRightSidebarTab(item.key.slice("command:".length) as RightSidebarTab);
+    if (item.key === "command:prompts" || item.key === "command:deliveries") {
+      setAuxiliaryTool(item.key === "command:prompts" ? "prompts" : "deliveries");
+      return;
+    }
+    if (item.key === "command:records" || item.key === "command:activity") {
+      setRightSidebarTab("records");
       setRightSidebarCollapsed(false);
       return;
     }
@@ -2194,8 +2200,8 @@ export function App() {
       case "edit.clear": terminal?.clear(); break;
       case "view.toggle-sidebar": setSidebarCollapsed((value) => !value); break;
       case "view.toggle-right-sidebar": setRightSidebarCollapsed((value) => !value); break;
-      case "view.quick-open": setQuickOpenKind("all"); setQuickOpenVisible((visible) => !visible); break;
-      case "view.commands": setQuickOpenKind("command"); setQuickOpenVisible(true); break;
+      case "view.quick-open": setAuxiliaryTool(null); setQuickOpenKind("all"); setQuickOpenVisible((visible) => !visible); break;
+      case "view.commands": setAuxiliaryTool(null); setQuickOpenKind("command"); setQuickOpenVisible(true); break;
       case "view.zoom-in": void window.multiCliWork.window.zoom("in"); break;
       case "view.zoom-out": void window.multiCliWork.window.zoom("out"); break;
       case "view.zoom-reset": void window.multiCliWork.window.zoom("reset"); break;
@@ -2235,6 +2241,7 @@ export function App() {
       case "help.release-notes": void window.multiCliWork.updates.openReleases(); break;
       case "help.repository": void window.multiCliWork.updates.openRepository(); break;
       case "settings.open":
+        setAuxiliaryTool(null);
         setSettingsOpen(true);
         break;
     }
@@ -2705,7 +2712,9 @@ export function App() {
         onMouseDown={beginRightSidebarResize}
       />
 
+      <AuxiliaryToolsDialog tool={auxiliaryTool} sessions={sessions} onFocusSession={selectSession} onClose={() => setAuxiliaryTool(null)} />
       <RightSidebar
+        onManageDeliveries={() => setAuxiliaryTool("deliveries")}
         activityLog={activityLog}
         selectedSession={selectedSession}
         sessionIndicators={sessionIndicators}
@@ -2747,15 +2756,10 @@ export function App() {
         projectId={fileExplorerOwnerProject?.id ?? null}
         selectedPullRequest={focusedPullRequest ? { projectId: focusedPullRequest.projectId, remoteName: focusedPullRequest.remoteName, prNumber: focusedPullRequest.number } : null}
         onOpenPullRequest={openPullRequest}
-        boardProjectId={fileExplorerOwnerProject?.id ?? null}
-        boardProjectLabel={fileExplorerOwnerProject?.displayName ?? null}
+        boardProjectId={activeView === "home" || activeView === "work-project" ? null : fileExplorerOwnerProject?.id ?? null}
+        boardProjectLabel={activeView === "home" || activeView === "work-project" ? null : fileExplorerOwnerProject?.displayName ?? null}
         sessions={sessions}
-        agents={agents}
         onFocusSession={selectSession}
-        presets={presets}
-        onStartPreset={(presetId) => {
-          if (fileExplorerOwnerProject) void startPreset(fileExplorerOwnerProject, presetId, selectedWorktree?.id ?? null);
-        }}
       />
 
       {newSessionSlot ? (
@@ -2887,7 +2891,7 @@ export function App() {
           onClose={() => setQuickOpenVisible(false)}
         />
       ) : null}
-      {handoff ? <HandoffDialog source={handoff.source} selection={handoff.selection} sessions={sessions} onClose={() => setHandoff(null)} onDone={() => { selectSession(handoff.source); setHandoff(null); setRightSidebarTab("board"); setRightSidebarCollapsed(false); }} /> : null}
+      {handoff ? <HandoffDialog source={handoff.source} selection={handoff.selection} sessions={sessions} onClose={() => setHandoff(null)} onDone={() => { selectSession(handoff.source); setHandoff(null); setRightSidebarTab("records"); setRightSidebarCollapsed(false); }} /> : null}
 
       {forkSource ? <ForkDialog source={forkSource} onClose={() => setForkSource(null)} onCreated={session => {
         setSessions(current => replaceSession(current, session)); setForkSource(null);
@@ -2966,7 +2970,7 @@ export function App() {
             const results = await Promise.allSettled(ids.map(id => window.multiCliWork.deliveries.send(id, text)));
             const failures = results.filter(result => result.status === "rejected");
             setFanOutVisible(false);
-            setRightSidebarTab("deliveries");
+            setRightSidebarTab("records");
             setRightSidebarCollapsed(false);
             if (failures.length) setActionError(`${failures.length}개 메시지를 보류 큐에 등록하지 못했습니다. 보류함에서 전달 상태를 확인해 주세요.`);
           }}

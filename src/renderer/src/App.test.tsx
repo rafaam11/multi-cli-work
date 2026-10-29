@@ -360,7 +360,7 @@ function createApi(options?: {
   };
   const api: MultiCliWorkApi = {
     activity: { list: vi.fn(async () => []) },
-    workbench: { state: vi.fn(), savePrompt: vi.fn(), removePrompt: vi.fn(), saveDraft: vi.fn(), importPrompts: vi.fn(), exportPrompts: vi.fn(), togglePin: vi.fn(), saveLaunchProfile: vi.fn(), removeLaunchProfile: vi.fn(), setDefaultLaunchProfile: vi.fn(), saveView: vi.fn(), removeView: vi.fn() },
+    workbench: { state: vi.fn(), savePrompt: vi.fn(), removePrompt: vi.fn(), saveDraft: vi.fn(), importPrompts: vi.fn(), exportPrompts: vi.fn(), saveLaunchProfile: vi.fn(), removeLaunchProfile: vi.fn(), setDefaultLaunchProfile: vi.fn(), saveView: vi.fn(), removeView: vi.fn() },
     deliveries: { list: vi.fn(async () => []), send: vi.fn(), edit: vi.fn(), drop: vi.fn(), sendNow: vi.fn(), move: vi.fn() },
     platform: "win32",
     projects: {
@@ -749,6 +749,51 @@ function xtermFor(sessionId: string) {
 }
 
 describe("folder workspace", () => {
+  it("clears record scope on Home instead of keeping the previous folder's feed", async () => {
+    window.multiCliWork = createApi().api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    fireEvent.click(screen.getByRole("button", { name: "홈 대시보드 열기" }));
+    fireEvent.click(screen.getByRole("tab", { name: "기록" }));
+    expect(await screen.findByText("폴더를 선택하면 기록을 표시합니다.")).toBeInTheDocument();
+  });
+
+  it.each(["palette", "settings"])("suspends auxiliary tools before opening %s and preserves unsaved text", async destination => {
+    const harness = createApi();
+    vi.mocked(harness.api.workbench.state).mockResolvedValue({ writable: true, state: { schemaVersion: 1, prompts: [], drafts: {} } });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true, shiftKey: true });
+    fireEvent.click(await screen.findByText("프롬프트 라이브러리 열기"));
+    fireEvent.change(screen.getByLabelText("프롬프트", { exact: true }), { target: { value: "keep unsaved text" } });
+    fireEvent.keyDown(window, { key: destination === "palette" ? "p" : ",", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: destination === "palette" ? "빠른 열기" : "설정" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "프롬프트 라이브러리" })).not.toBeInTheDocument();
+    if (destination === "palette") {
+      expect(screen.getByRole("textbox", { name: "빠른 열기 검색" })).toHaveFocus();
+      fireEvent.click(screen.getByText("프롬프트 라이브러리 열기"));
+      expect(screen.getByLabelText("프롬프트", { exact: true })).toHaveValue("keep unsaved text");
+    }
+  });
+
+  it("remembers collapsed favorites without removing shortcuts and restores them on expansion", async () => {
+    window.multiCliWork = createApi({ projects: [atlas, dashboard] }).api;
+    const view = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Dashboard 즐겨찾기 추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "즐겨찾기 접기" }));
+    expect(screen.queryByRole("button", { name: "Dashboard 즐겨찾기 열기" })).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1")!)).toMatchObject({ favoritesOpen: false, favoriteProjectIds: [dashboard.id] });
+    view.unmount();
+    render(<App />);
+    const expand = await screen.findByRole("button", { name: "즐겨찾기 펼치기" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Dashboard 즐겨찾기 열기" })).not.toBeInTheDocument();
+    fireEvent.click(expand);
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard 즐겨찾기 열기" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Dashboard 폴더 선택" }).closest(".project-row")).toHaveClass("selected"));
+  });
+
   it("keeps favorite folder shortcuts across remounts and lets them open and unpin a folder", async () => {
     window.multiCliWork = createApi({ projects: [atlas, dashboard] }).api;
     const view = render(<App />);

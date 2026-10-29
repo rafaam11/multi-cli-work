@@ -102,6 +102,14 @@ function harness(initial: TerminalSessionView[] = [session({}), session({ id: "s
 }
 
 describe("DeliveryQueue", () => {
+  it("keeps the target folder after a held target is removed", async () => {
+    const h = harness([session({ status: "working", worktreeId: "worktree-1" })]);
+    const record = await h.queue.enqueue({ to: "target", text: "review" });
+    h.setSessions([]);
+    await h.tick();
+    expect(h.queue.list().find(item => item.id === record.id)).toMatchObject({ projectId: "project-1" });
+    h.queue.dispose();
+  });
   it("reorders held messages only within the same target", async () => {
     const h = harness([session({ status: "working" }), session({ id: "other", status: "working" })]);
     const first = await h.queue.enqueue({ to: "target", text: "first" });

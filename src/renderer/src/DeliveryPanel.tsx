@@ -23,7 +23,7 @@ export function DeliveryPanel({ hidden, sessions, onFocusSession }: {
     const refresh = async () => {
       try {
         const list = await window.multiCliWork.deliveries.list();
-        if (!disposed) setRecords(list);
+        if (!disposed) { setRecords(list); setError(null); }
       } catch (cause) { if (!disposed) setError(String(cause)); }
       if (!disposed) timer = setTimeout(() => void refresh(), 1000);
     };
@@ -41,7 +41,7 @@ export function DeliveryPanel({ hidden, sessions, onFocusSession }: {
     finally { setBusy(false); }
   };
   return <section className="delivery-panel" hidden={hidden} aria-label="보류 메시지 관리">
-    <header><h2>메시지 전달</h2><p>보류 {records.filter(record => record.state === "held").length}개 · 전달됨은 CLI의 실행 완료를 뜻하지 않습니다.</p></header>
+    <header><h2>메시지 전달</h2><p>모든 폴더 · 보류 {records.filter(record => record.state === "held").length}개 · 전달됨은 CLI의 실행 완료를 뜻하지 않습니다.</p></header>
     {error ? <p role="alert">{error}</p> : null}
     {records.length === 0 ? <p>보류하거나 전달한 메시지가 없습니다.</p> : null}
     <ol className="delivery-list">{[...records.filter(record => record.state === "held"), ...records.filter(record => record.state !== "held").reverse()].map(record => {

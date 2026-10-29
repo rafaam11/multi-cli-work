@@ -62,9 +62,9 @@ export function parseWorkbench(value: unknown): WorkbenchState {
 export function parseSavedView(value: unknown): SavedViewPreset {
   const raw = record(value);
   if (typeof raw.layoutId !== "string" || !/^(auto|cols:[12](-[12]){0,5})$/.test(raw.layoutId)) throw new WorkbenchError("배치 형태가 올바르지 않습니다");
-  if (typeof raw.sidebarCollapsed !== "boolean" || typeof raw.rightSidebarCollapsed !== "boolean" || !["files", "git", "board", "deliveries", "prompts", "activity"].includes(raw.rightSidebarTab as string)) throw new WorkbenchError("배치의 패널 설정이 올바르지 않습니다");
+  if (typeof raw.sidebarCollapsed !== "boolean" || typeof raw.rightSidebarCollapsed !== "boolean" || !["files", "git", "records", "board", "deliveries", "prompts", "activity"].includes(raw.rightSidebarTab as string)) throw new WorkbenchError("배치의 패널 설정이 올바르지 않습니다");
   return { id: text(raw.id, 120), name: text(raw.name, 40), layoutId: raw.layoutId, sidebarCollapsed: raw.sidebarCollapsed,
-    rightSidebarCollapsed: raw.rightSidebarCollapsed, rightSidebarTab: raw.rightSidebarTab as SavedViewPreset["rightSidebarTab"] };
+    rightSidebarCollapsed: raw.rightSidebarCollapsed, rightSidebarTab: raw.rightSidebarTab === "prompts" ? "files" : ["board", "deliveries", "activity"].includes(raw.rightSidebarTab as string) ? "records" : raw.rightSidebarTab as SavedViewPreset["rightSidebarTab"] };
 }
 const spec: JsonStoreSpec<WorkbenchState> = {
   label: "workbench", displayName: "작업공간(workbench-state.json)", parse: parseWorkbench,
@@ -114,10 +114,6 @@ export async function createWorkbenchStore(file: string, legacy: readonly FanOut
       return updateJsonStore(spec, file, state => ({ ...state, savedViews: [...(state.savedViews ?? []).filter(item => item.id !== view.id), view] }));
     },
     async removeView(id: string) { return updateJsonStore(spec, file, state => ({ ...state, savedViews: (state.savedViews ?? []).filter(item => item.id !== id) })); },
-    async togglePin(id: string) {
-      text(id, 120);
-      return updateJsonStore(spec, file, state => ({ ...state, pinnedPaneIds: state.pinnedPaneIds?.includes(id) ? state.pinnedPaneIds.filter(value => value !== id) : [...(state.pinnedPaneIds ?? []), id] }));
-    },
     async recordFork(child: string, parent: string) {
       text(child, 120); text(parent, 120);
       return updateJsonStore(spec, file, state => ({ ...state, forks: Object.fromEntries([...Object.entries(state.forks ?? {}), [child, parent]]) }));

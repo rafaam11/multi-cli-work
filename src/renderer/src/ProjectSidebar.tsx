@@ -163,6 +163,7 @@ const SIDEBAR_STATE_KEY = "multi-cli-work.sidebar.v1";
 
 interface SidebarPrefs {
   favoriteProjectIds: string[];
+  favoritesOpen: boolean;
   expandedWorkspaces: string[];
   openShelves: ShelfKind[];
   sessionPanelOpen: boolean;
@@ -176,6 +177,7 @@ interface SidebarPrefs {
 function readSidebarState(): SidebarPrefs {
   const empty: SidebarPrefs = {
     favoriteProjectIds: [],
+    favoritesOpen: true,
     expandedWorkspaces: [],
     openShelves: [],
     sessionPanelOpen: true,
@@ -184,12 +186,14 @@ function readSidebarState(): SidebarPrefs {
   try {
     const value = JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) ?? "{}") as {
       favoriteProjectIds?: unknown;
+      favoritesOpen?: unknown;
       expandedWorkspaces?: string[];
       openShelves?: unknown[];
       sessionPanelOpen?: unknown;
       sessionWaitingOnly?: unknown;
     };
     return {
+      favoritesOpen: value.favoritesOpen !== false,
       favoriteProjectIds: Array.isArray(value.favoriteProjectIds)
         ? [...new Set(value.favoriteProjectIds.filter((id): id is string => typeof id === "string"))]
         : [],
@@ -311,6 +315,7 @@ export function ProjectSidebar({
   // 사이드바 선호는 한 레코드에서 오므로 마운트 때 한 번만 읽는다.
   const [savedSidebarState] = useState(readSidebarState);
   const [favoriteProjectIds, setFavoriteProjectIds] = useState(savedSidebarState.favoriteProjectIds);
+  const [favoritesOpen, setFavoritesOpen] = useState(savedSidebarState.favoritesOpen);
   const favoriteProjects = favoriteProjectIds.flatMap((id) => {
     const project = projects.find((candidate) => candidate.id === id);
     return project ? [project] : [];
@@ -335,6 +340,7 @@ export function ProjectSidebar({
         JSON.stringify({
           version: 1,
           favoriteProjectIds: next.favoriteProjectIds,
+          favoritesOpen: next.favoritesOpen,
           expandedWorkspaces: next.expandedWorkspaces,
           openShelves: next.openShelves,
           sessionPanelOpen: next.sessionPanelOpen,
@@ -1234,9 +1240,15 @@ export function ProjectSidebar({
         </div>
       ) : (
       <nav className="project-navigation" aria-label="프로젝트">
-        <section className="project-favorites" aria-label="즐겨찾기">
-          <div className="section-heading"><Star size={13} aria-hidden="true" /><span>즐겨찾기</span></div>
-          {favoriteProjects.length === 0 ? (
+        <section className={`project-favorites ${favoritesOpen ? "" : "is-collapsed"}`} aria-label="즐겨찾기">
+          <button type="button" className="section-heading favorites-heading" aria-expanded={favoritesOpen}
+            aria-label={`즐겨찾기 ${favoritesOpen ? "접기" : "펼치기"}`} onClick={() => {
+              const next = !favoritesOpen; setFavoritesOpen(next); persist({ favoritesOpen: next });
+            }}>
+            {favoritesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <Star size={13} aria-hidden="true" /><span>즐겨찾기</span><span className="favorites-count">{favoriteProjects.length}</span>
+          </button>
+          {!favoritesOpen ? null : favoriteProjects.length === 0 ? (
             <p className="project-favorites-empty">폴더 옆 별표로 자주 쓰는 폴더를 고정하세요</p>
           ) : (
             <ul className="project-favorites-list">

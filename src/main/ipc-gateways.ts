@@ -166,6 +166,7 @@ export interface TerminalSizeGateway {
 export interface BoardGateway {
   list(projectId: string): Promise<BoardMessage[]>;
   post(input: BoardPostInput): Promise<BoardMessage>;
+  recordDirect(record: import("../shared/delivery-types").DeliveryRecord): Promise<void>;
 }
 
 export interface SessionPresetsGateway {

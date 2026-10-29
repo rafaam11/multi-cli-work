@@ -326,7 +326,6 @@ export interface MultiCliWorkApi {
     setDefaultLaunchProfile(agent: "claude" | "codex", id: string | null): Promise<import("./workbench-types").WorkbenchState>;
     saveView(view: import("./workbench-types").SavedViewPreset): Promise<import("./workbench-types").WorkbenchState>;
     removeView(id: string): Promise<import("./workbench-types").WorkbenchState>;
-    togglePin(id: string): Promise<import("./workbench-types").WorkbenchState>;
     state(): Promise<import("./workbench-types").WorkbenchSnapshot>;
     savePrompt(prompt: import("./workbench-types").PromptEntry): Promise<import("./workbench-types").WorkbenchState>;
     removePrompt(id: string): Promise<import("./workbench-types").WorkbenchState>;

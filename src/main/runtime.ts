@@ -951,6 +951,7 @@ export async function createDesktopRuntime(
     board: {
       list: (projectId) => board.list(projectId),
       post: (input) => board.post({ ...input, from: null }),
+      recordDirect: (record) => board.recordDirect(record, undefined, { kind: "user" }),
     },
     presets: {
       list: () => readSessionPresets(presetOptions),

@@ -22,7 +22,7 @@ export interface SavedViewPreset {
   layoutId: string;
   sidebarCollapsed: boolean;
   rightSidebarCollapsed: boolean;
-  rightSidebarTab: "files" | "git" | "board" | "deliveries" | "prompts" | "activity";
+  rightSidebarTab: "files" | "git" | "records";
 }
 export interface WorkbenchSnapshot {
   state: WorkbenchState;

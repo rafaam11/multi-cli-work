@@ -19,7 +19,7 @@ export function SessionActivityPanel({ hidden, sessions, activity, selected, ind
   selected: TerminalSessionView | null; indicators: Readonly<Record<string, SessionIndicators>>;
   onFocusSession(session: TerminalSessionView): void;
 }) {
-  const [onlySelected, setOnlySelected] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [providerEvents, setProviderEvents] = useState<ProviderActivity[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
@@ -33,19 +33,20 @@ export function SessionActivityPanel({ hidden, sessions, activity, selected, ind
     return () => { disposed = true; };
   }, [hidden, selected?.id]);
   useEffect(() => {
-    if (hidden || !window.multiCliWork.activity) return;
+    setProviderEvents([]); setError(null);
+    if (hidden || !selected || !window.multiCliWork.activity) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
-      try { const events = await window.multiCliWork.activity.list(); if (!disposed) { setProviderEvents(events); setError(null); } }
+      try { const events = await window.multiCliWork.activity.list(selected.id); if (!disposed) { setProviderEvents(events); setError(null); } }
       catch (cause) { if (!disposed) setError(String(cause)); }
       if (!disposed) timer = setTimeout(() => void refresh(), 1000);
     };
     void refresh(); return () => { disposed = true; clearTimeout(timer); };
-  }, [hidden]);
+  }, [hidden, selected?.id, retry]);
   if (hidden) return null;
-  const entries = onlySelected ? activity.filter(entry => entry.sessionId === selected?.id) : activity;
-  const observed = providerEvents.filter(event => !onlySelected || event.sessionId === selected?.id);
+  const entries = activity.filter(entry => entry.sessionId === selected?.id);
+  const observed = providerEvents.filter(event => event.sessionId === selected?.id);
   const selectedEvents = providerEvents.filter(event => event.sessionId === selected?.id);
   const lastGeneration = selectedEvents.at(-1)?.generation;
   const generationEvents = selectedEvents.filter(event => event.generation === lastGeneration);
@@ -59,8 +60,7 @@ export function SessionActivityPanel({ hidden, sessions, activity, selected, ind
     if (event.taskId) tasks.set(event.taskId, event);
   }
   return <section hidden={hidden} className="delivery-panel session-activity-panel" aria-label="세션 활동 및 정보">
-    <header><h2>세션 관측</h2><p>이 창에서 관측한 상태 전환입니다. 응답 종료는 작업 성공을 의미하지 않습니다.</p></header>
-    {error ? <p role="alert">{error}</p> : null}
+    {error ? <p role="alert">{error}<button type="button" onClick={() => setRetry(value => value + 1)}>활동 다시 불러오기</button></p> : null}
     {selected ? <section className="delivery-card" aria-label="선택 세션 정보">
       <h3>{selected.name || selected.title || selected.kind}</h3>
       {parentId ? <button type="button" disabled={!sessions.some(session => session.id === parentId)} onClick={() => { const parent = sessions.find(session => session.id === parentId); if (parent) onFocusSession(parent); }}>원본 대화로 이동</button> : null}
@@ -71,7 +71,6 @@ export function SessionActivityPanel({ hidden, sessions, activity, selected, ind
     </section> : <p>세션을 선택하면 상세 정보를 표시합니다.</p>}
     {agents.size ? <section className="delivery-card"><h3>관측된 하위 에이전트</h3><ul>{[...agents.values()].map(event => <li key={event.agentId}>{event.agentType || event.agentId} · {event.event === "SubagentStop" ? "종료 관측" : "시작 관측"}</li>)}</ul></section> : null}
     {tasks.size ? <section className="delivery-card"><h3>관측된 작업</h3><ul>{[...tasks.values()].map(event => <li key={event.taskId}>{event.taskSubject || event.taskId} · {event.event === "TaskCompleted" ? "완료 관측" : "생성 관측"}</li>)}</ul></section> : null}
-    <label className="activity-filter"><input type="checkbox" checked={onlySelected} onChange={event => setOnlySelected(event.target.checked)} />선택 세션만 보기</label>
     <h3>CLI 활동 이력</h3><p>최근 7일, 최대 500건의 관측 기록입니다. 마지막 기록이 현재 상태와 다를 수 있습니다.</p>
     <ol className="activity-timeline">{[...observed].reverse().map(event => {
       const session = sessions.find(candidate => candidate.id === event.sessionId);

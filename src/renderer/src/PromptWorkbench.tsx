@@ -74,8 +74,8 @@ export function PromptWorkbench({ hidden, sessions, onFocusSession }: {
       <button type="button" disabled={busy || !text} onClick={() => void perform(async () => { await window.multiCliWork.clipboard.writeText(text); setNotice("복사했습니다."); })}>복사</button>
       <button type="button" disabled={busy || !selected || !text.trim()} onClick={() => void perform(async () => {
         if (!selected) return;
-        await window.multiCliWork.deliveries.send(selected.id, text);
-        setNotice("전달 큐에 등록했습니다. 보류 탭에서 상태를 확인할 수 있습니다.");
+        const result = await window.multiCliWork.deliveries.send(selected.id, text);
+        setNotice(result.recordingWarning ?? "전달 큐에 등록했습니다. 기록 탭에서 상태를 확인할 수 있습니다.");
         // Keep the draft until the user explicitly clears it: enqueueing is not execution acknowledgement.
       })}>보류 큐로 전송</button>
     </div>

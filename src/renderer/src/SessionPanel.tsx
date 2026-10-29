@@ -1,7 +1,7 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import { ChevronDown, ChevronRight, EyeOff } from "lucide-react";
-import { useEffect, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { DocumentRow, SessionRow } from "./PaneRows";
 import { findAgent } from "./session-labels";
 import {
@@ -76,34 +76,8 @@ export function SessionPanel({
   paneDropProps,
   headingDropProps,
 }: SessionPanelProps) {
-  const [query, setQuery] = useState("");
-  const [agentFilter, setAgentFilter] = useState("");
-  const [pins, setPins] = useState<string[]>([]);
-  const [pinnedOnly, setPinnedOnly] = useState(false);
-  const [pinWritable, setPinWritable] = useState(false);
-  const [pinBusy, setPinBusy] = useState(false);
-  const [pinError, setPinError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!open || !window.multiCliWork?.workbench) return;
-    let disposed = false;
-    void Promise.resolve(window.multiCliWork.workbench.state()).then(snapshot => {
-      if (disposed || !snapshot) return;
-      setPins(snapshot.state.pinnedPaneIds ?? []); setPinWritable(snapshot.writable);
-      setPinError(snapshot.warning ?? null);
-    }).catch(error => { if (!disposed) setPinError(String(error)); });
-    return () => { disposed = true; };
-  }, [open]);
-  const visible = items.filter(item => {
-    if (pinnedOnly && !pins.includes(item.id)) return false;
-    if (waitingOnly && !isWaitingItem(item)) return false;
-    if (agentFilter && (item.kind !== "session" || item.agent !== agentFilter)) return false;
-    return [item.label, item.place, item.branch].filter(Boolean).join(" ").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
-  });
+  const visible = waitingOnly ? items.filter(isWaitingItem) : items;
   const waiting = sessionPanelWaitCount(items);
-  const pinButton = (item: SessionPanelItem) => <button type="button" className="session-pin-button" aria-label={`${item.label} 세션 고정`} aria-pressed={pins.includes(item.id)} disabled={!pinWritable || pinBusy} onClick={event => {
-    event.stopPropagation(); setPinBusy(true); setPinError(null);
-    void window.multiCliWork.workbench.togglePin(item.id).then(state => setPins(state.pinnedPaneIds ?? [])).catch(error => setPinError(String(error))).finally(() => setPinBusy(false));
-  }}>{pins.includes(item.id) ? "★" : "☆"}</button>;
 
   /**
    * 행 오른쪽 끝의 숨김(눈) 버튼. 트리 행에는 없는, 이 패널만의 동작이라 `trailing`으로 붙인다.
@@ -154,7 +128,7 @@ export function SessionPanel({
       dragProps={paneDragProps(item.id)}
       dropClass={paneDropClass(item.id)}
       dropProps={paneDropProps(item.id)}
-      trailing={<>{pinButton(item)}{hideButton(item)}</>}
+      trailing={hideButton(item)}
     />
   );
 
@@ -224,27 +198,16 @@ export function SessionPanel({
         </div>
       </div>
       {open ? (
-        <>
-        <div className="session-panel-filters">
-          <button type="button" aria-label="고정 세션만 보기" aria-pressed={pinnedOnly} onClick={() => setPinnedOnly(value => !value)}>★ 고정</button>
-          <input aria-label="세션·폴더·브랜치 검색" placeholder="세션·폴더·브랜치 검색" value={query} onChange={event => setQuery(event.target.value)} />
-          <select aria-label="CLI 필터" value={agentFilter} onChange={event => setAgentFilter(event.target.value)}>
-            <option value="">모든 CLI</option>
-            {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.label}</option>)}
-          </select>
-        </div>
-        {pinError ? <p className="session-panel-empty" role="alert">{pinError}</p> : null}
         <ul className="session-tree session-panel-list" role="group" aria-label="세션 목록">
           {visible.length === 0 ? (
             <li className="session-panel-empty">
-              {query || agentFilter ? "조건에 맞는 세션이 없습니다" : pinnedOnly ? "고정된 세션이 없습니다" : waitingOnly ? "기다리는 세션이 없습니다" : "열린 세션이 없습니다"}
+              {waitingOnly ? "기다리는 세션이 없습니다" : "열린 세션이 없습니다"}
             </li>
           ) : null}
           {visible.map((item, index) =>
             item.kind === "session" ? renderSession(item, visible[index - 1]) : renderDocument(item),
           )}
         </ul>
-        </>
       ) : null}
     </section>
   );

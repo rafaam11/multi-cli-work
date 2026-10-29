@@ -22,7 +22,6 @@ const api: MultiCliWorkApi = {
     setDefaultLaunchProfile: (agent, id) => ipcRenderer.invoke("workbench:default-launch-profile", agent, id),
     saveView: (view) => ipcRenderer.invoke("workbench:save-view", view),
     removeView: (id) => ipcRenderer.invoke("workbench:remove-view", id),
-    togglePin: (id) => ipcRenderer.invoke("workbench:toggle-pin", id),
     state: () => ipcRenderer.invoke("workbench:state"),
     savePrompt: (prompt) => ipcRenderer.invoke("workbench:save-prompt", prompt),
     removePrompt: (id) => ipcRenderer.invoke("workbench:remove-prompt", id),
