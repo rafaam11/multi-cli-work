@@ -7,6 +7,7 @@ export type RecoveryEntry = RecoveryFileEntry | RecoveryDirectoryEntry;
 export interface V1BackupManifest {
   schema: 1; kind: 'mcw-v1-backup'; version: '1.55.1'; createdAt: string;
   sources: V1RecoverySources; entries: RecoveryEntry[];
+  excluded?: {path:string;reason:'electron-process-singleton'}[];
 }
 export interface RecoveryHostObservation {
   hostId: string; state: 'stopped' | 'completed' | 'running' | 'unknown'; observedAt: number;

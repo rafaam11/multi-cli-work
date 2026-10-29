@@ -20,6 +20,17 @@ async function fixture() {
 }
 const stopped = async () => undefined;
 describe('offline recovery', () => {
+  it('records only root Electron singleton symlinks as ephemeral and still rejects other links', async () => {
+    const f=await fixture();
+    await symlink(f.registry,join(f.userData,'SingletonCookie'),process.platform==='win32'?'junction':'dir');
+    const manifest=await createV1Backup({...f,sources:{userData:f.userData,registry:f.registry},assertStopped:stopped});
+    expect(manifest.excluded).toEqual([{path:'userData/SingletonCookie',reason:'electron-process-singleton'}]);
+    await expect(stat(join(f.destination,'data/userData/SingletonCookie'))).rejects.toThrow();
+    expect((await verifyV1Backup(f.destination)).entries.some(entry=>entry.path==='userData/Local Storage/db')).toBe(true);
+    expect(await compareV1WithBackup({backupDirectory:f.destination,sources:{userData:f.userData,registry:f.registry}})).toEqual({added:[],removed:[],changed:[]});
+    await symlink(f.registry,join(f.userData,'Local Storage','SingletonCookie'),process.platform==='win32'?'junction':'dir');
+    await expect(createV1Backup({...f,destination:join(f.root,'second-backup'),sources:{userData:f.userData,registry:f.registry},assertStopped:stopped})).rejects.toThrow(/symbolic/i);
+  });
   it('copies a consistent write-once v1 snapshot including Local Storage and detects tampering', async () => {
     const f = await fixture(); const manifest = await createV1Backup({ ...f, sources: { userData: f.userData, registry: f.registry }, assertStopped: stopped });
     expect(manifest.version).toBe('1.55.1');

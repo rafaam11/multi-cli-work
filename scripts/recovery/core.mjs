@@ -16,6 +16,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = value => `${JSON.stringify(value, null, 2)}\n`;
 const labels = new Set(['userData', 'registry', 'remote', 'mods']);
 const digestPattern = /^[a-f0-9]{64}$/;
+const electronSingletonPaths = new Set(['userData/SingletonCookie','userData/SingletonLock','userData/SingletonSocket']);
 function contains(parent, child) {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
@@ -59,14 +60,18 @@ async function writeExclusive(filename, bytes, mode = 0o600) {
   const handle = await open(filename, 'wx', mode);
   try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
 }
-async function scan(root, prefix = '', copyTo) {
+async function scan(root, prefix = '', copyTo, excluded) {
   await noLinks(root); const rootStat = await lstat(root);
   if (!rootStat.isDirectory()) throw new Error(`Source must be a directory: ${root}`);
   const entries = [];
   async function visit(directory, relative) {
     for (const name of (await readdir(directory)).sort()) {
       const rel = relativePath(relative ? `${relative}/${name}` : name); const filename = path.join(directory, name);
-      const info = await lstat(filename); if (info.isSymbolicLink()) throw new Error(`Symbolic link rejected: ${filename}`);
+      const info = await lstat(filename);
+      if (info.isSymbolicLink() && excluded && electronSingletonPaths.has(`${prefix}/${rel}`)) {
+        excluded.push({path:`${prefix}/${rel}`,reason:'electron-process-singleton'}); continue;
+      }
+      if (info.isSymbolicLink()) throw new Error(`Symbolic link rejected: ${filename}`);
       const destination = copyTo && path.join(copyTo, ...rel.split('/'));
       if (info.isDirectory()) {
         entries.push({ path: prefix ? `${prefix}/${rel}` : rel, type: 'directory' });
@@ -91,12 +96,12 @@ function sourcesList(sources, required = false) {
 function requireStopped(assertStopped) {
   if (typeof assertStopped !== 'function') throw new Error('Stopped-process verification is required');
 }
-async function snapshot(sources, destination) {
+async function snapshot(sources, destination, excluded = []) {
   const entries = [];
   for (const [label, root] of sources) {
     const target = destination && path.join(destination, label);
     if (target) await mkdir(target, { mode: 0o700 });
-    entries.push({ path: label, type: 'directory' }); entries.push(...await scan(root, label, target));
+    entries.push({ path: label, type: 'directory' }); entries.push(...await scan(root, label, target, excluded));
   }
   return entries;
 }
@@ -119,10 +124,11 @@ export async function createV1Backup({ destination, sources, assertStopped }) {
   for (const [, root] of roots) { disjoint(destination, root); await noLinks(root); }
   await assertStopped();
   await freshDirectory(destination); await mkdir(path.join(destination, 'data'), { mode: 0o700 });
-  const entries = await snapshot(roots, path.join(destination, 'data'));
+  const excluded = [];
+  const entries = await snapshot(roots, path.join(destination, 'data'), excluded);
   await assertStopped();
   if (json(entries) !== json(await snapshot(roots))) throw new Error('Source changed during backup; snapshot is incomplete');
-  const manifest = { schema: 1, kind: 'mcw-v1-backup', version: '1.55.1', createdAt: new Date().toISOString(), sources: Object.fromEntries(roots), entries };
+  const manifest = { schema: 1, kind: 'mcw-v1-backup', version: '1.55.1', createdAt: new Date().toISOString(), sources: Object.fromEntries(roots), entries, excluded };
   await publishManifest(destination, manifest); return verifyV1Backup(destination);
 }
 export async function verifyV1Backup(directory) {
@@ -131,6 +137,7 @@ export async function verifyV1Backup(directory) {
   if (sha(bytes) !== (await stableRead(path.join(directory, 'manifest.sha256'))).toString('utf8').trim()) throw new Error('Manifest integrity failure');
   const manifest = JSON.parse(bytes.toString('utf8'));
   if (manifest.schema !== 1 || manifest.kind !== 'mcw-v1-backup' || manifest.version !== '1.55.1' || !Array.isArray(manifest.entries)) throw new Error('Invalid backup manifest');
+  if (manifest.excluded !== undefined && (!Array.isArray(manifest.excluded) || manifest.excluded.some(entry=>!electronSingletonPaths.has(entry.path) || entry.reason!=='electron-process-singleton' || manifest.entries.some(file=>file.path===entry.path)) || new Set(manifest.excluded.map(entry=>entry.path)).size!==manifest.excluded.length)) throw new Error('Invalid backup exclusions');
   const roots = sourcesList(manifest.sources, true); const seen = new Set();
   for (const entry of manifest.entries) {
     relativePath(entry.path); if (!labels.has(entry.path.split('/')[0]) || seen.has(entry.path)) throw new Error('Invalid duplicate manifest path'); seen.add(entry.path);
