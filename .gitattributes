@@ -1,2 +1,4 @@
 # Official signed/checksummed upstream content must remain byte-exact on every OS.
 scripts/v2/node-v22.12.0-SHASUMS256.txt -text
+# Release evidence is hash-bound, including explicitly authorized validation deferrals.
+docs/release/evidence/v2/** -text

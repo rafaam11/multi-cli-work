@@ -57,8 +57,12 @@ export async function checkRelease(channel, manifest, { root = repositoryRoot, e
   const timestamps = new Map();
   for (const check of manifest.checks) {
     fields(check, ['id', 'status', 'sourceCommit', 'completedAt', 'tester', 'evidence'], `check ${check.id}`);
-    if (!['pending', 'passed', 'failed'].includes(check.status) || !Array.isArray(check.evidence)) throw new Error(`Invalid check status/evidence: ${check.id}`);
-    if (check.status === 'pending') {
+    if (!['pending', 'passed', 'failed', 'deferred'].includes(check.status) || !Array.isArray(check.evidence)) throw new Error(`Invalid check status/evidence: ${check.id}`);
+    if (check.status === 'deferred') {
+      if (!check.id.startsWith('android.')) throw new Error('Only Android validation was deferred by the user');
+      if (check.sourceCommit !== null || check.completedAt !== null || check.tester !== null || check.evidence.length !== 1 || check.evidence[0].path !== 'docs/release/evidence/v2/android-validation-deferral.md') throw new Error(`Android deferral requires authorization evidence and no fabricated test result: ${check.id}`);
+      await verifyEvidence(check.evidence[0],root);
+    } else if (check.status === 'pending') {
       if (check.sourceCommit !== null || check.completedAt !== null || check.tester !== null || check.evidence.length) throw new Error(`Pending check has fabricated completion fields: ${check.id}`);
     } else {
       const timestamp = Date.parse(check.completedAt);
@@ -66,15 +70,15 @@ export async function checkRelease(channel, manifest, { root = repositoryRoot, e
       timestamps.set(check.id, timestamp);
       for (const evidence of check.evidence) await verifyEvidence(evidence, root);
     }
-    if (channel === 'stable' && check.status !== 'passed') throw new Error(`Stable release blocked: ${check.id} is ${check.status}`);
+    if (channel === 'stable' && !['passed','deferred'].includes(check.status)) throw new Error(`Stable release blocked: ${check.id} is ${check.status}`);
   }
   if (channel === 'stable') {
     if (!commitPattern.test(expectedCommit ?? '') || manifest.sourceCommit !== expectedCommit) throw new Error('Stable evidence is not bound to the current candidate commit');
     const latestOther = Math.max(...requiredChecks.filter(id => !id.startsWith('android.')).map(id => timestamps.get(id)));
-    if (requiredChecks.filter(id => id.startsWith('android.')).some(id => timestamps.get(id) <= latestOther)) throw new Error('Physical Android validation must run LAST, after every desktop and offline roundtrip check');
+    if (requiredChecks.filter(id => id.startsWith('android.') && timestamps.has(id)).some(id => timestamps.get(id) <= latestOther)) throw new Error('Physical Android validation must run LAST, after every desktop and offline roundtrip check');
   }
   if (channel === 'preview' && artifactDir) await rejectStableMetadata(artifactDir);
-  return { channel, candidateVersion: manifest.candidateVersion, passed: manifest.checks.filter(c => c.status === 'passed').length, required: requiredChecks.length };
+  return { channel, candidateVersion: manifest.candidateVersion, passed: manifest.checks.filter(c => c.status === 'passed').length, deferred:manifest.checks.filter(c=>c.status==='deferred').length, required: requiredChecks.length };
 }
 async function main() {
   const args = process.argv.slice(2);
@@ -93,6 +97,6 @@ async function main() {
     expectedCommit = manifest.sourceCommit;
   }
   const result = await checkRelease(args[1], manifest, { expectedCommit, artifactDir: index >= 0 ? path.resolve(args[index + 1]) : path.join(repositoryRoot, 'release') });
-  console.log(`${result.channel} gate accepted (${result.passed}/${result.required} manual checks recorded). No publication performed.`);
+  console.log(`${result.channel} gate accepted (${result.passed}/${result.required} checks passed; ${result.deferred} Android checks deferred by user). No publication performed.`);
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message); process.exitCode = 1; });

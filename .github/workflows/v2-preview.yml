@@ -73,4 +73,4 @@ jobs:
             release-v2-preview/*.AppImage
             release-v2-preview/*.deb
             test-results/
-  # Physical Android validation intentionally remains the final release gate.
+  # Android verification was explicitly deferred by the user; release notes must disclose it.

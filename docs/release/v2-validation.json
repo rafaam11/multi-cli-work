@@ -189,67 +189,107 @@
     },
     {
       "id": "android.physical.terminal.ime",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     },
     {
       "id": "android.physical.terminal.mouse",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     },
     {
       "id": "android.physical.terminal.images",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     },
     {
       "id": "android.physical.terminal.reconnect",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     },
     {
       "id": "android.physical.terminal.size-owner",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     },
     {
       "id": "android.physical.cooperation",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     },
     {
       "id": "android.physical.dual-host",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     },
     {
       "id": "android.physical.newest-version-pairing",
-      "status": "pending",
+      "status": "deferred",
       "sourceCommit": null,
       "completedAt": null,
       "tester": null,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "docs/release/evidence/v2/android-validation-deferral.md",
+          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+        }
+      ]
     }
   ]
 }

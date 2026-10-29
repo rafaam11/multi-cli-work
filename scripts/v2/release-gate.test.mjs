@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -16,6 +16,15 @@ async function fixture() {
   return { root, manifest, commit };
 }
 describe('v2 release gate', () => {
+  it('permits only explicitly documented Android deferral, without treating it as a passed test',async()=>{
+    const f=await fixture(),relative='docs/release/evidence/v2/android-validation-deferral.md',authorization='User explicitly excluded Android validation from this release.';
+    await mkdir(path.dirname(path.join(f.root,relative)),{recursive:true});await writeFile(path.join(f.root,relative),authorization);
+    const deferred={status:'deferred',sourceCommit:null,completedAt:null,tester:null,evidence:[{path:relative,sha256:createHash('sha256').update(authorization).digest('hex')}]};
+    f.manifest.checks=f.manifest.checks.map(check=>check.id.startsWith('android.')?{id:check.id,...deferred}:check);
+    await expect(checkRelease('stable',f.manifest,{root:f.root,expectedCommit:f.commit})).resolves.toMatchObject({passed:23,deferred:8,required:31});
+    f.manifest.checks[0]={id:requiredChecks[0],...deferred};
+    await expect(checkRelease('stable',f.manifest,{root:f.root,expectedCommit:f.commit})).rejects.toThrow(/Android/);
+  });
   it('refuses stable release while any required manual check is pending', async () => {
     const f = await fixture(); f.manifest.checks[0] = { id: requiredChecks[0], status: 'pending', sourceCommit: null, completedAt: null, tester: null, evidence: [] };
     await expect(checkRelease('stable', f.manifest, { root: f.root, expectedCommit: f.commit })).rejects.toThrow(/pending/);
