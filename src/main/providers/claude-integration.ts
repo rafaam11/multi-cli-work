@@ -12,6 +12,7 @@ const CLAUDE_EVENTS = [
   "Notification",
   "Stop",
   "StopFailure",
+  "SubagentStart", "SubagentStop", "PreCompact", "PostCompact", "PostModelSwitch", "TaskCreated", "TaskCompleted",
 ] as const;
 
 interface ClaudeHookHandler {
@@ -51,6 +52,24 @@ if ([string]::IsNullOrWhiteSpace($sessionId) -or $sessionId -notmatch '^[a-zA-Z0
 if ([string]::IsNullOrWhiteSpace($statusDir)) { exit 0 }
 
 try { $inputValue = [Console]::In.ReadToEnd() | ConvertFrom-Json } catch { exit 0 }
+try {
+  $activityDir = $env:MULTI_CLI_WORK_ACTIVITY_DIR
+  if ($activityDir -and $env:MULTI_CLI_WORK_GENERATION) {
+    [IO.Directory]::CreateDirectory($activityDir) | Out-Null
+    $activityId = [guid]::NewGuid().ToString("N")
+    $activity = [ordered]@{ id = $activityId; sessionId = $sessionId; generation = $env:MULTI_CLI_WORK_GENERATION; provider = "claude"; event = [string]$inputValue.hook_event_name; at = [DateTime]::UtcNow.ToString("o") }
+    foreach ($pair in @(@("tool_name", "toolName"), @("tool_use_id", "toolCallId"), @("agent_id", "agentId"), @("agent_type", "agentType"), @("model", "model"), @("task_id", "taskId"), @("task_subject", "taskSubject"))) {
+      $field = [string]$inputValue.($pair[0])
+      if ($field) { $field = [regex]::Replace($field, '[\x00-\x1f\x7f]', ' '); $activity[$pair[1]] = $field.Substring(0, [Math]::Min(200, $field.Length)) }
+    }
+    if ($inputValue.to_model) { $activity.model = [string]$inputValue.to_model }
+    $activityTarget = Join-Path $activityDir ($activityId + ".json")
+    $activityTemp = $activityTarget + ".tmp"
+    [IO.File]::WriteAllText($activityTemp, ($activity | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $activityTemp -Destination $activityTarget -Force -ErrorAction Stop
+  }
+} catch { }
+if ($inputValue.hook_event_name -in @("SubagentStart", "SubagentStop", "PreCompact", "PostCompact", "PostModelSwitch", "TaskCreated", "TaskCompleted")) { exit 0 }
 if ($inputValue.agent_id) { exit 0 }
 $eventName = [string]$inputValue.hook_event_name
 $status = switch ($eventName) {
@@ -122,6 +141,22 @@ status_dir = os.environ.get("MULTI_CLI_WORK_STATUS_DIR", "")
 if not re.fullmatch(r"[a-zA-Z0-9-]+", session_id) or not status_dir: raise SystemExit(0)
 try: value = json.load(sys.stdin)
 except Exception: raise SystemExit(0)
+try:
+    activity_dir = os.environ.get("MULTI_CLI_WORK_ACTIVITY_DIR")
+    generation = os.environ.get("MULTI_CLI_WORK_GENERATION")
+    if activity_dir and generation:
+        import uuid
+        os.makedirs(activity_dir, exist_ok=True)
+        activity_id = uuid.uuid4().hex
+        activity = dict(id=activity_id, sessionId=session_id, generation=generation, provider="claude", event=str(value.get("hook_event_name", "")), at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+        for source, key in (("tool_name", "toolName"), ("tool_use_id", "toolCallId"), ("agent_id", "agentId"), ("agent_type", "agentType"), ("model", "model"), ("task_id", "taskId"), ("task_subject", "taskSubject")):
+            if value.get(source): activity[key] = re.sub(r"[\x00-\x1f\x7f]", " ", str(value[source]))[:200]
+        if value.get("to_model"): activity["model"] = str(value["to_model"])[:200]
+        target_activity = os.path.join(activity_dir, activity_id + ".json")
+        with open(target_activity + ".tmp", "w", encoding="utf-8") as output: json.dump(activity, output)
+        os.replace(target_activity + ".tmp", target_activity)
+except Exception: pass
+if value.get("hook_event_name") in ("SubagentStart", "SubagentStop", "PreCompact", "PostCompact", "PostModelSwitch", "TaskCreated", "TaskCompleted"): raise SystemExit(0)
 if value.get("agent_id"): raise SystemExit(0)
 event = str(value.get("hook_event_name", ""))
 if event == "SessionStart": status = "idle"

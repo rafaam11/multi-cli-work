@@ -119,7 +119,7 @@ export function slotViewsInput(value: unknown, label = "Slot views"): SlotViewsI
 export function validateCreateInput(value: unknown): CreateTerminalInput {
   const input = exactObject(
     value,
-    ["projectId", "kind", "worktreeId", "cols", "rows", "background", "name"],
+    ["projectId", "kind", "worktreeId", "cols", "rows", "background", "name", "launchProfileId"],
     "Terminal create input",
   );
   if (input.name !== undefined && (typeof input.name !== "string" || input.name.trim().length === 0 || input.name.length > 60)) {
@@ -134,6 +134,7 @@ export function validateCreateInput(value: unknown): CreateTerminalInput {
   if (input.background !== undefined && typeof input.background !== "boolean") {
     throw new Error("Terminal background flag must be a boolean");
   }
+  if (input.launchProfileId !== undefined && input.launchProfileId !== null && (typeof input.launchProfileId !== "string" || !input.launchProfileId.trim() || input.launchProfileId.length > 120)) throw new Error("Launch profile id is invalid");
   return {
     projectId: nonEmptyString(input.projectId, "Project id"),
     kind: input.kind,
@@ -142,6 +143,7 @@ export function validateCreateInput(value: unknown): CreateTerminalInput {
     rows: integer(input.rows, "Terminal rows"),
     ...(input.background !== undefined ? { background: input.background } : {}),
     ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(input.launchProfileId !== undefined ? { launchProfileId: input.launchProfileId as string | null } : {}),
   };
 }
 
@@ -536,13 +538,23 @@ export function validateSettingsPatch(value: unknown): AppSettingsPatch {
     }
   }
   if (raw.appearance !== undefined) {
-    const appearance = exactObject(raw.appearance, ["theme"], "Settings appearance");
+    const appearance = exactObject(raw.appearance, ["theme", "effects", "density"], "Settings appearance");
+    const next: NonNullable<AppSettingsPatch["appearance"]> = {};
+    if (appearance.effects !== undefined) {
+      if (appearance.effects !== "rich" && appearance.effects !== "balanced" && appearance.effects !== "minimal") throw new Error("Invalid visual effects preference");
+      next.effects = appearance.effects;
+    }
+    if (appearance.density !== undefined) {
+      if (appearance.density !== "comfortable" && appearance.density !== "compact") throw new Error("Invalid density preference");
+      next.density = appearance.density;
+    }
     if (appearance.theme !== undefined) {
       if (appearance.theme !== "dark" && appearance.theme !== "light" && appearance.theme !== "system") {
         throw new Error("Settings appearance.theme must be dark, light, or system");
       }
-      patch.appearance = { theme: appearance.theme };
+      next.theme = appearance.theme;
     }
+    patch.appearance = next;
   }
   if (raw.fanOut !== undefined) {
     const fanOut = exactObject(raw.fanOut, ["templates"], "Settings fanOut");

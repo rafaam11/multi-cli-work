@@ -17,6 +17,7 @@ import { currentTheme, useResolvedTheme } from "./theme";
  * menu cannot reach into it directly — it gets these handles instead.
  */
 export interface TerminalCommands {
+  selectionText?(): string;
   copySelection(): void;
   paste(): void;
   selectAll(): void;
@@ -242,6 +243,7 @@ export function TerminalPane({
     });
 
     onRegisterCommandsRef.current?.(session.id, {
+      selectionText: () => terminal.getSelection(),
       copySelection,
       paste: pasteFromClipboard,
       selectAll: () => terminal.selectAll(),

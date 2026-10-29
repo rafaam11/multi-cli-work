@@ -21,6 +21,21 @@ afterEach(async () => {
 });
 
 describe("Claude app-owned integration", () => {
+  it("records child activity without changing its parent's status", async () => {
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-activity-")); roots.push(root);
+    const integration = await ensureClaudeIntegration(root, process.platform);
+    const activityDir = path.join(root, "events");
+    const child = execFileAsync(process.platform === "win32" ? "powershell.exe" : "python3",
+      process.platform === "win32" ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", integration.hookPath] : [integration.hookPath],
+      { env: { ...process.env, MULTI_CLI_WORK_SESSION_ID: "parent", MULTI_CLI_WORK_STATUS_DIR: integration.statusDir, MULTI_CLI_WORK_ACTIVITY_DIR: activityDir, MULTI_CLI_WORK_GENERATION: "generation" } });
+    child.child.stdin?.end(JSON.stringify({ hook_event_name: "SubagentStop", agent_id: "child", agent_type: "Explore", session_id: "parent-conversation", tool_input: { secret: "never store" } }));
+    await child;
+    const files = await fs.readdir(activityDir); expect(files).toHaveLength(1);
+    const activity = await fs.readFile(path.join(activityDir, files[0]), "utf8");
+    expect(JSON.parse(activity)).toMatchObject({ sessionId: "parent", agentId: "child", agentType: "Explore", event: "SubagentStop" });
+    expect(activity).not.toContain("never store");
+    await expect(fs.stat(path.join(integration.statusDir, "parent.json"))).rejects.toThrow();
+  });
   it("registers state hooks without changing user settings", () => {
     const settings = buildClaudeSettings("C:\\App Data\\hooks\\claude-status.ps1", "win32");
 
@@ -35,6 +50,7 @@ describe("Claude app-owned integration", () => {
       "Notification",
       "Stop",
       "StopFailure",
+      "SubagentStart", "SubagentStop", "PreCompact", "PostCompact", "PostModelSwitch", "TaskCreated", "TaskCompleted",
     ]);
     expect(settings.hooks.PermissionRequest[0].hooks[0]).toEqual({
       type: "command",

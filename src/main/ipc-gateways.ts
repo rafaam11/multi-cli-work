@@ -121,6 +121,7 @@ export interface TerminalCoordinatorGateway {
   resize(sessionId: string, cols: number, rows: number): Promise<void>;
   stop(sessionId: string): Promise<void>;
   resume(input: ResumeTerminalInput): Promise<unknown>;
+  fork?(input: import("../shared/api-types").ForkTerminalInput): Promise<TerminalSessionView>;
   remove(sessionId: string): Promise<void>;
   removeProjectSessions(projectId: string): Promise<void>;
   rename(sessionId: string, name: string | null): Promise<unknown>;
@@ -346,10 +347,14 @@ export interface MainIpcDependencies {
   sizes: TerminalSizeGateway;
   humanInput: HumanInputGateway;
   board: BoardGateway;
+  activity?: { list(sessionId?: string): import("../shared/activity-types").ProviderActivity[] };
+  workbench?: Awaited<ReturnType<typeof import("./workbench/workbench-store").createWorkbenchStore>>;
+  deliveries?: Pick<import("./control/delivery-queue").DeliveryQueue, "list" | "enqueue" | "edit" | "drop" | "sendNow" | "move">;
   presets: SessionPresetsGateway;
   indicators: SessionIndicatorsGateway;
   worktreeScripts: WorktreeScriptsGateway;
   usage: UsageGateway;
+  usageHistory?: { list(): Promise<import("../shared/usage-types").UsageHistorySnapshot> };
   windowControls: WindowControlsGateway;
   appVersion(): string;
   readRegistry(): Promise<ProjectRegistrySnapshot>;

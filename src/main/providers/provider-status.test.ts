@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanupProviderStatusFiles, deleteProviderStatusFile, parseProviderStatusEvent } from "./provider-status";
+import { cleanupProviderStatusFiles, deleteProviderStatusFile, parseProviderStatusEvent, startProviderStatusWatcher, type ProviderStatusEvent } from "./provider-status";
 
 const roots: string[] = [];
 
@@ -18,6 +18,12 @@ afterEach(async () => {
 });
 
 describe("provider status events", () => {
+  it("validates the optional Codex display metadata", () => {
+    const event = { sessionId: "s", status: "working", event: "PreToolUse", at: "2026-01-01T00:00:00Z", model: "test", permissionMode: "plan", toolName: "Bash" };
+    expect(parseProviderStatusEvent(event)).toMatchObject({ model: "test", permissionMode: "plan", toolName: "Bash" });
+    expect(() => parseProviderStatusEvent({ ...event, model: "test\u001b[31m" })).toThrow();
+    expect(() => parseProviderStatusEvent({ ...event, toolName: "x".repeat(201) })).toThrow();
+  });
   it("accepts hook events with unified states", () => {
     expect(
       parseProviderStatusEvent({
@@ -66,10 +72,12 @@ describe("deleteProviderStatusFile", () => {
   it("deletes the status file for a session", async () => {
     const dir = await tempStatusDir();
     await fs.writeFile(path.join(dir, "session-1.json"), "{}");
+    await fs.writeFile(path.join(dir, "session-1.start.json"), "{}");
 
     await deleteProviderStatusFile(dir, "session-1");
 
     await expect(fs.stat(path.join(dir, "session-1.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(dir, "session-1.start.json"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does nothing when the status file is already missing", async () => {
@@ -89,11 +97,13 @@ describe("cleanupProviderStatusFiles", () => {
   it("removes status files whose session id is not in the keep set", async () => {
     const dir = await tempStatusDir();
     await fs.writeFile(path.join(dir, "keep-me.json"), "{}");
+    await fs.writeFile(path.join(dir, "keep-me.start.json"), "{}");
     await fs.writeFile(path.join(dir, "orphan.json"), "{}");
+    await fs.writeFile(path.join(dir, "orphan.start.json"), "{}");
 
     await cleanupProviderStatusFiles(dir, new Set(["keep-me"]));
 
-    expect(await fs.readdir(dir)).toEqual(["keep-me.json"]);
+    expect(await fs.readdir(dir)).toEqual(["keep-me.json", "keep-me.start.json"]);
   });
 
   it("sweeps hook temp files a crashed or raced write left behind, but not one being written now", async () => {
@@ -121,5 +131,25 @@ describe("cleanupProviderStatusFiles", () => {
     await expect(
       cleanupProviderStatusFiles(path.join(dir, "does-not-exist"), new Set()),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("startProviderStatusWatcher", () => {
+  it("does not replay ownership from another generation and only replays a matching start once", async () => {
+    const dir = await tempStatusDir();
+    const start = { sessionId: "s", provider: "codex", generation: "current", providerConversationId: "conversation", status: "working", event: "SessionStart", at: "2026-10-28T00:00:00Z" };
+    const latest = { ...start, event: "PreToolUse" };
+    await fs.writeFile(path.join(dir, "s.start.json"), JSON.stringify({ ...start, generation: "previous" }));
+    await fs.writeFile(path.join(dir, "s.json"), JSON.stringify(latest));
+    const events: ProviderStatusEvent[] = [];
+    const watcher = await startProviderStatusWatcher(dir, (event) => events.push(event));
+    try {
+      await expect.poll(() => events.map((event) => event.event)).toEqual(["PreToolUse"]);
+      await fs.writeFile(path.join(dir, "s.start.json"), JSON.stringify(start));
+      await fs.writeFile(path.join(dir, "s.json"), JSON.stringify({ ...latest, event: "PostToolUse" }));
+      await expect.poll(() => events.map((event) => event.event)).toEqual(["PreToolUse", "SessionStart", "PostToolUse"]);
+      await fs.writeFile(path.join(dir, "s.json"), JSON.stringify({ ...latest, event: "Stop" }));
+      await expect.poll(() => events.map((event) => event.event)).toEqual(["PreToolUse", "SessionStart", "PostToolUse", "Stop"]);
+    } finally { watcher.close(); }
   });
 });

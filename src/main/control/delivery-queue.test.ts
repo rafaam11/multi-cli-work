@@ -102,6 +102,38 @@ function harness(initial: TerminalSessionView[] = [session({}), session({ id: "s
 }
 
 describe("DeliveryQueue", () => {
+  it("reorders held messages only within the same target", async () => {
+    const h = harness([session({ status: "working" }), session({ id: "other", status: "working" })]);
+    const first = await h.queue.enqueue({ to: "target", text: "first" });
+    const other = await h.queue.enqueue({ to: "other", text: "other" });
+    const last = await h.queue.enqueue({ to: "target", text: "last" });
+    h.queue.move(last.id, "up");
+    expect(h.queue.held("target").map(record => record.id)).toEqual([last.id, first.id]);
+    expect(h.queue.held("other").map(record => record.id)).toEqual([other.id]);
+    h.queue.dispose();
+  });
+  it("edits a held message and preserves typing protection on send now", async () => {
+    const h = harness([session({ status: "working" })]);
+    const record = await h.queue.enqueue({ to: "target", text: "old", raw: true });
+    expect(await h.queue.edit(record.id, "new")).toMatchObject({ text: "new", state: "held" });
+    h.type(3);
+    expect(await h.queue.sendNow(record.id)).toMatchObject({ state: "held", reason: "typing" });
+    expect(h.sent()).toEqual([]);
+    h.type(0); h.advance(10_000);
+    await h.queue.pump();
+    expect(h.sent()).toEqual(["new\r"]);
+    expect(await h.queue.edit(record.id, "duplicate")).toBeNull();
+    expect(h.queue.drop(record.id)).toBeNull();
+    h.queue.dispose();
+  });
+
+  it("returns copies of delivery records", async () => {
+    const h = harness([session({ status: "working" })]);
+    const record = await h.queue.enqueue({ to: "target", text: "original" });
+    h.queue.list()[0].text = "modified";
+    expect(h.queue.get(record.id)?.text).toBe("original");
+    h.queue.dispose();
+  });
   it("delivers at once to an idle target, with the sender's name in front", async () => {
     const h = harness();
     const result = await h.queue.enqueue({ to: "target", text: "리뷰해 줘", from: "sender" });

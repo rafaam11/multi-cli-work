@@ -10,16 +10,22 @@ const KIND_LABELS: Record<QuickOpenItem["kind"], string> = {
 };
 
 interface QuickOpenPaletteProps {
+  initialKind?: QuickOpenItem["kind"] | "all";
+  currentProjectId?: string | null;
   /** Everything reachable, in the order an empty query should show it (most useful first). */
   items: QuickOpenItem[];
   onSelect(item: QuickOpenItem): void;
   onClose(): void;
 }
 
-export function QuickOpenPalette({ items, onSelect, onClose }: QuickOpenPaletteProps) {
+export function QuickOpenPalette({ items, onSelect, onClose, currentProjectId, initialKind = "all" }: QuickOpenPaletteProps) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
-  const ranked = useMemo(() => rankQuickOpen(items, query), [items, query]);
+  const [kind, setKind] = useState<QuickOpenItem["kind"] | "all">(initialKind);
+  const [localOnly, setLocalOnly] = useState(false);
+  const ranked = useMemo(() => rankQuickOpen(items.filter(item =>
+    (kind === "all" || item.kind === kind) &&
+    (!localOnly || !currentProjectId || item.projectId === currentProjectId || item.kind === "command" && !item.projectId)), query), [items, query, kind, localOnly, currentProjectId]);
   const active = ranked[Math.min(activeIndex, ranked.length - 1)] ?? null;
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -47,6 +53,14 @@ export function QuickOpenPalette({ items, onSelect, onClose }: QuickOpenPaletteP
       }}
     >
       <div className="quick-open" role="dialog" aria-modal="true" aria-label="빠른 열기">
+        <div className="quick-open-filters" role="group" aria-label="검색 범위">
+          {currentProjectId ? <button type="button" aria-pressed={localOnly} onClick={() => { setLocalOnly(value => !value); setActiveIndex(0); }}>현재 저장소</button> : null}
+          {(["all", "session", "project", "workspace", "workProject", "command"] as const).map(value =>
+            <button type="button" key={value} aria-pressed={kind === value}
+              onClick={() => { setKind(value); setActiveIndex(0); }}>
+              {value === "all" ? "전체" : KIND_LABELS[value]}
+            </button>)}
+        </div>
         <input
           type="text"
           className="quick-open-input"
@@ -84,6 +98,7 @@ export function QuickOpenPalette({ items, onSelect, onClose }: QuickOpenPaletteP
             ))}
           </ul>
         )}
+        <footer className="quick-open-hints">↑ ↓ 선택 · Enter 열기 · Esc 닫기</footer>
       </div>
     </div>
   );

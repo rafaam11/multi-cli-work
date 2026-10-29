@@ -122,6 +122,16 @@ describe("SettingsDialog", () => {
     fireEvent.change(screen.getByLabelText("테마"), { target: { value: "system" } });
     await waitFor(() => expect(update).toHaveBeenCalledWith({ appearance: { theme: "system" } }));
   });
+  it("시각 효과와 화면 밀도를 저장하고 검색으로 다른 분류를 연다", async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.change(screen.getByLabelText("시각 효과 · 즉시 적용"), { target: { value: "minimal" } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ appearance: { effects: "minimal" } }));
+    fireEvent.change(screen.getByLabelText("화면 밀도 · 즉시 적용"), { target: { value: "compact" } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ appearance: { density: "compact" } }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "설정 검색어" }), { target: { value: "font" } });
+    fireEvent.click(screen.getByRole("button", { name: /터미널 글꼴/ }));
+    expect(screen.getByLabelText("글꼴")).toBeInTheDocument();
+  });
 
   it("적용되지 않는 언어 선택은 보여 주지 않는다", () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);

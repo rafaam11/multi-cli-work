@@ -148,6 +148,8 @@ export type ThemePreference = "dark" | "light" | "system";
 
 export interface AppearanceSettings {
   theme: ThemePreference;
+  effects: "rich" | "balanced" | "minimal";
+  density: "comfortable" | "compact";
 }
 
 export interface RemoteSettings {
@@ -256,7 +258,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타", folderTemplates: defaultFolderTemplates() },
   files: { defaultOpenWith: "os", openWith: {}, unsupportedOpensWithOs: true },
   fanOut: { templates: [] },
-  appearance: { theme: "dark" },
+  appearance: { theme: "dark", effects: "rich", density: "comfortable" },
   remote: { enabled: false, port: DEFAULT_REMOTE_PORT },
   usage: { enabled: true, notifyAt90: true },
   pcRoots: { dev: null, data: null, work: null, drive: null },
@@ -528,6 +530,8 @@ export function parseSettings(value: unknown): AppSettings {
     },
     fanOut: { templates: readFanOutTemplates(fanOut.templates) },
     appearance: {
+      effects: appearance.effects === "minimal" || appearance.effects === "balanced" || appearance.effects === "rich" ? appearance.effects : defaults.appearance.effects,
+      density: appearance.density === "compact" || appearance.density === "comfortable" ? appearance.density : defaults.appearance.density,
       theme:
         appearance.theme === "light" || appearance.theme === "system" || appearance.theme === "dark"
           ? appearance.theme

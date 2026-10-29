@@ -9,6 +9,7 @@ import {
 } from "../../shared/app-state-types";
 import type {
   CreateTerminalInput,
+  ForkTerminalInput,
   CreateToolTerminalInput,
   ResumeTerminalInput,
   SlotViewsInput,
@@ -105,6 +106,7 @@ interface TerminalCoordinatorOptions {
   claudeSettingsPath: string;
   codexProfileName?: string;
   getProject(projectId: string): Promise<SharedProject | null>;
+  getLaunchProfile?(agentId: string, profileId?: string | null): Promise<import("../../shared/launch-profile").LaunchProfile | null>;
   /** Null when the worktree was removed (from the app or by hand). Absent in tests without worktrees. */
   getWorktree?(worktreeId: string): Promise<SharedWorktree | null>;
   resolveWorkspace?(projectId: string, cwd: string): Promise<{ cwd: string; worktreeId?: string } | null>;
@@ -144,6 +146,7 @@ interface TerminalCoordinatorOptions {
    * whose transcripts we cannot locate, every conversation is taken to exist.
    */
   hasProviderConversation?(session: TerminalSessionView, agent: AgentDefinition, conversationId: string): Promise<boolean>;
+  onCodexStatus?(sessionId: string, event: ProviderStatusEvent): void;
 }
 
 const DEFAULT_TITLE_POLL_MS = 2_000;
@@ -218,6 +221,7 @@ export class TerminalCoordinator {
   private readonly workspaceEventTimes = new Map<string, number>();
   private workspacePoll: Promise<void> | null = null;
   private readonly pendingProviderStarts = new Map<string, ProviderStatusEvent>();
+  private readonly pendingCodexStatuses = new Map<string, ProviderStatusEvent>();
   private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" }>>();
   private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
@@ -253,6 +257,10 @@ export class TerminalCoordinator {
   list(): TerminalSessionView[] {
     return [...this.views.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
+  ownsActivity(event: import("../../shared/activity-types").ProviderActivity): boolean {
+    return !this.removedSessionIds.has(event.sessionId) && this.generations.get(event.sessionId) === event.generation &&
+      (this.views.get(event.sessionId)?.kind === event.provider || this.launchingSessionIds.has(event.sessionId));
+  }
 
   state() {
     return readAppState({ statePath: this.options.statePath });
@@ -263,7 +271,13 @@ export class TerminalCoordinator {
     const project = await this.options.getProject(input.projectId);
     if (!project) throw new Error(`Unknown project: ${input.projectId}`);
     const worktree = input.worktreeId ? await this.requireWorktree(input.worktreeId, project.id) : null;
+    const agent = this.requireAgent(input.kind);
+    if (input.launchProfileId && (!agent.builtin || !["codex", "claude"].includes(agent.id))) throw new Error("이 CLI에는 시작 프로필을 적용할 수 없습니다");
+    if (input.launchProfileId && !this.options.getLaunchProfile) throw new Error("시작 프로필을 사용할 수 없습니다");
+    const launchProfile = agent.builtin && ["codex", "claude"].includes(agent.id)
+      ? await this.options.getLaunchProfile?.(agent.id, input.launchProfileId) : null;
     return this.launch({
+      launchProfile,
       sessionId: this.options.idFactory(),
       projectId: project.id,
       tool: null,
@@ -293,6 +307,23 @@ export class TerminalCoordinator {
       createdAt: this.options.now(),
       resumeConversationId: null,
     });
+  }
+
+  async fork(input: ForkTerminalInput): Promise<TerminalSessionView> {
+    this.validateDimensions(input.cols, input.rows);
+    const source = this.views.get(input.sourceSessionId);
+    if (!source || !source.projectId || source.tool) throw new Error("분기할 프로젝트 세션을 찾을 수 없습니다");
+    const agent = this.requireAgent(source.kind);
+    if (!agent.builtin || !["claude", "codex"].includes(agent.id)) throw new Error("이 CLI는 대화 분기를 지원하지 않습니다");
+    if (["starting", "working", "awaiting-approval"].includes(source.status)) throw new Error("현재 응답이나 승인을 마친 뒤 분기해 주세요");
+    if (!source.providerConversationId) throw new Error("대화 ID가 확인된 세션만 분기할 수 있습니다");
+    const project = await this.options.getProject(source.projectId);
+    if (!project) throw new Error("분기할 폴더를 찾을 수 없습니다");
+    const worktree = source.worktreeId ? await this.requireWorktree(source.worktreeId, source.projectId) : null;
+    return this.launch({ sessionId: randomUUID(), projectId: source.projectId, tool: null,
+      cwd: worktree?.path ?? project.rootPath, ...(worktree ? { worktreeId: worktree.id } : {}),
+      kind: source.kind, cols: input.cols, rows: input.rows, createdAt: this.options.now(),
+      resumeConversationId: null, forkConversationId: source.providerConversationId, name: input.name });
   }
 
   async resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
@@ -514,6 +545,7 @@ export class TerminalCoordinator {
     if (!view) return;
     this.removedSessionIds.add(sessionId);
     this.pendingProviderStarts.delete(sessionId);
+    this.pendingCodexStatuses.delete(sessionId);
     this.dropPendingLog(sessionId);
     // Drain lifecycle writes that began before removal claimed the session. Events from stop() and
     // later are rejected by removedSessionIds, so durable deletion remains the final state write.
@@ -687,17 +719,25 @@ export class TerminalCoordinator {
       this.pendingProviderStarts.set(event.sessionId, event);
       return;
     }
+    if ((!view || this.launchingSessionIds.has(event.sessionId)) && event.provider === "codex" &&
+        event.generation && event.providerConversationId &&
+        ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt"].includes(event.event)) {
+      this.pendingCodexStatuses.set(event.sessionId, event);
+      return;
+    }
     const agent = view ? this.options.getAgent(view.kind) : null;
     if (view && agent && event.generation) {
       this.enqueueEvent(() => this.applyWorkspaceStatus(event));
     }
     const ownsCodexSession = agent?.conversationId === "provider-assigned" && event.event === "SessionStart";
+    const codexStatusEvent = agent?.conversationId === "provider-assigned" && event.provider === "codex" &&
+      Boolean(event.generation && event.providerConversationId) && ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt"].includes(event.event);
     // Claude moves to a new conversation on /clear (or an in-app /resume) without a new process, and
     // its SessionStart names it. Only this launch's own hook may move the id a later resume uses.
     const movesClaudeConversation = agent?.conversationId === "app-generated" && agent.statusAdapter === "claude-hook" &&
       event.event === "SessionStart" && Boolean(event.generation && event.providerConversationId);
     if (
-      !view || !agent || (!ownsCodexSession && agent.statusAdapter !== "claude-hook") ||
+      !view || !agent || (!ownsCodexSession && !codexStatusEvent && agent.statusAdapter !== "claude-hook") ||
       event.status === "exited" || event.status === "error"
     ) return;
     this.enqueueEvent(async () => {
@@ -705,6 +745,8 @@ export class TerminalCoordinator {
       if (!current) return;
       if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
       const live = current.pid !== null && current.status !== "exited" && current.status !== "error";
+      // Later events only belong to the conversation established by the trusted SessionStart.
+      if (codexStatusEvent && current.providerConversationId !== event.providerConversationId) return;
       // A hook from this launch still proves ownership after its PTY exits. Retain the exact id
       // without reviving the process; unversioned events cannot claim an inactive session.
       if (!live && (!ownsCodexSession || !event.generation)) return;
@@ -731,6 +773,7 @@ export class TerminalCoordinator {
         else this.transcriptPaths.delete(current.id);
         metadataChanged = true;
       }
+      if (live && event.provider === "codex" && event.generation && (ownsCodexSession || codexStatusEvent)) this.options.onCodexStatus?.(current.id, event);
       const statusChanged = live && current.status !== event.status;
       if (!metadataChanged && !statusChanged) return;
       if (statusChanged) current.status = event.status;
@@ -771,6 +814,8 @@ export class TerminalCoordinator {
   }
 
   private async launch(input: {
+    launchProfile?: import("../../shared/launch-profile").LaunchProfile | null;
+    forkConversationId?: string;
     sessionId: string;
     projectId: string | null;
     tool: ToolCommand | null;
@@ -805,6 +850,8 @@ export class TerminalCoordinator {
           claudeSettingsPath: this.options.claudeSettingsPath,
           codexProfileName: this.options.codexProfileName ?? "multi-cli-work",
           resumeConversationId: input.resumeConversationId,
+          forkConversationId: input.forkConversationId,
+          launchProfile: input.launchProfile,
           newConversationId: input.newConversationId,
           codexResumePicker: input.codexResumePicker,
           extraArgs,
@@ -847,6 +894,7 @@ export class TerminalCoordinator {
           ...this.options.env,
           MULTI_CLI_WORK_SESSION_ID: input.sessionId,
           MULTI_CLI_WORK_GENERATION: generation,
+          MULTI_CLI_WORK_ACTIVITY_DIR: this.options.env.MULTI_CLI_WORK_ACTIVITY_DIR ?? "",
           MULTI_CLI_WORK_CLAUDE_SETTINGS: this.options.claudeSettingsPath,
           MULTI_CLI_WORK_CODEX_PROFILE: this.options.codexProfileName ?? "multi-cli-work",
           ...(briefPath ? { MULTI_CLI_WORK_PROJECT_BRIEF: briefPath } : {}),
@@ -861,6 +909,8 @@ export class TerminalCoordinator {
       if (previousGeneration) this.generations.set(input.sessionId, previousGeneration);
       else this.generations.delete(input.sessionId);
       this.launchingSessionIds.delete(input.sessionId);
+      this.pendingProviderStarts.delete(input.sessionId);
+      this.pendingCodexStatuses.delete(input.sessionId);
       this.pendingWorkerEvents.delete(input.sessionId);
       throw error;
     }
@@ -892,6 +942,11 @@ export class TerminalCoordinator {
     if (pendingProviderStart) {
       this.pendingProviderStarts.delete(view.id);
       this.applyProviderStatus(pendingProviderStart);
+    }
+    const pendingCodexStatus = this.pendingCodexStatuses.get(view.id);
+    if (pendingCodexStatus) {
+      this.pendingCodexStatuses.delete(view.id);
+      this.applyProviderStatus(pendingCodexStatus);
     }
     this.startTitlePolling();
     return { ...view };

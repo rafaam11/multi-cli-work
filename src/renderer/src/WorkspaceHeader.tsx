@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { isAutoLayout } from "./grid-layouts";
 import { LayoutPicker } from "./LayoutPicker";
@@ -27,6 +27,7 @@ interface WorkspaceHeaderProps {
    * rather than above the grid so choosing a layout costs no terminal height.
    */
   layout: { layoutId: string; paneCount: number; onSelect(layoutId: string): void } | null;
+  savedViews?: ReactNode;
   /**
    * Which page of the arrangement is showing. Panes that do not fit the layout paginate rather than
    * disappear, so this row is the way back to them — it rides beside the workspace name.
@@ -84,6 +85,7 @@ interface WorkspaceHeaderProps {
 export function WorkspaceHeader({
   workspace,
   layout,
+  savedViews,
   pages,
   refreshAll,
   selectedProject,
@@ -197,6 +199,7 @@ export function WorkspaceHeader({
       </div>
 
       <div className="workspace-actions">
+        {savedViews}
         {layout ? (
           <LayoutPicker layoutId={layout.layoutId} paneCount={layout.paneCount} onSelect={layout.onSelect} />
         ) : null}

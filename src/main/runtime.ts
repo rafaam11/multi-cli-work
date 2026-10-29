@@ -1,3 +1,4 @@
+import { codexIndicatorUpdate } from "./providers/codex-indicators";
 import {
   app,
   globalShortcut,
@@ -38,6 +39,9 @@ import {
 import { jkMcpLaunchArgs, removeJkMcpConfig } from "./control/jk-mcp-launch";
 import { handleControlCommand, type ControlCommandContext } from "./control/control-commands";
 import { DeliveryQueue } from "./control/delivery-queue";
+import { createWorkbenchStore } from "./workbench/workbench-store";
+import { ActivityJournal } from "./workbench/activity-journal";
+import { UsageHistoryStore } from "./usage/usage-history";
 import { BoardService } from "./board/board-service";
 import { BoardStore } from "./board/board-store";
 import { readSessionPresets, removeSessionPreset, saveSessionPreset } from "./presets/preset-registry";
@@ -206,6 +210,8 @@ export async function createDesktopRuntime(
   const recoveryMarkerPath = path.join(userData, "shutdown-recovery.json");
   await consumeRecoveryMarker(recoveryMarkerPath, statePath);
   const settingsService = await createSettingsService(path.join(userData, "settings.json"));
+  const workbench = await createWorkbenchStore(path.join(userData, "workbench-state.json"), settingsService.current().fanOut.templates);
+  const usageHistory = new UsageHistoryStore(path.join(userData, "usage-history.json"));
   const pcRoots = new PcRootsProvider(
     () => settingsService.current().pcRoots,
     {},
@@ -351,18 +357,26 @@ export async function createDesktopRuntime(
     {
       ...providerEnvironment,
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
+      MULTI_CLI_WORK_ACTIVITY_DIR: path.join(userData, "activity-events"),
       [CONTROL_PIPE_ENV]: controlPipeName,
       [CONTROL_TOKEN_ENV]: controlToken,
     },
     controlCli.binDir,
   );
+  const indicators = new SessionIndicatorTracker();
   const coordinator: TerminalCoordinator = new TerminalCoordinator({
+    onCodexStatus: (sessionId, event) => {
+      const update = codexIndicatorUpdate(event);
+      if (update.clearTool) indicators.clearChips(sessionId, "codex-tool");
+      for (const chip of update.chips) indicators.setChip(sessionId, chip);
+    },
     worker,
     statePath,
     logDir: path.join(userData, "session-logs"),
     statusDir: claudeIntegration.statusDir,
     claudeSettingsPath: claudeIntegration.settingsPath,
     getProject,
+    getLaunchProfile: (agent, id) => workbench.resolveLaunchProfile(agent, id),
     getWorktree: (worktreeId) => worktrees.get(worktreeId),
     shellIntegrationPath,
     readWorkspace: (transcriptPath, since) => sessionWorkspaceReader.read(transcriptPath, since),
@@ -572,6 +586,9 @@ export async function createDesktopRuntime(
   const statusWatcher = await startProviderStatusWatcher(claudeIntegration.statusDir, (event) => {
     coordinator.applyProviderStatus(event);
   });
+  const activity = new ActivityJournal(path.join(userData, "activity-events"), path.join(userData, "activity"), event => coordinator.ownsActivity(event));
+  let activityError: string | null = null;
+  await activity.start().catch(error => { activityError = String(error); console.error("Failed to start activity journal", error); });
 
   const projectActions = createProjectActions({ getExecutables });
   const htmlPreviewController = new HtmlPreviewController({
@@ -642,7 +659,7 @@ export async function createDesktopRuntime(
     shellExecutable: async () => (await getExecutables()).agents[process.platform === "win32" ? "powershell" : "bash"] ?? null,
   });
   // 패인 머리줄의 진행률·상태 칩. 터미널 출력(OSC 9;4)과 jk에서 오고, 세션과 함께 사라진다.
-  const indicators = new SessionIndicatorTracker();
+
   let appliedTaskbarProgress = "";
   const applyTaskbarProgress = () => {
     const window = host.getMainWindow();
@@ -851,6 +868,10 @@ export async function createDesktopRuntime(
   };
 
   registerMainIpc(ipcMain, {
+    usageHistory,
+    activity: { list: sessionId => { if (activityError) throw new Error(activityError); return activity.list(sessionId); } },
+    workbench,
+    deliveries: delivery,
     projectService,
     workProjectService,
     readWorkProjectRegistry: () =>
@@ -1269,7 +1290,10 @@ export async function createDesktopRuntime(
       write: (snapshot) => fs.writeFile(usageSnapshotPath, JSON.stringify(snapshot), "utf8"),
     },
   });
-  usageService.onChange((snapshot) => sendToMainWindow(host.getMainWindow(), "usage:changed", snapshot));
+  usageService.onChange((snapshot) => {
+    sendToMainWindow(host.getMainWindow(), "usage:changed", snapshot);
+    if (settingsService.current().usage.enabled) void usageHistory.record(snapshot).catch(error => console.error("Failed to save usage history", error));
+  });
   void usageService.start().catch((error) => console.error("Failed to start usage tracking", error));
 
   coordinator.onEvent((event: TerminalEvent) => {
@@ -1290,6 +1314,7 @@ export async function createDesktopRuntime(
     () => remoteWindows.closeAll(),
     () => remoteAccess.dispose(),
     () => statusWatcher.close(),
+    () => activity.stop(),
     () => usageService.stop(),
     () => coordinator.shutdown(),
     () => worker.dispose(),

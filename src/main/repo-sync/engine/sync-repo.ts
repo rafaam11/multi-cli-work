@@ -43,6 +43,16 @@ async function isDirectory(candidate: string): Promise<boolean> {
   }
 }
 
+/**
+ * git이 돌려준 최상위와 받은 경로가 같은 폴더인가. 문자열만 비교하면 junction·심볼릭 링크로 가리킨 레포나
+ * 8.3 짧은 이름(`C:\Users\RUNNER~1\…`)으로 받은 경로를 "레포 아님"으로 잘못 본다. 둘 다 실제 경로로 푼 뒤 비교한다.
+ */
+async function sameLocation(a: string, b: string, platform: NodeJS.Platform): Promise<boolean> {
+  const real = (value: string) => fs.realpath(value).catch(() => value);
+  const [left, right] = await Promise.all([real(a), real(b)]);
+  return repoSyncKey(left, platform) === repoSyncKey(right, platform);
+}
+
 function parseLeftRight(output: string): { ahead: number; behind: number } | null {
   const match = /^(\d+)\s+(\d+)\s*$/.exec(output.trim());
   return match ? { ahead: Number(match[1]), behind: Number(match[2]) } : null;
@@ -77,7 +87,7 @@ export async function syncRepo(repoPath: string, options: SyncRepoOptions = {}):
   try {
     const toplevel = (await git(resolved, ["rev-parse", "--show-toplevel"], QUERY_TIMEOUT_MS)).trim();
     // 레포 안의 하위 폴더를 받으면 엉뚱한 범위를 최신화하게 된다. 최상위만 받는다.
-    if (!toplevel || repoSyncKey(toplevel, platform) !== repoSyncKey(resolved, platform)) return skip("not-a-repo");
+    if (!toplevel || !(await sameLocation(toplevel, resolved, platform))) return skip("not-a-repo");
     gitDir = (await git(resolved, ["rev-parse", "--absolute-git-dir"], QUERY_TIMEOUT_MS)).trim();
   } catch {
     return skip("not-a-repo");

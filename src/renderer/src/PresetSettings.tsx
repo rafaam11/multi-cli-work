@@ -11,6 +11,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AgentIcon } from "./brand-icons";
 import { errorMessage } from "./ipc-error";
+import type { LaunchProfile } from "@shared/launch-profile";
+import { LaunchProfileSelect } from "./LaunchProfileSelect";
 
 /**
  * 설정 › 팀 프리셋. A preset is a list of members — which CLI, the pane's name, and the role prompt
@@ -22,9 +24,13 @@ export function PresetSettings() {
   const [draft, setDraft] = useState<SessionPreset | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<LaunchProfile[]>([]);
 
   useEffect(() => {
     let alive = true;
+    void Promise.resolve(window.multiCliWork.workbench?.state?.()).then(snapshot => {
+      if (alive) setProfiles(snapshot?.state.launchProfiles ?? []);
+    }).catch((cause: unknown) => { if (alive) setError(errorMessage(cause)); });
     void Promise.all([window.multiCliWork.presets.list(), window.multiCliWork.agents.list()])
       .then(([loaded, snapshot]) => {
         if (!alive) return;
@@ -138,7 +144,7 @@ export function PresetSettings() {
                 <select
                   aria-label={`멤버 ${index + 1} CLI`}
                   value={member.agentId}
-                  onChange={(event) => updateMember(index, { agentId: event.target.value })}
+                  onChange={(event) => updateMember(index, { agentId: event.target.value, launchProfileId: undefined })}
                 >
                   {agents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
@@ -163,6 +169,7 @@ export function PresetSettings() {
                   <Trash2 size={13} />
                 </button>
               </div>
+              {["codex", "claude"].includes(member.agentId) ? <label className="preset-member-profile"><span>시작 프로필</span><LaunchProfileSelect agentId={member.agentId} profiles={profiles} value={member.launchProfileId} onChange={value => updateMember(index, { launchProfileId: value })} label={`멤버 ${index + 1} 시작 프로필`} /></label> : null}
               <textarea
                 aria-label={`멤버 ${index + 1} 역할 프롬프트`}
                 placeholder="역할 프롬프트(선택) — 세션이 준비되면 자동으로 입력됩니다"

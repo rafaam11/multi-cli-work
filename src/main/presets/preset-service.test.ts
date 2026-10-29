@@ -25,6 +25,13 @@ function harness() {
 }
 
 describe("launchPreset", () => {
+  it("passes each member's explicit profile or native-default choice to creation", async () => {
+    const h = harness();
+    h.options.presets = async () => [{ ...BUILTIN_PRESETS[0], members: [{ agentId: "claude", name: "One", launchProfileId: "deep" }, { agentId: "codex", name: "Two", launchProfileId: null }] }];
+    await launchPreset({ presetId: "builder-reviewer", projectId: "p1" }, h.options);
+    expect(h.create).toHaveBeenNthCalledWith(1, expect.objectContaining({ launchProfileId: "deep" }));
+    expect(h.create).toHaveBeenNthCalledWith(2, expect.objectContaining({ launchProfileId: null }));
+  });
   it("starts each member named, notes it on the board, then queues each role prompt raw", async () => {
     const h = harness();
     const sessions = await launchPreset({ presetId: "builder-reviewer", projectId: "p1", worktreeId: "w1" }, h.options);

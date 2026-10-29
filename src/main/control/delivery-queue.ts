@@ -3,6 +3,8 @@ import { promptAsTerminalInput, submitTerminalInput } from "../../shared/fan-out
 import type { StatusChip, TerminalEvent } from "../../shared/terminal-types";
 import { FirstRunDialogWatcher } from "../terminal/first-run-dialog";
 import type { HumanDraft } from "../terminal/human-input-tracker";
+import type { DeliveryRecord, DeliveryState, HoldReason } from "../../shared/delivery-types";
+export type { DeliveryRecord, DeliveryState, HoldReason } from "../../shared/delivery-types";
 
 /**
  * Text one session (or the board, or a preset) wants typed into another. It is never typed straight
@@ -13,22 +15,6 @@ import type { HumanDraft } from "../terminal/human-input-tracker";
  * Held messages live in memory only. An app restart drops them, and their senders see them fail.
  */
 
-export type DeliveryState = "held" | "delivered" | "failed" | "dropped";
-export type HoldReason = "working" | "awaiting-approval" | "typing" | "starting" | "settling" | "dialog";
-
-export interface DeliveryRecord {
-  id: string;
-  /** The sending session, when a session sent it. */
-  from: string | null;
-  to: string;
-  /** The text as asked for — without the sender prefix. */
-  text: string;
-  state: DeliveryState;
-  /** Why it is still held, or why it failed. */
-  reason: HoldReason | string | null;
-  createdAt: number;
-  settledAt: number | null;
-}
 
 export interface DeliveryRequest {
   to: string;
@@ -89,6 +75,7 @@ export function sessionLabel(session: Pick<TerminalSessionView, "id" | "name" | 
 
 export class DeliveryQueue {
   private readonly records = new Map<string, DeliveryRecord>();
+  private readonly inFlight = new Set<string>();
   private readonly lastOutputAt = new Map<string, number>();
   /** Nothing goes in while a first-run dialog is up, until a person has answered it. */
   private readonly dialogs = new FirstRunDialogWatcher();
@@ -150,6 +137,44 @@ export class DeliveryQueue {
       .map((record) => ({ ...record }));
   }
 
+  list(): DeliveryRecord[] {
+    return [...this.records.values()].map(record => ({ ...record }));
+  }
+
+  async edit(id: string, text: string): Promise<DeliveryRecord | null> {
+    const record = this.records.get(id);
+    if (!record || record.state !== "held" || this.inFlight.has(id)) return null;
+    record.text = text;
+    this.emit(record);
+    await this.pump();
+    return this.get(id);
+  }
+
+  async sendNow(id: string): Promise<DeliveryRecord | null> {
+    const record = this.records.get(id);
+    if (!record || record.state !== "held") return null;
+    this.urgent.add(id);
+    await this.pump();
+    return this.get(id);
+  }
+
+  move(id: string, direction: "up" | "down"): DeliveryRecord | null {
+    const record = this.records.get(id);
+    if (!record || record.state !== "held" || this.inFlight.has(id)) return null;
+    const peers = this.held(record.to);
+    const index = peers.findIndex(peer => peer.id === id);
+    const other = peers[index + (direction === "up" ? -1 : 1)];
+    if (!other || this.inFlight.has(other.id)) return { ...record };
+    const entries = [...this.records.entries()];
+    const left = entries.findIndex(([key]) => key === id);
+    const right = entries.findIndex(([key]) => key === other.id);
+    [entries[left], entries[right]] = [entries[right], entries[left]];
+    this.records.clear();
+    for (const [key, value] of entries) this.records.set(key, value);
+    this.emit(record);
+    return { ...record };
+  }
+
   get(id: string): DeliveryRecord | null {
     const record = this.records.get(id);
     return record ? { ...record } : null;
@@ -157,7 +182,7 @@ export class DeliveryQueue {
 
   drop(id: string): DeliveryRecord | null {
     const record = this.records.get(id);
-    if (!record || record.state !== "held") return null;
+    if (!record || record.state !== "held" || this.inFlight.has(id)) return null;
     this.settle(record, "dropped", "취소됨");
     return { ...record };
   }
@@ -239,6 +264,7 @@ export class DeliveryQueue {
         continue;
       }
       const prefix = this.prefixes.get(record.id) ?? "";
+      this.inFlight.add(record.id);
       try {
         const input = promptAsTerminalInput(`${prefix}${sanitizeDeliveryText(record.text)}`);
         await submitTerminalInput((data) => this.options.write(record.to, data), input, this.sleep);
@@ -246,6 +272,8 @@ export class DeliveryQueue {
         this.settle(record, "delivered", null);
       } catch (error) {
         this.settle(record, "failed", error instanceof Error ? error.message : String(error));
+      } finally {
+        this.inFlight.delete(record.id);
       }
     }
     for (const sessionId of touched) this.syncChip(sessionId);

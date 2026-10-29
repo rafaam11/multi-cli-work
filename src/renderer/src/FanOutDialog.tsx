@@ -17,6 +17,7 @@ interface FanOutDialogProps {
   /** The whole list after a save or delete. */
   onSaveTemplates?(templates: FanOutTemplate[]): void;
   onSend(inputs: Array<{ sessionId: string; data: string }>): void;
+  onQueue?(targets: string[], text: string): Promise<void>;
   onClose(): void;
 }
 
@@ -24,7 +25,9 @@ interface FanOutDialogProps {
  * One prompt to several agents at once — every send is an explicit button press over a visible
  * target list, because a shortcut that moves N agents in one keystroke is an accident machine.
  */
-export function FanOutDialog({ projectName, targets, templates = [], onSaveTemplates, onSend, onClose }: FanOutDialogProps) {
+export function FanOutDialog({ projectName, targets, templates = [], onSaveTemplates, onSend, onQueue, onClose }: FanOutDialogProps) {
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [chosen, setChosen] = useState("");
   const [naming, setNaming] = useState<string | null>(null);
@@ -56,6 +59,12 @@ export function FanOutDialog({ projectName, targets, templates = [], onSaveTempl
   };
   const send = () => {
     if (!sendable) return;
+    if (onQueue) {
+      setSending(true); setSendError(null);
+      void onQueue(targets.filter(target => selected.has(target.sessionId)).map(target => target.sessionId), prompt)
+        .catch(error => setSendError(String(error))).finally(() => setSending(false));
+      return;
+    }
     const data = promptAsTerminalInput(prompt);
     onSend(targets.filter((target) => selected.has(target.sessionId)).map((target) => ({ sessionId: target.sessionId, data })));
   };
@@ -137,6 +146,7 @@ export function FanOutDialog({ projectName, targets, templates = [], onSaveTempl
           placeholder="모든 대상 세션에 전송할 프롬프트…"
           autoFocus
           value={prompt}
+          maxLength={8000}
           onChange={(event) => setPrompt(event.target.value)}
         />
         {targets.length === 0 ? (
@@ -159,10 +169,11 @@ export function FanOutDialog({ projectName, targets, templates = [], onSaveTempl
           </ul>
         )}
         <footer className="confirm-dialog-actions">
+          {sendError ? <p role="alert">{sendError}</p> : null}
           <button type="button" onClick={onClose}>
             취소
           </button>
-          <button type="button" disabled={!sendable} onClick={send}>
+          <button type="button" disabled={!sendable || sending} onClick={send}>
             {selected.size}개 세션에 전송
           </button>
         </footer>

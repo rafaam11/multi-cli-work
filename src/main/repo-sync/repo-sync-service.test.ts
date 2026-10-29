@@ -90,7 +90,8 @@ describe("createRepoSyncService", () => {
     const result = await service.sync("wp", { force: false, waitMs: 3000 });
     expect(startFallback).not.toHaveBeenCalled();
     expect(result?.source).toBe("hm");
-    expect(result?.report.pending).toEqual(target.paths);
+    // 기록 조회는 경로를 path.resolve한 원형으로 돌려준다 — posix에서는 Windows 경로가 cwd 아래로 풀린다.
+    expect(result?.report.pending).toEqual(target.paths.map((candidate) => path.resolve(candidate)));
   });
 
   it("레포가 없는 업무 프로젝트는 아무것도 돌리지 않는다", async () => {

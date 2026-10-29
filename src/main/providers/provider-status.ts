@@ -23,6 +23,9 @@ export interface ProviderStatusEvent {
   provider?: "codex" | "claude" | "shell";
   generation?: string;
   cwd?: string;
+  model?: string;
+  permissionMode?: string;
+  toolName?: string;
 }
 
 export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
@@ -50,6 +53,11 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
       throw new Error(`Provider ${key} is invalid`);
     }
   }
+  for (const key of ["model", "permissionMode", "toolName"] as const) {
+    if (record[key] !== undefined && (typeof record[key] !== "string" || !(record[key] as string).length || (record[key] as string).length > 200 || /[\x00-\x1f\x7f]/.test(record[key] as string))) {
+      throw new Error(`Provider ${key} is invalid`);
+    }
+  }
   return {
     sessionId: record.sessionId,
     status: record.status as TerminalStatus,
@@ -60,6 +68,9 @@ export function parseProviderStatusEvent(value: unknown): ProviderStatusEvent {
     ...(record.provider ? { provider: record.provider as ProviderStatusEvent["provider"] } : {}),
     ...(typeof record.generation === "string" ? { generation: record.generation } : {}),
     ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
+    ...(typeof record.model === "string" ? { model: record.model } : {}),
+    ...(typeof record.permissionMode === "string" ? { permissionMode: record.permissionMode } : {}),
+    ...(typeof record.toolName === "string" ? { toolName: record.toolName } : {}),
   };
 }
 
@@ -69,7 +80,11 @@ function safeStatusFilePath(statusDir: string, sessionId: string): string {
 }
 
 export async function deleteProviderStatusFile(statusDir: string, sessionId: string): Promise<void> {
-  await fs.rm(safeStatusFilePath(statusDir, sessionId), { force: true });
+  const statusPath = safeStatusFilePath(statusDir, sessionId);
+  await Promise.all([
+    fs.rm(statusPath, { force: true }),
+    fs.rm(statusPath.replace(/\.json$/, ".start.json"), { force: true }),
+  ]);
 }
 
 /** A hook finishes its write in milliseconds; a temp file older than this was abandoned. */
@@ -87,7 +102,7 @@ export async function cleanupProviderStatusFiles(
     return;
   }
   const orphanStatus = entries.filter(
-    (name) => name.endsWith(".json") && !keepSessionIds.has(name.slice(0, -".json".length)),
+    (name) => name.endsWith(".json") && !keepSessionIds.has(name.replace(/(?:\.start)?\.json$/, "")),
   );
   // Hooks write `<id>.json.<pid>.tmp` and rename it over the target. Two hooks racing for the same
   // target, or a hook killed mid-write, leave the temp behind — nothing else would ever remove it.
@@ -121,31 +136,56 @@ export async function startProviderStatusWatcher(
 ): Promise<FSWatcher> {
   await fs.mkdir(statusDir, { recursive: true });
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
+  const deliveredStarts = new Map<string, string>();
+  let closed = false;
+  let consumption = Promise.resolve();
+
+  const deliver = (event: ProviderStatusEvent) => {
+    if (closed) return;
+    if (event.provider === "codex" && event.event === "SessionStart") {
+      const key = JSON.stringify([event.generation, event.providerConversationId, event.at]);
+      if (deliveredStarts.get(event.sessionId) === key) return;
+      deliveredStarts.set(event.sessionId, key);
+    }
+    onStatus(event);
+  };
+
+  const readLatest = async (filename: string) => {
+    const event = await readStatusFile(path.join(statusDir, filename));
+    if (!event) return;
+    if (event.provider === "codex" && event.event !== "SessionStart") {
+      const start = await readStatusFile(path.join(statusDir, filename.replace(/\.json$/, ".start.json")));
+      if (start?.event === "SessionStart" && start.provider === "codex" &&
+          start.sessionId === event.sessionId && start.generation === event.generation &&
+          start.providerConversationId === event.providerConversationId) deliver(start);
+    }
+    deliver(event);
+  };
 
   const consume = (filename: string) => {
-    if (path.basename(filename) !== filename || !filename.endsWith(".json")) return;
+    if (!/^[a-zA-Z0-9-]+\.json$/.test(filename)) return;
     const existing = pending.get(filename);
     if (existing) clearTimeout(existing);
     pending.set(
       filename,
       setTimeout(() => {
         pending.delete(filename);
-        void readStatusFile(path.join(statusDir, filename)).then((event) => {
-          if (event) onStatus(event);
-        });
+        // Serialize reads so a slower ownership read cannot arrive after the next tool event.
+        consumption = consumption.then(() => readLatest(filename)).catch(() => undefined);
       }, 25),
     );
   };
 
-  const initial = await fs.readdir(statusDir).catch(() => [] as string[]);
-  initial.forEach(consume);
   const watcher = watch(statusDir, (_eventType, filename) => {
     if (filename) consume(filename.toString());
   });
   watcher.on("close", () => {
+    closed = true;
     for (const timer of pending.values()) clearTimeout(timer);
     pending.clear();
   });
+  const initial = await fs.readdir(statusDir).catch(() => [] as string[]);
+  initial.forEach(consume);
   return watcher;
 }
 

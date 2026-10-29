@@ -112,8 +112,12 @@ async function coordinator(
   appendLog?: (logDir: string, sessionId: string, data: string, maxBytes: number, trimSlackBytes?: number) => Promise<void>,
   statusDir?: string,
   hasProviderConversation?: (conversationId: string) => Promise<boolean>,
+  getLaunchProfile?: (agentId: string, id?: string | null) => Promise<import("../../shared/launch-profile").LaunchProfile | null>,
 ) {
+  const onCodexStatus = vi.fn();
   const instance = new TerminalCoordinator({
+    onCodexStatus,
+    getLaunchProfile,
     ...(hasProviderConversation
       ? { hasProviderConversation: (_session, _agent, conversationId) => hasProviderConversation(conversationId) }
       : {}),
@@ -136,10 +140,37 @@ async function coordinator(
     statusDir,
   });
   await instance.initialize();
-  return { instance, worker };
+  return { instance, worker, onCodexStatus };
 }
 
 describe("TerminalCoordinator", () => {
+  it("resolves a new-session profile once and does not override the saved conversation when resuming", async () => {
+    const getProfile = vi.fn(async () => ({ id: "p", name: "Profile", agentId: "claude" as const, model: "sonnet", effort: "medium" }));
+    const { instance, worker } = await coordinator(await tempRoot(), new FakeWorker(), undefined, undefined, undefined, undefined, getProfile);
+    await instance.create({ projectId: project.id, kind: "claude", cols: 80, rows: 24, launchProfileId: "p" });
+    expect(getProfile).toHaveBeenCalledWith("claude", "p");
+    expect(worker.create.mock.calls[0][0].args).toContain("--model=sonnet");
+    worker.emit({ type: "exit", sessionId: "session-1", exitCode: 0 }); await instance.flush();
+    await instance.resume({ sessionId: "session-1", cols: 80, rows: 24 });
+    expect(getProfile).toHaveBeenCalledTimes(1);
+    expect(worker.create.mock.calls[1][0].args).not.toContain("--model=sonnet");
+    expect(worker.create.mock.calls[1][0].args).toContain("--resume");
+    await instance.flush();
+  });
+  it("forks Claude into a distinct process and adopts only the child's hook ID", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: project.id, kind: "claude", cols: 80, rows: 24 });
+    instance.applyProviderStatus("session-1", "awaiting-input"); await instance.flush();
+    const child = await instance.fork({ sourceSessionId: "session-1", name: "Branch", cols: 90, rows: 30 });
+    expect(child.id).not.toBe("session-1"); expect(child.providerConversationId).toBeNull();
+    const spec = worker.create.mock.calls[1][0];
+    expect(spec.args).toContain("--fork-session");
+    instance.applyProviderStatus({ sessionId: child.id, provider: "claude", generation: spec.generation, event: "SessionStart", at: "2026-07-11T02:00:00Z", status: "idle", providerConversationId: "child-conversation" });
+    await instance.flush();
+    expect(instance.list().find(session => session.id === child.id)?.providerConversationId).toBe("child-conversation");
+    expect(instance.list().find(session => session.id === "session-1")?.providerConversationId).toBe("session-1");
+  });
   it("retains failed exit logs and releases only after a durable retry", async () => {
     const root = await tempRoot();
     let fail = true;
@@ -623,6 +654,31 @@ describe("TerminalCoordinator", () => {
     expect(stored.state.sessions["session-1"].providerConversationId).toBe("codex-created");
   });
 
+  it("updates Codex status only for the owned conversation and generation", async () => {
+    const root = await tempRoot();
+    const { instance, worker, onCodexStatus } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    const generation = worker.create.mock.calls[0][0].generation;
+    const base = { sessionId: "session-1", at: "2026-07-11T01:00:00.000Z", provider: "codex" as const, generation };
+    instance.applyProviderStatus({ ...base, event: "SessionStart", status: "working", providerConversationId: "owned" });
+    await instance.flush();
+    instance.applyProviderStatus({ ...base, event: "Stop", status: "awaiting-input", providerConversationId: "other" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("working");
+    expect(onCodexStatus).toHaveBeenCalledTimes(1);
+    instance.applyProviderStatus({ ...base, generation: "stale", event: "Stop", status: "awaiting-input", providerConversationId: "owned" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("working");
+    expect(onCodexStatus).toHaveBeenCalledTimes(1);
+    instance.applyProviderStatus({ ...base, event: "Stop", status: "awaiting-input", providerConversationId: "owned" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("awaiting-input");
+    instance.applyProviderStatus({ ...base, event: "UserPromptSubmit", status: "working", providerConversationId: "owned" });
+    await instance.flush();
+    expect(instance.list()[0].status).toBe("working");
+    expect(onCodexStatus).toHaveBeenCalledTimes(3);
+  });
+
   it("keeps main-owned Codex metadata when a worker attachment is stale", async () => {
     const root = await tempRoot();
     const worker = new FakeWorker();
@@ -811,6 +867,22 @@ describe("TerminalCoordinator", () => {
     await instance.flush();
 
     expect(instance.list()[0].providerConversationId).toBe("codex-early");
+  });
+
+  it("keeps the first tool metadata that arrives before worker creation finishes", async () => {
+    const root = await tempRoot();
+    const worker = new FakeWorker();
+    const create = worker.create.getMockImplementation()!;
+    const { instance, onCodexStatus } = await coordinator(root, worker);
+    worker.create.mockImplementation(async (spec) => {
+      const base = { sessionId: spec.sessionId, provider: "codex" as const, generation: spec.generation, providerConversationId: "early", at: "2026-07-11T01:00:00.000Z", status: "working" as const };
+      instance.applyProviderStatus({ ...base, event: "SessionStart", model: "probe" });
+      instance.applyProviderStatus({ ...base, event: "PreToolUse", model: "probe", toolName: "Bash" });
+      return create(spec);
+    });
+    await instance.create({ projectId: "project-1", kind: "codex", cols: 80, rows: 24 });
+    await instance.flush();
+    expect(onCodexStatus).toHaveBeenLastCalledWith("session-1", expect.objectContaining({ event: "PreToolUse", toolName: "Bash" }));
   });
 
   it("opens Codex's resume picker when neither a hook nor an exit footer linked the conversation", async () => {

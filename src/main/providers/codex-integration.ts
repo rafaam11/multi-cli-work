@@ -15,24 +15,43 @@ function writeStatus(event) {
   const statusDir = process.env.MULTI_CLI_WORK_STATUS_DIR;
   if (!sessionId || !/^[a-zA-Z0-9-]+$/.test(sessionId) || !statusDir) return;
   if (typeof event.session_id !== "string") return;
-  const target = path.join(statusDir, sessionId + ".json");
-  const temporary = target + "." + process.pid + "." + Date.now() + ".tmp";
   fs.mkdirSync(statusDir, { recursive: true });
-  try {
-  fs.writeFileSync(temporary, JSON.stringify({
+  const snapshot = JSON.stringify({
     sessionId,
-    status: "working",
-    event: "SessionStart",
+    status: ["Stop", "Interrupt"].includes(event.hook_event_name) ? "awaiting-input" : "working",
+    event: event.hook_event_name,
     at: new Date().toISOString(),
     providerConversationId: event.session_id,
     provider: "codex",
+    ...(typeof event.model === "string" ? { model: event.model } : {}),
+    ...(typeof event.permission_mode === "string" ? { permissionMode: event.permission_mode } : {}),
+    ...(typeof event.tool_name === "string" ? { toolName: event.tool_name } : {}),
     ...(process.env.MULTI_CLI_WORK_GENERATION ? { generation: process.env.MULTI_CLI_WORK_GENERATION } : {}),
     ...(typeof event.cwd === "string" && event.cwd ? { cwd: event.cwd } : {}),
     ...(typeof event.transcript_path === "string" ? { transcriptPath: event.transcript_path } : {}),
-  }) + "\\n", "utf8");
-  fs.rmSync(target, { force: true });
-  fs.renameSync(temporary, target);
-  } finally { fs.rmSync(temporary, { force: true }); }
+  }) + "\\n";
+  function writeSnapshot(target) {
+    const temporary = target + "." + process.pid + "." + Date.now() + ".tmp";
+    try {
+      fs.writeFileSync(temporary, snapshot, "utf8");
+      fs.renameSync(temporary, target);
+    } finally { fs.rmSync(temporary, { force: true }); }
+  }
+  // Watchers can coalesce startup and the first tool into one change. Preserve ownership first.
+  if (event.hook_event_name === "SessionStart") writeSnapshot(path.join(statusDir, sessionId + ".start.json"));
+  writeSnapshot(path.join(statusDir, sessionId + ".json"));
+  const activityDir = process.env.MULTI_CLI_WORK_ACTIVITY_DIR;
+  if (activityDir && process.env.MULTI_CLI_WORK_GENERATION) {
+    try {
+      fs.mkdirSync(activityDir, { recursive: true });
+      const id = require("node:crypto").randomUUID();
+      const activity = { ...JSON.parse(snapshot), id,
+        ...(typeof event.tool_use_id === "string" ? { toolCallId: event.tool_use_id } : {}) };
+      const target = path.join(activityDir, id + ".json");
+      fs.writeFileSync(target + ".tmp", JSON.stringify(activity), "utf8");
+      fs.renameSync(target + ".tmp", target);
+    } catch {}
+  }
 }
 // The work-project brief, in the same SessionStart shape the Claude hook prints. Non-ASCII goes out as
 // \\uXXXX so the console code page cannot mangle Korean on the way to Codex.
@@ -48,9 +67,10 @@ function emitBrief() {
 process.stdin.on("end", () => {
   let event;
   try { event = JSON.parse(input); } catch { return; }
-  if (!event || event.hook_event_name !== "SessionStart") return;
+  if (!event || !["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt"].includes(event.hook_event_name)) return;
   try { writeStatus(event); } catch {}
-  try { emitBrief(); } catch {}
+  if (event.hook_event_name === "SessionStart") { try { emitBrief(); } catch {} }
+  if (["Stop", "Interrupt"].includes(event.hook_event_name)) process.stdout.write("{}");
 });
 `;
 
@@ -116,7 +136,8 @@ export async function ensureCodexIntegration(options: CodexIntegrationOptions): 
   const command = `ELECTRON_RUN_AS_NODE=1 ${shellLiteral(executablePath)} ${shellLiteral(hookScriptPath)}`;
   const commandWindows = `cmd.exe /d /s /c ""${windowsHookRunnerPath.replaceAll("%", "%%")}""`;
   const trustState = await readHookTrustState(profilePath);
-  const profile = `[features]\nhooks = true\n\n[[hooks.SessionStart]]\nmatcher = "^(startup|resume)$"\n\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = ${tomlString(command)}\ncommand_windows = ${tomlString(commandWindows)}\ntimeout = 5\n${trustState}`;
+  const hook = (event: string, matcher = "") => `[[hooks.${event}]]\n${matcher}\n[[hooks.${event}.hooks]]\ntype = "command"\ncommand = ${tomlString(command)}\ncommand_windows = ${tomlString(commandWindows)}\ntimeout = ${event === "Interrupt" ? 3 : 5}\n`;
+  const profile = `[features]\nhooks = true\n\n${hook("SessionStart", 'matcher = "^(startup|resume)$"')}\n${hook("UserPromptSubmit")}\n${hook("PreToolUse")}\n${hook("PostToolUse")}\n${hook("Stop")}\n${hook("Interrupt")}\n${trustState}`;
   await fs.writeFile(profilePath, profile, "utf8");
   return { profileName: CODEX_APP_PROFILE, profilePath, hookScriptPath };
 }

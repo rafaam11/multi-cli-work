@@ -1,6 +1,9 @@
 import { AGENT_ARG_TOKENS, type AgentArgToken, type AgentDefinition } from "../../shared/agent-types";
+import { parseLaunchProfile, type LaunchProfile } from "../../shared/launch-profile";
 
 export interface AgentLaunchContext {
+  launchProfile?: LaunchProfile | null;
+  forkConversationId?: string;
   cwd: string;
   /** The id the app minted for this session. Also Claude's conversation id. */
   sessionId: string;
@@ -79,22 +82,48 @@ export function buildAgentLaunch(
   executable: string,
   context: AgentLaunchContext,
 ): AgentLaunchCommand {
+  const forking = Boolean(context.forkConversationId);
+  if (forking && (!definition.builtin || !["codex", "claude"].includes(definition.id) || context.resumeConversationId)) {
+    throw new AgentLaunchError("This agent cannot fork this conversation");
+  }
   const picker = context.codexResumePicker === true && context.resumeConversationId === null &&
     definition.builtin && definition.id === "codex";
   const resuming = context.resumeConversationId !== null || picker;
   const values: Record<AgentArgToken, string | null> = {
     cwd: context.cwd,
     sessionId: context.newConversationId ?? context.sessionId,
-    conversationId: context.resumeConversationId,
+    conversationId: context.forkConversationId ?? context.resumeConversationId,
     claudeSettings: context.claudeSettingsPath,
     codexProfile: context.codexProfileName,
   };
-  const sessionArgs = resuming ? definition.resumeArgs : definition.newSessionArgs;
+  const sessionArgs = forking
+    ? definition.id === "codex" ? definition.resumeArgs.map(arg => arg === "resume" ? "fork" : arg) : [...definition.resumeArgs, "--fork-session"]
+    : resuming ? definition.resumeArgs : definition.newSessionArgs;
   const template = [...(picker ? sessionArgs.filter((arg) => arg !== "{conversationId}") : sessionArgs), ...definition.args];
+  let args = [...template.map((arg) => substituteAgentArg(arg, values)), ...(context.extraArgs ?? [])];
+  if (context.launchProfile) {
+    const profile = parseLaunchProfile(context.launchProfile);
+    if (!definition.builtin || profile.agentId !== definition.id || resuming || forking) throw new AgentLaunchError("시작 프로필은 같은 CLI의 새 대화에만 적용할 수 있습니다");
+    const cleaned: string[] = [];
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index];
+      if (profile.model && ["--model", "-m"].includes(arg)) { index++; continue; }
+      if (profile.model && arg.startsWith("--model=")) continue;
+      if (profile.effort && definition.id === "claude" && arg === "--effort") { index++; continue; }
+      if (profile.effort && definition.id === "claude" && arg.startsWith("--effort=")) continue;
+      cleaned.push(arg);
+    }
+    args = cleaned;
+    if (profile.model) args.push(`--model=${profile.model}`);
+    if (profile.effort) {
+      if (definition.id === "claude") args.push(`--effort=${profile.effort}`);
+      else args.push("-c", `model_reasoning_effort=${JSON.stringify(profile.effort)}`);
+    }
+  }
   return {
     executable,
-    args: [...template.map((arg) => substituteAgentArg(arg, values)), ...(context.extraArgs ?? [])],
-    providerConversationId: providerConversationId(definition, context),
+    args,
+    providerConversationId: forking ? null : providerConversationId(definition, context),
   };
 }
 

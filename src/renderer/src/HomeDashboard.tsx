@@ -10,6 +10,8 @@ import { useEffect, useState } from "react";
 import { AgentIcon, GitHubIcon, agentAccentClass } from "./brand-icons";
 import { motionDuration, motionEase } from "./motion-tokens";
 import { SessionChips } from "./SessionChips";
+import { ControlOverview } from "./ControlOverview";
+import { UsageHistoryPanel } from "./UsageHistoryPanel";
 import { recentProjects } from "./recent-folders";
 import { TagChips } from "./TagChips";
 import {
@@ -69,6 +71,7 @@ function progressText(progress: SessionProgress | null): string {
 }
 
 interface HomeDashboardProps {
+  showUsageHistory?: boolean;
   projects: SharedProject[];
   workProjects: WorkProject[];
   projectMembership: Record<string, { workProjectId: string; role: WorkProjectRole }>;
@@ -94,6 +97,7 @@ interface HomeDashboardProps {
 }
 
 export function HomeDashboard({
+  showUsageHistory = true,
   projects,
   workProjects,
   projectMembership,
@@ -128,6 +132,7 @@ export function HomeDashboard({
 
   return (
     <section className="home-dashboard" aria-label="홈 대시보드">
+      <ControlOverview sessions={sessions} onSelectSession={onSelectSession} />
       <div className="home-grid">
         {workProjects.length > 0 ? (
           <section className="home-card home-card-work-projects" aria-label="업무 프로젝트">
@@ -340,6 +345,7 @@ export function HomeDashboard({
           )}
         </section>
 
+        {showUsageHistory ? <UsageHistoryPanel /> : null}
         <section className="home-card home-card-app" aria-label="앱 및 시스템 바로가기">
           <h2>멀티 터미널 작업기</h2>
           <p className="app-version-line">

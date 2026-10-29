@@ -245,6 +245,8 @@ export interface TerminalSessionView extends PersistedTerminalSession {
 }
 
 export interface CreateTerminalInput {
+  /** Omitted follows the app's default; null explicitly inherits the CLI's own settings. */
+  launchProfileId?: string | null;
   projectId: string;
   kind: TerminalKind;
   /** When set, the session runs in this worktree's directory instead of the project root. */
@@ -268,6 +270,13 @@ export interface CreateToolTerminalInput {
 
 export interface ResumeTerminalInput {
   sessionId: string;
+  cols: number;
+  rows: number;
+}
+
+export interface ForkTerminalInput {
+  sourceSessionId: string;
+  name: string;
   cols: number;
   rows: number;
 }
@@ -310,8 +319,32 @@ export type UpdaterStatus =
   | { state: "error"; message: string };
 
 export interface MultiCliWorkApi {
+  activity: { list(sessionId?: string): Promise<import("./activity-types").ProviderActivity[]> };
+  workbench: {
+    saveLaunchProfile(profile: import("./launch-profile").LaunchProfile): Promise<import("./workbench-types").WorkbenchState>;
+    removeLaunchProfile(id: string): Promise<import("./workbench-types").WorkbenchState>;
+    setDefaultLaunchProfile(agent: "claude" | "codex", id: string | null): Promise<import("./workbench-types").WorkbenchState>;
+    saveView(view: import("./workbench-types").SavedViewPreset): Promise<import("./workbench-types").WorkbenchState>;
+    removeView(id: string): Promise<import("./workbench-types").WorkbenchState>;
+    togglePin(id: string): Promise<import("./workbench-types").WorkbenchState>;
+    state(): Promise<import("./workbench-types").WorkbenchSnapshot>;
+    savePrompt(prompt: import("./workbench-types").PromptEntry): Promise<import("./workbench-types").WorkbenchState>;
+    removePrompt(id: string): Promise<import("./workbench-types").WorkbenchState>;
+    importPrompts(text: string): Promise<import("./workbench-types").WorkbenchState>;
+    exportPrompts(): Promise<string | null>;
+    saveDraft(id: string, text: string): Promise<import("./workbench-types").WorkbenchState>;
+  };
+  deliveries: {
+    list(): Promise<import("./delivery-types").DeliveryRecord[]>;
+    send(sessionId: string, text: string): Promise<import("./delivery-types").DeliveryRecord>;
+    edit(id: string, text: string): Promise<import("./delivery-types").DeliveryRecord | null>;
+    drop(id: string): Promise<import("./delivery-types").DeliveryRecord | null>;
+    sendNow(id: string): Promise<import("./delivery-types").DeliveryRecord | null>;
+    move(id: string, direction: "up" | "down"): Promise<import("./delivery-types").DeliveryRecord | null>;
+  };
   /** Claude·Codex 구독 사용량(타이틀바 게이지). */
   usage: {
+    history(): Promise<import("./usage-types").UsageHistorySnapshot>;
     state(): Promise<UsageSnapshot>;
     /** 지금 다시 읽는다 — 1분에 한 번까지. */
     refresh(): Promise<UsageSnapshot>;
@@ -603,6 +636,7 @@ export interface MultiCliWorkApi {
     onStateChange(listener: (state: WindowChromeState) => void): () => void;
   };
   terminals: {
+    fork(input: ForkTerminalInput): Promise<TerminalSessionView>;
     list(): Promise<TerminalSessionView[]>;
     state(): Promise<AppStateSnapshot>;
     create(input: CreateTerminalInput): Promise<TerminalSessionView>;

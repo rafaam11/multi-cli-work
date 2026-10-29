@@ -17,6 +17,8 @@ import { MotionConfig } from "motion/react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { DiffView } from "./DiffView";
 import { FanOutDialog } from "./FanOutDialog";
+import { HandoffDialog } from "./HandoffDialog";
+import { ForkDialog } from "./ForkDialog";
 import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
 import { GitGraphEmbed } from "./GitGraphEmbed";
 import type { GitWorktreeOption } from "./GitPanel";
@@ -48,6 +50,7 @@ import { localDiffNotesPrompt } from "@shared/line-notes";
 import type { QuickOpenItem } from "./quick-open";
 import { projectName, sessionLabel } from "./session-labels";
 import { neighbourSlot, resolveLayout, type FocusDirection } from "./grid-layouts";
+import { SavedViewPicker } from "./SavedViewPicker";
 import { SESSION_SIGNAL_MS, SessionSignalsContext, sessionSignalFor, type SessionSignal } from "./session-signals";
 import { DriveRootContext, type DriveRootInfo } from "./drive-root-context";
 import { showToast, Toaster } from "./toast";
@@ -193,6 +196,7 @@ export function App() {
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; surface: RenameSurface } | null>(null);
   const [removal, setRemoval] = useState<RemovalState | null>(null);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
+  const [quickOpenKind, setQuickOpenKind] = useState<QuickOpenItem["kind"] | "all">("all");
   const [unread, setUnread] = useState<Record<string, SessionAttention>>({});
   const [worktrees, setWorktrees] = useState<SharedWorktree[]>([]);
   const [activeReviews, setActiveReviews] = useState<ActivePullRequestReview[]>([]);
@@ -204,6 +208,8 @@ export function App() {
   const [worktreeRemoval, setWorktreeRemoval] = useState<WorktreeRemovalState | null>(null);
   const [worktreeForce, setWorktreeForce] = useState<WorktreeForceState | null>(null);
   const [fanOutVisible, setFanOutVisible] = useState(false);
+  const [handoff, setHandoff] = useState<{ source: TerminalSessionView; selection: string } | null>(null);
+  const [forkSource, setForkSource] = useState<TerminalSessionView | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 설정을 특정 탭으로 열 때만 값이 있다. */
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
@@ -1547,6 +1553,11 @@ export function App() {
 
   const handleQuickOpenSelect = (item: QuickOpenItem) => {
     setQuickOpenVisible(false);
+    if (["command:prompts", "command:deliveries", "command:activity"].includes(item.key)) {
+      setRightSidebarTab(item.key.slice("command:".length) as RightSidebarTab);
+      setRightSidebarCollapsed(false);
+      return;
+    }
     const [prefix, ...rest] = item.key.split(":");
     if (prefix === "session") {
       const session = sessions.find((candidate) => candidate.id === rest.join(":"));
@@ -2183,7 +2194,8 @@ export function App() {
       case "edit.clear": terminal?.clear(); break;
       case "view.toggle-sidebar": setSidebarCollapsed((value) => !value); break;
       case "view.toggle-right-sidebar": setRightSidebarCollapsed((value) => !value); break;
-      case "view.quick-open": setQuickOpenVisible((visible) => !visible); break;
+      case "view.quick-open": setQuickOpenKind("all"); setQuickOpenVisible((visible) => !visible); break;
+      case "view.commands": setQuickOpenKind("command"); setQuickOpenVisible(true); break;
       case "view.zoom-in": void window.multiCliWork.window.zoom("in"); break;
       case "view.zoom-out": void window.multiCliWork.window.zoom("out"); break;
       case "view.zoom-reset": void window.multiCliWork.window.zoom("reset"); break;
@@ -2385,6 +2397,9 @@ export function App() {
           pages={
             showsLayoutPicker ? { page: resolvedView.page, items: pageTabItems, onChange: setPage } : null
           }
+          savedViews={showsLayoutPicker ? <SavedViewPicker current={{ layoutId: currentView.layoutId, sidebarCollapsed, rightSidebarCollapsed, rightSidebarTab }} onApply={view => {
+            chooseLayout(view.layoutId); setSidebarCollapsed(view.sidebarCollapsed); setRightSidebarCollapsed(view.rightSidebarCollapsed); setRightSidebarTab(view.rightSidebarTab);
+          }} /> : null}
           refreshAll={
             showsLayoutPicker
               ? {
@@ -2658,6 +2673,7 @@ export function App() {
             />
           ) : (
             <HomeDashboard
+              showUsageHistory={appSettings.usage.enabled}
               projects={projects}
               workProjects={workProjects}
               projectMembership={projectMembership}
@@ -2690,6 +2706,9 @@ export function App() {
       />
 
       <RightSidebar
+        activityLog={activityLog}
+        selectedSession={selectedSession}
+        sessionIndicators={sessionIndicators}
         collapsed={rightSidebarCollapsed}
         onToggleCollapse={() => setRightSidebarCollapsed((value) => !value)}
         activeTab={rightSidebarTab}
@@ -2747,8 +2766,8 @@ export function App() {
           worktrees={worktrees.filter((worktree) => isWorkingWorktree(worktree, workspaceViews))}
           agents={agents}
           disabledReasonFor={newSessionDisabledReason}
-          onStart={(project, agentId, worktreeId) =>
-            void startSessionInSlot(project, agentId, worktreeId, newSessionSlot.index)
+          onStart={(project, agentId, worktreeId, profileId) =>
+            void startSessionInSlot(project, agentId, worktreeId, newSessionSlot.index, profileId)
           }
           onClose={() => setNewSessionSlot(null)}
         />
@@ -2832,6 +2851,8 @@ export function App() {
 
       {sessionMenu ? (
         <SessionContextMenu
+          onFork={sessionMenu.session.projectId && sessionMenu.session.providerConversationId && ["codex", "claude"].includes(sessionMenu.session.kind) && !["starting", "working", "awaiting-approval"].includes(sessionMenu.session.status) ? () => setForkSource(sessionMenu.session) : undefined}
+          onHandoff={sessionMenu.session.projectId ? () => setHandoff({ source: sessionMenu.session, selection: terminalCommands.current.get(sessionMenu.session.id)?.selectionText?.() ?? "" }) : undefined}
           sessionLabel={sessionMenu.label}
           x={sessionMenu.x}
           y={sessionMenu.y}
@@ -2859,12 +2880,19 @@ export function App() {
 
       {quickOpenVisible ? (
         <QuickOpenPalette
+          initialKind={quickOpenKind}
+          currentProjectId={selectedProjectId}
           items={quickOpenItems}
           onSelect={handleQuickOpenSelect}
           onClose={() => setQuickOpenVisible(false)}
         />
       ) : null}
+      {handoff ? <HandoffDialog source={handoff.source} selection={handoff.selection} sessions={sessions} onClose={() => setHandoff(null)} onDone={() => { selectSession(handoff.source); setHandoff(null); setRightSidebarTab("board"); setRightSidebarCollapsed(false); }} /> : null}
 
+      {forkSource ? <ForkDialog source={forkSource} onClose={() => setForkSource(null)} onCreated={session => {
+        setSessions(current => replaceSession(current, session)); setForkSource(null);
+        requestAnimationFrame(() => revealSessionRef.current(session));
+      }} /> : null}
       {workProjectCreateOpen ? (
         <WorkProjectCreateDialog
           categories={appSettings.projects.categories}
@@ -2934,6 +2962,14 @@ export function App() {
               .catch((error) => setActionError(errorMessage(error)))
           }
           onSend={(inputs) => void sendFanOut(inputs)}
+          onQueue={async (ids, text) => {
+            const results = await Promise.allSettled(ids.map(id => window.multiCliWork.deliveries.send(id, text)));
+            const failures = results.filter(result => result.status === "rejected");
+            setFanOutVisible(false);
+            setRightSidebarTab("deliveries");
+            setRightSidebarCollapsed(false);
+            if (failures.length) setActionError(`${failures.length}개 메시지를 보류 큐에 등록하지 못했습니다. 보류함에서 전달 상태를 확인해 주세요.`);
+          }}
           onClose={() => setFanOutVisible(false)}
         />
       ) : null}
