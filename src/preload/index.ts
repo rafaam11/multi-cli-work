@@ -391,6 +391,8 @@ if (process.argv.includes("--mcw-v2")) {
     taskAction: (id, action, input) => ipcRenderer.invoke("v2:task-action", id, action, input),
     onState: callback => {const listener=(_event:Electron.IpcRendererEvent,value:Parameters<typeof callback>[0])=>callback(value);ipcRenderer.on("v2:state",listener);return()=>ipcRenderer.removeListener("v2:state",listener);},
     hostState: () => ipcRenderer.invoke("v2:host-state"),
+    localConnection:()=>ipcRenderer.invoke("v2:local-connection"),listHosts:()=>ipcRenderer.invoke("v2:hosts"),
+    configureHost:registration=>ipcRenderer.invoke("v2:host-configure",registration),removeHost:id=>ipcRenderer.invoke("v2:host-remove",id),
     startTask: (id, input) => ipcRenderer.invoke("v2:task-start", id, input), repositoryHead: directory => ipcRenderer.invoke("v2:repository-head", directory),
     listTerminals: () => ipcRenderer.invoke("v2:terminals"), createTerminal: input => ipcRenderer.invoke("v2:terminal-create", input),
     subscribeTerminal: (id, callback) => {

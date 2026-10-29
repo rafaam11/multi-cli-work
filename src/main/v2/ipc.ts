@@ -48,6 +48,10 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
   };
   handle("enabled", () => true);
   handle("host-state", () => options.state?.() ?? {tasks:[],terminals:[],observedAt:null,connected:false});
+  handle("local-connection",()=>options.client.request("/connection"));
+  handle("hosts",()=>options.client.request("/hosts"));
+  handle("host-configure",registration=>options.client.request("/hosts","POST",registration));
+  handle("host-remove",(hostId:string)=>{if(typeof hostId!=="string"||!/^[\w-]{1,128}$/.test(hostId))throw new Error("Invalid host ID");return options.client.request(`/hosts/${encodeURIComponent(hostId)}`,"DELETE");});
   handle("configuration", async () => ({ hostId: options.hostId, ...await options.configuration() }));
   handle("tasks", () => options.client.tasks());
   handle("task-create", input => options.client.createTask(input));

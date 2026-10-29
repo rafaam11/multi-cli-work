@@ -34,6 +34,12 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     page.on("pageerror",error=>errors.push(`renderer: ${error.message}`));
     await expect.poll(()=>page.evaluate(()=>window.mcwV2?.version)).toBe(2);
     const descriptor=JSON.parse(await fs.readFile(path.join(`${userData}-v2`,"host/mcw-host.json"),"utf8")); client=new HostClient(descriptor);
+    await page.getByRole("menuitem",{name:"설정",exact:true}).click();
+    const settings=page.getByRole("dialog",{name:"설정",exact:true});await settings.getByRole("button",{name:"원격",exact:true}).click();
+    await expect(settings.getByText(`이 PC: ${descriptor.hostId}`)).toBeVisible();
+    const connectionInfo=await page.evaluate(()=>window.mcwV2!.localConnection!());expect(connectionInfo.hostId).toBe(descriptor.hostId);expect(connectionInfo).not.toHaveProperty("token");
+    await settings.getByLabel("SSH 주소",{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath("host-settings.png")});
+    await page.keyboard.press("Escape");
     const session=await page.evaluate(({projectId,kind})=>window.multiCliWork.terminals.create({projectId,kind,cols:100,rows:30}),{projectId,kind:process.platform==="win32"?"powershell":"bash"});
     observer=client.terminalSocket(session.id,event=>{
       const outer=event as {snapshot?:HerdrSurfaceEvent;frame?:HerdrSurfaceEvent};const value=outer.snapshot??outer.frame;

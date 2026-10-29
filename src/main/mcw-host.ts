@@ -4,6 +4,7 @@ import { TaskStore } from "./host/task-store";
 import { createHerdrTerminalService } from "./herdr/terminal-service";
 import { TaskExecutor } from "./host/task-executor";
 import { readConnectionInfo } from "./host/connection-info";
+import { HostConnections } from "./host/host-connections";
 
 /** Separate Node entrypoint. Importing it never starts a host or touches a user's data. */
 export async function startHost(options: HostGatewayOptions): Promise<HostGateway> {
@@ -23,6 +24,7 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   let terminals: Awaited<ReturnType<typeof createHerdrTerminalService>> | undefined;
   let executor: TaskExecutor | undefined;
   let stopObservation: (() => void) | undefined;
+  const hosts=new HostConnections({directory,localHostId:hostId});
   const service: HostGatewayOptions["terminals"] = {
     onChange: callback => terminals!.onChange(callback),
     list: () => terminals!.list(), create: input => terminals!.create(input), stop: id => terminals!.stop(id), snapshot: id => terminals!.snapshot(id),
@@ -31,11 +33,12 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
     takeOwnership: (id, viewer) => terminals!.takeOwnership(id, viewer), releaseOwnership: (id, viewer) => terminals!.releaseOwnership(id, viewer),
   };
   let gateway: HostGateway;
-  const finish = async () => { stopObservation?.(); await terminals?.close(); process.exit(0); };
+  const finish = async () => { stopObservation?.(); await hosts.close(); await terminals?.close(); process.exit(0); };
   try {
-    gateway = await startHost({ directory, store, terminals: service, bindAddress: option("--bind-address", false), allowRemote: argv.includes("--allow-remote"), advertisedHost: option("--advertised-host", false), onShutdown: finish, startTask: (taskId, input) => executor!.start(taskId, input), prepare: async () => {
+    gateway = await startHost({ directory, store, terminals: service, hosts, connectionInfo:()=>({hostId,platform:process.platform as "win32"|"linux",nodeExecutable:process.execPath,hostEntrypoint:path.join(__dirname,"mcw-host.js"),dataRoot:directory}), bindAddress: option("--bind-address", false), allowRemote: argv.includes("--allow-remote"), advertisedHost: option("--advertised-host", false), onShutdown: finish, startTask: (taskId, input) => executor!.start(taskId, input), prepare: async () => {
       terminals = await createHerdrTerminalService({ root: directory, binaryPath: config.binaryPath as string, binarySha256: config.binarySha256 as string, bridgePath: config.bridgePath as string });
       await store.recover();
+      await hosts.start();
     } });
     executor = new TaskExecutor({ directory, store, terminals: service, issueTaskToken: ref => gateway.issueTaskToken(ref), gatewayUrl: () => gateway.descriptor!.url,
       mcpClientPath: path.join(__dirname, "mcw-task-mcp-client.js"), mcpElectron: !!process.versions.electron });
@@ -47,7 +50,7 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
       finally { reconciling = false; }
     };
     stopObservation = terminals!.onChange(() => { void reconcile(); }); await reconcile();
-  } catch (error) { await terminals?.close(); throw error; }
+  } catch (error) { await hosts.close();await terminals?.close(); throw error; }
   const stop = () => { gateway.drain(); void gateway.canShutdown().then(async safe => { if (safe) { await gateway.close(); await finish(); } }); };
   process.on("SIGTERM", stop); process.on("SIGINT", stop);
   return gateway;

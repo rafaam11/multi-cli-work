@@ -51,6 +51,7 @@ export type TerminalStatus =
   | "error";
 
 export interface TerminalSession {
+  remote?: RemoteTerminalSource;
   taskNotice?: import("./task-notices").TaskSessionNotice | null;
   id: string;
   projectId: string | null;
@@ -64,6 +65,8 @@ export interface TerminalSession {
   updatedAt: string;
   exitCode: number | null;
 }
+
+export interface RemoteTerminalSource {hostId:string;name:string;sessionId:string;projectId:string|null;connected:boolean;observedAt:number|null}
 
 export interface TerminalLaunchSpec {
   sessionId: string;

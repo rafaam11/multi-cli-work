@@ -144,6 +144,16 @@ async function coordinator(
 }
 
 describe("TerminalCoordinator", () => {
+  it("retains disconnected remote work and never resumes it in a local checkout",async()=>{
+    const {instance,worker}=await coordinator(await tempRoot());
+    const id="mcwr-"+"a".repeat(64),base={id,projectId:null,tool:null,kind:"codex",cwd:"/remote/repo",providerConversationId:null,status:"idle" as const,pid:0,createdAt:"2026-10-30T00:00:00.000Z",updatedAt:"2026-10-30T00:01:00.000Z",exitCode:null,generation:"g",remote:{hostId:"lab",name:"Lab",sessionId:"actual",projectId:"remote-project",connected:true,observedAt:12}};
+    await instance.reconcileHostSessions([base]);await instance.reconcileHostSessions([]);
+    expect(instance.list()[0]).toMatchObject({status:"error",updatedAt:base.updatedAt,remote:{connected:false}});
+    await expect(instance.resume({sessionId:id,cols:80,rows:24})).rejects.toThrow(/원격/);expect(worker.create).not.toHaveBeenCalled();
+    worker.stop.mockRejectedValueOnce(new Error("delivery unknown"));await expect(instance.remove(id)).rejects.toThrow(/unknown/);
+    expect(instance.list()).toHaveLength(1);
+    await instance.reconcileHostSessions([base]);expect(instance.list()[0].status).toBe("idle");
+  });
   it("serializes host observations and publishes last-seen timestamps on disconnect", async () => {
     const { instance } = await coordinator(await tempRoot());
     const events: TerminalEvent[] = []; instance.onEvent(event => events.push(event));

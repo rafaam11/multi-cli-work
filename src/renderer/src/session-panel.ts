@@ -89,7 +89,7 @@ export function buildSessionPanelItems(input: {
         id: session.id,
         session,
         label: sessionLabel(session, peers, input.agents),
-        place: placeOf(session.projectId),
+        place: session.remote ? `${session.remote.name} · ${session.cwd}${session.remote.connected?"":" · 연결 끊김"}` : placeOf(session.projectId),
         branch: worktree?.branch ?? null,
         projectId: session.projectId,
         worktreeId: session.worktreeId ?? null,

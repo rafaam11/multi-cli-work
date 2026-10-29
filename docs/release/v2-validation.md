@@ -39,6 +39,8 @@ The implementation is still incomplete. SSH remote dispatch, the mobile v2 gatew
 
 The SSH transport now discovers an already-running `mcw-host` through an authenticated SSH account, then opens a loopback-only forward. It requires a preverified SSH host key and the expected MCW host ID, never starts a remote host, and carries owner credentials only inside SSH/HTTP messages, not command arguments. The remote helper's `--connection-info` option is a private read-only connection handshake, not a session-control CLI. Each connection closes its own SSH child without shutting down remote work. The Linux preview job uses a separate temporary sshd/key/known-host fixture to exercise real OpenSSH and reject a changed key; this is not a completed multi-PC dispatch or disconnected-results gate.
 
+The desktop Remote settings now copies safe local runtime connection information and explicitly registers SSH PCs. Registrations and observation reconnects belong to `mcw-host`, so closing the GUI does not close those links. Remote terminals appear in the global all/waiting list with PC/path labels and separate view identities. Canvas input and size ownership are routed to the remote host, while disconnection retains the last observation and never replays input. Remote repository IDs are kept separate from local folders; remote task dispatch, project-to-repository mapping and remote task actions are still pending. The Linux SSH fixture now also covers registration, terminal routing, explicit control and observer shutdown without stopping remote work.
+
 ```powershell
 node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release/v2-preview
 ```

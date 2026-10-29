@@ -23,7 +23,8 @@ export function observeHost(options: { client: HostClient; refresh?(): Promise<v
       } else if (value.type === "disconnected") {
         epoch++; socket?.close();
         // A disconnection is not a new observation of any process or task.
-        latest = { ...latest, connected: false, terminals: latest.terminals.map(terminal => ({ ...terminal, connected: false })) };
+        latest = { ...latest, connected: false, terminals: latest.terminals.map(terminal => ({ ...terminal, connected: false })),
+          ...(latest.hosts?{hosts:latest.hosts.map(host=>({...host,connected:false,terminals:host.terminals.map(terminal=>({...terminal,connected:false}))}))}:{}) };
         options.state(latest); schedule();
       }
     });

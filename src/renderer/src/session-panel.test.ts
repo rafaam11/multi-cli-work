@@ -40,6 +40,12 @@ function document(overrides: Partial<DocumentPane>): DocumentPane {
 const build = (input: Partial<Parameters<typeof buildSessionPanelItems>[0]>) =>
   buildSessionPanelItems({ sessions: [], documentPanes: [], projects: [atlas, dashboard], worktrees: [worktree], agents, unread: {}, ...input });
 
+it("shows remote PC and path in the global waiting list even when its transport is offline",()=>{
+  const remote=session({id:"remote-view",projectId:null,cwd:"/lab/repo",status:"error",remote:{hostId:"lab",name:"Lab",sessionId:"same",projectId:atlas.id,connected:false,observedAt:12},taskNotice:{taskId:"task",kind:"question",questionIds:["q"],resultIds:[],unread:true}});
+  const items=build({sessions:[session({id:"local"}),remote]});
+  expect(items[0]).toMatchObject({id:"remote-view",place:"Lab · /lab/repo · 연결 끊김",projectId:null});expect(sessionPanelWaitCount(items)).toBe(1);
+});
+
 describe("sessionRank", () => {
   it("승인 대기 → 입력 대기 → 작업 중/시작 중 → 나머지 순서다", () => {
     expect(sessionRank("awaiting-approval", null)).toBe(0);

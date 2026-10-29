@@ -19,11 +19,12 @@ const object = (value: unknown): value is JsonObject => typeof value === "object
 class RegistryContentError extends Error {}
 const validText=(value:unknown,max=512):value is string=>typeof value==="string"&&value.length>0&&value.length<=max&&!value.includes("\0");
 const validGeometry=(value:unknown):value is Geometry=>object(value)&&Number.isInteger(value.cols)&&Number.isInteger(value.rows)&&Number(value.cols)>=1&&Number(value.cols)<=4096&&Number(value.rows)>=1&&Number(value.rows)<=4096&&Number(value.cols)*Number(value.rows)<=1_000_000&&Number.isInteger(value.cellWidthPx)&&Number(value.cellWidthPx)>=0&&Number(value.cellWidthPx)<=1024&&Number.isInteger(value.cellHeightPx)&&Number(value.cellHeightPx)>=0&&Number(value.cellHeightPx)<=1024;
-export function parseHerdrSessionRegistry(value:unknown):Registry {
+export function parseHerdrSessionRegistry(value:unknown,platform:NodeJS.Platform=process.platform):Registry {
   if(!object(value)||value.version!==2||!Array.isArray(value.sessions)||value.sessions.length>10000) throw new RegistryContentError("Invalid Herdr session registry");
   const ids=new Set<string>();
+  const paths=platform==="win32"?path.win32:path.posix;
   for(const s of value.sessions) {
-    if(!object(s)||!validText(s.id,128)||!/^[\w-]+$/.test(s.id)||ids.has(s.id)||!validText(s.generation,128)||!validText(s.cwd,32768)||!path.isAbsolute(s.cwd)||!validText(s.kind,128)||!validText(s.createdAt,128)||!Number.isFinite(Date.parse(s.createdAt))||(s.projectId!==null&&!validText(s.projectId))||(s.tabId!==null&&!validText(s.tabId))||(s.paneId!==null&&!validText(s.paneId))||!['pending','delivered','unknown','rejected'].includes(String(s.delivery))||!validText(s.status,128)||typeof s.connected!=="boolean"||(s.observedAt!==null&&(!Number.isSafeInteger(s.observedAt)||Number(s.observedAt)<0))||(s.geometry!==undefined&&s.geometry!==null&&!validGeometry(s.geometry))||(s.delivery==='delivered'&&(!s.tabId||!s.paneId))) throw new RegistryContentError("Invalid Herdr session record");
+    if(!object(s)||!validText(s.id,128)||!/^[\w-]+$/.test(s.id)||ids.has(s.id)||!validText(s.generation,128)||!validText(s.cwd,32768)||!paths.isAbsolute(s.cwd)||!validText(s.kind,128)||!validText(s.createdAt,128)||!Number.isFinite(Date.parse(s.createdAt))||(s.projectId!==null&&!validText(s.projectId))||(s.tabId!==null&&!validText(s.tabId))||(s.paneId!==null&&!validText(s.paneId))||!['pending','delivered','unknown','rejected'].includes(String(s.delivery))||!validText(s.status,128)||typeof s.connected!=="boolean"||(s.observedAt!==null&&(!Number.isSafeInteger(s.observedAt)||Number(s.observedAt)<0))||(s.geometry!==undefined&&s.geometry!==null&&!validGeometry(s.geometry))||(s.delivery==='delivered'&&(!s.tabId||!s.paneId))) throw new RegistryContentError("Invalid Herdr session record");
     ids.add(s.id);
   }
   return value as unknown as Registry;
@@ -242,6 +243,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
     async list() {return [...sessions.values()].map(s=>({...s}));},
     async create(input:JsonObject):Promise<ManagedSession> {
       const spec=parseLaunchSpec(input);
+      if(spec.sessionId.startsWith("mcwr-"))throw new Error("Reserved remote viewer session ID");
       let finish!:()=>void;
       const prior=mutation;mutation=new Promise<void>(resolve=>finish=resolve);await prior;
       try {

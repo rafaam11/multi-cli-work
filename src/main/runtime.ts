@@ -1,7 +1,7 @@
 import { codexIndicatorUpdate } from "./providers/codex-indicators";
 import { observeHost } from "./v2/host-observer";
+import { observedTerminals,observedTaskNotices } from "./v2/observed-terminals";
 import { hostSessionView } from "./v2/worker-gateway";
-import { taskSessionNotices, taskUnread } from "../shared/task-notices";
 import {
   app,
   globalShortcut,
@@ -585,8 +585,7 @@ export async function createDesktopRuntime(
   }) : undefined;
   let onTaskState = () => {};
   const v2Watcher = host.v2 ? observeHost({ ...host.v2, state: state => {
-    const notices=taskSessionNotices(state.tasks);
-    void coordinator.reconcileHostSessions(state.terminals.map(value => ({ ...hostSessionView(value), generation: value.generation, taskNotice:notices[value.id]??null }))).catch(error => console.error("Host state reconciliation failed", error));
+    void coordinator.reconcileHostSessions(observedTerminals(state).map(value => ({ ...hostSessionView(value), generation: value.generation }))).catch(error => console.error("Host state reconciliation failed", error));
     sendToMainWindow(host.getMainWindow(), "v2:state", state);
     onTaskState();
   } }) : undefined;
@@ -634,7 +633,9 @@ export async function createDesktopRuntime(
   // One snapshot feeds every surface: window frame + taskbar (via applyAttention) and the
   // renderer's sidebar badges (via the broadcast).
   const combinedAttention = (snapshot: AttentionSnapshot):AttentionSnapshot => {
-    const unread = {...snapshot.unread,...taskUnread(v2Watcher?.snapshot().tasks??[])};
+    const hostState=v2Watcher?.snapshot();
+    const notices=hostState?Object.fromEntries(observedTaskNotices(hostState).filter(({notice})=>notice.unread).map(({sessionId,notice})=>[sessionId,notice.kind==="approval"?"approval" as const:"input" as const])):{};
+    const unread = {...snapshot.unread,...notices};
     return {unread,window:Object.values(unread).includes("approval")?"approval":Object.keys(unread).length?"input":"none"};
   };
   const publishAttention = (snapshot: AttentionSnapshot) => {
@@ -684,11 +685,13 @@ export async function createDesktopRuntime(
     publishAttention(attention.snapshot());
     const state=v2Watcher?.snapshot();if(!state?.connected)return;
     const settings=settingsService.current().notifications;
-    for(const task of state.tasks)for(const [sessionId,notice] of Object.entries(taskSessionNotices([task]))){
+    for(const {task,sessionId,notice,hostId,hostName,connected} of observedTaskNotices(state)){
+      if(!connected)continue;
       const ids=[...notice.questionIds.filter(id=>task.questions.some(question=>question.id===id&&!question.acknowledged)),...notice.resultIds];
-      const fresh=ids.some(id=>!notifiedTaskEvents.has(id));ids.forEach(id=>notifiedTaskEvents.add(id));
+      const keys=ids.map(id=>JSON.stringify([hostId,task.id,id]));
+      const fresh=keys.some(id=>!notifiedTaskEvents.has(id));keys.forEach(id=>notifiedTaskEvents.add(id));
       if(!fresh || !settings.desktop || !settings.statuses[notice.kind==="approval"?"awaiting-approval":"awaiting-input"] || notificationsMuted(settings,new Date()) || !Notification.isSupported())continue;
-      const notification=new Notification({title:notice.kind==="approval"?"작업 승인 대기":notice.kind==="question"?"작업 질문 도착":"작업 결과 제출",body:task.title});
+      const notification=new Notification({title:notice.kind==="approval"?"작업 승인 대기":notice.kind==="question"?"작업 질문 도착":"작업 결과 제출",body:hostName?`${hostName} · ${task.title}`:task.title});
       notification.on("click",()=>{showMainWindow();sendToMainWindow(host.getMainWindow(),"navigation:session-requested",{sessionId});});notification.show();
     }
   };

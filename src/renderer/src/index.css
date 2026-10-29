@@ -5379,6 +5379,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .settings-remote-host-form button { flex: 0 0 auto; white-space: nowrap; }
 .settings-remote-host-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .settings-remote-host-actions label { white-space: nowrap; font: var(--type-secondary); }
+.v2-host-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin: 12px 0; }
+.v2-host-form label { display: grid; gap: 4px; min-width: 0; color: var(--text-muted); font: var(--type-secondary); }
+.v2-host-form input, .v2-host-form textarea { min-width: 0; padding: 6px 8px; color: var(--text); background: var(--surface-raised); border: 1px solid var(--line); border-radius: 5px; font: var(--type-secondary); }
+.v2-host-form textarea { resize: vertical; }
+.v2-host-connection { grid-column: 1 / -1; }
 
 .settings-error {
   margin: 10px 0 0;

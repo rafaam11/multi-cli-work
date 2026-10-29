@@ -9,6 +9,10 @@ import { TaskStore } from "./task-store";
 import { isFetchPort } from "./http-port";
 import { TaskMcpServer } from "../mcw-task-mcp";
 import type { AttemptRef, TaskCreateInput, TaskIdentity } from "../../shared/host-types";
+import type { LocalHostConnection, HostRegistration } from "../../shared/host-connection-types";
+import type { HostConnections } from "./host-connections";
+import type { HostTerminalSocket } from "./host-client";
+import { resolveRemoteSession } from "../v2/observed-terminals";
 
 /** The independent daemon owns this service. Closing a viewer never stops a session. */
 export interface HostTerminalService {
@@ -34,6 +38,8 @@ export interface HostGatewayOptions {
   /** Runs after the singleton daemon lock, before routes/readiness become visible. */
   prepare?: () => Promise<void>;
   startTask?: (taskId: string, input: unknown) => Promise<unknown>;
+  hosts?: Pick<HostConnections,"snapshot"|"registrations"|"configure"|"remove"|"onChange"|"client">;
+  connectionInfo?:()=>LocalHostConnection;
 }
 class HttpError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 const secret = () => randomBytes(32).toString("base64url");
@@ -163,6 +169,17 @@ export class HostGateway {
         reply(response, result === null ? 202 : 200, result); return;
       }
       if (!auth.owner) throw new HttpError(403, "Owner capability required");
+      if(url.pathname==="/connection"&&method==="GET"){if(!this.options.connectionInfo)throw new HttpError(503,"Host connection info unavailable");reply(response,200,this.options.connectionInfo());return;}
+      if(url.pathname==="/hosts"&&method==="GET"){reply(response,200,{registrations:this.options.hosts?.registrations()??[],observations:this.options.hosts?.snapshot()??[]});return;}
+      if(url.pathname==="/hosts"&&method==="POST"){
+        if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.hosts)throw new HttpError(503,"Host connections unavailable");
+        await this.options.hosts.configure(await body(request,this.limit) as HostRegistration);reply(response,200,{});return;
+      }
+      const hostRoute=/^\/hosts\/([^/]+)$/.exec(url.pathname);
+      if(hostRoute&&method==="DELETE"){
+        if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.hosts)throw new HttpError(503,"Host connections unavailable");
+        await this.options.hosts.remove(text(decodeURIComponent(hostRoute[1])));reply(response,200,{});return;
+      }
       if (url.pathname === "/health" && method === "GET") { reply(response, 200, { schemaVersion: 2, hostId: this.descriptor.hostId, instanceId: this.descriptor.instanceId, accepting: this.accepting }); return; }
       if (url.pathname === "/drain" && method === "POST") { this.drain(); reply(response, 200, { accepting: false }); return; }
       if (url.pathname === "/shutdown" && method === "POST") { this.drain(); if (!await this.canShutdown()) throw new HttpError(409, "Active or unobserved work prevents shutdown"); reply(response, 200, { shutdown: true }); setImmediate(() => { void this.close().then(() => this.options.onShutdown?.()); }); return; }
@@ -192,12 +209,21 @@ export class HostGateway {
       if (url.pathname === "/terminals" && method === "GET") { reply(response, 200, await this.options.terminals.list()); return; }
       if (url.pathname === "/terminals" && method === "POST") { if (!this.accepting) throw new HttpError(409, "Host is draining"); this.pendingCreates++; try { reply(response, 201, await this.options.terminals.create(object(await body(request, this.limit)))); } finally { this.pendingCreates--; } return; }
       const terminalRoute = /^\/terminals\/([^/]+)$/.exec(url.pathname);
-      if (terminalRoute && method === "DELETE") { await this.options.terminals.stop(text(decodeURIComponent(terminalRoute[1]))); reply(response, 200, {}); return; }
+      if (terminalRoute && method === "DELETE") {
+        const id=text(decodeURIComponent(terminalRoute[1]));
+        if(id.startsWith("mcwr-")){
+          const {host,terminal}=resolveRemoteSession(this.options.hosts?.snapshot()??[],id);
+          await this.options.hosts!.client(host.hostId).stopTerminal(terminal.id);
+        }else await this.options.terminals.stop(id);
+        reply(response, 200, {}); return;
+      }
       throw new HttpError(404, "Unknown endpoint");
     } catch (error) { if (!response.headersSent) reply(response, error instanceof HttpError ? error.status : 400, { error: error instanceof HttpError ? error.message : "Operation rejected" }); else response.end(); }
   }
   private connect(socket: WebSocket, headerToken?: string): void {
     const viewerId = randomUUID(); let authenticated = false; let sessionId: string | undefined; let unsubscribe: (() => void) | undefined;
+    let remote:HostTerminalSocket|undefined,remoteReady=false,remoteEpoch=0;
+    const closeRemote=()=>{remoteEpoch++;remoteReady=false;remote?.close();remote=undefined;};
     const send = (value: unknown) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value)); };
     const authenticate = (token: string | undefined) => { if (!this.authorize(token).owner) throw new HttpError(403, "Owner capability required"); authenticated = true; clearTimeout(timer); send({ type: "authenticated", viewerId }); };
     const timer = setTimeout(() => socket.close(1008, "Authentication required"), 5000); timer.unref();
@@ -221,7 +247,7 @@ export class HostGateway {
               const [tasks, terminals] = await Promise.all([this.options.store.list(), this.options.terminals.list()]);
               if (!stopped) {
                 if (socket.bufferedAmount > 4 * 1024 * 1024) socket.close(1013, "Viewer too slow");
-                else send({ type: "state", tasks, terminals, observedAt: Date.now() });
+                else send({ type: "state", tasks, terminals, hosts:this.options.hosts?.snapshot()??[], observedAt: Date.now() });
               }
             } while (dirty && !stopped); }
             catch { send({ type: "error", error: "Host state unavailable" }); }
@@ -229,13 +255,33 @@ export class HostGateway {
           };
           const offTasks = this.options.store.onChange(() => { void publish(); });
           const offTerminals = this.options.terminals.onChange?.(() => { void publish(); });
-          stopWatching = () => { stopped = true; offTasks(); offTerminals?.(); };
+          const offHosts=this.options.hosts?.onChange(()=>{void publish();});
+          stopWatching = () => { stopped = true; offTasks(); offTerminals?.(); offHosts?.(); };
           await publish(); return;
         }
         if (message.type === "subscribe") {
           const nextId = text(message.sessionId);
           if (sessionId && this.owners.get(sessionId) === viewerId) { await this.options.terminals.releaseOwnership(sessionId, viewerId); this.owners.delete(sessionId); }
-          unsubscribe?.(); sessionId = nextId;
+          closeRemote();unsubscribe?.();unsubscribe=undefined; sessionId = nextId;
+          if(nextId.startsWith("mcwr-")){
+            try{
+              const {host,terminal}=resolveRemoteSession(this.options.hosts?.snapshot()??[],nextId);
+              const epoch=remoteEpoch;
+              remote=this.options.hosts!.client(host.hostId).terminalSocket(terminal.id,event=>{
+                if(epoch!==remoteEpoch||socket.readyState!==WebSocket.OPEN)return;
+                if(socket.bufferedAmount>4*1024*1024){socket.close(1013,"Viewer too slow");return;}
+                if(event instanceof Uint8Array){socket.send(event,{binary:true});return;}
+                const value=event as Record<string,unknown>;
+                if(value.type==="authenticated"){remoteReady=true;return;}
+                if(value.type==="disconnected"){remoteReady=false;socket.close(1013,"Remote observation disconnected");return;}
+                // The remote socket owns its own input lease. Translate only this viewer's ID;
+                // another viewer's owner ID stays distinct and cannot grant local control.
+                send({...value,sessionId:nextId,...(value.viewerId?{viewerId}:{}),
+                  ...("ownerId" in value?{ownerId:value.ownerId===value.viewerId?viewerId:value.ownerId}: {})});
+              },()=>socket.close(1013,"Remote terminal unavailable"));
+            }catch{socket.close(1013,"Remote host unavailable; reconnect observation");}
+            return;
+          }
           try {
             // Register first: a frame can arrive while the snapshot promise resolves.
             unsubscribe = this.options.terminals.subscribeFrames(sessionId, frame => { if (socket.readyState === WebSocket.OPEN) { if (socket.bufferedAmount > 4 * 1024 * 1024) socket.close(1013, "Viewer too slow"); else if (frame instanceof Uint8Array) socket.send(frame, { binary: true }); else send({ type: "frame", sessionId, frame }); } });
@@ -245,6 +291,11 @@ export class HostGateway {
           return;
         }
         if (!sessionId) throw new HttpError(400, "Subscribe first");
+        if(sessionId.startsWith("mcwr-")){
+          if(!remoteReady||!remote)throw new HttpError(409,"Remote terminal is not connected");
+          if(!["snapshot","input","resize","scroll","takeOwnership","releaseOwnership"].includes(String(message.type)))throw new HttpError(400,"Unknown terminal command");
+          remote.send(message);return;
+        }
         if (message.type === "takeOwnership") {
           if (this.owners.has(sessionId) && this.owners.get(sessionId) !== viewerId) throw new HttpError(409, "Session already has an owner");
           this.owners.set(sessionId, viewerId);
@@ -263,6 +314,7 @@ export class HostGateway {
     socket.on("error", () => undefined);
     socket.once("close", () => {
       clearTimeout(timer);
+      closeRemote();
       stopWatching?.();
       // Await queued input before relinquishing size ownership; never terminate work.
       void queue.finally(async () => { unsubscribe?.(); if (sessionId && this.owners.get(sessionId) === viewerId) { this.owners.delete(sessionId); await this.options.terminals.releaseOwnership(sessionId, viewerId).catch(() => undefined); } });

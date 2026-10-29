@@ -10,6 +10,7 @@ import { HostGateway, type HostTerminalService } from "./gateway";
 import { HostClient } from "./host-client";
 import { TaskStore } from "./task-store";
 import { ensureHostProcess, readHostDescriptor } from "./host-process";
+import {remoteSessionId} from "../v2/observed-terminals";
 
 const directories: string[] = []; const gateways: HostGateway[] = []; const sockets: WebSocket[] = [];
 afterEach(async () => { for (const socket of sockets.splice(0)) socket.terminate(); await Promise.all(gateways.splice(0).map(gateway => gateway.close())); await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
@@ -38,6 +39,34 @@ async function setup(extra: Partial<import("./gateway").HostGatewayOptions> = {}
   return { directory, store, terminals, gateway, descriptor, client, fetchRoute };
 }
 const taskInput = { title: "Review", brief: "Preserve execution across viewer disconnect", lead: { provider: "codex" as const, profileId: "default", hostId: "pc-a" }, workers: [{ provider: "claude" as const, profileId: "review" }] };
+it("routes a remote view to the registered PC and leaves its process alive when the viewer closes",async()=>{
+  const remote=await setup();remote.terminals.sessions.set("same",{id:"same"});
+  const observation:import("../../shared/host-connection-types").RemoteHostObservation={hostId:"remote",name:"Lab",enabled:true,connected:true,observedAt:12,error:null,tasks:[],terminals:[{id:"same",kind:"codex",cwd:"/repo",projectId:null,status:"idle",connected:true,observedAt:12,tabId:"tab",paneId:"pane",generation:"g",createdAt:"2026-10-30T00:00:00Z"}]};
+  const hosts={registrations:()=>[],snapshot:()=>[observation],configure:vi.fn(),remove:vi.fn(),onChange:()=>()=>{},client:vi.fn(()=>{if(!observation.connected)throw new Error("offline");return remote.client;})};
+  const local=await setup({hosts});local.terminals.sessions.set("same",{id:"same"});
+  const viewId=remoteSessionId("remote","same"),view=await viewer(local.descriptor.url,local.descriptor.token);
+  view.send({type:"subscribe",sessionId:viewId});const snapshot=await view.next("snapshot");
+  expect(snapshot).toMatchObject({sessionId:viewId,snapshot:{surface:"same"},viewerId:view.viewerId});
+  view.send({type:"input",data:{TextCommit:"blocked"}});await view.next("error");expect(remote.terminals.input).not.toHaveBeenCalled();
+  view.send({type:"takeOwnership"});expect(await view.next("ownership")).toMatchObject({owner:true,ownerId:view.viewerId});
+  view.send({type:"input",data:{TextCommit:"one command"}});
+  await vi.waitFor(()=>expect(remote.terminals.input).toHaveBeenCalledOnce());expect(local.terminals.input).not.toHaveBeenCalled();
+  view.socket.close();await vi.waitFor(()=>expect(remote.terminals.releaseOwnership).toHaveBeenCalled());
+  expect(remote.terminals.stop).not.toHaveBeenCalled();
+  observation.connected=false;await expect(local.client.stopTerminal(viewId)).rejects.toThrow();expect(remote.terminals.stop).not.toHaveBeenCalled();
+  observation.connected=true;await local.client.stopTerminal(viewId);expect(remote.terminals.stop).toHaveBeenCalledWith("same");expect(local.terminals.stop).not.toHaveBeenCalled();
+});
+it("exposes SSH registrations and non-secret local connection info only to the owner and freezes edits while draining",async()=>{
+  const hosts={registrations:vi.fn(()=>[]),snapshot:vi.fn(()=>[]),configure:vi.fn(async()=>{}),remove:vi.fn(async()=>{}),onChange:vi.fn(()=>()=>{}),client:vi.fn()};
+  const info={hostId:"pc-a",platform:"linux" as const,nodeExecutable:"/opt/node",hostEntrypoint:"/opt/mcw-host.js",dataRoot:"/home/me/mcw"};
+  const {client,descriptor}=await setup({hosts,connectionInfo:()=>info});
+  expect(await client.request("/connection")).toEqual(info);
+  expect(await client.request("/hosts")).toEqual({registrations:[],observations:[]});
+  expect((await fetch(descriptor.url+"/hosts")).status).toBe(401);
+  const registration={name:"remote",enabled:true,ssh:{}};await client.request("/hosts","POST",registration);expect(hosts.configure).toHaveBeenCalledExactlyOnceWith(registration);
+  await client.drain();await expect(client.request("/hosts","POST",registration)).rejects.toThrow(/draining/);
+  await expect(client.request("/hosts/remote","DELETE")).rejects.toThrow(/draining/);expect(hosts.remove).not.toHaveBeenCalled();
+});
 it("rebinds an ephemeral Fetch-blocked port before publishing the host descriptor",async()=>{
   const original=Server.prototype.address;
   let calls=0;

@@ -3,11 +3,13 @@ import type { V2TerminalSummary } from "../../shared/v2-api";
 import type { ClientPaneInputEvent } from "../../shared/herdr-surface-types";
 import type { TerminalWorkerGateway } from "../terminal/terminal-coordinator";
 import { HostClient } from "../host/host-client";
+import { observedTerminals, type ObservedTerminal } from "./observed-terminals";
+import type { RemoteHostObservation } from "../../shared/host-connection-types";
 
-export function hostSessionView(value:V2TerminalSummary):TerminalSession {
+export function hostSessionView(value:ObservedTerminal):TerminalSession {
   const status = !value.connected ? "error" : value.status==="blocked" ? "awaiting-input" : value.status==="working" ? "working" : value.status==="exited" ? "exited" : ["idle","done"].includes(value.status) ? "idle" : "starting";
   // Zero explicitly means a host-managed process; this GUI does not own or signal an OS PID.
-  return {id:value.id,projectId:value.projectId,kind:value.kind,cwd:value.cwd,tool:null,providerConversationId:null,status,pid:0,createdAt:value.createdAt,updatedAt:value.observedAt?new Date(value.observedAt).toISOString():value.createdAt,exitCode:null};
+  return {id:value.id,projectId:value.projectId,kind:value.kind,cwd:value.cwd,tool:null,providerConversationId:null,status,pid:0,createdAt:value.createdAt,updatedAt:value.observedAt?new Date(value.observedAt).toISOString():value.createdAt,exitCode:null,...(value.remote?{remote:value.remote}:{}),taskNotice:value.taskNotice??null};
 }
 export function semanticInput(data:string):ClientPaneInputEvent[] {
   if(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(data)) throw new Error("이 입력은 Canvas 터미널에서 직접 실행하세요.");
@@ -23,15 +25,18 @@ export function semanticInput(data:string):ClientPaneInputEvent[] {
 export class HostWorkerGateway implements TerminalWorkerGateway {
   private listeners=new Set<(event:TerminalWorkerEvent)=>void>();
   constructor(readonly client:HostClient) {}
-  async listExisting(){return (await this.client.terminals() as V2TerminalSummary[]).map(s=>({...hostSessionView(s),generation:s.generation}));}
+  async listExisting(){
+    const [terminals,tasks,{observations:hosts}]=await Promise.all([this.client.terminals() as Promise<V2TerminalSummary[]>,this.client.tasks(),this.client.request<{observations:RemoteHostObservation[]}>("/hosts")]);
+    return observedTerminals({tasks,terminals,hosts}).map(s=>({...hostSessionView(s),generation:s.generation}));
+  }
   async create(spec:TerminalLaunchSpec) {
     const env=Object.fromEntries(Object.entries(spec.env).filter(([key])=>!/^HERDR_|^MULTI_CLI_WORK_CONTROL_|^JK_/i.test(key)));
     return hostSessionView(await this.client.createTerminal({...spec,env}) as V2TerminalSummary);
   }
   async attach(id:string):Promise<TerminalAttachment> {
-    const found=(await this.client.terminals() as V2TerminalSummary[]).find(s=>s.id===id);
+    const found=(await this.listExisting()).find(s=>s.id===id);
     if(!found)throw new Error("호스트 세션을 찾을 수 없습니다.");
-    return {session:hostSessionView(found),replay:"",sequence:0};
+    return {session:found,replay:"",sequence:0};
   }
   async write(_id:string,_data:string):Promise<void> {throw new Error("Herdr 세션의 입력은 제어권을 가진 Canvas 터미널에서 전송하세요.");}
   async resize():Promise<void> { /* The authenticated Canvas owner sizes the shared host endpoint. */ }

@@ -262,7 +262,13 @@ export class TerminalCoordinator {
   }
   reconcileHostSessions(observed?: (TerminalSession & {generation: string})[]): Promise<void> {
     const next = this.hostReconciliation.then(async () => {
-    for (const session of observed ?? await this.options.worker.listExisting?.() ?? []) {
+    const sessions=observed ?? await this.options.worker.listExisting?.() ?? [];
+    const ids=new Set(sessions.map(session=>session.id));
+    for(const view of this.views.values())if(view.remote&&!ids.has(view.id)){
+      view.remote={...view.remote,connected:false};view.status="error";
+      this.publish({type:"workspace",sessionId:view.id,session:{...view}});
+    }
+    for (const session of sessions) {
       if (this.removedSessionIds.has(session.id)) continue;
       const previous = this.views.get(session.id);
       const view: TerminalSessionView = { ...previous, ...session, title: previous?.title ?? null, name: previous?.name ?? null, interruptedByShutdown: false };
@@ -356,6 +362,7 @@ export class TerminalCoordinator {
   }
 
   async resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
+    if(input.sessionId.startsWith("mcwr-"))throw new Error("원격 세션 재개는 해당 PC에서 실행하세요.");
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
@@ -572,6 +579,9 @@ export class TerminalCoordinator {
   async remove(sessionId: string): Promise<void> {
     const view = this.views.get(sessionId);
     if (!view) return;
+    // Host-owned work must remain visible if stop delivery or its remote state is unknown.
+    const hostStop=view.pid===0&&view.status!=="exited";
+    if(hostStop)await this.options.worker.stop(sessionId);
     this.removedSessionIds.add(sessionId);
     this.pendingProviderStarts.delete(sessionId);
     this.pendingCodexStatuses.delete(sessionId);
@@ -579,7 +589,7 @@ export class TerminalCoordinator {
     // Drain lifecycle writes that began before removal claimed the session. Events from stop() and
     // later are rejected by removedSessionIds, so durable deletion remains the final state write.
     await this.eventChain;
-    if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
+    if (!hostStop && view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
     await this.logWrites.get(sessionId)?.catch(() => undefined);
     await deleteSessionLog(this.options.logDir, sessionId);
     if (this.options.statusDir) {
@@ -1101,6 +1111,7 @@ export class TerminalCoordinator {
   /** Only an agent that writes a transcript we can parse has a title to poll for. */
   private titleCandidates(): Array<{ session: TerminalSessionView; agent: AgentDefinition }> {
     return this.list().flatMap((session) => {
+      if(session.id.startsWith("mcwr-"))return [];
       const agent = this.options.getAgent(session.kind);
       if (!agent || agent.titleSource === "none") return [];
       if (agent.titleSource === "codex-transcript" && session.title !== null) return [];
@@ -1116,6 +1127,7 @@ export class TerminalCoordinator {
    */
   private editCandidates(): Array<{ session: TerminalSessionView; agent: AgentDefinition }> {
     return this.list().flatMap((session) => {
+      if(session.id.startsWith("mcwr-"))return [];
       const agent = this.options.getAgent(session.kind);
       if (!agent || agent.titleSource === "none") return [];
       if (session.pid === null || session.status === "exited" || session.status === "error") return [];
