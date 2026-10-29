@@ -1,6 +1,9 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, dialog } from "electron";
 import path from "node:path";
-import { createDesktopRuntime, type DesktopRuntime } from "./runtime";
+import type { DesktopRuntime, DesktopWindowHost } from "./runtime";
+import os from "node:os";
+import { prepareV2Data, v2RegistryEnvironment } from "./v2/bootstrap";
+import { startDesktopHost, preserveRecoveryRuntime } from "./v2/desktop-host";
 import { trayIconDataUrl } from "./tray-icon";
 import { checkForUpdates, initUpdater, quitAndInstall } from "./updater";
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
@@ -21,6 +24,8 @@ let runtime: DesktopRuntime | null = null;
 let shouldFocusWhenReady = false;
 let trayUnavailable = false;
 let windowAttention: AttentionSnapshot = { window: "none", unread: {} };
+const v2Enabled = process.env.MCW_RUNTIME === "v2-preview" || /^2\./.test(app.getVersion());
+let v2Host: DesktopWindowHost["v2"];
 const quitCoordinator = new QuitCoordinator(async () => {
   await runtime?.dispose();
 });
@@ -45,6 +50,7 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: v2Enabled ? ["--mcw-v2"] : [],
       // 원격 창이 보낸 그리드 조작은 이 렌더러가 처리한다 — 창이 가려져 있어도 늦지 않게.
       backgroundThrottling: false,
     },
@@ -172,7 +178,7 @@ async function confirmStoppingSessions(title: string, message: string, confirmLa
 async function requestQuit(): Promise<void> {
   if (!runtime || quitCoordinator.isCommitted()) return;
   await quitCoordinator.request({
-    confirm: () => confirmStoppingSessions(
+    confirm: () => v2Enabled ? Promise.resolve(true) : confirmStoppingSessions(
       "멀티 터미널 작업기 종료",
       "종료하고 실행 중인 모든 세션을 중지할까요?",
       "종료",
@@ -245,10 +251,24 @@ if (!hasSingleInstanceLock) {
     // English row on top of it. The tray still builds a menu of its own.
     Menu.setApplicationMenu(null);
     try {
+      if (v2Enabled) {
+        const v1UserData = app.getPath("userData");
+        const prepared = await prepareV2Data({v1UserData, v1Registry: process.env.MCW_V1_REGISTRY ?? path.join(os.homedir(), ".multi-cli-work"), recoveryRoot: process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`,
+          assertStopped: async () => {if (!hasSingleInstanceLock || runtime) throw new Error("v1 종료를 확인하지 못했습니다.");}});
+        app.setPath("userData", prepared.userData);
+        Object.assign(process.env, v2RegistryEnvironment(prepared.registry));
+        const sourceRoot = path.resolve(__dirname,"../..");
+        const resourcesDirectory = app.isPackaged ? path.join(process.resourcesPath,"v2") : path.join(sourceRoot,"build/v2");
+        const bridgeDirectory = app.isPackaged ? path.join(process.resourcesPath,"herdr-bridge") : path.join(sourceRoot,`build/herdr-bridge/${process.platform}-${process.arch}`);
+        await preserveRecoveryRuntime(resourcesDirectory, prepared.recoveryRoot, path.dirname(process.execPath), app.isPackaged ? path.join(process.resourcesPath,"recovery-scripts") : path.join(sourceRoot,"scripts/recovery"));
+        v2Host = {...await startDesktopHost({userData:prepared.userData,resourcesDirectory,bridgeDirectory,entryPath:path.join(resourcesDirectory,"host/mcw-host.js")}),backupDirectory:prepared.backupDirectory};
+      }
+      const {createDesktopRuntime} = await import("./runtime");
       runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit, updateWindowAttention, {
         // Lazy: the runtime is constructed before the window exists (the next line).
         getMainWindow: () => mainWindow,
         requestQuit,
+        v2: v2Host,
       });
       mainWindow = createWindow();
       try {
@@ -259,11 +279,12 @@ if (!hasSingleInstanceLock) {
         console.error("Tray creation failed; close will quit instead of hiding the app.", error);
       }
       initUpdater({
-        autoCheck: runtime?.settings.current().general.autoCheckUpdates ?? true,
+        autoCheck: !v2Enabled && (runtime?.settings.current().general.autoCheckUpdates ?? true),
         getWindow: () => mainWindow,
       });
       if (shouldFocusWhenReady) showMainWindow();
     } catch (error) {
+      console.error("Desktop startup failed", error);
       await dialog.showMessageBox({
         type: "error",
         title: "멀티 터미널 작업기",

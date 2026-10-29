@@ -1,0 +1,31 @@
+# Offline v1.55.1 recovery
+
+This engine uses Node built-ins and does not import Electron, the app registry, provider transcripts, or Git. Every mutation takes explicit paths. Development tests use temporary directories only.
+
+The main-process facade is `src/main/recovery/index.ts`; shared contracts are in `src/shared/recovery-types.ts`. Bootstrap must await `createV1Backup` or verify the existing backup before importing registry-bearing runtime modules. `getV2DataLayout` gives separate `-v2` userData and registry paths, and rejects overlaps with v1 and the outside-install recovery root.
+
+`createV1Backup` requires a real `assertStopped` callback, captures userData (including Local Storage), registry and optional separate remote/mod trees, checks the stopped state again, and rescans the originals before publishing. Its manifest records directories plus each file's relative path, size and SHA-256, with a companion manifest digest. Existing destinations are never replaced. Files become read-only. This is application-level immutability and corruption detection, not an OS immutable attribute or protection from the account owner. A failed or interrupted operation leaves `.incomplete` and is rejected by verification. Symlinks/junctions in sources or path ancestors are rejected rather than dereferenced. The stopped-state authority must exclude concurrent writers; path validation does not claim protection against a malicious process racing filesystem operations under the same account.
+
+`prepareRollback` requires a complete expected-host inventory with a fresh stopped/completed observation for every host. Unknown, running, missing, duplicate, future or stale observations block preparation. It preserves v2 copies/results, copies the verified v1 snapshot, and disables `general.autoCheckUpdates`, `general.autoResumeSessions`, and `general.repoSyncOnSessionStart` in the restored working copy. It does not change the original backup, install an application, launch it, rewind Git, or merge provider transcripts.
+
+`activatePreparedRollback` rechecks the prepared files, stages copies beside every target, and retains each prior target beside itself. An exclusive append-and-sync `activation.jsonl` records rename intent and completion. Interrupted activation stops without launching anything; retained directories and the journal need inspection before another activation. A second activation of the same operation is refused. Multi-directory replacement is not one atomic filesystem transaction.
+
+`journalSharedConfig` saves before/after bytes and hashes before changing a shared file. `restoreSharedConfig` writes only while its hash still matches the journaled after image, and reports a conflict otherwise. A cooperative per-file lock and a last hash check protect application-mediated writes; editors that ignore that lock must be stopped during recovery. Later user edits are preserved when detected. Journals are private recovery assets, not a portable instruction to trust an arbitrary downloaded config path.
+
+`coordinateRollback` performs stop-new-work → host inventory → graceful GUI/host stop → residual-instance verification → offline-asset verification → v2 preservation and v1 preparation → shared-config restoration → original install → installed-version check → data activation → updater cache cleanup → launch. The lifecycle adapter must provide real authority for every method; there are no permissive default process probes. In particular `clearPendingUpdaterState` must clear or quarantine the platform's shared v2 updater cache before launch. The adapter verifies installed version exactly `1.55.1`. Config conflicts and any failed stage prevent launch. `installOriginalV1` provides actual NSIS, dpkg and retained AppImage replacement operations for a production adapter; it must only be called after lifecycle checks. Debian installs use dpkg's package paths and can require existing elevation. Windows NSIS `/D` is last and passed without a shell.
+
+`stageRecoveryAssets` verifies original installer bytes against the hardcoded official v1.55.1 hashes, and writes the scripts, launcher, pinned standalone Node executable, asset digest manifest and installer outside the replaceable install directory. Explicit runtimes require `runtimeSha256`. Copying Electron alone is rejected: a real isolated executable probe must identify standalone Node >=22.12, and the copied runner must pass `runtime-smoke`. Packaged callers must provide `scriptDirectory: <resources>/recovery` and the pinned runtime from `<resources>/v2/node/<platform>`. A current standalone Node process can stage itself for developer use. Cross-platform resources must be staged and smoke-tested on their matching OS.
+
+Commands:
+
+```text
+node scripts/recovery/recover.mjs verify <backup-directory>
+node scripts/recovery/recover.mjs verify-prepared <prepared-directory>
+node scripts/recovery/recover.mjs verify-assets <assets-directory> <win32|deb|appimage>
+node scripts/recovery/recover.mjs stage-assets <request.json>
+node scripts/recovery/recover.mjs backup|prepare|activate|rollback <request.json>
+```
+
+Mutating commands other than asset staging require an absolute `controllerModule` in the request. That trusted local ES module exports `createAdapter(options)` returning the lifecycle adapter. A static JSON `stopped: true` claim is intentionally insufficient. Offline rollback still needs actual local-process and remote-work authority; unavailable hosts block it until their work is verifiably stopped or an explicit user-stop decision is recorded by that authority. `compareV1WithBackup` reports added/removed/changed v1 paths for reupgrade without merging them into retained v2 state.
+
+Validation includes real temporary filesystem copies and Node child processes, junction/symlink containment, manifest traversal, missing/corrupt/incomplete/extra files, version separation, safe restored settings, preserved v2 results, retained pre-restore directories, conflict journals, and injected ENOSPC/EACCES fsync failures. Fault injection demonstrates fail-closed handling, not a physical full disk or an OS permission round trip. Actual Windows installer, Linux deb/AppImage, installed-data launch verification, and Android rollback compatibility remain separate release gates. No platform installer is exercised by unit tests.

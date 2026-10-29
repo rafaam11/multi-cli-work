@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 1,
+  "candidateVersion": "2.0.0",
+  "sourceCommit": null,
+  "checks": [
+    {
+      "id": "windows.terminal.ime",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.terminal.mouse",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.terminal.images",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.terminal.reconnect",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.terminal.size-owner",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.cooperation.gui-survival",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.cooperation.ssh",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.cooperation.disconnect-delivery",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.cooperation.event-loss",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "windows.cooperation.no-duplicate-rerun",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.terminal.ime",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.terminal.mouse",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.terminal.images",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.terminal.reconnect",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.terminal.size-owner",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.cooperation.gui-survival",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.cooperation.ssh",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.cooperation.disconnect-delivery",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.cooperation.event-loss",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "linux.cooperation.no-duplicate-rerun",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "recovery.windows.offline-v1-v2-v1-v2",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "recovery.deb.offline-v1-v2-v1-v2",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "recovery.appimage.offline-v1-v2-v1-v2",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.terminal.ime",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.terminal.mouse",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.terminal.images",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.terminal.reconnect",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.terminal.size-owner",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.cooperation",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.dual-host",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    },
+    {
+      "id": "android.physical.newest-version-pairing",
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
+    }
+  ]
+}

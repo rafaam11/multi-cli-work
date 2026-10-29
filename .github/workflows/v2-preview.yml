@@ -1,0 +1,65 @@
+name: v2-preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/herdr-v2]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1
+      - run: npm ci --ignore-scripts
+      - run: node node_modules/electron/install.js
+      - name: Acquire digest-pinned resources
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/v2/assets.mjs --download --platform $(node -p 'process.platform')
+      - run: npm run build:v2
+      - run: npm test
+      - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
+      - name: Actual Herdr Windows broker tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:MCW_HERDR_TEST_BINARY=(Resolve-Path build/v2/herdr/windows/herdr.exe).Path
+          $env:MCW_BRIDGE_TEST_BINARY=(Resolve-Path build/herdr-bridge/win32-x64/mcw-herdr-bridge.exe).Path
+          npx vitest run src/main/herdr --maxWorkers=2
+      - name: Actual Herdr Linux broker tests
+        if: runner.os == 'Linux'
+        run: MCW_HERDR_TEST_BINARY="$PWD/build/v2/herdr/herdr-linux-x86_64" MCW_BRIDGE_TEST_BINARY="$PWD/build/herdr-bridge/linux-x64/mcw-herdr-bridge" npx vitest run src/main/herdr --maxWorkers=2
+      - name: Windows GUI survival and reconnect
+        if: runner.os == 'Windows'
+        env:
+          MCW_V2_E2E: '1'
+        run: npx playwright test e2e/herdr-v2.spec.ts
+      - name: Linux GUI survival and reconnect
+        if: runner.os == 'Linux'
+        env:
+          MCW_V2_E2E: '1'
+        run: xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts
+      - run: npx electron-builder --config electron-builder.v2-preview.cjs --publish never
+      - run: node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release-v2-preview
+      - uses: actions/upload-artifact@v7
+        with:
+          name: v2-preview-${{ runner.os }}
+          path: |
+            release-v2-preview/*.exe
+            release-v2-preview/*.AppImage
+            release-v2-preview/*.deb
+            test-results/
+  # Physical Android validation intentionally remains the final release gate.

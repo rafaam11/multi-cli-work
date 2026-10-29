@@ -8,7 +8,7 @@ import type {
 } from "../../shared/github-types";
 import { readJsonStore, updateJsonStore, type JsonStoreSnapshot, type JsonStoreSpec } from "../storage/json-store";
 
-export const REVIEW_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "pr-reviews.json");
+export const REVIEW_REGISTRY_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "pr-reviews.json");
 export class ReviewRegistryError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

@@ -88,6 +88,7 @@ export function resumeSeparatorText(nowIso: string): string {
 }
 
 export interface TerminalWorkerGateway {
+  listExisting?(): Promise<(TerminalSession & {generation:string})[]>;
   create(spec: TerminalLaunchSpec): Promise<TerminalSession>;
   attach(sessionId: string): Promise<TerminalAttachment>;
   write(sessionId: string, data: string): Promise<void>;
@@ -246,6 +247,7 @@ export class TerminalCoordinator {
     );
     const snapshot = await readAppState({ statePath: this.options.statePath });
     for (const session of Object.values(snapshot.state.sessions)) this.views.set(session.id, exitedView(session));
+    await this.reconcileHostSessions();
     this.hiddenIds = this.knownSessionIds(snapshot.state.hiddenPanes?.slots ?? []);
     if (this.options.statusDir) {
       await cleanupProviderStatusFiles(this.options.statusDir, new Set(this.views.keys())).catch((error) =>
@@ -256,6 +258,22 @@ export class TerminalCoordinator {
 
   list(): TerminalSessionView[] {
     return [...this.views.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+  async reconcileHostSessions(): Promise<void> {
+    for (const session of await this.options.worker.listExisting?.() ?? []) {
+      const previous = this.views.get(session.id);
+      const view: TerminalSessionView = { ...previous, ...session, title: previous?.title ?? null, name: previous?.name ?? null, interruptedByShutdown: false };
+      this.views.set(session.id, view);
+      this.generations.set(session.id, session.generation);
+      await this.persistView(view);
+      if (!previous) this.publish({type:"created",sessionId:session.id,session:view});
+      else if (previous.status !== view.status) this.publish({type:"status",sessionId:session.id,status:view.status,generation:session.generation});
+    }
+  }
+  /** Close GUI observers while the independent host retains all processes. */
+  async detach(): Promise<void> {
+    this.stopTitlePolling();
+    await this.flush(false);
   }
   ownsActivity(event: import("../../shared/activity-types").ProviderActivity): boolean {
     return !this.removedSessionIds.has(event.sessionId) && this.generations.get(event.sessionId) === event.generation &&

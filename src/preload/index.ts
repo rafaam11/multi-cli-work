@@ -383,3 +383,23 @@ const api: MultiCliWorkApi = {
 };
 
 contextBridge.exposeInMainWorld("multiCliWork", api);
+let nextV2Reference = 0;
+if (process.argv.includes("--mcw-v2")) {
+  const v2: import("../shared/v2-api").McwV2Api = {
+    version: 2, enabled: () => ipcRenderer.invoke("v2:enabled"), configuration: () => ipcRenderer.invoke("v2:configuration"),
+    listTasks: () => ipcRenderer.invoke("v2:tasks"), createTask: input => ipcRenderer.invoke("v2:task-create", input), inspectTask: id => ipcRenderer.invoke("v2:task-inspect", id),
+    taskAction: (id, action, input) => ipcRenderer.invoke("v2:task-action", id, action, input),
+    onState: callback => {const listener=(_event:Electron.IpcRendererEvent,value:Parameters<typeof callback>[0])=>callback(value);ipcRenderer.on("v2:state",listener);return()=>ipcRenderer.removeListener("v2:state",listener);},
+    startTask: (id, input) => ipcRenderer.invoke("v2:task-start", id, input), repositoryHead: directory => ipcRenderer.invoke("v2:repository-head", directory),
+    listTerminals: () => ipcRenderer.invoke("v2:terminals"), createTerminal: input => ipcRenderer.invoke("v2:terminal-create", input),
+    subscribeTerminal: (id, callback) => {
+      const reference = String(++nextV2Reference);
+      const listener = (_event: Electron.IpcRendererEvent, sessionId: string, value: unknown) => {if (sessionId === id) callback(value);};
+      ipcRenderer.on("v2:terminal-event", listener);
+      void ipcRenderer.invoke("v2:terminal-subscribe", id, reference).catch(error => callback({type:"error",error:String(error)}));
+      return () => {ipcRenderer.removeListener("v2:terminal-event", listener);void ipcRenderer.invoke("v2:terminal-unsubscribe", id, reference).catch(() => undefined);};
+    },
+    terminalCommand: (id, command) => ipcRenderer.invoke("v2:terminal-command", id, command), recoveryStatus: () => ipcRenderer.invoke("v2:recovery-status"),
+  };
+  contextBridge.exposeInMainWorld("mcwV2", v2);
+}

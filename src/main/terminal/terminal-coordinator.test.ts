@@ -144,6 +144,14 @@ async function coordinator(
 }
 
 describe("TerminalCoordinator", () => {
+  it("reattaches surviving host sessions and can detach without stopping them", async () => {
+    const worker = Object.assign(new FakeWorker(), { listExisting: async () => [{ id:"host-session",projectId:project.id,tool:null,kind:"codex",cwd:project.rootPath,providerConversationId:null,status:"idle" as const,pid:0,createdAt:"2026-10-30T00:00:00.000Z",updatedAt:"2026-10-30T00:00:00.000Z",exitCode:null,generation:"host-generation" }] });
+    const {instance}=await coordinator(await tempRoot(),worker);
+    expect(instance.list()).toMatchObject([{id:"host-session",status:"idle",pid:0}]);
+    await instance.detach();
+    expect(worker.stop).not.toHaveBeenCalled();
+    expect(worker.create).not.toHaveBeenCalled();
+  });
   it("resolves a new-session profile once and does not override the saved conversation when resuming", async () => {
     const getProfile = vi.fn(async () => ({ id: "p", name: "Profile", agentId: "claude" as const, model: "sonnet", effort: "medium" }));
     const { instance, worker } = await coordinator(await tempRoot(), new FakeWorker(), undefined, undefined, undefined, undefined, getProfile);

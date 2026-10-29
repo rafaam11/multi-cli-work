@@ -18,7 +18,7 @@ import {
  * `.bak`은 `json-store`가, exact-keys 파싱과 canonical ISO는 여기가 맡는다
  * (docs/superpowers/specs/registry-contract.md §3~§6).
  */
-export const WORKSPACE_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "workspace.json");
+export const WORKSPACE_REGISTRY_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "workspace.json");
 
 const REGISTRY_KEYS = ["schemaVersion", "updatedAt", "roots", "shellLinks"] as const;
 const ROOT_KEYS = ["work", "dev", "data", "label"] as const;

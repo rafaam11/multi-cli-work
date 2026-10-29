@@ -13,6 +13,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require all v2 desktop, recovery and final Android evidence before stable release
+        if: startsWith(github.ref_name, 'v2.')
+        run: node scripts/v2/release-gate.mjs --check-release stable
       - name: Require tag and package version to match
         if: github.ref_type == 'tag'
         shell: bash

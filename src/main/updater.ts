@@ -63,7 +63,7 @@ export function initUpdater(options: { autoCheck?: boolean; getWindow?: () => Ma
 }
 
 export async function checkForUpdates(): Promise<void> {
-  if (!app.isPackaged) {
+  if (!app.isPackaged || process.env.MCW_RUNTIME === "v2-preview" || app.getVersion().includes("-preview")) {
     publish({ state: "idle" });
     return;
   }

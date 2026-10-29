@@ -165,6 +165,9 @@ import { readWorktreeScripts, removeWorktreeScripts, setWorktreeScripts } from "
 import { aggregateTaskbarProgress, type TaskbarProgress } from "./window-progress";
 import { PcRootsProvider } from "./settings/pc-roots";
 import { createProfileGateway } from "./profile/profile-gateway";
+import type { HostClient } from "./host/host-client";
+import { HostWorkerGateway } from "./v2/worker-gateway";
+import { registerV2Ipc } from "./v2/ipc";
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -189,6 +192,7 @@ export interface DesktopRuntime {
 
 /** What the custom title bar needs from the app shell, which only `index.ts` owns. */
 export interface DesktopWindowHost {
+  v2?: {client: HostClient; hostId: string; backupDirectory: string};
   /** Lazy, because the runtime is built before the window exists. */
   getMainWindow(): BrowserWindow | null;
   /** 파일▸종료: the confirm-then-tear-down path, not a bare `app.quit()`. */
@@ -226,7 +230,7 @@ export async function createDesktopRuntime(
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData, process.platform);
-  const codexIntegration = await ensureCodexIntegration({ userData });
+  const codexIntegration = host.v2 ? { profileName: "" } : await ensureCodexIntegration({ userData });
   const shellIntegrationPath = process.platform === "win32" ? await ensurePowerShellIntegration(userData) : undefined;
   const sessionWorkspaceReader = new SessionWorkspaceReader();
   const titleReader = new SessionTitleReader();
@@ -240,10 +244,10 @@ export async function createDesktopRuntime(
   // jk-coding-cli: the client lands in userData/bin (joined to every session's PATH below), the
   // token rotates per app run, and the pipe name can be overridden so a dev build next to an
   // installed one gets its own pipe instead of silently losing the CLI.
-  const controlCli = await ensureControlCli(userData, process.platform, path.join(__dirname, JK_MCP_SCRIPT));
+  const controlCli = host.v2 ? {binDir:"",mcpScriptPath:null} : await ensureControlCli(userData, process.platform, path.join(__dirname, JK_MCP_SCRIPT));
   // Per-session MCP configs carry this run's token; last run's are dead weight.
   const jkMcpConfigDir = path.join(userData, "mcp");
-  await removeJkMcpConfig(jkMcpConfigDir).catch(() => undefined);
+  if (!host.v2) await removeJkMcpConfig(jkMcpConfigDir).catch(() => undefined);
   const controlPipeName = resolveControlPipeName(process.env, userData);
   const controlToken = crypto.randomUUID();
   const providerEnvironment = await discoverSessionEnvironment(stringEnvironment());
@@ -347,13 +351,13 @@ export async function createDesktopRuntime(
     now: () => new Date().toISOString(),
   });
 
-  const worker = new RestartingTerminalWorker(
+  const worker = host.v2 ? new HostWorkerGateway(host.v2.client) : new RestartingTerminalWorker(
     () =>
       utilityProcess.fork(path.join(__dirname, "terminal-worker.js"), [], {
         serviceName: "Multi CLI Work PTY",
       }) as RestartableTerminalWorkerTransport,
   );
-  const sessionEnvironment = prependPath(
+  const sessionEnvironment = host.v2 ? { ...providerEnvironment, MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir, MULTI_CLI_WORK_ACTIVITY_DIR: path.join(userData,"activity-events") } : prependPath(
     {
       ...providerEnvironment,
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
@@ -406,7 +410,7 @@ export async function createDesktopRuntime(
       const syncRepos =
         workProject !== undefined &&
         (launch.agentId === "claude" || launch.agentId === "codex") &&
-        settingsService.current().general.repoSyncOnSessionStart;
+        !host.v2 && settingsService.current().general.repoSyncOnSessionStart;
       const repoSyncSection = syncRepos
         ? repoSyncForSession(repoSync, workProject.id).then(({ section, report }) => {
             const notice = report ? sessionNotice(workProject.id, launch.sessionId, report) : null;
@@ -448,7 +452,13 @@ export async function createDesktopRuntime(
         workspaceSection,
       ]);
     },
-    getAgent: (agentId) => agentMap.get(agentId) ?? null,
+    getAgent: (agentId) => {
+      const agent = agentMap.get(agentId);
+      if (!agent) return null;
+      if (!host.v2 || agent.id !== "codex" || !agent.builtin) return agent;
+      const stripProfile = (args: string[]) => args.filter((arg, i) => arg !== "{codexProfile}" && !(arg === "--profile" && args[i + 1] === "{codexProfile}"));
+      return {...agent,newSessionArgs:stripProfile(agent.newSessionArgs),resumeArgs:stripProfile(agent.resumeArgs),args:stripProfile(agent.args)};
+    },
     extraLaunchArgs: async (agent, sessionId) =>
       controlCli.mcpScriptPath && settingsService.current().general.jkMcp
         ? jkMcpLaunchArgs(agent, sessionId, {
@@ -494,7 +504,7 @@ export async function createDesktopRuntime(
     env: sessionEnvironment,
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
-    autoResumeEnabled: () => settingsService.current().general.autoResumeSessions,
+    autoResumeEnabled: () => !host.v2 && settingsService.current().general.autoResumeSessions,
     hasProviderConversation: async (session, agent, conversationId) =>
       agent.titleSource !== "claude-transcript" ||
       (await findClaudeTranscript(
@@ -512,7 +522,7 @@ export async function createDesktopRuntime(
   coordinator.onEvent((event) => {
     if (event.type !== "removed") return;
     humanInput.forget(event.sessionId);
-    void removeJkMcpConfig(jkMcpConfigDir, event.sessionId).catch(() => undefined);
+    if (!host.v2) void removeJkMcpConfig(jkMcpConfigDir, event.sessionId).catch(() => undefined);
   });
   const delivery = new DeliveryQueue({
     sessions: () => coordinator.list(),
@@ -548,7 +558,7 @@ export async function createDesktopRuntime(
     clearChips: (sessionId, key) => indicators.clearChips(sessionId, key),
     setProgress: (sessionId, progress) => indicators.setProgress(sessionId, progress),
   };
-  const controlServer = await startControlServer({
+  const controlServer = host.v2 ? null : await startControlServer({
     pipeName: controlPipeName,
     token: controlToken,
     handle: (request) => handleControlCommand(request, controlContext),
@@ -556,6 +566,25 @@ export async function createDesktopRuntime(
   });
   if (controlServer) sessionEnvironment[CONTROL_ENDPOINT_ENV] = controlServer.endpoint;
   await coordinator.initialize();
+  const disposeV2Ipc = host.v2 ? registerV2Ipc({
+    ipc: ipcMain, authorize: event => isMainWindowSender(host.getMainWindow(), event),
+    send: (channel, ...args) => { const window = host.getMainWindow(); if (window && !window.isDestroyed()) window.webContents.send(channel, ...args); },
+    ...host.v2,
+    configuration: async () => {
+      const state = (await workbench.state()).state;
+      const defaults = ["codex", "claude"].map(agentId => ({ id: `mcw-default-${agentId}`, name: agentId === "codex" ? "Codex 기본" : "Claude Code 기본", agentId: agentId as "codex" | "claude", model: null, effort: null }));
+      return {launchProfiles:[...defaults,...(state.launchProfiles ?? [])],defaultLaunchProfiles:{codex:"mcw-default-codex",claude:"mcw-default-claude",...state.defaultLaunchProfiles}};
+    },
+    executable: async provider => (await getExecutables()).agents[provider] ?? null,
+    reconcile: () => coordinator.reconcileHostSessions(),
+  }) : undefined;
+  let v2Watcher: ReturnType<HostClient["watch"]> | undefined, v2Retry: ReturnType<typeof setTimeout> | undefined, v2Closed = false;
+  const watchV2 = () => { if (!host.v2 || v2Closed) return; v2Watcher = host.v2.client.watch(event => {
+    const value = event as {type?:string};
+    if (value.type === "state") { void coordinator.reconcileHostSessions().catch(error => console.error("Host state reconciliation failed", error)); sendToMainWindow(host.getMainWindow(), "v2:state", event); }
+    if (value.type === "disconnected") { v2Watcher?.close(); v2Retry = setTimeout(watchV2, 1000); }
+  }); };
+  watchV2();
 
   const reviewRegistryPath = process.env.MULTI_CLI_WORK_PR_REVIEWS_PATH;
   const reviewService = new PullRequestReviewService({
@@ -1317,7 +1346,8 @@ export async function createDesktopRuntime(
     () => statusWatcher.close(),
     () => activity.stop(),
     () => usageService.stop(),
-    () => coordinator.shutdown(),
+    () => {v2Closed=true;clearTimeout(v2Retry);v2Watcher?.close();disposeV2Ipc?.();},
+    () => host.v2 ? coordinator.detach() : coordinator.shutdown(),
     () => worker.dispose(),
   ]);
 

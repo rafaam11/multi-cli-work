@@ -7,11 +7,15 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
+        // Runtime is loaded after v2 migration. Keep __dirname beside worker/preload resources.
+        output: { chunkFileNames: "[name]-[hash].js" },
         input: {
           index: resolve("src/main/index.ts"),
           "terminal-worker": resolve("src/main/terminal-worker.ts"),
           // Copied to userData/bin and run on its own in node mode: it must not share chunks with index.
           "jk-mcp": resolve("src/main/jk-mcp.ts"),
+          "mcw-host": resolve("src/main/mcw-host.ts"),
+          "mcw-task-mcp-client": resolve("src/main/mcw-task-mcp-client.ts"),
         },
       },
     },

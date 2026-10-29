@@ -1,0 +1,44 @@
+# v2 distribution and release evidence
+
+The package version stays **1.55.1** during implementation. Nothing in these scripts publishes a release, executes a downloaded program, changes user installations, or changes a pending check to passed. Stable v2.0.0 remains blocked while any required check is pending or failed.
+
+## Immutable resources
+
+`scripts/v2/assets.json` pins the official Herdr v0.9.5 Windows archive/Linux x64 binary and original MCW v1.55.1 Windows, deb, and AppImage installers. The Herdr annotated tag resolves to `2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01`. GitHub release asset digests and lengths were read from the official release APIs. The extracted Windows members were hashed from that verified archive; retain the complete ConPTY and third-party notices layout.
+
+```powershell
+node scripts/v2/assets.mjs --download --platform all
+node scripts/v2/assets.mjs --verify --platform all
+```
+
+Default staging is `build/v2/`; `--platform win32` or `--platform linux` permits platform-specific staging. Downloads stream to unique temporary files and only promote files after both exact byte length and SHA-256 pass. Cached assets are rehashed. An invalid download preserves an existing final file. Archive extraction validates every pinned member before promoting any member. Verification rehashes all extracted members as well. No mutable receipt substitutes for verification.
+
+Desktop packaging must execute `--verify` before electron-builder and include these resources at `resources/v2/`. Preserve executable mode for `herdr/herdr-linux-x86_64` on Linux. Windows entrypoint is `herdr/windows/herdr.exe`, with its `conpty/` directory beside it. Recovery installers live under `recovery/`. Recovery bootstrap must copy the original installer, manifest and runner to a durable recovery location outside the replaceable application directory **before** installation changes, and reverify there before allowing recovery. Staging alone does not prove this bootstrap behavior or offline recovery.
+
+Recovery uses standalone **Node 22.12.0**, not an isolated copy of the Electron executable. `assets.json` also pins the original Windows x64 ZIP/Linux x64 tar.gz from [the official Node distribution](https://nodejs.org/dist/v22.12.0/), checked against the retained [SHASUMS256.txt](https://nodejs.org/dist/v22.12.0/SHASUMS256.txt). The checksums file's digest is pinned too. Archive extraction stages only the independently hashed Node executable and LICENSE: `node/windows/node.exe` and `node/linux/node`. `nodeRuntimes[].members` records their output paths, lengths and SHA-256. Pass the matching standalone executable and its pinned `runtimeSha256` to recovery staging, preserve executable mode on Linux, and smoke-test the durable staged runner separately before replacement of the app. Acquisition/extraction never runs any downloaded program.
+
+## Stable gate
+
+```powershell
+node scripts/v2/release-gate.mjs --check-release stable --artifact-dir release
+```
+
+`v2-validation.json` is a strict ledger. Keep pending checks with null completion fields and empty evidence. A human records an actual result, tester, ISO completion time, tested source commit, and one or more workspace-relative evidence files with their SHA-256. Evidence should live in `docs/release/evidence/v2/`; it must describe the device/OS/build, procedure, expected and observed results, and limitations. Retain logs, captures, and roundtrip manifests as attachments. A passed record is a claim requiring human review; the gate verifies its structure, commit binding and unchanged evidence bytes, not the truth of the observation.
+
+For completed checks, every `sourceCommit` must match the ledger's tested source commit. Stable requires a clean tree and that commit must be an ancestor of HEAD with no source changes since testing. Only this ledger and `docs/release/evidence/v2/**` may change in the evidence recording commit. This permits evidence to refer to the preceding tested commit without a self-referential Git hash.
+
+Required checks cover Windows and Linux terminal IME, mouse, images, reconnect and explicit size ownership; GUI-independent host survival, SSH, durable disconnected delivery, event loss, and duplicate-run prevention; offline Windows/deb/AppImage **v1 → v2 → v1 → v2** recovery roundtrips; and physical Android terminal/cooperation/dual-host/newest-version pairing. A roundtrip record must verify preserved v1/v2 data, separate profiles/mods, stopped-work handling, pending updater cleanup, conservative restored defaults, original installer verification and startup-failure recovery. Git/provider transcripts must remain intact. Physical Android checks run **LAST**, with completion times strictly after every desktop and roundtrip check. Do not infer those results from desktop browsers, emulators or unit tests.
+
+## Preview isolation
+
+`npm run build:v2` verifies pinned assets, builds the Rust bridge and standalone Node host, then builds Electron. `npm run dist:v2:preview` uses `electron-builder.v2-preview.cjs`, a separate application ID/name, version `2.0.0-preview.0`, and `release-v2-preview/`; it cannot publish. Windows signing is disabled for the preview so pinned upstream executables and the original v1 installer are not rewritten. The v2 package excludes `jk-mcp`, the old terminal worker and `node-pty`.
+
+For source testing, explicitly set `MCW_RUNTIME=v2-preview`, `MULTI_CLI_WORK_USER_DATA`, `MCW_V1_REGISTRY` and `MCW_RECOVERY_ROOT` to disposable fixtures. Run the dedicated desktop test with `MCW_V2_E2E=1`; optionally set `MCW_V2_E2E_EXECUTABLE` to the unpacked preview executable. Normal v1 E2E skips this resource-dependent test. The `v2-preview` workflow builds Windows/Linux artifacts without Android jobs or release publication.
+
+The implementation is still incomplete. SSH remote dispatch, the mobile v2 gateway/pairing path, production rollback UI/controller and real installer roundtrips remain outstanding. Passing local host and filesystem recovery tests does not satisfy those release gates.
+
+```powershell
+node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release/v2-preview
+```
+
+Preview accepts a valid ledger with pending checks but refuses `latest*.yml` / `latest*.yaml` anywhere in its artifact directory. Run this check again **after** packaging. Build previews with publication disabled, update metadata generation disabled, and a distinct preview directory/channel. Never publish preview artifacts into stable/latest or attach them to the stable v1 release. This read-only gate rejects unsafe output; it never deletes or rewrites existing stable metadata. Stable publication must remain a separate, explicitly gated workflow.

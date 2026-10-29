@@ -1,0 +1,22 @@
+.herdr-task-panel{height:100%;overflow:auto;padding:20px;color:var(--text-primary,#e5e5e5);background:var(--bg-primary,#15171b);font-size:13px}
+.herdr-task-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+.herdr-task-header h2{margin:0;font-size:18px;font-weight:600}.herdr-task-header p{margin:6px 0 0;color:var(--text-secondary,#a3aab8)}
+.herdr-task-panel button,.herdr-task-panel input,.herdr-task-panel select,.herdr-task-panel textarea{font:inherit;color:inherit;background:var(--bg-secondary,#20242b);border:1px solid var(--border,#3b414b);border-radius:5px;padding:7px 9px}
+.herdr-task-panel button{cursor:pointer}.herdr-task-panel button:disabled{opacity:.45;cursor:default}
+.herdr-task-panel :is(button,input,select,textarea):focus-visible{outline:2px solid var(--accent,#a8c7fa);outline-offset:2px}
+.herdr-task-panel label{display:flex;flex-direction:column;gap:5px;min-width:0}.herdr-task-panel input,.herdr-task-panel textarea{box-sizing:border-box;width:100%}
+.herdr-task-create{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--border,#30343b);border-radius:7px;margin-bottom:20px}
+.herdr-task-agents{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.herdr-task-agent{display:flex;flex-direction:column;gap:8px;min-width:0;margin:0;padding:10px;border:1px solid var(--border,#30343b);border-radius:5px}.herdr-task-agent legend{padding:0 5px;font-weight:600}
+.herdr-task-form-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.herdr-task-form-actions button:last-child{margin-left:auto}
+.herdr-task-hint{font-size:11px;color:var(--text-secondary,#a3aab8)}.herdr-task-error{padding:10px;color:#f5b8b8;background:#43272b;border-radius:5px}
+.herdr-task-workspace{display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);gap:18px}
+.herdr-task-list{display:flex;flex-direction:column;gap:6px}.herdr-task-list button{display:flex;flex-direction:column;text-align:left;gap:5px;padding:10px}.herdr-task-list button span{font-size:11px;color:var(--text-secondary,#a3aab8)}.herdr-task-list button[aria-pressed=true]{border-color:var(--accent,#a8c7fa)}
+.herdr-task-detail{min-width:0}.herdr-task-detail h3{margin:0 0 8px;font-size:16px}.herdr-task-brief{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:0 0 16px}
+.herdr-task-detail table{width:100%;border-collapse:collapse;font-size:12px}.herdr-task-detail :is(th,td){padding:8px 6px;text-align:left;border-bottom:1px solid var(--border,#30343b)}.herdr-task-detail th{font-weight:500;color:var(--text-secondary,#a3aab8)}.herdr-task-detail small{display:block;font-size:10px;color:var(--text-secondary,#a3aab8);margin-top:4px}
+.herdr-task-start{display:flex;align-items:end;flex-wrap:wrap;gap:8px;padding:14px 0}.herdr-task-start label{flex:1;min-width:180px}.herdr-task-start code{align-self:center;font-size:11px;color:var(--text-secondary,#a3aab8)}
+.herdr-task-question{margin-top:14px;padding:12px;border-left:3px solid #c9a25f;background:#29251e}.herdr-task-question p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.herdr-task-detail h4{font-size:13px;margin:20px 0 8px}.herdr-task-result{padding:12px;border:1px solid var(--border,#30343b);border-radius:5px;margin-bottom:8px}.herdr-task-result>.herdr-task-hint{display:block;margin-top:5px}.herdr-task-result h5{margin:12px 0 4px;font-size:12px}.herdr-task-result ul{margin:0;padding-left:18px;line-height:1.6;overflow-wrap:anywhere}
+.herdr-task-events{list-style:none;margin:0;padding:0}.herdr-task-events li{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border,#30343b);white-space:pre-wrap;overflow-wrap:anywhere}.herdr-task-events time{flex-shrink:0;color:var(--text-secondary,#a3aab8);font-size:11px}
+@media(max-width:700px){.herdr-task-panel{padding:12px}.herdr-task-workspace{grid-template-columns:1fr}.herdr-task-list{max-height:220px;overflow:auto}.herdr-task-detail{overflow:auto}.herdr-task-header{gap:8px}.herdr-task-create{padding:12px}.herdr-task-agents{grid-template-columns:1fr 1fr}}
+@media(max-width:420px){.herdr-task-agents{grid-template-columns:1fr}}

@@ -15,7 +15,7 @@ import { type JsonStoreSnapshot, type JsonStoreSpec, readJsonStore } from "../st
 import { agentArgTokens } from "./agent-launch";
 import { builtinAgents } from "./builtin-agents";
 
-export const AGENT_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "agents.json");
+export const AGENT_REGISTRY_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "agents.json");
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const HEX_COLOUR_PATTERN = /^#[0-9a-fA-F]{6}$/;

@@ -16,7 +16,7 @@ import {
   updateJsonStore,
 } from "../storage/json-store";
 
-export const WORK_PROJECT_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "work-projects.json");
+export const WORK_PROJECT_REGISTRY_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "work-projects.json");
 
 const STATUSES: readonly ProjectStatus[] = ["진행중", "보류", "완료", "보관"];
 const ROLES: readonly WorkProjectRole[] = ["repo", "docs"];

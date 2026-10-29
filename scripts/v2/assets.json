@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "herdrVersion": "0.9.5",
+  "herdrSourceCommit": "2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01",
+  "recoveryVersion": "1.55.1",
+  "nodeVersion": "22.12.0",
+  "nodeChecksumsUrl": "https://nodejs.org/dist/v22.12.0/SHASUMS256.txt",
+  "nodeChecksumsSha256": "4d4dc7ec5755c7b034127c9f13ba83efe9869d2aa11c173d901a551da0f4649f",
+  "nodeRuntimes": [
+    { "platform": "win32", "archiveId": "node-windows", "directory": "node/windows", "members": [
+      { "file": "node-v22.12.0-win-x64/node.exe", "output": "node.exe", "bytes": 82818704, "sha256": "b3b117a08ee61efee09e6fd523ab33c0c018da1b570bde08e4fd914dc1170ed6" },
+      { "file": "node-v22.12.0-win-x64/LICENSE", "output": "LICENSE", "bytes": 140397, "sha256": "9d72cce9b104ecb67feb8af38618511685190ae5a119cc0488ecae66b221000d" }
+    ] },
+    { "platform": "linux", "archiveId": "node-linux", "directory": "node/linux", "members": [
+      { "file": "node-v22.12.0-linux-x64/bin/node", "output": "node", "bytes": 119801632, "sha256": "177208bfc4a9403121a40c72d038c670f4fd937fa16ca7df0a720e90be0fe2d9" },
+      { "file": "node-v22.12.0-linux-x64/LICENSE", "output": "LICENSE", "bytes": 140397, "sha256": "9d72cce9b104ecb67feb8af38618511685190ae5a119cc0488ecae66b221000d" }
+    ] }
+  ],
+  "windowsMembers": [
+    { "file": "conpty/arm64/OpenConsole.exe", "bytes": 1120056, "sha256": "ed7622fd0d3bedc9ab9f122f5e58edf0def9e7999224f52dd395ba9f54edbe09" },
+    { "file": "conpty/conpty.dll", "bytes": 109920, "sha256": "39fba2713e2495117b1591ae8c32a3b904bea7aa66069cf7815e2844c76d75d8" },
+    { "file": "conpty/herdr-conpty.json", "bytes": 450, "sha256": "c8f499ad82c568e737d6bc7d0b583e3785d2f43af3d2c0cebb856076690533f5" },
+    { "file": "conpty/x64/OpenConsole.exe", "bytes": 1066296, "sha256": "b7fd936c2668b87b9ecf7b3366dc6568afc1c6f981874cba3e955a1c35cf8160" },
+    { "file": "herdr.exe", "bytes": 26821120, "sha256": "cd877c8744296f4a38a2703bf13cf11728973649ec54959959c4587ffe5368b2" },
+    { "file": "THIRD-PARTY-NOTICES/Microsoft.Windows.Console.ConPTY-LICENSE.txt", "bytes": 1116, "sha256": "5d177f23ecfeb0ea8e050b6a5a16355e1ae9a0b286436ca8f83ed08b3795be6b" },
+    { "file": "THIRD-PARTY-NOTICES/Microsoft.Windows.Console.ConPTY-NOTICE.md", "bytes": 23176, "sha256": "e7fbaadee6ab20c28b87730a510ee5f5815d8fb4bd88d1d54d282dc2a74c0726" }
+  ],
+  "assets": [
+    { "id": "herdr-windows", "platform": "win32", "role": "terminal-archive", "repository": "herdrdev/herdr", "tag": "v0.9.5", "file": "herdr/herdr-windows-x86_64.zip", "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.5/herdr-windows-x86_64.zip", "bytes": 10037141, "sha256": "d2c6c9c971c43a0bfdde8c692a9a1a7a45c3e4807cd01ae45662b4734fac1cbf" },
+    { "id": "herdr-linux", "platform": "linux", "role": "terminal", "repository": "herdrdev/herdr", "tag": "v0.9.5", "file": "herdr/herdr-linux-x86_64", "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.5/herdr-linux-x86_64", "bytes": 30285672, "sha256": "14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d" },
+    { "id": "recovery-windows", "platform": "win32", "role": "original-v1-installer", "repository": "rafaam11/multi-cli-work", "tag": "v1.55.1", "file": "recovery/Multi-CLI-Work-Setup-1.55.1.exe", "url": "https://github.com/rafaam11/multi-cli-work/releases/download/v1.55.1/Multi-CLI-Work-Setup-1.55.1.exe", "bytes": 128988668, "sha256": "5d34ad8ad328d47dd425b2e4de193cf0ace0777d667578ad4abdddbc19bcc33f" },
+    { "id": "recovery-deb", "platform": "linux", "role": "original-v1-installer", "repository": "rafaam11/multi-cli-work", "tag": "v1.55.1", "file": "recovery/Multi-CLI-Work-1.55.1-linux-x64.deb", "url": "https://github.com/rafaam11/multi-cli-work/releases/download/v1.55.1/Multi-CLI-Work-1.55.1-linux-x64.deb", "bytes": 124160096, "sha256": "f3a5c28ea7e853c7e5ae1bd104b2098dd3167f3238e548450e43c4591d8c7e0d" },
+    { "id": "recovery-appimage", "platform": "linux", "role": "original-v1-installer", "repository": "rafaam11/multi-cli-work", "tag": "v1.55.1", "file": "recovery/Multi-CLI-Work-1.55.1-linux-x64.AppImage", "url": "https://github.com/rafaam11/multi-cli-work/releases/download/v1.55.1/Multi-CLI-Work-1.55.1-linux-x64.AppImage", "bytes": 151386841, "sha256": "06912be8df57c5c680daaa7406c0eaaaed2795580dbdf0b96848c31f9cea7bdc" },
+    { "id": "node-windows", "platform": "win32", "role": "recovery-runtime-archive", "repository": "nodejs/node", "tag": "v22.12.0", "file": "node/node-v22.12.0-win-x64.zip", "url": "https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip", "bytes": 34872043, "sha256": "2b8f2256382f97ad51e29ff71f702961af466c4616393f767455501e6aece9b8" },
+    { "id": "node-linux", "platform": "linux", "role": "recovery-runtime-archive", "repository": "nodejs/node", "tag": "v22.12.0", "file": "node/node-v22.12.0-linux-x64.tar.gz", "url": "https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.gz", "bytes": 53958425, "sha256": "e05a4d65232ae2b27b3d77da2e368522fb46b923335b8e0d5f77624c32484044" }
+  ]
+}

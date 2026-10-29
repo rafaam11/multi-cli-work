@@ -11,6 +11,7 @@ import { TerminalSearchBar } from "./TerminalSearchBar";
 import "@xterm/xterm/css/xterm.css";
 import { terminalTheme } from "./terminal-themes";
 import { currentTheme, useResolvedTheme } from "./theme";
+import { HostTerminalPane } from "./herdr/HostTerminalPane";
 
 /**
  * What the title bar's 편집 menu can do to a live terminal. The pane owns the xterm instance, so the
@@ -57,7 +58,13 @@ function isReadOnly(session: TerminalSessionView): boolean {
   return session.status === "exited" || session.status === "error";
 }
 
-export function TerminalPane({
+export function TerminalPane(props: TerminalPaneProps) {
+  if (window.mcwV2?.version === 2 && props.session.pid === 0) return <HostTerminalPane sessionId={props.session.id} onError={props.onError}
+    onFocus={() => props.onTerminalFocused?.(props.session.id)} fontSize={props.settings.fontSize} fontFamily={props.settings.fontFamily} />;
+  return <LegacyTerminalPane {...props} />;
+}
+
+function LegacyTerminalPane({
   session,
   settings,
   shiftEnterBytes,

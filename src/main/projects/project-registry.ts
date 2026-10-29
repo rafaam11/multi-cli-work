@@ -34,7 +34,7 @@ const PROJECT_KEYS = [
 ] as const;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export const PROJECT_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "projects.json");
+export const PROJECT_REGISTRY_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "projects.json");
 
 export class ProjectRegistryError extends Error {
   constructor(message: string, options?: ErrorOptions) {

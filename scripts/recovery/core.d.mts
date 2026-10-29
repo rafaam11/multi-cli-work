@@ -1,0 +1,17 @@
+import type { V1BackupManifest, RecoverySources, V1RecoverySources, PrepareRollbackOptions, PreparedRollbackReceipt, RollbackHostInventory, RecoveryInstallerPlatform, RecoveryAssetsManifest, ConfigJournal, RecoveryActivation, CoordinateRollbackOptions } from '../../src/shared/recovery-types';
+export const ORIGINAL_INSTALLERS: Readonly<Record<RecoveryInstallerPlatform, Readonly<{ filename: string; sha256: string }>>>;
+export function getV2DataLayout(options: { v1UserData: string; v1Registry: string; recoveryRoot: string }): { userData: string; registry: string; recoveryRoot: string };
+export function createV1Backup(options: { destination: string; sources: V1RecoverySources; assertStopped(): Promise<void> }): Promise<V1BackupManifest>;
+export function verifyV1Backup(directory: string): Promise<V1BackupManifest>;
+export function assertRollbackHosts(options: RollbackHostInventory & { now?: number; maxObservationAgeMs?: number }): void;
+export function prepareRollback(options: PrepareRollbackOptions): Promise<PreparedRollbackReceipt>;
+export function verifyPreparedRollback(directory: string): Promise<PreparedRollbackReceipt>;
+export function activatePreparedRollback(options: { directory: string; targets: V1RecoverySources; assertStopped(): Promise<void> }): Promise<RecoveryActivation>;
+export function journalSharedConfig(options: { configPath: string; journalDirectory: string; nextBytes: Uint8Array }): Promise<ConfigJournal>;
+export function restoreSharedConfig(journalDirectory: string): Promise<{ restored: boolean; conflict: boolean }>;
+export function stageRecoveryAssets(options: { destination: string; installDirectory: string; installers: Partial<Record<RecoveryInstallerPlatform, string>>; runtimeExecutable?: string; runtimeSha256?: string; scriptDirectory?: string }): Promise<RecoveryAssetsManifest>;
+export function verifyRecoveryAssets(directory: string, platform: RecoveryInstallerPlatform): Promise<{ manifest: RecoveryAssetsManifest; installer: string }>;
+export function coordinateRollback(options: CoordinateRollbackOptions): Promise<{ version: '1.55.1'; activation: RecoveryActivation }>;
+export function installOriginalV1(options: { assetsDirectory: string; platform: RecoveryInstallerPlatform; installDirectory: string }): Promise<void>;
+export function compareV1WithBackup(options: { backupDirectory: string; sources: V1RecoverySources }): Promise<{ added: string[]; removed: string[]; changed: string[] }>;
+export function verifyStandaloneNodeRuntime(filename: string, expectedSha256: string): Promise<{ version: string; electron: false }>;
