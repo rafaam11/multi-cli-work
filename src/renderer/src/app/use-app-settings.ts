@@ -39,5 +39,9 @@ export function useAppSettings() {
     return () => media.removeEventListener("change", apply);
   }, [appSettings.appearance.theme]);
 
+  useEffect(() => {
+    document.documentElement.dataset.effects = appSettings.appearance.effects;
+    document.documentElement.dataset.density = appSettings.appearance.density;
+  }, [appSettings.appearance.effects, appSettings.appearance.density]);
   return { appSettings, setAppSettings, appVersion };
 }

@@ -9,6 +9,7 @@ import {
 } from "../../shared/app-state-types";
 import type {
   CreateTerminalInput,
+  ForkTerminalInput,
   CreateToolTerminalInput,
   ResumeTerminalInput,
   SlotViewsInput,
@@ -105,6 +106,7 @@ interface TerminalCoordinatorOptions {
   claudeSettingsPath: string;
   codexProfileName?: string;
   getProject(projectId: string): Promise<SharedProject | null>;
+  getLaunchProfile?(agentId: string, profileId?: string | null): Promise<import("../../shared/launch-profile").LaunchProfile | null>;
   /** Null when the worktree was removed (from the app or by hand). Absent in tests without worktrees. */
   getWorktree?(worktreeId: string): Promise<SharedWorktree | null>;
   resolveWorkspace?(projectId: string, cwd: string): Promise<{ cwd: string; worktreeId?: string } | null>;
@@ -255,6 +257,10 @@ export class TerminalCoordinator {
   list(): TerminalSessionView[] {
     return [...this.views.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
+  ownsActivity(event: import("../../shared/activity-types").ProviderActivity): boolean {
+    return !this.removedSessionIds.has(event.sessionId) && this.generations.get(event.sessionId) === event.generation &&
+      (this.views.get(event.sessionId)?.kind === event.provider || this.launchingSessionIds.has(event.sessionId));
+  }
 
   state() {
     return readAppState({ statePath: this.options.statePath });
@@ -265,7 +271,13 @@ export class TerminalCoordinator {
     const project = await this.options.getProject(input.projectId);
     if (!project) throw new Error(`Unknown project: ${input.projectId}`);
     const worktree = input.worktreeId ? await this.requireWorktree(input.worktreeId, project.id) : null;
+    const agent = this.requireAgent(input.kind);
+    if (input.launchProfileId && (!agent.builtin || !["codex", "claude"].includes(agent.id))) throw new Error("이 CLI에는 시작 프로필을 적용할 수 없습니다");
+    if (input.launchProfileId && !this.options.getLaunchProfile) throw new Error("시작 프로필을 사용할 수 없습니다");
+    const launchProfile = agent.builtin && ["codex", "claude"].includes(agent.id)
+      ? await this.options.getLaunchProfile?.(agent.id, input.launchProfileId) : null;
     return this.launch({
+      launchProfile,
       sessionId: this.options.idFactory(),
       projectId: project.id,
       tool: null,
@@ -295,6 +307,23 @@ export class TerminalCoordinator {
       createdAt: this.options.now(),
       resumeConversationId: null,
     });
+  }
+
+  async fork(input: ForkTerminalInput): Promise<TerminalSessionView> {
+    this.validateDimensions(input.cols, input.rows);
+    const source = this.views.get(input.sourceSessionId);
+    if (!source || !source.projectId || source.tool) throw new Error("분기할 프로젝트 세션을 찾을 수 없습니다");
+    const agent = this.requireAgent(source.kind);
+    if (!agent.builtin || !["claude", "codex"].includes(agent.id)) throw new Error("이 CLI는 대화 분기를 지원하지 않습니다");
+    if (["starting", "working", "awaiting-approval"].includes(source.status)) throw new Error("현재 응답이나 승인을 마친 뒤 분기해 주세요");
+    if (!source.providerConversationId) throw new Error("대화 ID가 확인된 세션만 분기할 수 있습니다");
+    const project = await this.options.getProject(source.projectId);
+    if (!project) throw new Error("분기할 폴더를 찾을 수 없습니다");
+    const worktree = source.worktreeId ? await this.requireWorktree(source.worktreeId, source.projectId) : null;
+    return this.launch({ sessionId: randomUUID(), projectId: source.projectId, tool: null,
+      cwd: worktree?.path ?? project.rootPath, ...(worktree ? { worktreeId: worktree.id } : {}),
+      kind: source.kind, cols: input.cols, rows: input.rows, createdAt: this.options.now(),
+      resumeConversationId: null, forkConversationId: source.providerConversationId, name: input.name });
   }
 
   async resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
@@ -785,6 +814,8 @@ export class TerminalCoordinator {
   }
 
   private async launch(input: {
+    launchProfile?: import("../../shared/launch-profile").LaunchProfile | null;
+    forkConversationId?: string;
     sessionId: string;
     projectId: string | null;
     tool: ToolCommand | null;
@@ -819,6 +850,8 @@ export class TerminalCoordinator {
           claudeSettingsPath: this.options.claudeSettingsPath,
           codexProfileName: this.options.codexProfileName ?? "multi-cli-work",
           resumeConversationId: input.resumeConversationId,
+          forkConversationId: input.forkConversationId,
+          launchProfile: input.launchProfile,
           newConversationId: input.newConversationId,
           codexResumePicker: input.codexResumePicker,
           extraArgs,
@@ -861,6 +894,7 @@ export class TerminalCoordinator {
           ...this.options.env,
           MULTI_CLI_WORK_SESSION_ID: input.sessionId,
           MULTI_CLI_WORK_GENERATION: generation,
+          MULTI_CLI_WORK_ACTIVITY_DIR: this.options.env.MULTI_CLI_WORK_ACTIVITY_DIR ?? "",
           MULTI_CLI_WORK_CLAUDE_SETTINGS: this.options.claudeSettingsPath,
           MULTI_CLI_WORK_CODEX_PROFILE: this.options.codexProfileName ?? "multi-cli-work",
           ...(briefPath ? { MULTI_CLI_WORK_PROJECT_BRIEF: briefPath } : {}),

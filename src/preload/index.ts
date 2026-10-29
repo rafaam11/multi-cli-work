@@ -15,6 +15,29 @@ import type { BoardMessage } from "../shared/board-types";
 import type { SessionPreset } from "../shared/preset-types";
 
 const api: MultiCliWorkApi = {
+  activity: { list: (sessionId) => ipcRenderer.invoke("activity:list", sessionId) },
+  workbench: {
+    saveLaunchProfile: (profile) => ipcRenderer.invoke("workbench:save-launch-profile", profile),
+    removeLaunchProfile: (id) => ipcRenderer.invoke("workbench:remove-launch-profile", id),
+    setDefaultLaunchProfile: (agent, id) => ipcRenderer.invoke("workbench:default-launch-profile", agent, id),
+    saveView: (view) => ipcRenderer.invoke("workbench:save-view", view),
+    removeView: (id) => ipcRenderer.invoke("workbench:remove-view", id),
+    togglePin: (id) => ipcRenderer.invoke("workbench:toggle-pin", id),
+    state: () => ipcRenderer.invoke("workbench:state"),
+    savePrompt: (prompt) => ipcRenderer.invoke("workbench:save-prompt", prompt),
+    removePrompt: (id) => ipcRenderer.invoke("workbench:remove-prompt", id),
+    importPrompts: (text) => ipcRenderer.invoke("workbench:import-prompts", text),
+    exportPrompts: () => ipcRenderer.invoke("workbench:export-prompts"),
+    saveDraft: (id, text) => ipcRenderer.invoke("workbench:save-draft", id, text),
+  },
+  deliveries: {
+    list: () => ipcRenderer.invoke("deliveries:list"),
+    send: (sessionId, text) => ipcRenderer.invoke("deliveries:send", sessionId, text),
+    edit: (id, text) => ipcRenderer.invoke("deliveries:edit", id, text),
+    drop: (id) => ipcRenderer.invoke("deliveries:drop", id),
+    sendNow: (id) => ipcRenderer.invoke("deliveries:send-now", id),
+    move: (id, direction) => ipcRenderer.invoke("deliveries:move", id, direction),
+  },
   platform: process.platform,
   clipboard: {
     readText: () => ipcRenderer.invoke("clipboard:read-text"),
@@ -238,6 +261,7 @@ const api: MultiCliWorkApi = {
     availability: () => ipcRenderer.invoke("providers:availability"),
   },
   terminals: {
+    fork: (input) => ipcRenderer.invoke("terminals:fork", input),
     list: () => ipcRenderer.invoke("terminals:list"),
     state: () => ipcRenderer.invoke("terminals:state"),
     create: (input) => ipcRenderer.invoke("terminals:create", input),
@@ -274,6 +298,7 @@ const api: MultiCliWorkApi = {
     },
   },
   usage: {
+    history: () => ipcRenderer.invoke("usage:history"),
     state: () => ipcRenderer.invoke("usage:state"),
     refresh: () => ipcRenderer.invoke("usage:refresh"),
     onChange(listener) {

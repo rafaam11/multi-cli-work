@@ -5,6 +5,8 @@ export interface QuickOpenItem {
   label: string;
   /** Dimmed context: the folder a session belongs to, or a folder's path. */
   detail: string | null;
+  projectId?: string | null;
+  agentId?: string;
 }
 
 /**

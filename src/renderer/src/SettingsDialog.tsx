@@ -41,6 +41,8 @@ import { DriveKindIcon } from "./drive-kind-icon";
 import type { WorkspaceSnapshot } from "@shared/workspace-types";
 import { RemoteSettings } from "./RemoteSettings";
 import { PresetSettings } from "./PresetSettings";
+import { LaunchProfileSettings } from "./LaunchProfileSettings";
+import { SettingsSearch } from "./SettingsSearch";
 import { errorMessage } from "./ipc-error";
 
 export type SettingsTab =
@@ -54,6 +56,7 @@ export type SettingsTab =
   | "mobile"
   | "keybindings"
   | "presets"
+  | "launch-profiles"
   | "pc";
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
@@ -64,6 +67,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "workspace", label: "워크스페이스" },
   { id: "files", label: "파일" },
   { id: "presets", label: "팀 프리셋" },
+  { id: "launch-profiles", label: "시작 프로필" },
   { id: "notion", label: "노션" },
   { id: "mobile", label: "원격" },
   { id: "keybindings", label: "단축키" },
@@ -1188,9 +1192,12 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
           ))}
         </nav>
         <div className="settings-body">
+          <SettingsSearch onSelect={setTab} />
           {tab === "general" ? (
             <>
               <h2>일반</h2>
+              <div className="settings-row"><label htmlFor="settings-effects">시각 효과 · 즉시 적용</label><select id="settings-effects" value={settings.appearance.effects} onChange={event => update({ appearance: { effects: event.target.value as AppSettings["appearance"]["effects"] } })}><option value="rich">풍부하게</option><option value="balanced">기본</option><option value="minimal">최소</option></select></div>
+              <div className="settings-row"><label htmlFor="settings-density">화면 밀도 · 즉시 적용</label><select id="settings-density" value={settings.appearance.density} onChange={event => update({ appearance: { density: event.target.value as AppSettings["appearance"]["density"] } })}><option value="comfortable">여유 있게</option><option value="compact">촘촘하게</option></select></div>
               {/* 언어 선택은 i18n이 붙을 때 돌아온다. 값(`language`)은 설정 파일에 그대로 남겨 두어
                   다운그레이드해도 잃지 않는다 — 적용되지 않는 선택지를 보여 주지 않을 뿐이다. */}
               <div className="settings-row">
@@ -1411,6 +1418,7 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
           ) : null}
           {tab === "workspace" ? <WorkspaceSettings /> : null}
           {tab === "presets" ? <PresetSettings /> : null}
+          {tab === "launch-profiles" ? <LaunchProfileSettings /> : null}
           {tab === "files" ? (
             <>
               <h2>파일</h2>

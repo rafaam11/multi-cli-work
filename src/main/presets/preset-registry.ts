@@ -56,7 +56,7 @@ export const BUILTIN_PRESETS: readonly SessionPreset[] = [
 
 const REGISTRY_KEYS = ["schemaVersion", "updatedAt", "presets"] as const;
 const PRESET_KEYS = ["id", "name", "description", "members"] as const;
-const MEMBER_KEYS = ["agentId", "name", "prompt"] as const;
+const MEMBER_KEYS = ["agentId", "name", "prompt", "launchProfileId"] as const;
 const PRESET_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -83,9 +83,11 @@ function parseMember(value: unknown, label: string): SessionPresetMember {
     throw new PresetRegistryError(`${label} agentId is invalid`);
   }
   const prompt = value.prompt === undefined || value.prompt === "" ? undefined : text(value.prompt, `${label} prompt`, PRESET_PROMPT_MAX);
+  if (value.launchProfileId !== undefined && value.launchProfileId !== null && (typeof value.launchProfileId !== "string" || !value.launchProfileId.trim() || value.launchProfileId.length > 120)) throw new PresetRegistryError(`${label} launchProfileId is invalid`);
   return {
     agentId: value.agentId,
     name: text(value.name, `${label} name`, PRESET_MEMBER_NAME_MAX),
+    ...(value.launchProfileId !== undefined ? { launchProfileId: value.launchProfileId as string | null } : {}),
     ...(prompt ? { prompt } : {}),
   };
 }

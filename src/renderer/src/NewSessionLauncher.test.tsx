@@ -1,7 +1,8 @@
 import type { AgentView } from "@shared/agent-types";
 import type { SharedProject } from "@shared/project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { MultiCliWorkApi } from "@shared/api-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewSessionLauncher } from "./NewSessionLauncher";
 
@@ -74,6 +75,19 @@ function renderLauncher(overrides: Partial<Parameters<typeof NewSessionLauncher>
 }
 
 describe("NewSessionLauncher", () => {
+  it("passes an explicit profile for its own provider and supports opting out of the app default", async () => {
+    window.multiCliWork = { workbench: { state: async () => ({ writable: true, state: { schemaVersion: 1, prompts: [], drafts: {}, launchProfiles: [{ id: "claude-review", name: "Review", agentId: "claude", model: null, effort: "high" }] } }) } } as unknown as MultiCliWorkApi;
+    const { props } = renderLauncher();
+    await waitFor(() => expect(screen.getByRole("option", { name: "Review" })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Claude Code 시작 프로필"), { target: { value: "profile:claude-review" } });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Atlas에서 Claude Code 시작" }));
+    expect(props.onStart).toHaveBeenLastCalledWith(atlas, "claude", null, "claude-review");
+    fireEvent.change(screen.getByLabelText("Claude Code 시작 프로필"), { target: { value: "native" } });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Atlas에서 Claude Code 시작" }));
+    expect(props.onStart).toHaveBeenLastCalledWith(atlas, "claude", null, null);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Atlas에서 PowerShell 시작" }));
+    expect(props.onStart).toHaveBeenLastCalledWith(atlas, "powershell", null);
+  });
   it("lists each folder with its worktrees under it, in the order it was given them", () => {
     const { container } = renderLauncher();
 

@@ -22,3 +22,8 @@ export interface UsageSnapshot {
   claude: ProviderUsage | null;
   codex: ProviderUsage | null;
 }
+export interface UsageSample extends UsageWindow {
+  provider: "claude" | "codex";
+  observedAt: string;
+}
+export interface UsageHistorySnapshot { samples: UsageSample[]; warning?: string }

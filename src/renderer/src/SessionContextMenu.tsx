@@ -19,6 +19,8 @@ export interface SessionContextMenuProps {
   onResetName(): void;
   /** Saves the scrollback as plain text. Optional so surfaces without it simply omit the item. */
   onExportLog?(): void;
+  onHandoff?(): void;
+  onFork?(): void;
   onRemove(): void;
   onClose(): void;
 }
@@ -34,6 +36,8 @@ export function SessionContextMenu({
   onRename,
   onResetName,
   onExportLog,
+  onHandoff,
+  onFork,
   onRemove,
   onClose,
 }: SessionContextMenuProps) {
@@ -85,6 +89,8 @@ export function SessionContextMenu({
           <span>스크롤백 저장…</span>
         </button>
       ) : null}
+      {onHandoff ? <button type="button" role="menuitem" onClick={run(onHandoff)}><span>다른 세션에 인계…</span></button> : null}
+      {onFork ? <button type="button" role="menuitem" onClick={run(onFork)}><span>대화 분기…</span></button> : null}
       <div className="context-menu-separator" role="separator" />
       <button
         type="button"

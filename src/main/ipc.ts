@@ -79,6 +79,56 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   };
 
   ipc.handle("projects:list", () => workspaceSnapshot());
+  ipc.handle("activity:list", (_event, sessionId: unknown) => dependencies.activity?.list(sessionId === undefined ? undefined : nonEmptyString(sessionId, "Session id")) ?? []);
+  const workbenchService = () => {
+    if (!dependencies.workbench) throw new Error("작업공간 저장소를 사용할 수 없습니다");
+    return dependencies.workbench;
+  };
+  ipc.handle("workbench:state", () => workbenchService().state());
+  ipc.handle("workbench:save-launch-profile", (_event, value: unknown) => workbenchService().saveLaunchProfile(value));
+  ipc.handle("workbench:remove-launch-profile", (_event, id: unknown) => workbenchService().removeLaunchProfile(nonEmptyString(id, "Profile id")));
+  ipc.handle("workbench:default-launch-profile", (_event, agent: unknown, id: unknown) => {
+    if (agent !== "claude" && agent !== "codex") throw new Error("Invalid launch profile agent");
+    return workbenchService().setDefaultLaunchProfile(agent, id === null ? null : nonEmptyString(id, "Profile id"));
+  });
+  ipc.handle("workbench:save-view", (_event, value: unknown) => workbenchService().saveView(value));
+  ipc.handle("workbench:remove-view", (_event, id: unknown) => workbenchService().removeView(nonEmptyString(id, "View preset id")));
+  ipc.handle("workbench:toggle-pin", (_event, id: unknown) => workbenchService().togglePin(nonEmptyString(id, "Pane id")));
+  ipc.handle("workbench:save-prompt", (_event, value: unknown) => workbenchService().savePrompt(value));
+  ipc.handle("workbench:remove-prompt", (_event, id: unknown) => workbenchService().removePrompt(nonEmptyString(id, "Prompt id")));
+  ipc.handle("workbench:import-prompts", (_event, json: unknown) => {
+    if (typeof json !== "string") throw new Error("Library must be JSON text");
+    return workbenchService().importPrompts(json);
+  });
+  ipc.handle("workbench:export-prompts", async () => {
+    const snapshot = await workbenchService().state();
+    if (snapshot.warning) throw new Error(snapshot.warning);
+    return dependencies.saveTextFile("mcw-prompts.json", JSON.stringify({ format: "mcw-prompts", version: 1, prompts: snapshot.state.prompts }, null, 2));
+  });
+  ipc.handle("workbench:save-draft", (_event, id: unknown, draft: unknown) => {
+    if (typeof draft !== "string") throw new Error("Draft must be text");
+    return workbenchService().saveDraft(nonEmptyString(id, "Session id"), draft);
+  });
+  const deliveryService = () => {
+    if (!dependencies.deliveries) throw new Error("전달 큐를 사용할 수 없습니다");
+    return dependencies.deliveries;
+  };
+  const deliveryText = (value: unknown) => {
+    const text = nonEmptyString(value, "Message text");
+    if (text.length > 8000) throw new Error("메시지는 8000자까지 입력할 수 있습니다");
+    return text;
+  };
+  ipc.handle("deliveries:list", () => deliveryService().list());
+  ipc.handle("deliveries:send", (_event, id: unknown, text: unknown) =>
+    deliveryService().enqueue({ to: nonEmptyString(id, "Session id"), text: deliveryText(text), raw: true }));
+  ipc.handle("deliveries:edit", (_event, id: unknown, text: unknown) =>
+    deliveryService().edit(nonEmptyString(id, "Delivery id"), deliveryText(text)));
+  ipc.handle("deliveries:drop", (_event, id: unknown) => deliveryService().drop(nonEmptyString(id, "Delivery id")));
+  ipc.handle("deliveries:send-now", (_event, id: unknown) => deliveryService().sendNow(nonEmptyString(id, "Delivery id")));
+  ipc.handle("deliveries:move", (_event, id: unknown, direction: unknown) => {
+    if (direction !== "up" && direction !== "down") throw new Error("Invalid delivery move direction");
+    return deliveryService().move(nonEmptyString(id, "Delivery id"), direction);
+  });
   ipc.handle("projects:add-folder", async () => {
     const rootPath = await dependencies.chooseDirectory();
     if (!rootPath) return null;
@@ -741,6 +791,7 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     });
   });
   ipc.handle("usage:state", () => dependencies.usage.state());
+  ipc.handle("usage:history", () => dependencies.usageHistory?.list() ?? { samples: [] });
   ipc.handle("usage:refresh", () => dependencies.usage.refresh());
   // 패인 머리줄의 "크기 되찾기". 입력할 때와 같은 길이다 — 기기가 갖고 있지 않으면 아무 일도 없다.
   ipc.handle("terminals:reclaim-size", (_event, sessionId: unknown) =>
@@ -750,6 +801,18 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     dependencies.coordinator.stop(nonEmptyString(sessionId, "Session id")),
   );
   ipc.handle("terminals:resume", (_event, input: unknown) => dependencies.coordinator.resume(validateResumeInput(input)));
+  ipc.handle("terminals:fork", async (_event, input: unknown) => {
+    const value = exactObject(input, ["sourceSessionId", "name", "cols", "rows"], "Fork input");
+    const sourceSessionId = nonEmptyString(value.sourceSessionId, "Source session id");
+    assertNotReviewSession(await dependencies.github.activeReviews(), sourceSessionId);
+    const name = nonEmptyString(value.name, "Session name");
+    if (name.length > 120 || /[\x00-\x1f\x7f]/.test(name)) throw new Error("분기 이름이 올바르지 않습니다");
+    if (!dependencies.coordinator.fork) throw new Error("대화 분기를 사용할 수 없습니다");
+    const child = await dependencies.coordinator.fork({ sourceSessionId, name, cols: positiveInteger(value.cols, "Columns"), rows: positiveInteger(value.rows, "Rows") });
+    // The PTY already exists; a metadata write failure must not invite a duplicate launch.
+    await dependencies.workbench?.recordFork(child.id, sourceSessionId).catch(error => console.error("Failed to record fork lineage", error));
+    return child;
+  });
   ipc.handle("terminals:remove", async (_event, sessionId: unknown) => {
     const id = nonEmptyString(sessionId, "Session id");
     assertNotReviewSession(await dependencies.github.activeReviews(), id);

@@ -139,6 +139,7 @@ export function createSessionActions(context: SessionContext) {
     kind: TerminalKind,
     worktreeId: string | null,
     slotIndex: number | null,
+    launchProfileId?: string | null,
   ) => {
     if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
     await whilePending(async () => {
@@ -146,6 +147,7 @@ export function createSessionActions(context: SessionContext) {
         projectId: project.id,
         kind,
         ...(worktreeId !== null ? { worktreeId } : {}),
+        ...(launchProfileId !== undefined ? { launchProfileId } : {}),
         ...DEFAULT_TERMINAL_SIZE,
         background: true,
       });

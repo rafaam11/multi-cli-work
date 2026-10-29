@@ -27,17 +27,20 @@ export function buildQuickOpenItems(sources: QuickOpenSources): QuickOpenItem[] 
     .map((session): QuickOpenItem => ({
       key: `session:${session.id}`,
       kind: "session",
+      projectId: session.projectId,
+      agentId: session.kind,
       label: sessionLabel(
         session,
         sessions.filter((peer) => peer.projectId === session.projectId),
         agents,
       ),
-      detail: session.projectId ? (nameById.get(session.projectId) ?? null) : "도구",
+      detail: session.projectId ? [nameById.get(session.projectId), workspaceViews.find(view => view.worktreeId && view.worktreeId === session.worktreeId)?.branch].filter(Boolean).join(" · ") : "도구",
     }));
   const projectItems = projects.map(
     (project): QuickOpenItem => ({
       key: `project:${project.id}`,
       kind: "project",
+      projectId: project.id,
       label: projectName(project),
       detail: project.rootPath,
     }),
@@ -45,6 +48,7 @@ export function buildQuickOpenItems(sources: QuickOpenSources): QuickOpenItem[] 
   const workspaceItems = workspaceViews.filter((workspace) => workspace.kind === "main" || isWorkingBranch(workspace.branch)).map((workspace): QuickOpenItem => ({
     key: workspace.kind === "main" ? `workspace:main:${workspace.projectId}` : `workspace:worktree:${workspace.worktreeId}`,
     kind: "workspace",
+    projectId: workspace.projectId,
     label: workspace.kind === "main" ? `${nameById.get(workspace.projectId) ?? "프로젝트"} · 메인` : workspace.branch ?? `detached @ ${workspace.head?.slice(0, 7) ?? "unknown"}`,
     detail: workspace.path,
   }));
@@ -72,6 +76,9 @@ export function buildQuickOpenItems(sources: QuickOpenSources): QuickOpenItem[] 
       : []),
     { key: "command:edit-agents", kind: "command", label: "에이전트 추가 (agents.json)", detail: null },
     { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
+    { key: "command:prompts", kind: "command", label: "프롬프트 라이브러리 열기", detail: null },
+    { key: "command:deliveries", kind: "command", label: "보류 메시지 관리", detail: null },
+    { key: "command:activity", kind: "command", label: "세션 활동 및 정보", detail: null },
     { key: "command:settings", kind: "command", label: "설정 열기", detail: null },
   ];
   return [...sessionItems, ...workspaceItems, ...projectItems, ...workProjectItems, ...commandItems];

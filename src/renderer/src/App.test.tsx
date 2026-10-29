@@ -359,6 +359,9 @@ function createApi(options?: {
     home: "C:/Users/test",
   };
   const api: MultiCliWorkApi = {
+    activity: { list: vi.fn(async () => []) },
+    workbench: { state: vi.fn(), savePrompt: vi.fn(), removePrompt: vi.fn(), saveDraft: vi.fn(), importPrompts: vi.fn(), exportPrompts: vi.fn(), togglePin: vi.fn(), saveLaunchProfile: vi.fn(), removeLaunchProfile: vi.fn(), setDefaultLaunchProfile: vi.fn(), saveView: vi.fn(), removeView: vi.fn() },
+    deliveries: { list: vi.fn(async () => []), send: vi.fn(), edit: vi.fn(), drop: vi.fn(), sendNow: vi.fn(), move: vi.fn() },
     platform: "win32",
     projects: {
       list: vi.fn().mockResolvedValue(snapshot),
@@ -452,6 +455,7 @@ function createApi(options?: {
       onChanged: vi.fn(() => () => undefined),
     },
     usage: {
+      history: vi.fn(async () => ({ samples: [] })),
       state: vi.fn().mockResolvedValue({ claude: null, codex: null }),
       refresh: vi.fn().mockResolvedValue({ claude: null, codex: null }),
       onChange: vi.fn(() => () => undefined),
@@ -603,6 +607,7 @@ function createApi(options?: {
       }),
     },
     terminals: {
+      fork: vi.fn(),
       list: vi.fn().mockResolvedValue(sessions),
       state: vi.fn().mockResolvedValue(appState),
       create: vi.fn().mockResolvedValue(created),
@@ -3195,9 +3200,8 @@ describe("prompt fan-out", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "1개 세션에 전송" }));
 
-    // The text, then its Enter on its own after a pause.
-    await waitFor(() => expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "\r"));
-    expect(harness.api.terminals.write).toHaveBeenCalledWith(powershellSession.id, "상태를 보고해줘");
+    await waitFor(() => expect(harness.api.deliveries.send).toHaveBeenCalledWith(powershellSession.id, "상태를 보고해줘"));
+    expect(harness.api.terminals.write).not.toHaveBeenCalled();
   });
 });
 
@@ -4634,6 +4638,7 @@ describe("settings entry points", () => {
     window.multiCliWork = harness.api;
     render(<App />);
     fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    fireEvent.change(await screen.findByRole("textbox", { name: "빠른 열기 검색" }), { target: { value: "설정 열기" } });
     fireEvent.click(await screen.findByText("설정 열기"));
     expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
   });

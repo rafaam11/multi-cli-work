@@ -4,15 +4,23 @@ import type { PullRequestListItem } from "@shared/github-types";
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SessionPreset } from "@shared/preset-types";
-import { Files, GitBranch, MessagesSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Activity, BookOpen, Send, Files, GitBranch, MessagesSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { FileExplorer } from "./FileExplorer";
 import { GitPanel, type GitWorktreeOption } from "./GitPanel";
 import { TeamBoard } from "./TeamBoard";
+import { DeliveryPanel } from "./DeliveryPanel";
+import { PromptWorkbench } from "./PromptWorkbench";
+import { SessionActivityPanel } from "./SessionActivityPanel";
+import type { ActivityEntry } from "./HomeDashboard";
+import type { SessionIndicators } from "@shared/terminal-types";
 
-export type RightSidebarTab = "files" | "git" | "board";
+export type RightSidebarTab = "files" | "git" | "board" | "deliveries" | "prompts" | "activity";
 
 export interface RightSidebarProps {
+  activityLog?: ActivityEntry[];
+  selectedSession?: TerminalSessionView | null;
+  sessionIndicators?: Readonly<Record<string, SessionIndicators>>;
   collapsed: boolean;
   onToggleCollapse(): void;
   activeTab: RightSidebarTab;
@@ -45,9 +53,10 @@ export interface RightSidebarProps {
   onStartPreset(presetId: string): void;
 }
 
-const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git", board: "팀 보드" };
+const TAB_TITLES: Record<RightSidebarTab, string> = { files: "파일 탐색기", git: "Git", board: "팀 보드", deliveries: "보류 메시지", prompts: "프롬프트 라이브러리", activity: "활동 및 정보" };
 
 export function RightSidebar({
+  activityLog = [], selectedSession = null, sessionIndicators = {},
   collapsed,
   onToggleCollapse,
   activeTab,
@@ -124,6 +133,9 @@ export function RightSidebar({
             {headerTab("files", <Files size={14} />, "파일")}
             {headerTab("git", <GitBranch size={14} />, "Git")}
             {headerTab("board", <MessagesSquare size={14} />, "보드")}
+            {headerTab("deliveries", <Send size={14} />, "보류")}
+            {headerTab("prompts", <BookOpen size={14} />, "프롬프트")}
+            {headerTab("activity", <Activity size={14} />, "활동")}
           </div>
         )}
         <button
@@ -143,6 +155,9 @@ export function RightSidebar({
             {railTab("files", <Files size={16} />)}
             {railTab("git", <GitBranch size={16} />)}
             {railTab("board", <MessagesSquare size={16} />)}
+            {railTab("deliveries", <Send size={16} />)}
+            {railTab("prompts", <BookOpen size={16} />)}
+            {railTab("activity", <Activity size={16} />)}
           </div>
         ) : null}
         {/* Both panels stay mounted while hidden so the file tree's expansion state and the git
@@ -183,6 +198,9 @@ export function RightSidebar({
           presets={presets}
           onStartPreset={onStartPreset}
         />
+        <DeliveryPanel hidden={collapsed || activeTab !== "deliveries"} sessions={sessions} onFocusSession={onFocusSession} />
+        <PromptWorkbench hidden={collapsed || activeTab !== "prompts"} sessions={sessions} onFocusSession={onFocusSession} />
+        <SessionActivityPanel hidden={collapsed || activeTab !== "activity"} sessions={sessions} activity={activityLog} selected={selectedSession} indicators={sessionIndicators} onFocusSession={onFocusSession} />
       </div>
     </aside>
   );

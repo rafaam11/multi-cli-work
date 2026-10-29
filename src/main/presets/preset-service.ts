@@ -34,6 +34,7 @@ export async function launchPreset(request: PresetLaunchInput, options: PresetSe
       kind: member.agentId,
       ...(request.worktreeId ? { worktreeId: request.worktreeId } : {}),
       name: member.name,
+      ...(member.launchProfileId !== undefined ? { launchProfileId: member.launchProfileId } : {}),
       cols: PRESET_COLS,
       rows: PRESET_ROWS,
       background: true,

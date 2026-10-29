@@ -22,6 +22,37 @@ const context = {
  * than derived so that a change to a built-in definition has to be made here too, deliberately.
  */
 describe("built-in agent command lines", () => {
+  it("applies a model and provider-specific effort to fresh sessions without changing permissions", () => {
+    const profile = { id: "review", name: "Review", agentId: "codex" as const, model: "gpt-5.5", effort: "high" };
+    const codex = buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, { ...context, launchProfile: profile });
+    expect(codex.args).toContain("--model=gpt-5.5");
+    expect(codex.args.slice(-2)).toEqual(["-c", 'model_reasoning_effort="high"']);
+    expect(codex.args).toContain("--dangerously-bypass-approvals-and-sandbox");
+    const claude = buildAgentLaunch({ ...BUILTIN_AGENTS.claude, args: [...BUILTIN_AGENTS.claude.args, "--model", "old", "--effort=low"] }, CLAUDE_EXE, {
+      ...context, launchProfile: { ...profile, agentId: "claude", model: "sonnet[1m]", effort: "medium" },
+    });
+    expect(claude.args).toContain("--model=sonnet[1m]"); expect(claude.args).toContain("--effort=medium");
+    expect(claude.args).not.toContain("old"); expect(claude.args).not.toContain("--effort=low");
+    expect(claude.args).toContain("--dangerously-skip-permissions");
+  });
+  it("rejects profile misuse and shell syntax before starting a process", () => {
+    const profile = { id: "p", name: "Profile", agentId: "codex" as const, model: "model", effort: null };
+    expect(() => buildAgentLaunch(BUILTIN_AGENTS.claude, CLAUDE_EXE, { ...context, launchProfile: profile })).toThrow();
+    expect(() => buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, { ...context, launchProfile: profile, resumeConversationId: "parent" })).toThrow();
+    expect(() => buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, { ...context, launchProfile: profile, forkConversationId: "parent" })).toThrow();
+    for (const model of ['model;echo', 'model&whoami', '$(whoami)', 'model --help']) {
+      expect(() => buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, { ...context, launchProfile: { ...profile, model } })).toThrow();
+    }
+  });
+  it("forks both providers without claiming the parent's conversation ID", () => {
+    const codex = buildAgentLaunch(BUILTIN_AGENTS.codex, CODEX_EXE, { ...context, forkConversationId: "parent" });
+    expect(codex.args).toContain("fork"); expect(codex.args).not.toContain("resume");
+    expect(codex.args).toContain("parent"); expect(codex.providerConversationId).toBeNull();
+    const claude = buildAgentLaunch(BUILTIN_AGENTS.claude, CLAUDE_EXE, { ...context, forkConversationId: "parent" });
+    expect(claude.args).toContain("--fork-session"); expect(claude.args).toContain("--resume");
+    expect(claude.args).not.toContain("--session-id"); expect(claude.providerConversationId).toBeNull();
+    expect(() => buildAgentLaunch(BUILTIN_AGENTS.powershell, POWERSHELL_EXE, { ...context, forkConversationId: "parent" })).toThrow();
+  });
   it("starts and resumes Claude with app-owned settings, a stable conversation id, and permissions skipped", () => {
     expect(buildAgentLaunch(BUILTIN_AGENTS.claude, CLAUDE_EXE, context)).toEqual({
       executable: CLAUDE_EXE,

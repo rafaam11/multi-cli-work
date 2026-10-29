@@ -40,6 +40,18 @@ function writeStatus(event) {
   // Watchers can coalesce startup and the first tool into one change. Preserve ownership first.
   if (event.hook_event_name === "SessionStart") writeSnapshot(path.join(statusDir, sessionId + ".start.json"));
   writeSnapshot(path.join(statusDir, sessionId + ".json"));
+  const activityDir = process.env.MULTI_CLI_WORK_ACTIVITY_DIR;
+  if (activityDir && process.env.MULTI_CLI_WORK_GENERATION) {
+    try {
+      fs.mkdirSync(activityDir, { recursive: true });
+      const id = require("node:crypto").randomUUID();
+      const activity = { ...JSON.parse(snapshot), id,
+        ...(typeof event.tool_use_id === "string" ? { toolCallId: event.tool_use_id } : {}) };
+      const target = path.join(activityDir, id + ".json");
+      fs.writeFileSync(target + ".tmp", JSON.stringify(activity), "utf8");
+      fs.renameSync(target + ".tmp", target);
+    } catch {}
+  }
 }
 // The work-project brief, in the same SessionStart shape the Claude hook prints. Non-ASCII goes out as
 // \\uXXXX so the console code page cannot mangle Korean on the way to Codex.

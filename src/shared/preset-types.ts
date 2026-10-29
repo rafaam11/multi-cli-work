@@ -6,6 +6,8 @@
 export interface SessionPresetMember {
   agentId: string;
   name: string;
+  /** Omitted uses the app default; null uses the CLI's own configuration. */
+  launchProfileId?: string | null;
   /** Typed in once the CLI is ready. */
   prompt?: string;
 }

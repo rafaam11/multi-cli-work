@@ -39,6 +39,7 @@ const action = (
 
 export const KEYMAP_ACTIONS: readonly KeymapAction[] = [
   action("view.quick-open", "빠른 열기", "일반", "Ctrl+P"),
+  action("view.commands", "명령 검색", "일반", "Ctrl+Shift+P"),
   action("file.save", "파일 저장", "일반", "Ctrl+S"),
   action("file.refresh", "파일 목록 새로고침", "보기", "F5"),
   action("settings.open", "설정 열기", "일반", "Ctrl+,"),

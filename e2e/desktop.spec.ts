@@ -714,6 +714,110 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("button", { name: new RegExp(`${SHELL_LABEL}( \\d+)? 세션 보기`) }).first()).toBeVisible();
   });
 
+  test("@smoke manages the prompt library through the native workbench store", async () => {
+    await page.keyboard.press("Control+Shift+P");
+    const palette = page.getByRole("dialog", { name: "빠른 열기" });
+    await palette.getByRole("textbox").fill("프롬프트 라이브러리");
+    await palette.getByRole("textbox").press("Enter");
+    const library = page.getByRole("region", { name: "프롬프트 라이브러리" });
+    await expect(library).toBeVisible();
+    const pin = page.getByRole("button", { name: /세션 고정/ }).first();
+    await expect(pin).toBeEnabled();
+    await pin.click();
+    await expect(pin).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "고정 세션만 보기" }).click();
+    await expect(page.getByRole("group", { name: "세션 목록", exact: true }).getByRole("button", { name: /세션 고정/ })).toHaveCount(1);
+    await page.getByRole("button", { name: "고정 세션만 보기" }).click();
+    await pin.click();
+    await expect(pin).toHaveAttribute("aria-pressed", "false");
+    await library.getByLabel("프롬프트", { exact: true }).fill("Review the selected changes.");
+    await library.locator("summary", { hasText: "라이브러리에 저장" }).click();
+    await library.getByLabel("이름", { exact: true }).fill("E2E review template");
+    await library.getByLabel("태그 (쉼표로 구분)").fill("review, test");
+    await library.getByRole("button", { name: "새 프롬프트 저장", exact: true }).click();
+    await expect(library.getByRole("status")).toHaveText("프롬프트를 저장했습니다.");
+    await expect.poll(() => page.evaluate(async () => (await window.multiCliWork.workbench.state()).state.prompts.some(prompt => prompt.name === "E2E review template"))).toBe(true);
+    const overflow = await library.evaluate(element => element.scrollWidth - element.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    await attachScreenshot("prompt-library-workbench");
+    await page.getByRole("tab", { name: "보류", exact: true }).click();
+    await expect(page.getByRole("region", { name: "보류 메시지 관리" })).toBeVisible();
+    await page.getByRole("tab", { name: "활동", exact: true }).click();
+    await expect(page.getByRole("region", { name: "세션 활동 및 정보" })).toBeVisible();
+    await page.getByRole("tab", { name: "파일", exact: true }).click();
+  });
+  test("@smoke saves a model profile and selects it as the next-session default", async () => {
+    await page.keyboard.press("Control+,");
+    const dialog = page.getByRole("dialog", { name: "설정", exact: true });
+    await dialog.getByRole("button", { name: "시작 프로필", exact: true }).click();
+    await dialog.getByRole("button", { name: "새 시작 프로필", exact: true }).click();
+    await dialog.getByLabel("프로필 이름", { exact: true }).fill("E2E deep review");
+    await dialog.getByLabel("모델 ID", { exact: true }).fill("gpt-5.5");
+    await dialog.getByLabel("추론 수준", { exact: true }).selectOption("high");
+    await dialog.getByRole("button", { name: "프로필 저장", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "E2E deep review 편집", exact: true })).toBeVisible();
+    const profile = await page.evaluate(async () => (await window.multiCliWork.workbench.state()).state.launchProfiles?.find(item => item.name === "E2E deep review"));
+    expect(profile).toBeDefined();
+    await dialog.getByLabel("Codex 기본 프로필", { exact: true }).selectOption(profile!.id);
+    await expect.poll(() => page.evaluate(async () => (await window.multiCliWork.workbench.state()).state.defaultLaunchProfiles?.codex)).toBe(profile!.id);
+    await attachScreenshot("launch-profile-settings");
+    await dialog.getByLabel("Codex 기본 프로필", { exact: true }).selectOption("");
+    await dialog.getByRole("button", { name: "E2E deep review 삭제", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "E2E deep review 편집", exact: true })).toBeHidden();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  });
+
+  test("@smoke restores a named layout without restarting or creating sessions", async () => {
+    await openFolder();
+    const live = await page.evaluate(async ({ projectId, kind }) => window.multiCliWork.terminals.create({ projectId, kind, cols: 80, rows: 24, background: true, name: "Layout keepalive" }), { projectId: PROJECT_ID, kind: SHELL_ID });
+    expect(live.pid).not.toBeNull();
+    const before = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map(session => ({ id: session.id, pid: session.pid })));
+    const layout = page.getByRole("radiogroup", { name: "레이아웃 선택" });
+    await layout.getByRole("radio", { name: "2열", exact: true }).click();
+    await page.getByRole("tab", { name: "활동", exact: true }).click();
+    await page.getByRole("button", { name: "저장 배치", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "저장 배치", exact: true });
+    await dialog.getByLabel("배치 이름", { exact: true }).fill("E2E review layout");
+    await dialog.getByRole("button", { name: "현재 배치 저장", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: /E2E review layout.*패널 상태 복원/ })).toBeVisible();
+    await attachScreenshot("saved-layout-dialog");
+    await dialog.getByRole("button", { name: "닫기", exact: true }).click();
+    await layout.getByRole("radio", { name: "자동", exact: true }).click();
+    await page.getByRole("tab", { name: "파일", exact: true }).click();
+    await page.getByRole("button", { name: "저장 배치", exact: true }).click();
+    await dialog.getByRole("button", { name: /E2E review layout.*패널 상태 복원/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(layout.getByRole("radio", { name: "2열", exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("tab", { name: "활동", exact: true })).toHaveAttribute("aria-selected", "true");
+    const after = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map(session => ({ id: session.id, pid: session.pid })));
+    expect(after).toEqual(before);
+    await page.getByRole("button", { name: "저장 배치", exact: true }).click();
+    await dialog.getByRole("button", { name: "E2E review layout 배치 삭제", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: /E2E review layout.*패널 상태 복원/ })).toBeHidden();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await layout.getByRole("radio", { name: "자동", exact: true }).click();
+    await page.getByRole("tab", { name: "파일", exact: true }).click();
+    await page.evaluate(async id => window.multiCliWork.terminals.remove(id), live.id);
+  });
+
+  test("@smoke searches appearance settings and applies effects and density live", async () => {
+    const previous = await page.evaluate(async () => (await window.multiCliWork.settings.get()).appearance);
+    await page.keyboard.press("Control+,");
+    const dialog = page.getByRole("dialog", { name: "설정", exact: true });
+    await dialog.getByRole("searchbox", { name: "설정 검색어" }).fill("시각 효과");
+    await dialog.getByRole("button", { name: /시각 효과/ }).click();
+    await dialog.getByLabel("시각 효과 · 즉시 적용").selectOption("minimal");
+    await dialog.getByLabel("화면 밀도 · 즉시 적용").selectOption("compact");
+    await expect(page.locator("html")).toHaveAttribute("data-effects", "minimal");
+    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await attachScreenshot("workbench-appearance-settings");
+    await page.evaluate(async appearance => window.multiCliWork.settings.update({ appearance }), previous);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  });
+
   /**
    * The window has no OS title bar and no native menu any more, so this bar is the only way to reach
    * what they used to offer. It has to be there, sit flush at the top, and actually drive the app.

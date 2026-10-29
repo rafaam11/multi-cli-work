@@ -2,7 +2,9 @@ import type { AgentId, AgentView } from "@shared/agent-types";
 import type { SharedProject } from "@shared/project-types";
 import type { SharedWorktree } from "@shared/worktree-types";
 import { GitBranch } from "lucide-react";
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import type { LaunchProfile } from "@shared/launch-profile";
+import { LaunchProfileSelect } from "./LaunchProfileSelect";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { useClampedMenuPosition } from "./context-menu-position";
 import { newSessionLabel, projectName } from "./session-labels";
@@ -17,7 +19,7 @@ export interface NewSessionLauncherProps {
   agents: readonly AgentView[];
   /** Why this folder cannot start anything, or null when it can. */
   disabledReasonFor(projectId: string): string | null;
-  onStart(project: SharedProject, agentId: AgentId, worktreeId: string | null): void;
+  onStart(project: SharedProject, agentId: AgentId, worktreeId: string | null, launchProfileId?: string | null): void;
   onClose(): void;
 }
 
@@ -41,7 +43,18 @@ export function NewSessionLauncher({
   onClose,
 }: NewSessionLauncherProps) {
   const menu = useRef<HTMLDivElement>(null);
+  const [profiles, setProfiles] = useState<LaunchProfile[]>([]);
+  const [selectedProfiles, setSelectedProfiles] = useState<Record<string, string | null | undefined>>({});
+  const [profileError, setProfileError] = useState<string | null>(null);
   const position = useClampedMenuPosition(x, y, menu);
+
+  useEffect(() => {
+    let alive = true;
+    void Promise.resolve(window.multiCliWork?.workbench?.state?.()).then(snapshot => {
+      if (alive) { setProfiles(snapshot?.state.launchProfiles ?? []); setProfileError(snapshot?.warning ?? null); }
+    }).catch(cause => { if (alive) setProfileError(String(cause)); });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -77,7 +90,9 @@ export function NewSessionLauncher({
             aria-label={`${where}에서 ${agent.label} 시작`}
             onClick={() => {
               onClose();
-              onStart(project, agent.id, worktreeId);
+              const profile = selectedProfiles[agent.id];
+              if (profile === undefined) onStart(project, agent.id, worktreeId);
+              else onStart(project, agent.id, worktreeId, profile);
             }}
           >
             <AgentIcon agent={agent} size={14} className={agent.available ? agentAccentClass(agent) : undefined} />
@@ -96,6 +111,10 @@ export function NewSessionLauncher({
       style={{ "--context-menu-x": `${position.x}px`, "--context-menu-y": `${position.y}px` } as CSSProperties}
     >
       <div className="context-menu-label">최근 폴더</div>
+      <div className="new-session-profiles">{agents.filter(agent => agent.builtin && ["claude", "codex"].includes(agent.id)).map(agent => <label key={agent.id}>
+        <span>{agent.label} 프로필</span><LaunchProfileSelect agentId={agent.id} label={`${agent.label} 시작 프로필`} profiles={profiles} value={selectedProfiles[agent.id]} onChange={value => setSelectedProfiles(current => ({ ...current, [agent.id]: value }))} />
+      </label>)}</div>
+      {profileError ? <p className="new-session-empty" role="alert">{profileError} · CLI 자체 설정을 선택해 시작할 수 있습니다.</p> : null}
       {projects.length === 0 ? (
         <p className="new-session-empty">폴더를 열면 여기에 표시됩니다</p>
       ) : (
