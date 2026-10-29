@@ -1,25 +1,40 @@
 import { WebSocket } from "ws";
+import { request as httpRequest } from "node:http";
 import type { AttemptRef, Task, TaskCreateInput } from "../../shared/host-types";
 import type { HostDescriptor } from "./gateway";
 
-export interface HostConnection { url: string; token: string; instanceId?: string }
+export interface HostConnection { url: string; token: string; instanceId?: string; /** Original loopback Host header behind an authenticated SSH tunnel. */ authority?: string }
 export class HostClient {
   readonly connection: HostConnection;
   constructor(connection: HostConnection) {
     const url = new URL(connection.url);
     if (url.protocol !== "http:" || url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) throw new Error("Invalid host URL");
     if (!/^[A-Za-z0-9_-]{43}$/.test(connection.token)) throw new Error("Invalid host token");
-    this.connection = { ...connection, url: url.origin };
+    if (connection.authority !== undefined) {
+      const target=new URL(`http://${connection.authority}`);
+      if (!["127.0.0.1","[::1]"].includes(target.hostname) || target.host!==connection.authority || target.username || target.password) throw new Error("Invalid tunneled host authority");
+    }
+    this.connection = { token:connection.token, instanceId:connection.instanceId, authority:connection.authority, url:url.origin };
   }
-  async request<T>(route: string, method = "GET", input?: unknown): Promise<T> {
+  async request<T>(route: string, method = "GET", input?: unknown, timeoutMs=65000): Promise<T> {
     if (!route.startsWith("/") || route.startsWith("//") || route.includes("?") || route.includes("#")) throw new Error("Invalid host route");
-    const response = await fetch(`${this.connection.url}${route}`, { method, redirect: "error", signal: AbortSignal.timeout(65000), headers: { authorization: `Bearer ${this.connection.token}`, ...(input === undefined ? {} : { "content-type": "application/json" }) }, ...(input === undefined ? {} : { body: JSON.stringify(input) }) });
-    const value = await response.json() as T & { error?: string };
-    if (!response.ok) throw new Error(value.error ?? `Host rejected request (${response.status})`);
-    return value;
+    // Node fetch overwrites Host with the local forwarding port. HTTP preserves
+    // the remote authority so the gateway's rebinding check remains effective.
+    return new Promise<T>((resolve,reject)=>{
+      const request=httpRequest(`${this.connection.url}${route}`,{method,signal:AbortSignal.timeout(timeoutMs),headers:{authorization:`Bearer ${this.connection.token}`,...(this.connection.authority?{host:this.connection.authority}:{}),...(input===undefined?{}:{"content-type":"application/json"})}},response=>{
+        const chunks:Buffer[]=[];let bytes=0;
+        response.on("error",reject);
+        response.on("data",(chunk:Buffer)=>{bytes+=chunk.length;if(bytes>16*1024*1024){request.destroy(new Error("Host response exceeds limit"));return;}chunks.push(chunk);});
+        response.on("end",()=>{
+          try{const value=JSON.parse(Buffer.concat(chunks).toString("utf8")) as T & {error?:string};if(!response.statusCode||response.statusCode<200||response.statusCode>=300)throw new Error(value.error??`Host rejected request (${response.statusCode})`);resolve(value);}
+          catch(error){reject(error);}
+        });
+      });
+      request.on("error",reject);request.end(input===undefined?undefined:JSON.stringify(input));
+    });
   }
   async health(): Promise<{ schemaVersion: 2; hostId: string; instanceId: string; accepting: boolean }> {
-    const value = await this.request<{ schemaVersion: 2; hostId: string; instanceId: string; accepting: boolean }>("/health");
+    const value = await this.request<{ schemaVersion: 2; hostId: string; instanceId: string; accepting: boolean }>("/health","GET",undefined,1000);
     if (this.connection.instanceId && value.instanceId !== this.connection.instanceId) throw new Error("Host instance changed");
     return value;
   }
@@ -52,7 +67,7 @@ export class HostTerminalSocket {
   private closed = false;
   private readonly pending: Record<string, unknown>[] = [];
   constructor(connection: HostConnection, sessionId: string | null, onEvent: (event: unknown) => void, onError?: (message: string) => void) {
-    this.socket = new WebSocket(`${connection.url.replace(/^http:/, "ws:")}/terminal`, { perMessageDeflate: false, maxPayload: 16 * 1024 * 1024 });
+    this.socket = new WebSocket(`${connection.url.replace(/^http:/, "ws:")}/terminal`, { perMessageDeflate: false, maxPayload: 16 * 1024 * 1024, ...(connection.authority?{headers:{host:connection.authority}}:{}) });
     this.socket.on("open", () => { this.socket.send(JSON.stringify({ type: "authenticate", token: connection.token })); });
     this.socket.on("message", (data, binary) => {
       try {

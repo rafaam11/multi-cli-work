@@ -21,7 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1 openssh-server && sudo mkdir -p /run/sshd
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
       - name: Acquire digest-pinned resources
@@ -35,6 +35,11 @@ jobs:
       - name: Provider hooks in a dedicated worker
         run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
       - run: npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
+      - name: Isolated OpenSSH host transport
+        if: runner.os == 'Linux'
+        env:
+          MCW_SSH_TEST: '1'
+        run: npx vitest run src/main/host/ssh-host-integration.test.ts --maxWorkers=1
       - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
       - name: Actual Herdr Windows broker tests
         if: runner.os == 'Windows'

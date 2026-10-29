@@ -3,6 +3,7 @@ import { HostGateway, type HostGatewayOptions } from "./host/gateway";
 import { TaskStore } from "./host/task-store";
 import { createHerdrTerminalService } from "./herdr/terminal-service";
 import { TaskExecutor } from "./host/task-executor";
+import { readConnectionInfo } from "./host/connection-info";
 
 /** Separate Node entrypoint. Importing it never starts a host or touches a user's data. */
 export async function startHost(options: HostGatewayOptions): Promise<HostGateway> {
@@ -51,6 +52,12 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   process.on("SIGTERM", stop); process.on("SIGINT", stop);
   return gateway;
 }
-if (process.argv.includes("--mcw-host")) {
+if (process.argv.includes("--connection-info")) {
+  const args=process.argv.slice(2);
+  const value=(flag:string)=>args[args.indexOf(flag)+1];
+  void readConnectionInfo(value("--data-root")??"",value("--host-id")??"").then(descriptor=>{
+    process.stdout.write(JSON.stringify(descriptor)+"\n");
+  }).catch(()=>{process.stderr.write("MCW SSH discovery unavailable; verify the running host and saved identity.\n");process.exitCode=1;});
+} else if (process.argv.includes("--mcw-host")) {
   void runHostProcess().catch(() => { process.stderr.write("mcw-host startup failed; inspect private host state.\n"); process.exitCode = 1; });
 }

@@ -37,6 +37,8 @@ For source testing, explicitly set `MCW_RUNTIME=v2-preview`, `MULTI_CLI_WORK_USE
 
 The implementation is still incomplete. SSH remote dispatch, the mobile v2 gateway/pairing path, production rollback UI/controller and real installer roundtrips remain outstanding. Passing local host and filesystem recovery tests does not satisfy those release gates.
 
+The SSH transport now discovers an already-running `mcw-host` through an authenticated SSH account, then opens a loopback-only forward. It requires a preverified SSH host key and the expected MCW host ID, never starts a remote host, and carries owner credentials only inside SSH/HTTP messages, not command arguments. The remote helper's `--connection-info` option is a private read-only connection handshake, not a session-control CLI. Each connection closes its own SSH child without shutting down remote work. The Linux preview job uses a separate temporary sshd/key/known-host fixture to exercise real OpenSSH and reject a changed key; this is not a completed multi-PC dispatch or disconnected-results gate.
+
 ```powershell
 node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release/v2-preview
 ```
