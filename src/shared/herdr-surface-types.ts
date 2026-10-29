@@ -50,7 +50,7 @@ export type ClientPaneInputEvent =
 export type HerdrSurfaceEvent = { type: "surface" | "frame"; surface: PaneSurfaceFrame } | { type: "patch"; patch: PaneSurfacePatch };
 export type HerdrTerminalEvent = HerdrSurfaceEvent
   | { type: "ownership"; ownerId: string | null; sizeOwnerId: string | null }
-  | { type: "disconnected"; observedAt?: number; reason?: string };
+  | { type: "disconnected"; observedAt?: number | null; reason?: string };
 export interface HerdrTerminalSize { cols: number; rows: number; cell_width_px: number; cell_height_px: number }
 export interface HerdrTerminalTransport {
   subscribe(sessionId: string, onEvent: (event: HerdrTerminalEvent) => void, onError?: (error: string) => void): () => void;

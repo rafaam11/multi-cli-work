@@ -144,6 +144,14 @@ async function coordinator(
 }
 
 describe("TerminalCoordinator", () => {
+  it("serializes host observations and publishes last-seen timestamps on disconnect", async () => {
+    const { instance } = await coordinator(await tempRoot());
+    const events: TerminalEvent[] = []; instance.onEvent(event => events.push(event));
+    const base = { id: "host-session", projectId: project.id, tool: null, kind: "codex", cwd: project.rootPath, providerConversationId: null, status: "idle" as const, pid: 0, createdAt: "2026-10-30T00:00:00.000Z", updatedAt: "2026-10-30T00:01:00.000Z", exitCode: null, generation: "g" };
+    await Promise.all([instance.reconcileHostSessions([base]), instance.reconcileHostSessions([{ ...base, status: "error" }])]);
+    expect(instance.list()[0]).toMatchObject({ status: "error", updatedAt: base.updatedAt });
+    expect(events.at(-1)).toMatchObject({ type: "workspace", session: { status: "error", updatedAt: base.updatedAt } });
+  });
   it("reattaches surviving host sessions and can detach without stopping them", async () => {
     const worker = Object.assign(new FakeWorker(), { listExisting: async () => [{ id:"host-session",projectId:project.id,tool:null,kind:"codex",cwd:project.rootPath,providerConversationId:null,status:"idle" as const,pid:0,createdAt:"2026-10-30T00:00:00.000Z",updatedAt:"2026-10-30T00:00:00.000Z",exitCode:null,generation:"host-generation" }] });
     const {instance}=await coordinator(await tempRoot(),worker);

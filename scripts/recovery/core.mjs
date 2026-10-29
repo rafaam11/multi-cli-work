@@ -168,7 +168,8 @@ export async function prepareRollback(options) {
   const preserved = path.join(destination, 'v2-preserved'); await mkdir(preserved, { mode: 0o700 });
   const v2Entries = await snapshot(preservedRoots, preserved); await assertStopped();
   if (json(v2Entries) !== json(await snapshot(preservedRoots))) throw new Error('V2 state changed during preservation');
-  const settingsPath = path.join(v1, 'registry', 'settings.json');
+  // v1's runtime opens userData/settings.json, independently of the registry.
+  const settingsPath = path.join(v1, 'userData', 'settings.json');
   let settings = {};
   try { settings = JSON.parse(await readFile(settingsPath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Invalid v1 settings');

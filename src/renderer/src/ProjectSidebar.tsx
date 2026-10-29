@@ -1151,7 +1151,7 @@ export function ProjectSidebar({
       ) : (
         <div className="workspace-shelf" aria-label="작업공간">
           <SessionPanel
-            items={shelfPaneRows.active
+            items={window.mcwV2?.version===2 ? sessionPanelItems.filter(item=>item.kind==="session") : shelfPaneRows.active
               .map((row) => sessionPanelItems.find((item) => item.id === row.id))
               .filter((item): item is SessionPanelItem => item !== undefined)}
             waitingOnly={sessionWaitingOnly}
@@ -1168,7 +1168,10 @@ export function ProjectSidebar({
             selected={selectedShelf === "active"}
             dropTarget={shelfDropKind === "active"}
             onSelectWorkspace={() => onSelectShelf("active")}
-            onSelectPane={(paneId) => onSelectShelfPane("active", paneId)}
+            onSelectPane={(paneId) => {
+              const session=window.mcwV2?.version===2 ? sessions.find(session=>session.id===paneId) : undefined;
+              if(session)onSelectSession(session);else onSelectShelfPane("active",paneId);
+            }}
             onMovePaneToHidden={(paneId) => onMovePaneToOtherShelf("active", paneId)}
             agents={agents}
             focusedPaneId={focusedPaneId}

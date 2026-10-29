@@ -33,8 +33,10 @@ export class TaskStore {
     await updateJsonStore(this.spec, this.filePath, state => { result = operation(state); return state; });
     this.changes.emit("change"); return structuredClone(result);
   }
-  private event(task: Task, kind: TaskEvent["kind"], from: string, text: string, to: string | null = null): TaskEvent {
-    const event = { id: randomUUID(), sequence: task.events.length + 1, kind, from, to, text, at: Date.now() }; task.events.push(event); return event;
+  private event(task: Task, kind: TaskEvent["kind"], from: string, text: string, to: string | null = null, targets?:TaskIdentity[]): TaskEvent {
+    const scope = (member:TaskParticipant):TaskIdentity => ({taskId:task.id,participantId:member.id,attemptId:member.attempt.id,generation:member.attempt.generation,hostId:member.hostId,role:member.role});
+    const sender = task.participants.find(member=>member.id===from);
+    const event:TaskEvent = { id: randomUUID(), sequence: task.events.length + 1, kind, from, to, text, at: Date.now(), ...(sender ? {source:scope(sender)} : {}), recipients: targets ?? task.participants.filter(member=>to===null || member.id===to).map(scope) }; task.events.push(event); return event;
   }
   private participant(choice: TaskAgentChoice, role: "lead" | "worker", defaultHost: string): TaskParticipant {
     return { id: randomUUID(), role, provider: choice.provider, profileId: choice.profileId, hostId: choice.hostId ?? defaultHost, attempt: { id: randomUUID(), generation: 1, execution: "not_started", delivery: "none", commandId: null, submittedResultId: null, observedAt: null }, previousAttempts: [] };
@@ -88,7 +90,8 @@ export class TaskStore {
   }
   async receive(identity: TaskIdentity, cursor = 0): Promise<TaskInbox> {
     validateTaskInteger(cursor); const task = await this.inspect(identity.taskId); this.authorize(task, identity);
-    return { events: task.events.filter(event => event.sequence > cursor && (event.to === null || event.to === identity.participantId || event.from === identity.participantId)), cursor: task.events.length };
+    const matches = (ref:TaskIdentity) => ref.participantId===identity.participantId && ref.attemptId===identity.attemptId && ref.generation===identity.generation;
+    return { events: task.events.filter(event => event.sequence > cursor && (event.recipients ? event.recipients.some(matches) || !!event.source && matches(event.source) : identity.generation===1 && (event.to===null || event.to===identity.participantId || event.from===identity.participantId))), cursor: task.events.length };
   }
   async wait(identity: TaskIdentity, cursor = 0, timeoutMs = 30000, signal?: AbortSignal): Promise<TaskInbox> {
     validateTaskInteger(timeoutMs); if (timeoutMs > 60000) throw new Error("Wait exceeds 60 seconds"); const deadline = Date.now() + timeoutMs;
@@ -97,7 +100,7 @@ export class TaskStore {
   private attention(task: Task): void { const question = task.questions.find(item => item.answer === null); task.attention = question ? { status: "waiting", eventId: question.id, kind: question.kind, acknowledged: question.acknowledged } : { status: "clear" }; }
   async ask(identity: TaskIdentity, kind: "question" | "approval", text: string): Promise<TaskEvent> {
     validateTaskText(text); if (!["question", "approval"].includes(kind)) throw new Error("Invalid attention kind");
-    return this.update(state => { const task = this.task(state, identity.taskId); this.authorize(task, identity); const event = this.event(task, "question", identity.participantId, text); task.questions.push({ id: event.id, participantId: identity.participantId, kind, text, acknowledged: false, answer: null }); this.attention(task); return event; });
+    return this.update(state => { const task = this.task(state, identity.taskId); this.authorize(task, identity); const event = this.event(task, "question", identity.participantId, text); task.questions.push({ id: event.id, participantId: identity.participantId, kind, text, acknowledged: false, answer: null, source: {...identity} }); this.attention(task); return event; });
   }
   /** User action: acknowledge exactly the viewed event; this does not answer it. */
   async acknowledge(taskId: string, eventId: string): Promise<void> {
@@ -106,11 +109,11 @@ export class TaskStore {
   }
   async answer(identity: TaskIdentity, eventId: string, text: string): Promise<void> {
     validateTaskText(text); validateTaskId(eventId);
-    await this.update(state => { const task = this.task(state, identity.taskId); this.authorize(task, identity, true); const question = task.questions.find(item => item.id === eventId && item.answer === null); if (!question) throw new Error("Waiting event no longer exists"); if(question.kind === "approval") throw new Error("Approval requires the user"); question.answer = text; this.event(task, "answer", identity.participantId, text, question.participantId); this.attention(task); });
+    await this.update(state => { const task = this.task(state, identity.taskId); this.authorize(task, identity, true); const question = task.questions.find(item => item.id === eventId && item.answer === null); if (!question) throw new Error("Waiting event no longer exists"); if(question.kind === "approval") throw new Error("Approval requires the user"); if (!question.source) throw new Error("Question execution is unknown; inspect historical records before answering"); question.answer = text; this.event(task, "answer", identity.participantId, text, question.participantId, [question.source]); this.attention(task); });
   }
   async answerAsUser(taskId: string, eventId: string, text: string): Promise<void> {
     validateTaskId(taskId);validateTaskId(eventId);validateTaskText(text);
-    await this.update(state=>{const task=this.task(state,taskId),question=task.questions.find(item=>item.id===eventId&&item.answer===null);if(!question)throw new Error("Waiting event no longer exists");question.answer=text;this.event(task,"answer","user",text,question.participantId);this.attention(task);});
+    await this.update(state=>{const task=this.task(state,taskId),question=task.questions.find(item=>item.id===eventId&&item.answer===null);if(!question)throw new Error("Waiting event no longer exists");if(!question.source)throw new Error("Question execution is unknown; inspect historical records before answering");question.answer=text;this.event(task,"answer","user",text,question.participantId,[question.source]);this.attention(task);});
   }
   async messageAsUser(taskId:string,text:string):Promise<void>{
     validateTaskId(taskId);validateTaskText(text);await this.update(state=>{this.event(this.task(state,taskId),"message","user",text);});

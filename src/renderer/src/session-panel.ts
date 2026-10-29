@@ -81,7 +81,8 @@ export function buildSessionPanelItems(input: {
   const sessions = input.sessions
     .map<SessionPanelSessionItem>((session) => {
       const peers = sessionsByProjectId.get(session.projectId) ?? [session];
-      const attention = input.unread[session.id] ?? null;
+      const notice = session.taskNotice;
+      const attention = notice?.unread ? notice.kind==="approval" ? "approval" : "input" : input.unread[session.id] ?? null;
       const worktree = session.worktreeId ? worktreeById.get(session.worktreeId) : undefined;
       return {
         kind: "session",
@@ -96,7 +97,7 @@ export function buildSessionPanelItems(input: {
         agent: session.kind,
         tool: session.tool !== null,
         attention,
-        rank: sessionRank(session.status, attention),
+        rank: Math.min(sessionRank(session.status, attention),notice ? notice.kind==="approval" ? 0 : 1 : Number.POSITIVE_INFINITY),
       };
     })
     .sort(

@@ -5,6 +5,7 @@ import os from "node:os";
 import { HostClient } from "../src/main/host/host-client";
 import { HerdrApiClient } from "../src/main/herdr/api-client";
 import { resolveHerdrPaths } from "../src/main/herdr/runtime";
+import { ensureHostProcess } from "../src/main/host/host-process";
 import { applySurfaceEvent } from "../src/shared/herdr-surface-model";
 import type { PaneSurfaceFrame, HerdrSurfaceEvent } from "../src/shared/herdr-surface-types";
 
@@ -30,6 +31,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   };
   try {
     app=await launch(); let page=await app.firstWindow();
+    page.on("pageerror",error=>errors.push(`renderer: ${error.message}`));
     await expect.poll(()=>page.evaluate(()=>window.mcwV2?.version)).toBe(2);
     const descriptor=JSON.parse(await fs.readFile(path.join(`${userData}-v2`,"host/mcw-host.json"),"utf8")); client=new HostClient(descriptor);
     const session=await page.evaluate(({projectId,kind})=>window.multiCliWork.terminals.create({projectId,kind,cols:100,rows:30}),{projectId,kind:process.platform==="win32"?"powershell":"bash"});
@@ -53,18 +55,46 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     app=await launch();page=await app.firstWindow();
     await expect.poll(()=>page.evaluate(()=>window.multiCliWork.terminals.list())).toEqual(expect.arrayContaining([expect.objectContaining({id:session.id,pid:0})]));
     const after=await client.terminals() as {id:string;paneId:string}[];expect(after).toHaveLength(1);expect(after[0].paneId).toBe(before[0].paneId);
+    // Crash only the authenticated host created inside this test fixture. Herdr and the shell
+    // remain independent; the explicit restart must recover observation without rerunning work.
+    await page.locator(".session-row").first().click();
+    await expect(page.getByRole("img",{name:"터미널 화면"})).toBeVisible();
+    await page.getByRole("button",{name:"제어 요청",exact:true}).click();
+    await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","false");
+    expect((await client.health()).instanceId).toBe(descriptor.instanceId);
+    process.kill(descriptor.pid,"SIGKILL");
+    await expect(page.getByText(/연결 끊김 · 마지막 관찰/)).toBeVisible();
+    await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","true");
+    await expect.poll(()=>{try{process.kill(descriptor.pid,0);return true;}catch{return false;}}).toBe(false);
+    const executable=process.env.MCW_V2_E2E_EXECUTABLE;
+    const resourcesDirectory=executable?path.join(path.dirname(executable),"resources/v2"):path.resolve("build/v2");
+    const bridgeDirectory=executable?path.join(path.dirname(executable),"resources/herdr-bridge"):path.resolve(`build/herdr-bridge/${process.platform}-${process.arch}`);
+    const manifest=JSON.parse(await fs.readFile(path.join(resourcesDirectory,"assets.json"),"utf8"));
+    const windows=process.platform==="win32";
+    const restarted=await ensureHostProcess({directory:path.join(`${userData}-v2`,"host"),hostId:descriptor.hostId,entryPath:path.join(resourcesDirectory,"host/mcw-host.js"),executablePath:path.join(resourcesDirectory,windows?"node/windows/node.exe":"node/linux/node"),electronExecutable:false,terminalConfig:{binaryPath:path.join(resourcesDirectory,windows?"herdr/windows/herdr.exe":"herdr/herdr-linux-x86_64"),binarySha256:windows?manifest.windowsMembers.find((entry:{file:string})=>entry.file==="herdr.exe").sha256:manifest.assets.find((entry:{id:string})=>entry.id==="herdr-linux").sha256,bridgePath:path.join(bridgeDirectory,windows?"mcw-herdr-bridge.exe":"mcw-herdr-bridge")}});
+    client=new HostClient(restarted);
+    await expect(page.getByRole("button",{name:"제어 요청",exact:true})).toBeEnabled({timeout:30000});
+    await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","true");
+    await page.getByRole("button",{name:"제어 요청",exact:true}).click();
+    await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","false");
+    const recovered=await client.terminals() as {id:string;paneId:string}[];
+    expect(recovered).toHaveLength(1);expect(recovered[0].paneId).toBe(before[0].paneId);
     expect(await fs.readFile(path.join(registry,"projects.json"),"utf8")).toContain("Herdr 검증");
     await expect(fs.access(path.join(directory,`recovery/v1.55.1-recovery/recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
     succeeded = true;
   } catch (error) {
+    if(app)for(const window of app.windows()) console.error("v2 renderer diagnostic:",await window.evaluate(()=>document.body.innerText).catch(()=>null));
+    console.error("v2 scenario failure:",error);
     console.error("v2 Electron main stderr:", errors.join(""));
     console.error("v2 startup fixture entries:", await fs.readdir(userData).catch(()=>[]), await fs.readdir(`${userData}-v2`).catch(()=>[]), await fs.readdir(path.join(directory,"recovery")).catch(()=>[]));
     throw error;
   } finally {
     observer?.close();
     if(app){const child=app.process();await app.evaluate(({app})=>app.quit()).catch(()=>undefined);await expect.poll(()=>child.exitCode,{timeout:10000}).not.toBe(null);}
-    if(client){for(const session of await client.terminals() as {id:string}[])await client.stopTerminal(session.id);await client.shutdown();}
-    await new HerdrApiClient(resolveHerdrPaths(path.join(`${userData}-v2`,"host/herdr")).endpoint).request("server.stop",{}).catch(()=>undefined);
+    try {
+      if(client){for(const session of await client.terminals() as {id:string}[])await client.stopTerminal(session.id);await client.shutdown();}
+    } catch(error) { console.error("Fixture host cleanup:",error); }
+    finally { await new HerdrApiClient(resolveHerdrPaths(path.join(`${userData}-v2`,"host/herdr")).endpoint).request("server.stop",{}).catch(()=>undefined); }
     await fs.writeFile(info.outputPath("main-stderr.txt"),errors.join(""));
     // Preserve fixture and evidence on failure; cleanup only our own successful test directory.
     if(succeeded)await fs.rm(directory,{recursive:true,force:true,maxRetries:15,retryDelay:100});

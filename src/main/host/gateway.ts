@@ -6,6 +6,7 @@ import { isIP } from "node:net";
 import lockfile from "proper-lockfile";
 import { WebSocket, WebSocketServer } from "ws";
 import { TaskStore } from "./task-store";
+import { isFetchPort } from "./http-port";
 import { TaskMcpServer } from "../mcw-task-mcp";
 import type { AttemptRef, TaskCreateInput, TaskIdentity } from "../../shared/host-types";
 
@@ -88,6 +89,7 @@ export class HostGateway {
   async start(): Promise<HostDescriptor> {
     if (this.descriptorValue) throw new Error("Host already started");
     const address = this.options.bindAddress ?? "127.0.0.1";
+    if (this.options.port && !isFetchPort(this.options.port)) throw new Error("Host port is blocked by Fetch");
     const local = address === "127.0.0.1" || address === "::1";
     if (!isIP(address) || (!local && (!this.options.allowRemote || !this.options.advertisedHost))) throw new Error("Remote hosting requires an explicit IP, allowRemote and advertisedHost");
     const advertised = this.options.advertisedHost ?? address;
@@ -103,8 +105,15 @@ export class HostGateway {
         this.credentials = parsed; await fs.chmod(credentialsFile, 0o600);
       } catch (error) { if (!missing(error)) throw error; this.credentials = { schemaVersion: 2, owner: secret(), capabilities: [] }; await writePrivateJson(credentialsFile, this.credentials); }
       await this.options.prepare?.();
-      await new Promise<void>((resolve, reject) => { this.server.once("error", reject); this.server.listen(this.options.port ?? 0, address, () => { this.server.off("error", reject); resolve(); }); });
-      const listening = this.server.address(); if (!listening || typeof listening === "string") throw new Error("Invalid host address");
+      let listening: ReturnType<typeof this.server.address> = null;
+      for (let attempt=0;attempt<10;attempt++) {
+        await new Promise<void>((resolve, reject) => { this.server.once("error", reject); this.server.listen(this.options.port ?? 0, address, () => { this.server.off("error", reject); resolve(); }); });
+        listening = this.server.address();
+        if (!listening || typeof listening === "string") throw new Error("Invalid host address");
+        if (isFetchPort(listening.port)) break;
+        await new Promise<void>((resolve,reject)=>this.server.close(error=>error?reject(error):resolve()));
+      }
+      if (!listening || typeof listening === "string" || !isFetchPort(listening.port)) throw new Error("No usable host port was assigned");
       const url = `http://${advertised.includes(":") ? `[${advertised}]` : advertised}:${listening.port}`;
       this.descriptorValue = { schemaVersion: 2, pid: process.pid, instanceId: randomUUID(), hostId: this.options.store.options.hostId, url, token: this.credentials.owner, startedAt: Date.now() };
       await writePrivateJson(hostDescriptorPath(this.options.directory), this.descriptorValue);
@@ -224,11 +233,16 @@ export class HostGateway {
           await publish(); return;
         }
         if (message.type === "subscribe") {
-          const nextId = text(message.sessionId); const snapshot = await this.options.terminals.snapshot(nextId);
+          const nextId = text(message.sessionId);
           if (sessionId && this.owners.get(sessionId) === viewerId) { await this.options.terminals.releaseOwnership(sessionId, viewerId); this.owners.delete(sessionId); }
           unsubscribe?.(); sessionId = nextId;
-          send({ type: "snapshot", sessionId, snapshot, viewerId, ownerId: this.owners.get(sessionId) ?? null });
-          unsubscribe = this.options.terminals.subscribeFrames(sessionId, frame => { if (socket.readyState === WebSocket.OPEN) { if (socket.bufferedAmount > 4 * 1024 * 1024) socket.close(1013, "Viewer too slow"); else if (frame instanceof Uint8Array) socket.send(frame, { binary: true }); else send({ type: "frame", sessionId, frame }); } }); return;
+          try {
+            // Register first: a frame can arrive while the snapshot promise resolves.
+            unsubscribe = this.options.terminals.subscribeFrames(sessionId, frame => { if (socket.readyState === WebSocket.OPEN) { if (socket.bufferedAmount > 4 * 1024 * 1024) socket.close(1013, "Viewer too slow"); else if (frame instanceof Uint8Array) socket.send(frame, { binary: true }); else send({ type: "frame", sessionId, frame }); } });
+            const snapshot = await this.options.terminals.snapshot(nextId);
+            send({ type: "snapshot", sessionId, snapshot, viewerId, ownerId: this.owners.get(sessionId) ?? null });
+          } catch { socket.close(1013,"Terminal surface unavailable; reconnect observation"); }
+          return;
         }
         if (!sessionId) throw new HttpError(400, "Subscribe first");
         if (message.type === "takeOwnership") {

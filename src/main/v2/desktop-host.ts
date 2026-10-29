@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { ensureHostProcess } from "../host/host-process";
+import { ensureHostProcess, readHostDescriptor } from "../host/host-process";
 import { HostClient } from "../host/host-client";
 import { stageRecoveryAssets, verifyRecoveryAssets, verifyStandaloneNodeRuntime } from "../recovery";
 
@@ -40,5 +40,10 @@ export async function startDesktopHost(options: DesktopHostOptions) {
   const executablePath = path.join(options.resourcesDirectory,node.directory,runtime.output);
   await verifyStandaloneNodeRuntime(executablePath,runtime.sha256);
   const descriptor = await ensureHostProcess({ directory, hostId, entryPath: options.entryPath, executablePath, electronExecutable: false, terminalConfig: { binaryPath, binarySha256, bridgePath } });
-  return { hostId, client: new HostClient(descriptor) };
+  const client = new HostClient(descriptor);
+  return { hostId, client, refresh: async () => {
+    const next = await readHostDescriptor(directory);
+    if (!next || next.hostId !== hostId) throw new Error("호스트 연결 정보를 확인할 수 없습니다.");
+    await client.reconnect(next, hostId);
+  } };
 }

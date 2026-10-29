@@ -226,6 +226,7 @@ export class TerminalCoordinator {
   private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" }>>();
   private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
+  private hostReconciliation: Promise<void> = Promise.resolve();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
   /** Sessions on the renderer's 숨김 shelf, as of its last save. The remote list shows them apart. */
   private hiddenIds = new Set<string>();
@@ -259,20 +260,30 @@ export class TerminalCoordinator {
   list(): TerminalSessionView[] {
     return [...this.views.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
-  async reconcileHostSessions(): Promise<void> {
-    for (const session of await this.options.worker.listExisting?.() ?? []) {
+  reconcileHostSessions(observed?: (TerminalSession & {generation: string})[]): Promise<void> {
+    const next = this.hostReconciliation.then(async () => {
+    for (const session of observed ?? await this.options.worker.listExisting?.() ?? []) {
+      if (this.removedSessionIds.has(session.id)) continue;
       const previous = this.views.get(session.id);
       const view: TerminalSessionView = { ...previous, ...session, title: previous?.title ?? null, name: previous?.name ?? null, interruptedByShutdown: false };
+      if (previous && JSON.stringify(previous) === JSON.stringify(view)) continue;
       this.views.set(session.id, view);
       this.generations.set(session.id, session.generation);
       await this.persistView(view);
       if (!previous) this.publish({type:"created",sessionId:session.id,session:view});
-      else if (previous.status !== view.status) this.publish({type:"status",sessionId:session.id,status:view.status,generation:session.generation});
+      else {
+        if (previous.status !== view.status) this.publish({type:"status",sessionId:session.id,status:view.status,generation:session.generation});
+        this.publish({type:"workspace",sessionId:session.id,session:view});
+      }
     }
+    });
+    this.hostReconciliation = next.catch(() => undefined);
+    return next;
   }
   /** Close GUI observers while the independent host retains all processes. */
   async detach(): Promise<void> {
     this.stopTitlePolling();
+    await this.hostReconciliation;
     await this.flush(false);
   }
   ownsActivity(event: import("../../shared/activity-types").ProviderActivity): boolean {

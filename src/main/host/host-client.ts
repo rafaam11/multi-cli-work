@@ -23,6 +23,12 @@ export class HostClient {
     if (this.connection.instanceId && value.instanceId !== this.connection.instanceId) throw new Error("Host instance changed");
     return value;
   }
+  /** Replace an observation endpoint only after authenticating the same host's fresh instance. */
+  async reconnect(connection: HostConnection, hostId: string): Promise<void> {
+    const candidate = new HostClient(connection), health = await candidate.health();
+    if (health.schemaVersion !== 2 || health.hostId !== hostId) throw new Error("Host identity changed");
+    Object.assign(this.connection, candidate.connection);
+  }
   tasks(): Promise<Task[]> { return this.request("/tasks"); }
   createTask(input: TaskCreateInput): Promise<Task> { return this.request("/tasks", "POST", input); }
   inspectTask(id: string): Promise<Task> { return this.request(`/tasks/${encodeURIComponent(id)}`); }

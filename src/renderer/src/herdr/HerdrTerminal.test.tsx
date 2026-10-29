@@ -15,9 +15,20 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("shared Herdr terminal ownership and input", () => {
+  it("accepts a fresh connection's lower surface revision after host restart without taking control",()=>{
+    const t=transport();render(<HerdrTerminal sessionId="s" viewerId="viewer" ownerId={null} transport={t}/>);
+    act(()=>receive({type:"surface",surface:{...surface(),surface_revision:70}}));
+    act(()=>receive({type:"disconnected",observedAt:1000}));
+    act(()=>receive({type:"surface",surface:surface()}));
+    expect(screen.queryByText(/연결 끊김/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"제어 요청"})).toBeEnabled();
+    expect(screen.getByLabelText("터미널 입력")).toHaveAttribute("aria-readonly","true");
+    expect(t.requestControl).not.toHaveBeenCalled();
+  });
   it("subscribes read only, requests a snapshot, and takes control only on explicit click", () => {
     const t = transport();
     render(<HerdrTerminal sessionId="s" viewerId="phone" ownerId="desktop" transport={t} />);
+    expect(screen.getByRole("button",{name:"제어 요청"})).toBeDisabled();
     act(() => receive({ type: "surface", surface: surface() }));
     expect(t.requestSnapshot).toHaveBeenCalledWith("s");
     fireEvent.keyDown(screen.getByLabelText("터미널 입력"), { key: "Enter" });

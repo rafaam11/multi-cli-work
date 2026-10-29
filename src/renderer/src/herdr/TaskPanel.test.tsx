@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Task, TaskCreateInput } from "@shared/host-types";
 import type { McwV2Api } from "@shared/v2-api";
@@ -14,6 +14,21 @@ function api() {
 }
 afterEach(cleanup);
 describe("v2 task dashboard", () => {
+  it("shows stale observations on disconnect and retains drafts without sending commands", async () => {
+    const host = api(); host.taskAction = vi.fn();
+    let changed!: Parameters<NonNullable<McwV2Api["onState"]>>[0]; host.onState = listener => { changed = listener; return () => {}; };
+    render(<TaskPanel api={host} projectId="project" />);
+    await screen.findByText("Existing task"); fireEvent.click(screen.getByRole("button", {name: /Existing task/}));
+    fireEvent.change(screen.getByLabelText("팀 메시지"), {target: {value: "보존할 초안"}});
+    act(() => changed({tasks: [task()], terminals: [], observedAt: 1000, connected: false}));
+    expect(screen.getByText(/호스트 연결 끊김/)).toHaveTextContent(/마지막 수신/);
+    expect(screen.getByRole("button", {name: "메시지 보내기"})).toBeDisabled();
+    expect(screen.getByRole("button", {name: "요청 확인"})).toBeDisabled();
+    act(() => changed({tasks: [task()], terminals: [], observedAt: 2000, connected: true}));
+    expect(screen.getByLabelText("팀 메시지")).toHaveValue("보존할 초안");
+    expect(screen.getByRole("button", {name: "메시지 보내기"})).toBeEnabled();
+    expect(host.taskAction).not.toHaveBeenCalled(); expect(host.startTask).not.toHaveBeenCalled();
+  });
   it("acknowledges and answers only the exact request explicitly acted on by the user",async()=>{
     const host=api();host.taskAction=vi.fn(async()=>{});
     render(<TaskPanel api={host} projectId="project"/>);

@@ -38,10 +38,9 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
       if (await ready(existing)) return existing;
       if (isAlive(existing.pid)) throw new Error("Existing host is alive but unavailable; reconcile it before starting another host");
     }
-    const locked = await lockfile.check(path.join(options.directory, "mcw-host-runtime"), { realpath: false, stale: 10000 });
     let child: ReturnType<typeof spawn> | undefined;
     let launchError: Error | undefined;
-    if (!locked) {
+    const launch = () => {
       const executable = options.executablePath ?? process.execPath;
       const env = { ...process.env };
       const electron = options.electronExecutable ?? (executable === process.execPath && !!process.versions.electron);
@@ -52,13 +51,14 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
       if (options.advertisedHost) args.push("--advertised-host", options.advertisedHost);
       child = spawn(executable, args, { detached: true, windowsHide: true, stdio: "ignore", env, cwd: path.dirname(path.resolve(options.entryPath)) });
       child.once("error", error => { launchError = error; }); child.unref();
-    }
+    };
     const deadline = Date.now() + timeout;
     do {
       if (launchError) throw new Error("Host process could not start", { cause: launchError });
       if (child && child.exitCode !== null) throw new Error("Host process exited before readiness");
       const descriptor = await readHostDescriptor(options.directory);
       if (descriptor && descriptor.hostId === options.hostId && (!existing || descriptor.instanceId !== existing.instanceId) && await ready(descriptor)) return descriptor;
+      if (!child && !await lockfile.check(path.join(options.directory, "mcw-host-runtime"), { realpath: false, stale: 10000 })) launch();
       await delay(100);
     } while (Date.now() < deadline);
     // Leave a slow host alive: killing it could interrupt work already accepted elsewhere.

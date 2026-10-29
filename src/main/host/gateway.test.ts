@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, Server } from "node:http";
 import { WebSocket } from "ws";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostGateway, type HostTerminalService } from "./gateway";
@@ -38,6 +38,26 @@ async function setup(extra: Partial<import("./gateway").HostGatewayOptions> = {}
   return { directory, store, terminals, gateway, descriptor, client, fetchRoute };
 }
 const taskInput = { title: "Review", brief: "Preserve execution across viewer disconnect", lead: { provider: "codex" as const, profileId: "default", hostId: "pc-a" }, workers: [{ provider: "claude" as const, profileId: "review" }] };
+it("rebinds an ephemeral Fetch-blocked port before publishing the host descriptor",async()=>{
+  const original=Server.prototype.address;
+  let calls=0;
+  const address=vi.spyOn(Server.prototype,"address").mockImplementation(function(this:Server){const value=original.call(this);return ++calls===1&&value&&typeof value!=="string"?{...value,port:10080}:value;});
+  try {const {client,descriptor}=await setup();expect(new URL(descriptor.url).port).not.toBe("10080");expect((await client.health()).hostId).toBe("pc-a");}
+  finally{address.mockRestore();}
+});
+it("rejects an explicitly configured Fetch-blocked port before opening a listener",async()=>{
+  await expect(setup({port:10080})).rejects.toThrow(/port/i);
+});
+it("changes endpoints only after verifying host and process identity, without dispatching work", async () => {
+  const first = await setup(), next = await setup();
+  await expect(first.client.reconnect(next.descriptor, "different-host")).rejects.toThrow("Host identity changed");
+  expect(first.client.connection.url).toBe(first.descriptor.url);
+  await expect(first.client.reconnect({ ...next.descriptor, instanceId: "stale" }, "pc-a")).rejects.toThrow("Host instance changed");
+  expect(first.client.connection.url).toBe(first.descriptor.url);
+  await first.client.reconnect(next.descriptor, "pc-a");
+  expect((await first.client.health()).instanceId).toBe(next.descriptor.instanceId);
+  expect(first.terminals.create).not.toHaveBeenCalled(); expect(next.terminals.create).not.toHaveBeenCalled();
+});
 it("admits explicit task starts only while accepting, and streams state without owning a terminal", async () => {
   const startTask = vi.fn(async (_id: string, _input: unknown) => ({ terminals: [] }));
   const { client, descriptor, fetchRoute } = await setup({ startTask });
@@ -65,6 +85,18 @@ async function viewer(url: string, token: string) {
   socket.send(JSON.stringify({ type: "authenticate", token })); const welcome = await next("authenticated");
   const send = (input: unknown) => socket.send(JSON.stringify(input)); return { socket, next, send, viewerId: welcome.viewerId };
 }
+
+it("closes an unavailable initial surface so a viewer can reconnect instead of staying half subscribed",async()=>{
+  const {terminals,descriptor}=await setup();
+  await terminals.create({sessionId:"s"});
+  terminals.snapshot.mockRejectedValueOnce(new Error("Bridge reconnecting"));
+  const first=await viewer(descriptor.url,descriptor.token);
+  const closed=new Promise<number>(resolve=>first.socket.once("close",resolve));
+  first.send({type:"subscribe",sessionId:"s"});
+  expect(await closed).toBe(1013);
+  const next=await viewer(descriptor.url,descriptor.token);next.send({type:"subscribe",sessionId:"s"});
+  expect((await next.next("snapshot")).sessionId).toBe("s");
+});
 
 it("authenticates every HTTP route and rejects origin, rebinding hosts and query credentials", async () => {
   const { descriptor, fetchRoute } = await setup();

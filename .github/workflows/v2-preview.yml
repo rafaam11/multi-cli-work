@@ -30,7 +30,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/v2/assets.mjs --download --platform $(node -p 'process.platform')
       - run: npm run build:v2
-      - run: npm test
+      # Keep the real hook's 10s deadline; isolate cold PowerShell startup from
+      # simultaneous jsdom/worker initialization on the small hosted runners.
+      - name: Provider hooks in a dedicated worker
+        run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
+      - run: npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
       - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
       - name: Actual Herdr Windows broker tests
         if: runner.os == 'Windows'

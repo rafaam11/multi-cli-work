@@ -138,6 +138,7 @@ export function SessionRow({
             <span className={`unread-dot unread-${attention}`} title="응답 대기" aria-hidden="true" />
           ) : null}
           <span className="session-status">{statusLabels[session.status]}</span>
+          {session.taskNotice && <span className="session-status">{session.taskNotice.kind==="approval"?"승인 대기":session.taskNotice.kind==="question"?"질문 대기":"결과 확인"}</span>}
         </button>
         {trailing}
       </div>

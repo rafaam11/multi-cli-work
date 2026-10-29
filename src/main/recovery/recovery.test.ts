@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { RecoveryHostObservation } from '../../shared/recovery-types';
+import { createSettingsService } from '../settings/settings-store';
 import { createV1Backup, verifyV1Backup, getV2DataLayout, prepareRollback, journalSharedConfig, restoreSharedConfig, stageRecoveryAssets, assertRollbackHosts, verifyPreparedRollback, activatePreparedRollback, coordinateRollback, installOriginalV1, compareV1WithBackup, verifyStandaloneNodeRuntime } from '../../../scripts/recovery/core.mjs';
 
 const roots: string[] = [];
@@ -15,7 +16,7 @@ async function fixture() {
   const userData = join(root, 'v1-user'); const registry = join(root, 'v1-registry');
   await mkdir(join(userData, 'Local Storage'), { recursive: true }); await mkdir(registry);
   await writeFile(join(userData, 'Local Storage', 'db'), 'original-browser-state');
-  await writeFile(join(registry, 'settings.json'), JSON.stringify({ general: { autoResumeSessions: true, autoCheckUpdates: true, repoSyncOnSessionStart: true }, keep: 'yes' }));
+  await writeFile(join(userData, 'settings.json'), JSON.stringify({ general: { autoResumeSessions: true, autoCheckUpdates: true, repoSyncOnSessionStart: true }, keep: 'yes' }));
   return { root, userData, registry, destination: join(root, 'backup') };
 }
 const stopped = async () => undefined;
@@ -69,10 +70,10 @@ describe('offline recovery', () => {
     const v2 = join(f.root, 'v2'); await mkdir(v2); await writeFile(join(v2, 'results.json'), '{"result":"keep"}');
     const destination = join(f.root, 'restore');
     await prepareRollback({ backupDirectory: f.destination, destination, expectedHostIds: ['local'], hosts: [{ hostId: 'local', state: 'stopped', observedAt: Date.now() }], preserveV2Sources: { registry: v2 }, assertStopped: stopped });
-    const settings = JSON.parse(await readFile(join(destination, 'v1/registry/settings.json'), 'utf8'));
+    const settings = JSON.parse(await readFile(join(destination, 'v1/userData/settings.json'), 'utf8'));
     expect(settings.general).toEqual({ autoResumeSessions: false, autoCheckUpdates: false, repoSyncOnSessionStart: false }); expect(settings.keep).toBe('yes');
     expect(await readFile(join(destination, 'v2-preserved/registry/results.json'), 'utf8')).toBe('{"result":"keep"}');
-    expect(JSON.parse(await readFile(join(f.registry, 'settings.json'), 'utf8')).general.autoResumeSessions).toBe(true);
+    expect(JSON.parse(await readFile(join(f.userData, 'settings.json'), 'utf8')).general.autoResumeSessions).toBe(true);
   });
   it('journals before and after config bytes and refuses to overwrite later edits', async () => {
     const f = await fixture(); const config = join(f.root, 'shared.json'); await writeFile(config, 'before');
@@ -121,7 +122,8 @@ describe('offline recovery', () => {
     const result = await activatePreparedRollback({ directory: destination, targets, assertStopped: stopped });
     expect(await readFile(join(targets.userData, 'Local Storage/db'), 'utf8')).toBe('original-browser-state');
     expect(await readFile(join(result.retained.userData!, 'older'), 'utf8')).toBe('keep-me');
-    expect(JSON.parse(await readFile(join(targets.registry, 'settings.json'), 'utf8')).general.autoCheckUpdates).toBe(false);
+    const restored = (await createSettingsService(join(targets.userData, 'settings.json'))).current();
+    expect(restored.general).toMatchObject({autoCheckUpdates:false,autoResumeSessions:false,repoSyncOnSessionStart:false});
   });
   it('blocks activation of a corrupt prepared copy before touching existing targets', async () => {
     const f = await fixture(); await createV1Backup({ ...f, sources: { userData: f.userData, registry: f.registry }, assertStopped: stopped }); const destination = join(f.root, 'restore');
@@ -164,7 +166,7 @@ describe('offline recovery', () => {
     fault.mockRestore(); expect(prototype.sync).toBe(realSync);
     expect(await readFile(join(f.destination, '.incomplete'), 'utf8')).toContain('Incomplete');
     await expect(verifyV1Backup(f.destination)).rejects.toThrow();
-    expect(await readFile(join(f.registry, 'settings.json'), 'utf8')).toContain('"autoResumeSessions":true');
+    expect(await readFile(join(f.userData, 'settings.json'), 'utf8')).toContain('"autoResumeSessions":true');
   });
   it('reports v1 changes for reupgrade without modifying or merging either version', async () => {
     const f = await fixture(); await createV1Backup({ ...f, sources: { userData: f.userData, registry: f.registry }, assertStopped: stopped });

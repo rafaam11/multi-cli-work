@@ -27,7 +27,7 @@ export function createHostTransport(api: HostTerminalConnectionApi, callbacks: {
           onEvent({ type: "ownership", ownerId, sizeOwnerId: typeof value.sizeOwnerId === "string" ? value.sizeOwnerId : ownerId }); return;
         }
         if (value.type === "disconnected") {
-          onEvent({ type: "disconnected", observedAt: typeof value.observedAt === "number" ? value.observedAt : Date.now(), reason: typeof value.reason === "string" ? value.reason : undefined }); return;
+          onEvent({ type: "disconnected", observedAt: typeof value.observedAt === "number" ? value.observedAt : null, reason: typeof value.reason === "string" ? value.reason : undefined }); return;
         }
         if (value.type === "error") onError?.(String(value.error ?? value.message ?? "호스트 요청 실패"));
       };

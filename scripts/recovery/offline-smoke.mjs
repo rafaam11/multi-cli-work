@@ -16,7 +16,7 @@ try {
   const userData = path.join(temporary, 'source-user'); const registry = path.join(temporary, 'source-registry');
   await mkdir(path.join(userData, 'Local Storage'), { recursive: true }); await mkdir(registry);
   await writeFile(path.join(userData, 'Local Storage', 'proof'), 'offline-original-v1');
-  await writeFile(path.join(registry, 'settings.json'), '{"general":{"autoCheckUpdates":true,"autoResumeSessions":true,"repoSyncOnSessionStart":true}}');
+  await writeFile(path.join(userData, 'settings.json'), '{"general":{"autoCheckUpdates":true,"autoResumeSessions":true,"repoSyncOnSessionStart":true}}');
   const backup = path.join(temporary, 'backup'); await createV1Backup({ destination: backup, sources: { userData, registry }, assertStopped: async () => {} });
   const offline = path.join(temporary, 'outside-install-recovery');
   const installers = Object.fromEntries(Object.entries(ORIGINAL_INSTALLERS).map(([platform, asset]) => [platform, path.resolve(resourcesRoot, 'recovery', asset.filename)]));

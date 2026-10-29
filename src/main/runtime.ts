@@ -1,4 +1,7 @@
 import { codexIndicatorUpdate } from "./providers/codex-indicators";
+import { observeHost } from "./v2/host-observer";
+import { hostSessionView } from "./v2/worker-gateway";
+import { taskSessionNotices, taskUnread } from "../shared/task-notices";
 import {
   app,
   globalShortcut,
@@ -192,7 +195,7 @@ export interface DesktopRuntime {
 
 /** What the custom title bar needs from the app shell, which only `index.ts` owns. */
 export interface DesktopWindowHost {
-  v2?: {client: HostClient; hostId: string; backupDirectory: string};
+  v2?: {client: HostClient; hostId: string; backupDirectory: string; refresh?(): Promise<void>};
   /** Lazy, because the runtime is built before the window exists. */
   getMainWindow(): BrowserWindow | null;
   /** 파일▸종료: the confirm-then-tear-down path, not a bare `app.quit()`. */
@@ -576,15 +579,17 @@ export async function createDesktopRuntime(
       return {launchProfiles:[...defaults,...(state.launchProfiles ?? [])],defaultLaunchProfiles:{codex:"mcw-default-codex",claude:"mcw-default-claude",...state.defaultLaunchProfiles}};
     },
     executable: async provider => (await getExecutables()).agents[provider] ?? null,
+    repositoryProjectId: async directory => Object.values((await readProjectRegistry({registryPath})).registry.projects).find(project=>normalizeForCompare(project.rootPath,process.platform)===normalizeForCompare(directory,process.platform))?.id??null,
     reconcile: () => coordinator.reconcileHostSessions(),
+    state: () => v2Watcher?.snapshot() ?? {tasks:[],terminals:[],observedAt:null,connected:false},
   }) : undefined;
-  let v2Watcher: ReturnType<HostClient["watch"]> | undefined, v2Retry: ReturnType<typeof setTimeout> | undefined, v2Closed = false;
-  const watchV2 = () => { if (!host.v2 || v2Closed) return; v2Watcher = host.v2.client.watch(event => {
-    const value = event as {type?:string};
-    if (value.type === "state") { void coordinator.reconcileHostSessions().catch(error => console.error("Host state reconciliation failed", error)); sendToMainWindow(host.getMainWindow(), "v2:state", event); }
-    if (value.type === "disconnected") { v2Watcher?.close(); v2Retry = setTimeout(watchV2, 1000); }
-  }); };
-  watchV2();
+  let onTaskState = () => {};
+  const v2Watcher = host.v2 ? observeHost({ ...host.v2, state: state => {
+    const notices=taskSessionNotices(state.tasks);
+    void coordinator.reconcileHostSessions(state.terminals.map(value => ({ ...hostSessionView(value), generation: value.generation, taskNotice:notices[value.id]??null }))).catch(error => console.error("Host state reconciliation failed", error));
+    sendToMainWindow(host.getMainWindow(), "v2:state", state);
+    onTaskState();
+  } }) : undefined;
 
   const reviewRegistryPath = process.env.MULTI_CLI_WORK_PR_REVIEWS_PATH;
   const reviewService = new PullRequestReviewService({
@@ -628,9 +633,14 @@ export async function createDesktopRuntime(
 
   // One snapshot feeds every surface: window frame + taskbar (via applyAttention) and the
   // renderer's sidebar badges (via the broadcast).
+  const combinedAttention = (snapshot: AttentionSnapshot):AttentionSnapshot => {
+    const unread = {...snapshot.unread,...taskUnread(v2Watcher?.snapshot().tasks??[])};
+    return {unread,window:Object.values(unread).includes("approval")?"approval":Object.keys(unread).length?"input":"none"};
+  };
   const publishAttention = (snapshot: AttentionSnapshot) => {
-    applyAttention(snapshot);
-    sendToMainWindow(host.getMainWindow(), "attention:event", snapshot.unread);
+    const combined=combinedAttention(snapshot);
+    applyAttention(combined);
+    sendToMainWindow(host.getMainWindow(), "attention:event", combined.unread);
   };
   const NOTIFICATION_BODY: Record<NotifiableStatus, string> = {
     "awaiting-input": "입력을 기다리는 중입니다",
@@ -669,6 +679,20 @@ export async function createDesktopRuntime(
     logError: (message, error) => console.error(message, error),
     notificationSettings: () => settingsService.current().notifications,
   });
+  const notifiedTaskEvents = new Set<string>();
+  onTaskState = () => {
+    publishAttention(attention.snapshot());
+    const state=v2Watcher?.snapshot();if(!state?.connected)return;
+    const settings=settingsService.current().notifications;
+    for(const task of state.tasks)for(const [sessionId,notice] of Object.entries(taskSessionNotices([task]))){
+      const ids=[...notice.questionIds.filter(id=>task.questions.some(question=>question.id===id&&!question.acknowledged)),...notice.resultIds];
+      const fresh=ids.some(id=>!notifiedTaskEvents.has(id));ids.forEach(id=>notifiedTaskEvents.add(id));
+      if(!fresh || !settings.desktop || !settings.statuses[notice.kind==="approval"?"awaiting-approval":"awaiting-input"] || notificationsMuted(settings,new Date()) || !Notification.isSupported())continue;
+      const notification=new Notification({title:notice.kind==="approval"?"작업 승인 대기":notice.kind==="question"?"작업 질문 도착":"작업 결과 제출",body:task.title});
+      notification.on("click",()=>{showMainWindow();sendToMainWindow(host.getMainWindow(),"navigation:session-requested",{sessionId});});notification.show();
+    }
+  };
+  onTaskState();
 
   // 모바일 컴패니언: 폰은 데스크톱 렌더러와 같은 코디네이터를 쓰는 두 번째 클라이언트다.
   // 설치본에 동봉된 셸 APK(resources/mobile). dev에서는 `npm run mobile:prepare`가 채우는 build/mobile.
@@ -1250,7 +1274,7 @@ export async function createDesktopRuntime(
     },
     listAgents,
     editAgents: () => openAgentRegistryForEditing(agentRegistryPath),
-    attentionState: () => attention.snapshot().unread,
+    attentionState: () => combinedAttention(attention.snapshot()).unread,
     onSessionSelected(sessionId) {
       attention.markSeen(sessionId);
       void remoteHub.desktopViewed(sessionId).catch(error => console.error("Mobile seen update failed", error));
@@ -1346,7 +1370,7 @@ export async function createDesktopRuntime(
     () => statusWatcher.close(),
     () => activity.stop(),
     () => usageService.stop(),
-    () => {v2Closed=true;clearTimeout(v2Retry);v2Watcher?.close();disposeV2Ipc?.();},
+    () => {v2Watcher?.close();disposeV2Ipc?.();},
     () => host.v2 ? coordinator.detach() : coordinator.shutdown(),
     () => worker.dispose(),
   ]);

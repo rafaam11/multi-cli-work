@@ -12,6 +12,34 @@ async function store(hostId = "pc-a") { const directory = await mkdtemp(path.joi
 const input = { title: "Implement toolbar", brief: "Keep changes for review", lead: { provider: "codex" as const, profileId: "careful", hostId: "pc-a" } };
 function identity(task: Task, index = 0): TaskIdentity { const member = task.participants[index]; return { taskId: task.id, participantId: member.id, attemptId: member.attempt.id, generation: member.attempt.generation, hostId: member.hostId, role: member.role }; }
 const evidence = { summary: "Implemented", changes: ["toolbar"], verification: ["unit tests passed"], artifacts: ["commit:abc"], issues: [] };
+it("compares question identities by fields independent of JSON key order",async()=>{
+  const first=await store(),task=await first.createTask(input),lead=identity(task);
+  const reordered={role:lead.role,hostId:lead.hostId,generation:lead.generation,attemptId:lead.attemptId,participantId:lead.participantId,taskId:lead.taskId};
+  const question=await first.ask(reordered,"question","Which repository?");
+  expect((await new TaskStore(first.options).inspect(task.id)).questions[0].id).toBe(question.id);
+});
+it("keeps an unscoped historical question unanswered instead of claiming an undelivered answer",async()=>{
+  const first=await store(),task=await first.createTask(input),lead=identity(task);
+  const question=await first.ask(lead,"question","Historical question");
+  const snapshot=await first.snapshot();delete snapshot.tasks[0].questions[0].source;delete snapshot.tasks[0].events[0].source;
+  await writeFile(first.filePath,JSON.stringify(snapshot));
+  await expect(first.answerAsUser(task.id,question.id,"Do this")).rejects.toThrow(/execution.*unknown/i);
+  expect((await first.inspect(task.id)).questions[0].answer).toBeNull();
+});
+it("binds messages and questions to attempts so a later run never receives an old command", async () => {
+  const first=await store(),task=await first.createTask({...input,workers:[{provider:"claude",profileId:"p"}]}),lead=identity(task),worker=identity(task,1);
+  const old=await first.message(lead,worker.participantId,"Old instruction");
+  const question=await first.ask(worker,"approval","Old approval");
+  expect(old).toMatchObject({source:lead,recipients:[worker]});
+  expect((await first.inspect(task.id)).questions[0]).toMatchObject({source:worker});
+  await first.observeExecution(worker,"exited");await first.restartAttempt(lead,worker.participantId);
+  const next=identity(await first.inspect(task.id),1);
+  await first.answerAsUser(task.id,question.id,"Answer for prior run");
+  expect((await first.receive(next,0)).events).toEqual([]);
+  await first.message(lead,next.participantId,"New instruction");
+  expect((await first.receive(next,0)).events.map(event=>event.text)).toEqual(["New instruction"]);
+  expect((await first.inspect(task.id)).events.find(event=>event.id===old.id)?.source).toEqual(lead);
+});
 it("reserves approval answers for the user, while allowing lead answers to ordinary team questions", async () => {
   const first=await store(),task=await first.createTask(input),lead=identity(task);
   const approval=await first.ask(lead,"approval","Integrate changes?");

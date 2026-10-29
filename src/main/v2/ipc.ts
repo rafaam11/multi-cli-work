@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import type { LaunchProfile } from "../../shared/launch-profile";
-import type { McwV2Api } from "../../shared/v2-api";
+import type { McwV2Api, V2HostState } from "../../shared/v2-api";
 import type { HostClient, HostTerminalSocket } from "../host/host-client";
 const exec = promisify(execFile);
 
@@ -15,14 +15,39 @@ export interface V2IpcOptions {
   configuration(): Promise<{ launchProfiles: LaunchProfile[]; defaultLaunchProfiles: Partial<Record<"claude" | "codex", string>> }>;
   executable(provider: "claude" | "codex"): Promise<string | null>;
   reconcile(): Promise<void>;
+  state?(): V2HostState;
+  refresh?(): Promise<void>;
+  repositoryProjectId?(directory:string): Promise<string|null>;
 }
 export function registerV2Ipc(options: V2IpcOptions): () => void {
-  const channels: string[] = [], viewers = new Map<string, { socket: HostTerminalSocket; references: Set<string> }>();
+  type Viewer = {socket?:HostTerminalSocket;references:Set<string>;ready:boolean;epoch:number;retry?:ReturnType<typeof setTimeout>;observedAt:number|null};
+  const channels: string[] = [], viewers = new Map<string, Viewer>();
+  const closeViewer = (viewer:Viewer) => {viewer.epoch++;viewer.ready=false;clearTimeout(viewer.retry);viewer.socket?.close();};
+  const connectViewer = (id:string,viewer:Viewer) => {
+    const epoch=++viewer.epoch;
+    const retry = () => {const expected=viewer.epoch;viewer.retry=setTimeout(async()=>{
+      try {await options.refresh?.();if(viewers.get(id)===viewer && expected===viewer.epoch)connectViewer(id,viewer);}
+      catch {if(viewers.get(id)===viewer && expected===viewer.epoch)retry();}
+    },1000);};
+    viewer.socket=options.client.terminalSocket(id,event=>{
+      if(viewers.get(id)!==viewer || epoch!==viewer.epoch)return;
+      const value=event as {type?:string};
+      if(value.type==="authenticated")viewer.ready=true;
+      if(value.type==="snapshot" || value.type==="frame")viewer.observedAt=Date.now();
+      if(value.type==="disconnected"){
+        viewer.epoch++;viewer.ready=false;viewer.socket?.close();
+        options.send("v2:terminal-event",id,{...value,observedAt:viewer.observedAt});
+        retry();return;
+      }
+      options.send("v2:terminal-event",id,event);
+    },message=>{if(viewers.get(id)===viewer && epoch===viewer.epoch)options.send("v2:terminal-event",id,{type:"error",error:message});});
+  };
   const handle = (name: string, fn: (...args: any[]) => unknown) => {
     const channel = `v2:${name}`; channels.push(channel);
     options.ipc.handle(channel, (event, ...args) => { if (!options.authorize(event)) throw new Error("Untrusted v2 IPC sender"); return fn(...args); });
   };
   handle("enabled", () => true);
+  handle("host-state", () => options.state?.() ?? {tasks:[],terminals:[],observedAt:null,connected:false});
   handle("configuration", async () => ({ hostId: options.hostId, ...await options.configuration() }));
   handle("tasks", () => options.client.tasks());
   handle("task-create", input => options.client.createTask(input));
@@ -40,7 +65,8 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
       if (!profile || !executable) throw new Error(`선택한 ${member.provider} 프로필 또는 실행 파일을 찾을 수 없습니다.`);
       return { participantId: member.id, profile, executable };
     }));
-    const result = await options.client.startTask(id, { ...input, profiles, projectId: task.projectId });
+    const projectId=await options.repositoryProjectId?.(input.repositoryPath)??null;
+    const result = await options.client.startTask(id, { ...input, profiles, projectId });
     await options.reconcile(); return result;
   });
   handle("repository-head", async (directory: string) => {
@@ -53,13 +79,19 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
     if (typeof id !== "string" || !/^[\w-]{1,128}$/.test(id) || typeof reference !== "string" || reference.length > 128) throw new Error("Invalid viewer");
     let viewer = viewers.get(id);
     if (!viewer) {
-      viewer = { socket: options.client.terminalSocket(id, event => options.send("v2:terminal-event", id, event), message => options.send("v2:terminal-event", id, { type: "error", error: message })), references: new Set() };
+      viewer = { references: new Set(),ready:false,epoch:0,observedAt:null };
       viewers.set(id, viewer);
+      connectViewer(id,viewer);
     }
     viewer.references.add(reference);
   });
-  handle("terminal-unsubscribe", (id: string, reference: string) => { const viewer = viewers.get(id); viewer?.references.delete(reference); if (viewer && !viewer.references.size) { viewer.socket.close(); viewers.delete(id); } });
-  handle("terminal-command", (id: string, command: Record<string, unknown>) => { const viewer = viewers.get(id); if (!viewer) throw new Error("Terminal viewer not attached"); if (!command || !["snapshot", "input", "resize", "scroll", "takeOwnership", "releaseOwnership"].includes(String(command.type))) throw new Error("Invalid terminal command"); viewer.socket.send(command); });
+  handle("terminal-unsubscribe", (id: string, reference: string) => { const viewer = viewers.get(id); viewer?.references.delete(reference); if (viewer && !viewer.references.size) { closeViewer(viewer); viewers.delete(id); } });
+  handle("terminal-command", (id: string, command: Record<string, unknown>) => {
+    const viewer = viewers.get(id); if (!viewer) throw new Error("Terminal viewer not attached");
+    if (!command || !["snapshot", "input", "resize", "scroll", "takeOwnership", "releaseOwnership"].includes(String(command.type))) throw new Error("Invalid terminal command");
+    if (!viewer.ready) {if(command.type==="snapshot")return;throw new Error("호스트 연결이 복구되면 제어권을 다시 요청하세요.");}
+    viewer.socket!.send(command);
+  });
   handle("recovery-status", (): Awaited<ReturnType<McwV2Api["recoveryStatus"]>> => ({ available: false, backupDirectory: options.backupDirectory, reason: "독립 복구본을 보존했습니다. 설치 왕복 검증 후 앱에서 복귀를 활성화합니다." }));
-  return () => { for (const viewer of viewers.values()) viewer.socket.close(); viewers.clear(); for (const channel of channels) options.ipc.removeHandler(channel); };
+  return () => { for (const viewer of viewers.values()) closeViewer(viewer); viewers.clear(); for (const channel of channels) options.ipc.removeHandler(channel); };
 }

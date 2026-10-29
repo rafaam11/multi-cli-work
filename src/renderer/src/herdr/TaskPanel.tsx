@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Task, TaskAgentChoice, TaskProvider } from "@shared/host-types";
-import type { McwV2Api } from "@shared/v2-api";
+import type { McwV2Api, V2HostState } from "@shared/v2-api";
 import type { LaunchProfile } from "@shared/launch-profile";
 import "./task-panel.css";
 
@@ -39,7 +39,9 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
   const [configuration, setConfiguration] = useState<Configuration | null>(null), [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null), [title, setTitle] = useState(""), [brief, setBrief] = useState("");
   const [lead, setLead] = useState<TaskAgentChoice>({ provider: "codex", profileId: "" }), [workers, setWorkers] = useState<TaskAgentChoice[]>([]);
-  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true), [pending, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+  const [hostState, setHostState] = useState<V2HostState | null>(null);
+  const offline = hostState?.connected === false, busy = pending || offline;
   const [repositoryPath, setRepositoryPath] = useState(defaultCwd), [expectedHead, setExpectedHead] = useState<string | null>(null);
   const [answers,setAnswers]=useState<Record<string,string>>({}),[userMessage,setUserMessage]=useState("");
   const stateRevision=useRef(0);
@@ -54,7 +56,9 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
     setLoading(true); setError(null);
     if (!api) { setLoading(false); return; }
     const initialRevision=stateRevision.current;
-    const unsubscribe=api.onState?.(state=>{stateRevision.current++;if(alive.current)setTasks(state.tasks);});
+    const received = (state:V2HostState) => {stateRevision.current++;if(alive.current){setHostState(state);setTasks(state.tasks);}};
+    const unsubscribe=api.onState?.(received);
+    void api.hostState?.().then(state=>{if(stateRevision.current===initialRevision)received(state);}).catch(()=>undefined);
     void Promise.all([api.configuration(), api.listTasks()]).then(([config, entries]) => {
       if (!alive.current) return;
       setConfiguration(config); if(stateRevision.current===initialRevision)setTasks(entries);
@@ -65,6 +69,7 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
   useEffect(() => { setRepositoryPath(defaultCwd); setExpectedHead(null); checkedPath.current = null; }, [selectedId, defaultCwd]);
 
   const run = async (action: () => Promise<void>) => {
+    if (offline) return;
     setBusy(true); setError(null);
     try { await action(); } catch (cause) { if (alive.current) setError(message(cause)); }
     finally { if (alive.current) setBusy(false); }
@@ -104,6 +109,7 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
   return <section className="herdr-task-panel" aria-label="협업 작업">
     <header className="herdr-task-header"><div><h2>협업 작업</h2><p>작업마다 새 대표가 지시를 받고, 선택한 작업자가 결과를 제출합니다.</p></div><button type="button" disabled={busy || loading} onClick={refresh}>새로고침</button></header>
     {error && <p className="herdr-task-error" role="alert">{error}</p>}
+    {offline && <p role="status">호스트 연결 끊김 · 마지막 수신: {hostState?.observedAt === null ? "없음" : new Date(hostState!.observedAt!).toLocaleString()}. 아래 상태는 마지막 관찰입니다.</p>}
     {loading && <p role="status">호스트 작업을 불러오는 중…</p>}
     <form className="herdr-task-create" onSubmit={(event) => { event.preventDefault(); create(); }}>
       <label><span>작업 제목</span><input aria-label="작업 제목" value={title} maxLength={200} required disabled={busy} onChange={(event) => setTitle(event.currentTarget.value)} /></label>

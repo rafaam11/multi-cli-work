@@ -37,6 +37,19 @@ it("launches selected profiles once in isolated directories with task-scoped MCP
   expect(commands.every(command => command.cwd !== repositoryPath)).toBe(true);
   expect(commands[0].cwd).not.toBe(commands[1].cwd);
   for (const command of commands) expect(command.args).toContain("--model=chosen-model");
+  for (const [index, command] of commands.entries()) {
+    const participant = task.participants[index];
+    expect(command.env).toMatchObject({
+      MULTI_CLI_WORK_SESSION_ID: participant.attempt.id,
+      MULTI_CLI_WORK_GENERATION: `${participant.attempt.id}-${participant.attempt.generation}`,
+      MCW_TASK_ID: task.id, MCW_PARTICIPANT_ID: participant.id, MCW_TASK_ROLE: participant.role,
+      MCW_TASK_OWNER_HOST_ID: task.ownerHostId, MCW_RUNTIME: "v2",
+    });
+    const briefPath = (command.env as Record<string, string>).MULTI_CLI_WORK_PROJECT_BRIEF;
+    expect(await readFile(briefPath, "utf8")).toContain(task.brief);
+    expect(command.env).not.toHaveProperty("MCW_TASK_TOKEN");
+    expect((command.args as string[]).some(arg => arg.includes("task_wait"))).toBe(true);
+  }
   expect(JSON.stringify(commands)).not.toMatch(/jk-mcp|MULTI_CLI_WORK_CONTROL/);
   expect(JSON.parse(await readFile(path.join(directory, "task-mcp", `${task.participants[1].attempt.id}.json`), "utf8")).mcpServers.mcw_task.env.MCW_TASK_TOKEN).toBe("private-capability");
   expect((await store.inspect(task.id)).participants.every(member => member.attempt.delivery === "delivered")).toBe(true);

@@ -17,6 +17,11 @@ describe("host terminal transport adapter", () => {
     expect(events).toEqual([{ type: "ownership", ownerId: "desktop", sizeOwnerId: "desktop" }, { type: "surface", surface: { boot_id: "boot" } }, { type: "patch", patch: { boot_id: "boot" } }]);
     stop(); expect(unsubscribe).toHaveBeenCalledOnce();
   });
+  it("does not invent a last-observed timestamp when a connection failed before its first frame",()=>{
+    let receive!:(event:unknown)=>void;const events:HerdrTerminalEvent[]=[];
+    createHostTransport({subscribeTerminal:(_id,callback)=>{receive=callback;return()=>{};},terminalCommand:async()=>{}}).subscribe("s",event=>events.push(event));
+    receive({type:"disconnected",observedAt:null});expect(events).toEqual([{type:"disconnected",observedAt:null,reason:undefined}]);
+  });
   it("maps semantic input, resize, scroll and explicit ownership to host commands", async () => {
     const api = { subscribeTerminal: vi.fn(() => () => {}), terminalCommand: vi.fn(async () => {}) }, adapter = createHostTransport(api);
     await adapter.sendInput("s", { TextCommit: "한" });

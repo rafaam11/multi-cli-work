@@ -20,11 +20,13 @@ function object(fields: Record<string, Check>, optional: string[] = []): Check {
 }
 const choice = object({ provider: one("claude", "codex"), profileId: id, hostId: id }, ["hostId"]);
 const identity = object({ taskId: id, participantId: id, attemptId: id, generation: integer, hostId: id, role: one("lead", "worker") });
+const sameIdentity = (left:TaskIdentity|undefined,right:TaskIdentity|undefined) => left===undefined || right===undefined ? left===right :
+  left.taskId===right.taskId && left.participantId===right.participantId && left.attemptId===right.attemptId && left.generation===right.generation && left.hostId===right.hostId && left.role===right.role;
 const result = object({ summary: text(), changes: array(text(), 1000), verification: array(text(), 1000), artifacts: array(text(), 1000), issues: array(text(), 1000) });
 const attempt = object({ id, generation: integer, execution: one("not_started", "running", "idle", "exited", "lost"), delivery: one("none", "pending", "delivered", "unknown", "rejected"), commandId: nullable(id), submittedResultId: nullable(id), observedAt: nullable(integer) });
 const participant = object({ id, role: one("lead", "worker"), provider: one("claude", "codex"), profileId: id, hostId: id, attempt, previousAttempts: array(attempt, 10000) });
-const event = object({ id, sequence: integer, kind: one("message", "question", "answer", "result", "cancellation", "assigned"), from: id, to: nullable(id), text: text(), at: integer });
-const question = object({ id, participantId: id, kind: one("question", "approval"), text: text(), acknowledged: bool, answer: nullable(text()) });
+const event = object({ id, sequence: integer, kind: one("message", "question", "answer", "result", "cancellation", "assigned"), from: id, to: nullable(id), text: text(), at: integer, source:identity, recipients:array(identity,4) },["source","recipients"]);
+const question = object({ id, participantId: id, kind: one("question", "approval"), text: text(), acknowledged: bool, answer: nullable(text()), source:identity },["source"]);
 const attention: Check = value => { if ((value as { status?: string })?.status === "clear") object({ status: one("clear") })(value); else object({ status: one("waiting"), eventId: id, kind: one("question", "approval"), acknowledged: bool })(value); };
 const storedResult: Check = value => { const item = value as Record<string, unknown>; if (!item || typeof item !== "object") fail(); const { id: resultId, source, submittedAt, integration, review, ...evidence } = item; id(resultId); identity(source); integer(submittedAt); one("unintegrated")(integration); one("pending", "acknowledged")(review); result(evidence); };
 const task = object({ id, ownerHostId: id, title: text(1000), brief: text(100000), projectId: id, workerPool: array(choice, 3), createdAt: integer, participants: array(participant, 4), events: array(event), questions: array(question), attention, results: array(storedResult), review: one("none", "pending", "acknowledged"), cancellation: one("none", "requested") }, ["projectId"]);
@@ -48,9 +50,15 @@ export function validateTaskSnapshot(value: unknown): TaskHostSnapshot {
       const slot = slots.indexOf(JSON.stringify([member.provider, member.profileId, member.hostId])); if (slot < 0) fail(); slots.splice(slot, 1);
     }
     const eventIds = new Set<string>();
+    const knownScope = (scope:TaskIdentity) => {
+      const member=entry.participants.find(item=>item.id===scope.participantId);
+      return scope.taskId===entry.id && member && member.role===scope.role && member.hostId===scope.hostId && [...member.previousAttempts,member.attempt].some(attempt=>attempt.id===scope.attemptId && attempt.generation===scope.generation);
+    };
     for (const [index, event] of entry.events.entries()) {
       if (event.sequence !== index + 1 || eventIds.has(event.id) || (event.from !== "user" && !entry.participants.some(item => item.id === event.from)) || (event.to !== null && !entry.participants.some(item => item.id === event.to))) fail();
       eventIds.add(event.id);
+      if(event.source && (!knownScope(event.source) || event.source.participantId!==event.from))fail();
+      if(event.recipients?.some(scope=>!knownScope(scope) || event.to!==null && event.to!==scope.participantId))fail();
     }
     for (const member of entry.participants) {
       const attempts = [...member.previousAttempts, member.attempt];
@@ -65,7 +73,10 @@ export function validateTaskSnapshot(value: unknown): TaskHostSnapshot {
       const member = entry.participants.find(item => item.id === result.source.participantId);
       if (!member || result.source.taskId !== entry.id || result.source.role !== member.role || result.source.hostId !== member.hostId || ![...member.previousAttempts, member.attempt].some(attempt => attempt.id === result.source.attemptId && attempt.generation === result.source.generation && attempt.submittedResultId === result.id)) fail();
     }
-    for (const question of entry.questions) if (!entry.events.some(event => event.id === question.id && event.kind === "question" && event.from === question.participantId)) fail();
+    for (const question of entry.questions) {
+      if (!entry.events.some(event => event.id === question.id && event.kind === "question" && event.from === question.participantId && sameIdentity(event.source,question.source))) fail();
+      if(question.source && (!knownScope(question.source) || question.source.participantId!==question.participantId))fail();
+    }
     const waiting = entry.questions.find(item => item.answer === null);
     if (waiting ? entry.attention.status !== "waiting" || entry.attention.eventId !== waiting.id || entry.attention.kind !== waiting.kind || entry.attention.acknowledged !== waiting.acknowledged : entry.attention.status !== "clear") fail();
     if (entry.review !== (entry.results.length === 0 ? "none" : entry.results.some(item => item.review === "pending") ? "pending" : "acknowledged")) fail();

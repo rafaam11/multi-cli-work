@@ -59,11 +59,19 @@ export class TaskExecutor {
         const toml = JSON.stringify;
         const mcpArgs = participant.provider === "claude" ? ["--strict-mcp-config", "--mcp-config", configPath] : ["-c", `mcp_servers.mcw_task.command=${toml(mcp.command)}`, "-c", `mcp_servers.mcw_task.args=${toml(mcp.args)}`, "-c", `mcp_servers.mcw_task.env={${Object.entries(env).map(([key, value]) => `${key}=${toml(value)}`).join(",")}}`, "-c", "mcp_servers.mcw_task.tool_timeout_sec=65"];
         const prompt = `You are the ${participant.role} for task ${task.id}. Read ${workspace.briefPath}. Repository: ${workspace.repositoryPath}; verified base: ${workspace.baseCommit}. Use only the mcw_task task tools for team communication: inspect, message, wait, submit and cancellation. ${participant.role === "lead" ? "Coordinate the selected workers; the current directory holds your brief, not a writable repository." : "Work only in this MCW-owned checkout."} Submit changes, verification, artifacts and unresolved issues for user review. Keep code unintegrated; never merge, push or reset. Idle is not completion. Do not acknowledge user questions on their behalf.`;
-        const command = buildAgentLaunch(definition, selection.executable, { cwd: workspace.directory, sessionId: participant.attempt.id, claudeSettingsPath: "", codexProfileName: "", resumeConversationId: null, launchProfile: selection.profile, extraArgs: [...mcpArgs, prompt] });
+        const waitInstruction = " After submitting or while waiting for other participants, call task_wait with your last received cursor; on timeout call it again. Process new questions, messages, results and cancellation requests before waiting again. Do not exit or invent new work while waiting for the user.";
+        const command = buildAgentLaunch(definition, selection.executable, { cwd: workspace.directory, sessionId: participant.attempt.id, claudeSettingsPath: "", codexProfileName: "", resumeConversationId: null, launchProfile: selection.profile, extraArgs: [...mcpArgs, prompt + waitInstruction] });
+        const terminalEnv = {
+          MULTI_CLI_WORK_PROJECT_BRIEF: workspace.briefPath,
+          MULTI_CLI_WORK_SESSION_ID: participant.attempt.id,
+          MULTI_CLI_WORK_GENERATION: generation(participant),
+          MCW_TASK_ID: task.id, MCW_PARTICIPANT_ID: participant.id, MCW_TASK_ROLE: participant.role,
+          MCW_TASK_OWNER_HOST_ID: task.ownerHostId, MCW_RUNTIME: "v2",
+        };
         const commandId = randomUUID();
         await this.options.store.beginDelivery(scope, commandId);
         try {
-          const terminal = await this.options.terminals.create({ sessionId: participant.attempt.id, generation: generation(participant), kind: participant.provider, cwd: workspace.directory, executable: command.executable, args: command.args, env: {}, projectId: input.projectId ?? null, createdAt: new Date().toISOString() });
+          const terminal = await this.options.terminals.create({ sessionId: participant.attempt.id, generation: generation(participant), kind: participant.provider, cwd: workspace.directory, executable: command.executable, args: command.args, env: terminalEnv, projectId: input.projectId ?? null, createdAt: new Date().toISOString() });
           await this.options.store.resolveDelivery(scope, commandId, "delivered"); await this.options.store.observeExecution(scope, "running"); terminals.push(terminal);
         } catch (error) {
           // A lost response may follow an accepted command. Only a durable broker rejection proves no dispatch.

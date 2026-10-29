@@ -2928,6 +2928,19 @@ describe("세션 패널", () => {
     expect(document.querySelector(".tools-group")).toBeNull();
   });
 
+  it("v2 전체와 대기는 숨긴 세션의 미확인 결과를 포함하고 화면 진입으로 확인하지 않는다", async () => {
+    const hidden = {...powershellSession,id:"hidden-v2",status:"idle" as const,taskNotice:{taskId:"task",kind:"result" as const,questionIds:[],resultIds:["result"],unread:true}};
+    const harness=createApi({sessions:[powershellSession,hidden],savedViews:{workspace:{layoutId:"auto",slots:[powershellSession.id]},hiddenPanes:{layoutId:"auto",slots:[hidden.id]}}});
+    window.multiCliWork=harness.api;
+    window.mcwV2={version:2} as import("@shared/v2-api").McwV2Api;
+    try{
+      render(<App/>);await screen.findByRole("region",{name:"세션 패널"});
+      await waitFor(()=>expect(rows()).toHaveLength(2));
+      fireEvent.click(within(panel()).getByRole("button",{name:"대기"}));
+      expect(rows()).toHaveLength(1);expect(within(panel()).getByText("결과 확인")).toBeInTheDocument();
+      expect(hidden.taskNotice.unread).toBe(true);
+    }finally{cleanup();delete window.mcwV2;}
+  });
   it("예전 '여기' 설정을 무시하고 전체·대기를 전환하며 폴더를 바꿔도 세션을 유지한다", async () => {
     localStorage.setItem("multi-cli-work.sidebar.v1", JSON.stringify({ sessionScope: "here" }));
     const dashboardSession: TerminalSessionView = {

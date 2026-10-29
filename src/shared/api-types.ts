@@ -239,6 +239,7 @@ export interface TerminalSizeOwner {
 }
 
 export interface TerminalSessionView extends PersistedTerminalSession {
+  taskNotice?: import("./task-notices").TaskSessionNotice | null;
   status: TerminalStatus;
   pid: number | null;
   exitCode: number | null;

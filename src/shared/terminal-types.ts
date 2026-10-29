@@ -51,6 +51,7 @@ export type TerminalStatus =
   | "error";
 
 export interface TerminalSession {
+  taskNotice?: import("./task-notices").TaskSessionNotice | null;
   id: string;
   projectId: string | null;
   tool: ToolCommand | null;

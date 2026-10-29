@@ -2,6 +2,7 @@ import type { Task, TaskCreateInput } from "./host-types";
 import type { LaunchProfile } from "./launch-profile";
 
 export interface V2TerminalSummary {id:string;kind:string;cwd:string;projectId:string|null;status:string;connected:boolean;observedAt:number|null;tabId:string|null;paneId:string|null;generation:string;createdAt:string}
+export interface V2HostState {tasks:Task[];terminals:V2TerminalSummary[];observedAt:number|null;connected:boolean}
 export interface McwV2Api {
   readonly version: 1 | 2;
   enabled(): Promise<boolean>;
@@ -10,7 +11,8 @@ export interface McwV2Api {
   createTask(input:TaskCreateInput):Promise<Task>;
   inspectTask(id:string):Promise<Task>;
   taskAction(id:string,action:"acknowledge"|"answer"|"acknowledge-result"|"message"|"cancel",input:Record<string,unknown>):Promise<void>;
-  onState?(listener:(state:{tasks:Task[];terminals:V2TerminalSummary[];observedAt:number})=>void):()=>void;
+  onState?(listener:(state:V2HostState)=>void):()=>void;
+  hostState?():Promise<V2HostState>;
   startTask(id:string,input:{repositoryPath:string;expectedHead:string}):Promise<unknown>;
   repositoryHead(directory:string):Promise<string>;
   listTerminals():Promise<V2TerminalSummary[]>;

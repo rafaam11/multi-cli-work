@@ -35,7 +35,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   const errorRef = useRef(onError); errorRef.current = onError;
   const [surface, setSurface] = useState<PaneSurfaceFrame | null>(null);
   const [ownership, setOwnership] = useState({ ownerId, sizeOwnerId });
-  const [disconnectedAt, setDisconnectedAt] = useState<number | null>(null), [synchronizing, setSynchronizing] = useState(true);
+  const [disconnectedAt, setDisconnectedAt] = useState<{observedAt:number|null} | null>(null), [synchronizing, setSynchronizing] = useState(true);
   const [selection, setSelection] = useState<Selection | null>(null), [blink, setBlink] = useState(true);
   const [graphicsVersion, setGraphicsVersion] = useState(0), [error, setError] = useState<string | null>(null);
   const safeFontSize = Math.max(8, Math.min(40, fontSize));
@@ -75,12 +75,14 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
         setOwnership(ownershipRef.current); return;
       }
       if (event.type === "disconnected") {
-        disconnectedRef.current = true; setDisconnectedAt(event.observedAt ?? Date.now());
+        disconnectedRef.current = true; setDisconnectedAt({observedAt:event.observedAt ?? null});
         pendingSnapshotRef.current = true; setSynchronizing(true); return;
       }
       // After loss/gap, only a complete snapshot can establish a valid scene.
       if (pendingSnapshotRef.current && event.type === "patch") return;
-      let result = applySurfaceEvent(surfaceRef.current, event);
+      // Surface revisions belong to a terminal connection. A new bridge may
+      // start at revision 1 while the Herdr server keeps the same boot ID.
+      let result = applySurfaceEvent(disconnectedRef.current ? null : surfaceRef.current, event);
       if (result.status === "stale" && event.type !== "patch" && pendingSnapshotRef.current
         && event.surface.surface_revision === surfaceRef.current?.surface_revision) result = applySurfaceEvent(null, event);
       if (result.status === "resync") {
@@ -200,12 +202,12 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
       {surface && <span>{surface.frame.width} × {surface.frame.height}</span>}
       <div className="herdr-terminal-actions">
         {controlled ? <button type="button" onClick={() => run(() => transport.releaseControl(sessionId, viewerId))}>제어 놓기</button>
-          : <button type="button" disabled={disconnectedAt !== null} onClick={() => run(() => transport.requestControl(sessionId, viewerId))}>제어 요청</button>}
+          : <button type="button" disabled={disconnectedAt !== null || synchronizing} onClick={() => run(() => transport.requestControl(sessionId, viewerId))}>제어 요청</button>}
         <button type="button" disabled={!selection} onClick={copy}>복사</button>
       </div>
     </div>
     {(disconnectedAt !== null || synchronizing || error) && <div className="herdr-terminal-status" role="status">
-      {disconnectedAt !== null ? `연결 끊김 · 마지막 관찰 ${new Date(disconnectedAt).toLocaleTimeString()}` : error ?? "화면 동기화 중…"}
+      {disconnectedAt !== null ? `연결 끊김 · 마지막 관찰 ${disconnectedAt.observedAt===null?"없음":new Date(disconnectedAt.observedAt).toLocaleTimeString()}` : error ?? "화면 동기화 중…"}
     </div>}
     <div className="herdr-terminal-viewport" ref={viewportRef}>
       <canvas ref={canvasRef} aria-label="터미널 화면" role="img" onContextMenu={(event) => { if (writable && paneAt(point(event))?.mouse_reporting && !event.shiftKey) event.preventDefault(); }}

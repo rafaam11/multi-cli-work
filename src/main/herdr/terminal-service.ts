@@ -76,7 +76,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
     if(closed) return;
     for(const s of sessions.values()) s.connected=false;
     changed();
-    for(const bridge of bridges.values()) emit(bridge,{type:"disconnected",observedAt:Date.now(),reason:error.message});
+    for(const [id,bridge] of bridges) emit(bridge,{type:"disconnected",observedAt:sessions.get(id)?.observedAt??null,reason:error.message});
     closeEvents?.(); closeEvents=undefined;
     clearTimeout(reconnectTimer);
     reconnectTimer=setTimeout(()=>void observe().catch(stale),1000); reconnectTimer.unref();

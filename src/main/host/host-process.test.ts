@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile, utimes } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -35,6 +35,10 @@ server.listen(0,'127.0.0.1',()=>{
   const before = process.env.ELECTRON_RUN_AS_NODE;
   try {
     process.env.ELECTRON_RUN_AS_NODE = "1";
+    // A crashed host can leave a lease that expires while a launcher is waiting.
+    // It must recheck that lease before its deadline, rather than wait forever for a dead host.
+    const runtimeLock=path.join(directory,"mcw-host-runtime.lock");await mkdir(runtimeLock);
+    const old=new Date(Date.now()-9000);await utimes(runtimeLock,old,old);
     const options = { directory, hostId: "fixture-host", entryPath, terminalConfig, executablePath: process.execPath, electronExecutable: false, startupTimeoutMs: 5000 };
     const [first, second] = await Promise.all([ensureHostProcess(options), ensureHostProcess(options)]);
     try {
@@ -43,7 +47,7 @@ server.listen(0,'127.0.0.1',()=>{
       expect((await new HostClient(await readHostDescriptor(directory)! as NonNullable<Awaited<ReturnType<typeof readHostDescriptor>>>).health()).instanceId).toBe(first.instanceId);
     } finally { await new HostClient(first).shutdown(); }
   } finally { if (before === undefined) delete process.env.ELECTRON_RUN_AS_NODE; else process.env.ELECTRON_RUN_AS_NODE = before; }
-});
+}, 15000);
 
 it("refuses a live unavailable descriptor without replacing or killing its process", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "mcw-host-unavailable-test-")); directories.push(directory);
