@@ -2,6 +2,8 @@ import { useEffect,useRef,useState } from "react";
 import type { McwV2Api } from "@shared/v2-api";
 import type { HostRegistration,RemoteHostObservation,LocalHostConnection } from "@shared/host-connection-types";
 import { errorMessage } from "../ipc-error";
+import { TaskPanel } from "./TaskPanel";
+import { HostTerminalPane } from "./HostTerminalPane";
 
 function parseConnection(text:string):LocalHostConnection {
   const value=JSON.parse(text) as LocalHostConnection;
@@ -12,6 +14,8 @@ export function HostsSettings({api=window.mcwV2}:{api?:McwV2Api}) {
   const [local,setLocal]=useState<LocalHostConnection|null>(null),[registrations,setRegistrations]=useState<HostRegistration[]>([]),[observations,setObservations]=useState<RemoteHostObservation[]>([]);
   const [connectionText,setConnectionText]=useState(""),[destination,setDestination]=useState(""),[name,setName]=useState(""),[username,setUsername]=useState(""),[port,setPort]=useState(""),[identityFile,setIdentityFile]=useState("");
   const [busy,setBusy]=useState(false),[online,setOnline]=useState(true),[error,setError]=useState<string|null>(null),[copied,setCopied]=useState(false);
+  const [taskHost,setTaskHost]=useState<string|null>(null),[terminal,setTerminal]=useState<string|null>(null);
+  const selectedHost=observations.find(host=>host.hostId===taskHost);
   const revision=useRef(0),alive=useRef(true);
   const supported=!!api?.listHosts&&!!api.localConnection&&!!api.configureHost&&!!api.removeHost;
   const refresh=async()=>{
@@ -54,10 +58,19 @@ export function HostsSettings({api=window.mcwV2}:{api?:McwV2Api}) {
     {observations.map(host=>{
       const registration=registrations.find(item=>item.ssh.hostId===host.hostId);
       return <div className="settings-row" key={host.hostId}><span>{host.name}<small className="settings-hint"> · {!host.enabled?"관찰 꺼짐":host.connected?"연결됨":"연결 끊김"} · 마지막 관찰 {host.observedAt===null?"없음":new Date(host.observedAt).toLocaleString("ko-KR")}{host.error?` · ${host.error}`:""}</small></span>
-        <span className="settings-remote-host-actions"><button type="button" disabled={busy||!online||!registration} onClick={()=>run(async()=>{await api!.configureHost!({...registration!,enabled:!host.enabled});await refresh();})}>{host.enabled?"관찰 끄기":"다시 연결"}</button>
+        <span className="settings-remote-host-actions"><button type="button" aria-label={`${host.name} 작업·결과 보기`} aria-expanded={taskHost===host.hostId} onClick={()=>{setTaskHost(host.hostId);setTerminal(null);}}>작업·결과</button>
+          <button type="button" disabled={busy||!online||!registration} onClick={()=>run(async()=>{await api!.configureHost!({...registration!,enabled:!host.enabled});await refresh();})}>{host.enabled?"관찰 끄기":"다시 연결"}</button>
           <button type="button" aria-label={`${host.name} 연결 삭제`} disabled={busy||!online} onClick={()=>run(async()=>{await api!.removeHost!(host.hostId);await refresh();})}>삭제</button></span>
       </div>;
     })}
+    {selectedHost&&<section className="v2-remote-tasks" aria-label={`${selectedHost.name} 작업 관제`}>
+      <button type="button" onClick={()=>{setTaskHost(null);setTerminal(null);}}>작업·결과 접기</button>
+      <TaskPanel key={selectedHost.hostId} hostId={selectedHost.hostId} hostName={selectedHost.name} api={api} onOpenTerminal={setTerminal}/>
+      {terminal&&<section className="v2-remote-task-terminal" aria-label="원격 작업 터미널">
+        <button type="button" onClick={()=>setTerminal(null)}>터미널 접기</button>
+        <div><HostTerminalPane key={terminal} sessionId={terminal} api={api}/></div>
+      </section>}
+    </section>}
     <p className="settings-hint">관찰을 끄거나 연결을 삭제해도 해당 PC의 작업은 계속 실행됩니다.</p>
     {error&&<p className="settings-error" role="alert">{error}</p>}
   </section>;

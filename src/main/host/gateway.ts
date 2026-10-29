@@ -13,6 +13,7 @@ import type { LocalHostConnection, HostRegistration } from "../../shared/host-co
 import type { HostConnections } from "./host-connections";
 import type { HostTerminalSocket } from "./host-client";
 import { resolveRemoteSession } from "../v2/observed-terminals";
+import { validateTaskSnapshot } from "./task-validation";
 
 /** The independent daemon owns this service. Closing a viewer never stops a session. */
 export interface HostTerminalService {
@@ -174,6 +175,31 @@ export class HostGateway {
       if(url.pathname==="/hosts"&&method==="POST"){
         if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.hosts)throw new HttpError(503,"Host connections unavailable");
         await this.options.hosts.configure(await body(request,this.limit) as HostRegistration);reply(response,200,{});return;
+      }
+      const remoteTaskRoute=/^\/hosts\/([^/]+)\/tasks(?:\/([^/]+)(?:\/(acknowledge|answer|acknowledge-result|message|cancel))?)?$/.exec(url.pathname);
+      if(remoteTaskRoute){
+        const hostId=text(decodeURIComponent(remoteTaskRoute[1]));
+        const observed=this.options.hosts?.snapshot().find(host=>host.hostId===hostId);
+        if(!observed)throw new HttpError(404,"Remote host is not registered");
+        if(!observed.enabled||!observed.connected)throw new HttpError(409,"Remote host is not observed");
+        const remote=this.options.hosts!.client(hostId);
+        const validate=(tasks:unknown)=>validateTaskSnapshot({schemaVersion:2,hostId,tasks,outbox:[]}).tasks;
+        if(!remoteTaskRoute[2]&&method==="GET"){reply(response,200,validate(await remote.tasks()));return;}
+        if(remoteTaskRoute[2]){
+          const taskId=text(decodeURIComponent(remoteTaskRoute[2]));
+          const task=validate([await remote.inspectTask(taskId)])[0];
+          if(task.id!==taskId)throw new HttpError(409,"Remote task identity changed");
+          if(!remoteTaskRoute[3]&&method==="GET"){reply(response,200,task);return;}
+          if(remoteTaskRoute[3]&&method==="POST"){
+            // Owner actions are explicit and never queued/retried. A lost reply
+            // must be reconciled by reading that owner's task, not replayed.
+            const input=object(await body(request,this.limit));
+            try{await remote.request(`/tasks/${encodeURIComponent(taskId)}/${remoteTaskRoute[3]}`,"POST",input);}
+            catch{throw new HttpError(502,"원격 응답을 받지 못했습니다. 전달되었을 수 있으니 작업 기록을 확인한 뒤 다시 요청하세요.");}
+            reply(response,200,{});return;
+          }
+        }
+        throw new HttpError(405,"Unsupported remote task operation");
       }
       const hostRoute=/^\/hosts\/([^/]+)$/.exec(url.pathname);
       if(hostRoute&&method==="DELETE"){

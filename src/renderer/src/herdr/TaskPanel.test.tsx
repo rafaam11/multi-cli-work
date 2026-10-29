@@ -14,6 +14,45 @@ function api() {
 }
 afterEach(cleanup);
 describe("v2 task dashboard", () => {
+  it("shows an offline owner's cached results without issuing a failing live read on entry",async()=>{
+    const host=api(),remote=task();remote.ownerHostId="remote";remote.participants[0].hostId="remote";remote.title="Offline task";
+    host.hostState=vi.fn(async()=>({tasks:[task()],terminals:[],connected:true,observedAt:2000,hosts:[{hostId:"remote",name:"Lab",enabled:false,connected:false,observedAt:1000,error:null,tasks:[remote],terminals:[]}]}));
+    vi.mocked(host.listTasks).mockRejectedValue(new Error("Error invoking remote method 'v2:tasks': Error: Remote host is not observed"));
+    render(<TaskPanel api={host} hostId="remote"/>);
+    await screen.findByText("Offline task");await waitFor(()=>expect(screen.queryByText(/불러오는 중/)).not.toBeInTheDocument());
+    expect(host.listTasks).not.toHaveBeenCalled();expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/호스트 연결 끊김/)).toHaveTextContent("마지막 수신");
+  });
+  it("scopes remote inspection and actions to the selected owner, keeps stale data and opens its terminal",async()=>{
+    const host=api(),remote=task();remote.ownerHostId="remote";remote.participants[0].hostId="remote";
+    remote.title="Remote task";remote.projectId="unrelated-remote-project";
+    host.taskAction=vi.fn(async()=>{});host.terminalViewId=vi.fn(async()=>"mcwr-observed");
+    vi.mocked(host.listTasks).mockResolvedValue([remote]);vi.mocked(host.inspectTask).mockResolvedValue(remote);
+    let changed!:Parameters<NonNullable<McwV2Api["onState"]>>[0];host.onState=listener=>{changed=listener;return()=>{};};
+    const state=(connected:boolean)=>({tasks:[task()],terminals:[],observedAt:2000,connected:true,hosts:[{hostId:"remote",name:"Lab",enabled:true,connected,observedAt:1000,error:null,tasks:[remote],terminals:[]}]});
+    host.hostState=vi.fn(async()=>state(true));const open=vi.fn();
+    render(<TaskPanel api={host} hostId="remote" hostName="Lab" onOpenTerminal={open}/>);
+    await screen.findByText("Remote task");expect(host.listTasks).toHaveBeenCalledWith("remote");
+    expect(screen.queryByRole("button",{name:"작업 만들기"})).not.toBeInTheDocument();
+    expect(screen.queryByText("Existing task")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:/Remote task/}));
+    expect(host.taskAction).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"요청 확인"}));
+    await waitFor(()=>expect(host.taskAction).toHaveBeenCalledWith("task","acknowledge",{eventId:"q"},"remote"));
+    await waitFor(()=>expect(host.inspectTask).toHaveBeenCalledWith("task","remote"));
+    fireEvent.click(screen.getByRole("button",{name:"터미널 열기"}));
+    await waitFor(()=>expect(open).toHaveBeenCalledWith("mcwr-observed"));
+    expect(host.terminalViewId).toHaveBeenCalledWith("attempt","remote");
+    fireEvent.change(screen.getByLabelText("팀 메시지"),{target:{value:"remote draft"}});
+    act(()=>changed(state(false)));
+    expect(screen.getByRole("button",{name:"메시지 보내기"})).toBeDisabled();
+    expect(screen.getByLabelText("팀 메시지")).toHaveValue("remote draft");
+    act(()=>changed(state(true)));
+    await waitFor(()=>expect(screen.getByRole("button",{name:"메시지 보내기"})).toBeEnabled());
+    fireEvent.click(screen.getByRole("button",{name:"메시지 보내기"}));
+    await waitFor(()=>expect(host.taskAction).toHaveBeenCalledWith("task","message",{text:"remote draft"},"remote"));
+    expect(host.createTask).not.toHaveBeenCalled();expect(host.startTask).not.toHaveBeenCalled();
+  });
   it("shows stale observations on disconnect and retains drafts without sending commands", async () => {
     const host = api(); host.taskAction = vi.fn();
     let changed!: Parameters<NonNullable<McwV2Api["onState"]>>[0]; host.onState = listener => { changed = listener; return () => {}; };

@@ -30,9 +30,9 @@ function terminalService() {
   } satisfies HostTerminalService & { sessions: Map<string, unknown>; frames: EventEmitter };
   return service;
 }
-async function setup(extra: Partial<import("./gateway").HostGatewayOptions> = {}) {
+async function setup(extra: Partial<import("./gateway").HostGatewayOptions> = {},hostId="pc-a") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "mcw-gateway-")); directories.push(directory);
-  const store = new TaskStore({ directory, hostId: "pc-a" }); const terminals = terminalService();
+  const store = new TaskStore({ directory, hostId }); const terminals = terminalService();
   const gateway = new HostGateway({ directory, store, terminals, maxBodyBytes: 1024, ...extra }); gateways.push(gateway);
   const descriptor = await gateway.start(); const client = new HostClient(descriptor);
   const fetchRoute = (route: string, init: RequestInit = {}) => fetch(`${descriptor.url}${route}`, { ...init, headers: { authorization: `Bearer ${descriptor.token}`, ...init.headers } });
@@ -55,6 +55,49 @@ it("routes a remote view to the registered PC and leaves its process alive when 
   expect(remote.terminals.stop).not.toHaveBeenCalled();
   observation.connected=false;await expect(local.client.stopTerminal(viewId)).rejects.toThrow();expect(remote.terminals.stop).not.toHaveBeenCalled();
   observation.connected=true;await local.client.stopTerminal(viewId);expect(remote.terminals.stop).toHaveBeenCalledWith("same");expect(local.terminals.stop).not.toHaveBeenCalled();
+});
+it("routes remote task reads and exact user actions to the owning host without local mutation or replay",async()=>{
+  const remote=await setup({},"pc-b");
+  const task=await remote.store.createTask({...taskInput,lead:{...taskInput.lead,hostId:"pc-b"}});
+  const lead=await remote.store.bind({taskId:task.id,participantId:task.participants[0].id,attemptId:task.participants[0].attempt.id,generation:1});
+  const question=await remote.store.ask(lead,"question","Which target?");
+  const result=await remote.store.submitResult(lead,{summary:"Prepared",changes:[],verification:["checked"],artifacts:[],issues:[]});
+  const observation={hostId:"pc-b",name:"Remote",enabled:true,connected:true,observedAt:12,error:null,tasks:[await remote.store.inspect(task.id)],terminals:[]};
+  const hosts={registrations:()=>[],snapshot:()=>[observation],configure:vi.fn(),remove:vi.fn(),onChange:()=>()=>{},client:vi.fn(()=>remote.client)};
+  const local=await setup({hosts});
+  const prefix=`/hosts/pc-b/tasks/${task.id}`;
+  const localTask=await local.store.createTask(taskInput);
+  const capability=await local.gateway.issueTaskToken({taskId:localTask.id,participantId:localTask.participants[0].id,attemptId:localTask.participants[0].attempt.id,generation:1});
+  expect((await fetch(local.descriptor.url+"/hosts/pc-b/tasks",{headers:{authorization:`Bearer ${capability}`}})).status).toBe(403);
+  expect(await local.client.request("/hosts/pc-b/tasks")).toHaveLength(1);
+  expect(await local.client.request(prefix)).toMatchObject({id:task.id,ownerHostId:"pc-b"});
+  expect((await remote.store.inspect(task.id)).questions[0].acknowledged).toBe(false);
+  await local.client.request(`${prefix}/acknowledge`,"POST",{eventId:question.id});
+  await local.client.request(`${prefix}/answer`,"POST",{eventId:question.id,text:"Keep unintegrated"});
+  await local.client.request(`${prefix}/acknowledge-result`,"POST",{resultId:result.id});
+  const updated=await remote.store.inspect(task.id);
+  expect(updated.questions[0]).toMatchObject({acknowledged:true,answer:"Keep unintegrated"});
+  expect(updated.results[0]).toMatchObject({integration:"unintegrated",review:"acknowledged"});
+  expect(await local.store.list()).toEqual([localTask]);
+  await expect(local.client.request(`${prefix}/start`,"POST",{})).rejects.toThrow();
+  await expect(local.client.request("/hosts/unregistered/tasks")).rejects.toThrow();
+  observation.connected=false;const before=(await remote.store.inspect(task.id)).events.length;
+  await expect(local.client.request(`${prefix}/message`,"POST",{text:"must not queue"})).rejects.toThrow();
+  observation.connected=true;
+  expect((await remote.store.inspect(task.id)).events).toHaveLength(before);
+  await local.client.request(`${prefix}/message`,"POST",{text:"once"});
+  expect((await remote.store.inspect(task.id)).events.filter(event=>event.text==="once")).toHaveLength(1);
+  const forward=remote.client.request.bind(remote.client);
+  const missingReply=vi.spyOn(remote.client,"request").mockImplementation(async <T,>(route:string,method?:string,input?:unknown,timeoutMs?:number)=>{
+    const result=await forward<T>(route,method,input,timeoutMs);
+    if(method==="POST"&&route.endsWith("/message"))throw new Error("reply lost after commit");return result;
+  });
+  await expect(local.client.request(`${prefix}/message`,"POST",{text:"ambiguous"})).rejects.toThrow(/전달되었을 수/);
+  expect((await remote.store.inspect(task.id)).events.filter(event=>event.text==="ambiguous")).toHaveLength(1);
+  missingReply.mockRestore();
+  await local.client.request(`${prefix}/cancel`,"POST",{});
+  expect((await remote.store.inspect(task.id)).cancellation).toBe("requested");
+  expect(remote.terminals.stop).not.toHaveBeenCalled();
 });
 it("exposes SSH registrations and non-secret local connection info only to the owner and freezes edits while draining",async()=>{
   const hosts={registrations:vi.fn(()=>[]),snapshot:vi.fn(()=>[]),configure:vi.fn(async()=>{}),remove:vi.fn(async()=>{}),onChange:vi.fn(()=>()=>{}),client:vi.fn()};

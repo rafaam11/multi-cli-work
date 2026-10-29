@@ -5,6 +5,22 @@ import { HostsSettings } from "./HostsSettings";
 const local={hostId:"local",platform:"linux",nodeExecutable:"/opt/node",hostEntrypoint:"/opt/mcw-host.js",dataRoot:"/home/me/mcw"};
 function setup(){let listener!:(state:V2HostState)=>void;const api={localConnection:vi.fn(async()=>local),listHosts:vi.fn(async()=>({registrations:[],observations:[]})),configureHost:vi.fn(async()=>{}),removeHost:vi.fn(async()=>{}),onState:(callback:typeof listener)=>{listener=callback;return()=>{};}};return{api:api as unknown as McwV2Api,calls:api,changed:(state:V2HostState)=>act(()=>listener(state))};}
 afterEach(cleanup);
+it("opens the selected PC task view by explicit action without acknowledging or stopping work",async()=>{
+  const {api}=setup();
+  const observation={hostId:"remote",name:"Lab",enabled:true,connected:true,observedAt:1000,error:null,tasks:[],terminals:[]};
+  vi.mocked(api.listHosts!).mockResolvedValue({registrations:[],observations:[observation]});
+  api.configuration=vi.fn(async()=>({hostId:"local",launchProfiles:[],defaultLaunchProfiles:{}}));
+  api.listTasks=vi.fn(async()=>[]);api.taskAction=vi.fn();
+  api.hostState=vi.fn(async()=>({tasks:[],terminals:[],connected:true,observedAt:1000,hosts:[observation]}));
+  render(<HostsSettings api={api}/>);await screen.findByText("이 PC: local");
+  expect(api.listTasks).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole("button",{name:"Lab 작업·결과 보기"}));
+  await waitFor(()=>expect(api.listTasks).toHaveBeenCalledWith("remote"));
+  expect(screen.getByRole("heading",{name:"Lab 작업·결과"})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"작업·결과 접기"}));
+  expect(screen.queryByRole("heading",{name:"Lab 작업·결과"})).not.toBeInTheDocument();
+  expect(api.taskAction).not.toHaveBeenCalled();expect(api.removeHost).not.toHaveBeenCalled();
+});
 it("only reads connections on entry and submits a selected SSH host explicitly",async()=>{
   const {api,calls}=setup();render(<HostsSettings api={api}/>);await screen.findByText("이 PC: local");
   expect(calls.configureHost).not.toHaveBeenCalled();expect(calls.removeHost).not.toHaveBeenCalled();

@@ -5,6 +5,8 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import type { LaunchProfile } from "../../shared/launch-profile";
 import type { McwV2Api, V2HostState } from "../../shared/v2-api";
 import type { HostClient, HostTerminalSocket } from "../host/host-client";
+import { ownerTaskRoute } from "../host/host-client";
+import { remoteSessionId, resolveRemoteSession } from "./observed-terminals";
 const exec = promisify(execFile);
 export async function readV2RepositoryHead(directory:string):Promise<string>{
   if(typeof directory!=="string"||!path.isAbsolute(directory)||directory.includes("\0"))throw new Error("저장소 절대 경로가 필요합니다.");
@@ -57,12 +59,18 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
   handle("host-configure",registration=>options.client.request("/hosts","POST",registration));
   handle("host-remove",(hostId:string)=>{if(typeof hostId!=="string"||!/^[\w-]{1,128}$/.test(hostId))throw new Error("Invalid host ID");return options.client.request(`/hosts/${encodeURIComponent(hostId)}`,"DELETE");});
   handle("configuration", async () => ({ hostId: options.hostId, ...await options.configuration() }));
-  handle("tasks", () => options.client.tasks());
+  handle("tasks", (hostId?:string) => {ownerTaskRoute(undefined,hostId);return options.client.tasks(hostId);});
   handle("task-create", input => options.client.createTask(input));
-  handle("task-inspect", id => options.client.inspectTask(id));
-  handle("task-action", (id:string,action:string,input:Record<string,unknown>)=>{
+  handle("task-inspect", (id:string,hostId?:string) => {ownerTaskRoute(id,hostId);return options.client.inspectTask(id,hostId);});
+  handle("task-action", (id:string,action:string,input:Record<string,unknown>,hostId?:string)=>{
     if(!["acknowledge","answer","acknowledge-result","message","cancel"].includes(action))throw new Error("Unknown task action");
-    return options.client.request(`/tasks/${encodeURIComponent(id)}/${action}`,"POST",input);
+    return options.client.request(`${ownerTaskRoute(id,hostId)}/${action}`,"POST",input);
+  });
+  handle("terminal-view-id",(sessionId:string,hostId:string)=>{
+    if(typeof sessionId!=="string"||!/^[\w-]{1,128}$/.test(sessionId))throw new Error("Invalid session ID");
+    ownerTaskRoute(undefined,hostId);
+    const viewId=remoteSessionId(hostId,sessionId);
+    resolveRemoteSession(options.state?.().hosts??[],viewId);return viewId;
   });
   handle("task-start", async (id: string, input: { repositoryPath: string; expectedHead: string }) => {
     if (!input || typeof input.repositoryPath !== "string" || typeof input.expectedHead !== "string" || Object.keys(input).some(key => !["repositoryPath", "expectedHead"].includes(key))) throw new Error("작업 시작 정보가 올바르지 않습니다.");

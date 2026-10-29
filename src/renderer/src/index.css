@@ -5384,6 +5384,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .v2-host-form input, .v2-host-form textarea { min-width: 0; padding: 6px 8px; color: var(--text); background: var(--surface-raised); border: 1px solid var(--line); border-radius: 5px; font: var(--type-secondary); }
 .v2-host-form textarea { resize: vertical; }
 .v2-host-connection { grid-column: 1 / -1; }
+.v2-remote-tasks { margin: 16px 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.v2-remote-tasks > .herdr-task-panel { height: auto; overflow: visible; padding: 12px 0; background: transparent; }
+.v2-remote-tasks .herdr-task-workspace { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.v2-remote-tasks .herdr-task-list { max-height: 180px; overflow: auto; }
+.v2-remote-task-terminal { display: flex; flex-direction: column; height: 440px; gap: 8px; }
+.v2-remote-task-terminal > button { align-self: flex-start; }
+.v2-remote-task-terminal > div { flex: 1; min-height: 0; position: relative; }
 
 .settings-error {
   margin: 10px 0 0;

@@ -3,9 +3,12 @@ import type { Task, TaskAgentChoice, TaskProvider } from "@shared/host-types";
 import type { McwV2Api, V2HostState } from "@shared/v2-api";
 import type { LaunchProfile } from "@shared/launch-profile";
 import "./task-panel.css";
+import { errorMessage } from "../ipc-error";
 
 export interface TaskPanelProps {
   projectId?: string;
+  hostId?: string;
+  hostName?: string;
   defaultCwd?: string;
   api?: McwV2Api;
   onTaskStarted?(taskId: string, result: unknown): void;
@@ -15,7 +18,7 @@ type Configuration = Awaited<ReturnType<McwV2Api["configuration"]>>;
 const executionLabel = { not_started: "시작 전", running: "실행 중", idle: "입력 대기", exited: "프로세스 종료", lost: "관찰 연결 끊김" };
 const deliveryLabel = { none: "전달 전", pending: "전달 중", delivered: "전달됨", unknown: "전달 여부 불명", rejected: "전달 거부" };
 const providerName = (provider: TaskProvider) => provider === "codex" ? "Codex" : "Claude Code";
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = errorMessage;
 
 function AgentFields({ label, value, profiles, disabled, onChange, onRemove }: {
   label: string; value: TaskAgentChoice; profiles: LaunchProfile[]; disabled: boolean;
@@ -35,37 +38,47 @@ function AgentFields({ label, value, profiles, disabled, onChange, onRemove }: {
   </fieldset>;
 }
 
-export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTaskStarted, onOpenTerminal }: TaskPanelProps) {
+export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = window.mcwV2, onTaskStarted, onOpenTerminal }: TaskPanelProps) {
   const [configuration, setConfiguration] = useState<Configuration | null>(null), [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null), [title, setTitle] = useState(""), [brief, setBrief] = useState("");
   const [lead, setLead] = useState<TaskAgentChoice>({ provider: "codex", profileId: "" }), [workers, setWorkers] = useState<TaskAgentChoice[]>([]);
   const [loading, setLoading] = useState(true), [pending, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [hostState, setHostState] = useState<V2HostState | null>(null);
-  const offline = hostState?.connected === false, busy = pending || offline;
+  const offline = hostState?.connected === false || (!!hostId&&hostState===null), busy = pending || offline;
   const [repositoryPath, setRepositoryPath] = useState(defaultCwd), [expectedHead, setExpectedHead] = useState<string | null>(null);
   const [answers,setAnswers]=useState<Record<string,string>>({}),[userMessage,setUserMessage]=useState("");
   const stateRevision=useRef(0);
+  const sourceConnected=useRef<boolean|null>(null);
   const alive = useRef(true), checkedPath = useRef<string | null>(null);
   const defaultProfile = (provider: TaskProvider, config = configuration) => config?.defaultLaunchProfiles[provider]
     ?? config?.launchProfiles.find((profile) => profile.agentId === provider)?.id ?? "";
   const selected = tasks.find((task) => task.id === selectedId) ?? null;
   const visibleTasks = tasks.filter((task) => projectId === undefined || task.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt);
+  const listTasks=()=>hostId?api!.listTasks(hostId):api!.listTasks();
 
   useEffect(() => {
     alive.current = true;
     setLoading(true); setError(null);
     if (!api) { setLoading(false); return; }
     const initialRevision=stateRevision.current;
-    const received = (state:V2HostState) => {stateRevision.current++;if(alive.current){setHostState(state);setTasks(state.tasks);}};
+    const received = (state:V2HostState) => {
+      stateRevision.current++;if(!alive.current)return;
+      const remote=hostId?state.hosts?.find(host=>host.hostId===hostId):undefined;
+      const scoped=hostId?{...state,tasks:remote?.tasks??[],terminals:remote?.terminals??[],connected:state.connected&&remote?.enabled===true&&remote.connected,observedAt:remote?.observedAt??null}:state;
+      sourceConnected.current=scoped.connected;setHostState(scoped);setTasks(scoped.tasks);
+    };
     const unsubscribe=api.onState?.(received);
-    void api.hostState?.().then(state=>{if(stateRevision.current===initialRevision)received(state);}).catch(()=>undefined);
-    void Promise.all([api.configuration(), api.listTasks()]).then(([config, entries]) => {
+    void Promise.all([api.configuration(),api.hostState?.().catch(()=>null)??Promise.resolve(null)]).then(async([config,snapshot]) => {
       if (!alive.current) return;
-      setConfiguration(config); if(stateRevision.current===initialRevision)setTasks(entries);
+      if(snapshot&&stateRevision.current===initialRevision)received(snapshot);
+      setConfiguration(config);
       setLead((current) => ({ ...current, profileId: current.profileId || defaultProfile(current.provider, config) }));
+      if(hostId&&sourceConnected.current!==true)return;
+      const revision=stateRevision.current,entries=await listTasks();
+      if(alive.current&&stateRevision.current===revision)setTasks(entries);
     }).catch((cause) => { if (alive.current) setError(message(cause)); }).finally(() => { if (alive.current) setLoading(false); });
     return () => { alive.current = false; unsubscribe?.(); };
-  }, [api]);
+  }, [api,hostId]);
   useEffect(() => { setRepositoryPath(defaultCwd); setExpectedHead(null); checkedPath.current = null; }, [selectedId, defaultCwd]);
 
   const run = async (action: () => Promise<void>) => {
@@ -74,14 +87,26 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
     try { await action(); } catch (cause) { if (alive.current) setError(message(cause)); }
     finally { if (alive.current) setBusy(false); }
   };
-  const refresh = () => { if (api) void run(async () => { const entries = await api.listTasks(); if (alive.current) setTasks(entries); }); };
+  const refresh = () => { if (api) void run(async () => { const entries = await listTasks(); if (alive.current) setTasks(entries); }); };
   const act = (action:Parameters<McwV2Api["taskAction"]>[1],input:Record<string,unknown>) => {
     if(!api||!selected)return;const taskId=selected.id;
-    void run(async()=>{await api.taskAction(taskId,action,input);const updated=await api.inspectTask(taskId);if(alive.current)setTasks(current=>current.map(task=>task.id===taskId?updated:task));});
+    void run(async()=>{
+      if(hostId)await api.taskAction(taskId,action,input,hostId);else await api.taskAction(taskId,action,input);
+      const updated=hostId?await api.inspectTask(taskId,hostId):await api.inspectTask(taskId);
+      if(alive.current)setTasks(current=>current.map(task=>task.id===taskId?updated:task));
+    });
+  };
+  const openTerminal=(sessionId:string,ownerHostId:string)=>{
+    if(!api)return;
+    void run(async()=>{
+      if(ownerHostId===configuration?.hostId){onOpenTerminal?.(sessionId);return;}
+      if(!api.terminalViewId)throw new Error("원격 터미널 관찰 연결이 준비되지 않았습니다.");
+      const viewId=await api.terminalViewId(sessionId,ownerHostId);if(alive.current)onOpenTerminal?.(viewId);
+    });
   };
   const changeChoice = (value: TaskAgentChoice): TaskAgentChoice => ({ ...value, profileId: value.profileId || defaultProfile(value.provider) });
   const create = () => {
-    if (!api || !configuration) return;
+    if (!api || !configuration || hostId) return;
     void run(async () => {
       const created = await api.createTask({ title: title.trim(), brief: brief.trim(), ...(projectId === undefined ? {} : { projectId }),
         lead: { ...lead, hostId: configuration.hostId }, workers });
@@ -91,7 +116,7 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
     });
   };
   const start = () => {
-    if (!api || !selected || !expectedHead || checkedPath.current !== repositoryPath) return;
+    if (!api || !selected || !expectedHead || hostId || checkedPath.current !== repositoryPath) return;
     const taskId = selected.id, path = repositoryPath, head = expectedHead;
     void run(async () => {
       const result = await api.startTask(taskId, { repositoryPath: path, expectedHead: head });
@@ -103,15 +128,15 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
     });
   };
   const profilesValid = !!configuration && [lead, ...workers].every((choice) => configuration.launchProfiles.some((profile) => profile.id === choice.profileId && profile.agentId === choice.provider));
-  const startable = selected?.cancellation === "none" && selected.participants.every((participant) => participant.attempt.delivery === "none" && participant.attempt.execution === "not_started");
+  const startable = !hostId && selected?.cancellation === "none" && selected.participants.every((participant) => participant.attempt.delivery === "none" && participant.attempt.execution === "not_started");
 
   if (!api) return <section className="herdr-task-panel"><p role="status">v2 호스트 연결이 준비되지 않았습니다.</p></section>;
   return <section className="herdr-task-panel" aria-label="협업 작업">
-    <header className="herdr-task-header"><div><h2>협업 작업</h2><p>작업마다 새 대표가 지시를 받고, 선택한 작업자가 결과를 제출합니다.</p></div><button type="button" disabled={busy || loading} onClick={refresh}>새로고침</button></header>
+    <header className="herdr-task-header"><div><h2>{hostId?`${hostName??hostId} 작업·결과`:"협업 작업"}</h2><p>{hostId?"작업을 소유한 PC에 메시지와 확인 결과를 전달합니다.":"작업마다 새 대표가 지시를 받고, 선택한 작업자가 결과를 제출합니다."}</p></div><button type="button" disabled={busy || loading} onClick={refresh}>새로고침</button></header>
     {error && <p className="herdr-task-error" role="alert">{error}</p>}
-    {offline && <p role="status">호스트 연결 끊김 · 마지막 수신: {hostState?.observedAt === null ? "없음" : new Date(hostState!.observedAt!).toLocaleString()}. 아래 상태는 마지막 관찰입니다.</p>}
+    {offline && <p role="status">호스트 연결 끊김 · 마지막 수신: {hostState?.observedAt == null ? "없음" : new Date(hostState.observedAt).toLocaleString()}. 아래 상태는 마지막 관찰입니다.</p>}
     {loading && <p role="status">호스트 작업을 불러오는 중…</p>}
-    <form className="herdr-task-create" onSubmit={(event) => { event.preventDefault(); create(); }}>
+    {!hostId&&<form className="herdr-task-create" onSubmit={(event) => { event.preventDefault(); create(); }}>
       <label><span>작업 제목</span><input aria-label="작업 제목" value={title} maxLength={200} required disabled={busy} onChange={(event) => setTitle(event.currentTarget.value)} /></label>
       <label><span>작업 지시</span><textarea aria-label="작업 지시" value={brief} maxLength={20000} required rows={3} disabled={busy} onChange={(event) => setBrief(event.currentTarget.value)} /></label>
       <div className="herdr-task-agents">
@@ -122,7 +147,7 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
       <div className="herdr-task-form-actions"><button type="button" disabled={busy || !configuration || workers.length >= 3} onClick={() => setWorkers((current) => [...current, { provider: "codex", profileId: defaultProfile("codex") }])}>작업자 추가</button>
         <span className="herdr-task-hint">최대 3명 · 생성 후 저장소와 기준 커밋을 확인하고 시작합니다.</span>
         <button type="submit" disabled={busy || !profilesValid || !title.trim() || !brief.trim()}>작업 만들기</button></div>
-    </form>
+    </form>}
     <div className="herdr-task-workspace">
       <nav className="herdr-task-list" aria-label="작업 목록">{visibleTasks.length === 0 && !loading ? <p className="herdr-task-hint">아직 작업이 없습니다.</p> : visibleTasks.map((task) => <button type="button" key={task.id} aria-pressed={task.id === selectedId} onClick={() => setSelectedId(task.id)}>
         <strong>{task.title}</strong><span>{task.attention.status === "waiting" ? task.attention.kind === "approval" ? "승인 대기" : "질문 대기" : task.results.length ? "결과 제출됨" : executionLabel[task.participants.find((p) => p.role === "lead")?.attempt.execution ?? "not_started"]}</span>
@@ -130,7 +155,7 @@ export function TaskPanel({ projectId, defaultCwd = "", api = window.mcwV2, onTa
       {selected && <article className="herdr-task-detail" aria-label="선택한 작업">
         <h3>{selected.title}</h3><p className="herdr-task-brief">{selected.brief}</p>
         <table><thead><tr><th>역할 · 도구</th><th>실행 관찰</th><th>명령 전달</th><th>마지막 관찰</th></tr></thead><tbody>{selected.participants.map((participant) => <tr key={participant.id}>
-          <td>{participant.role === "lead" ? "대표" : "작업자"} · {providerName(participant.provider)}<small>{configuration?.launchProfiles.find((profile) => profile.id === participant.profileId)?.name ?? participant.profileId} · {participant.hostId === configuration?.hostId ? "이 PC" : participant.hostId}</small>{participant.attempt.delivery === "delivered" && participant.attempt.execution !== "exited" && <button type="button" onClick={() => onOpenTerminal?.(participant.attempt.id)}>터미널 열기</button>}</td>
+          <td>{participant.role === "lead" ? "대표" : "작업자"} · {providerName(participant.provider)}<small>{(!hostId&&configuration?.launchProfiles.find((profile) => profile.id === participant.profileId)?.name) || participant.profileId} · {participant.hostId === configuration?.hostId ? "이 PC" : participant.hostId===hostId?hostName??hostId:participant.hostId}</small>{participant.attempt.delivery === "delivered" && participant.attempt.execution !== "exited" && <button type="button" disabled={busy} onClick={() => openTerminal(participant.attempt.id,participant.hostId)}>터미널 열기</button>}</td>
           <td>{executionLabel[participant.attempt.execution]}</td><td>{deliveryLabel[participant.attempt.delivery]}</td><td>{participant.attempt.observedAt === null ? "관찰 없음" : new Date(participant.attempt.observedAt).toLocaleString()}</td>
         </tr>)}</tbody></table>
         {startable && <div className="herdr-task-start"><label><span>저장소 경로</span><input aria-label="저장소 경로" value={repositoryPath} disabled={busy} onChange={(event) => { setRepositoryPath(event.currentTarget.value); setExpectedHead(null); checkedPath.current = null; }} /></label>

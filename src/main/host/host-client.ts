@@ -4,6 +4,11 @@ import type { AttemptRef, Task, TaskCreateInput } from "../../shared/host-types"
 import type { HostDescriptor } from "./gateway";
 
 export interface HostConnection { url: string; token: string; instanceId?: string; /** Original loopback Host header behind an authenticated SSH tunnel. */ authority?: string }
+export function ownerTaskRoute(id?:string,hostId?:string):string {
+  if(hostId!==undefined&&(typeof hostId!=="string"||!/^[\w-]{1,128}$/.test(hostId)))throw new Error("Invalid host ID");
+  if(id!==undefined&&(typeof id!=="string"||!id.trim()||id.length>200||id.includes("\0")))throw new Error("Invalid task ID");
+  return `${hostId===undefined?"":`/hosts/${encodeURIComponent(hostId)}`}/tasks${id===undefined?"":`/${encodeURIComponent(id)}`}`;
+}
 export class HostClient {
   readonly connection: HostConnection;
   constructor(connection: HostConnection) {
@@ -44,9 +49,9 @@ export class HostClient {
     if (health.schemaVersion !== 2 || health.hostId !== hostId) throw new Error("Host identity changed");
     Object.assign(this.connection, candidate.connection);
   }
-  tasks(): Promise<Task[]> { return this.request("/tasks"); }
+  tasks(hostId?:string): Promise<Task[]> { return this.request(ownerTaskRoute(undefined,hostId)); }
   createTask(input: TaskCreateInput): Promise<Task> { return this.request("/tasks", "POST", input); }
-  inspectTask(id: string): Promise<Task> { return this.request(`/tasks/${encodeURIComponent(id)}`); }
+  inspectTask(id: string,hostId?:string): Promise<Task> { return this.request(ownerTaskRoute(id,hostId)); }
   startTask(id: string, input: unknown): Promise<unknown> { return this.request(`/tasks/${encodeURIComponent(id)}/start`, "POST", input); }
   watch(onEvent: (event: unknown) => void): HostTerminalSocket { return new HostTerminalSocket(this.connection, null, onEvent); }
   issueTaskToken(ref: AttemptRef): Promise<{ token: string }> { return this.request(`/tasks/${encodeURIComponent(ref.taskId)}/capabilities`, "POST", { participantId: ref.participantId, attemptId: ref.attemptId, generation: ref.generation }); }

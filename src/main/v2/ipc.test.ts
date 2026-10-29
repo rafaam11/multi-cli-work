@@ -39,6 +39,19 @@ it("restricts task owner actions and keeps approval separate from task execution
   expect(client.request).toHaveBeenCalledWith("/tasks/task/answer","POST",{eventId:"q",text:"Keep pending"});
   expect(client.startTask).not.toHaveBeenCalled();dispose();
 });
+it("forwards remote task operations with an explicit host scope and resolves only observed terminal IDs",async()=>{
+  const {call,client,options,dispose}=setup();
+  await call("tasks","remote");expect(client.tasks).toHaveBeenCalledWith("remote");
+  await call("task-inspect","task","remote");expect(client.inspectTask).toHaveBeenCalledWith("task","remote");
+  await call("task-action","task","answer",{eventId:"q",text:"review"},"remote");
+  expect(client.request).toHaveBeenCalledWith("/hosts/remote/tasks/task/answer","POST",{eventId:"q",text:"review"});
+  expect(()=>call("task-action","task","answer",{},"../other")).toThrow();
+  options.state=()=>({connected:true,observedAt:1,tasks:[],terminals:[],hosts:[{hostId:"remote",name:"Lab",enabled:true,connected:true,observedAt:1,error:null,tasks:[],terminals:[{id:"attempt",kind:"codex",cwd:"/repo",projectId:null,status:"idle",connected:true,observedAt:1,tabId:"t",paneId:"p",generation:"g",createdAt:"now"}]}]});
+  expect(call("terminal-view-id","attempt","remote")).toMatch(/^mcwr-[a-f0-9]{64}$/);
+  expect(()=>call("terminal-view-id","missing","remote")).toThrow();
+  expect(()=>call("terminal-view-id","attempt","unregistered")).toThrow();
+  expect(client.startTask).not.toHaveBeenCalled();dispose();
+});
 it("reconnects a retained Canvas viewer without replaying input or taking control",async()=>{
   vi.useFakeTimers();
   const {client,call,options,dispose}=setup(),listeners:((event:unknown)=>void)[]=[],sockets:{send:ReturnType<typeof vi.fn>;close:ReturnType<typeof vi.fn>}[]=[];

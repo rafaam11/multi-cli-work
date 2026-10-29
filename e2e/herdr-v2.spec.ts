@@ -8,6 +8,7 @@ import { HostClient } from "../src/main/host/host-client";
 import { HerdrApiClient } from "../src/main/herdr/api-client";
 import { resolveHerdrPaths } from "../src/main/herdr/runtime";
 import { ensureHostProcess } from "../src/main/host/host-process";
+import { TaskStore } from "../src/main/host/task-store";
 import { applySurfaceEvent } from "../src/shared/herdr-surface-model";
 import type { PaneSurfaceFrame, HerdrSurfaceEvent } from "../src/shared/herdr-surface-types";
 
@@ -93,6 +94,14 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await page.getByRole("button",{name:"제어 요청",exact:true}).click();
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","false");
     expect((await client.health()).instanceId).toBe(descriptor.instanceId);
+    // Seed only this disposable host's last observation. The remote connection
+    // stays disabled; this checks offline UI without contacting a real PC.
+    const remoteId="offline-fixture",remoteStore=new TaskStore({directory:path.join(directory,"remote-fixture"),hostId:remoteId});
+    const remoteTask=await remoteStore.createTask({title:"원격 결과 보존",brief:"연결이 끊겨도 검증 결과를 보존합니다.",lead:{provider:"claude",profileId:"fixture",hostId:remoteId},workers:[]});
+    const remoteIdentity=await remoteStore.bind({taskId:remoteTask.id,participantId:remoteTask.participants[0].id,attemptId:remoteTask.participants[0].attempt.id,generation:1});
+    await remoteStore.submitResult(remoteIdentity,{summary:"사용자 확인 전 결과",changes:[],verification:["원격 검증 근거"],artifacts:[],issues:[]});
+    await client.request("/hosts","POST",{name:"검증 PC",enabled:false,ssh:{hostId:remoteId,destination:"unconnected.invalid",platform:"linux",nodeExecutable:"/fixture/node",hostEntrypoint:"/fixture/host.js",dataRoot:"/fixture/data"}});
+    await fs.writeFile(path.join(`${userData}-v2`,"host/host-observations.json"),JSON.stringify({version:2,observations:[{hostId:remoteId,platform:"linux",observedAt:Date.now(),tasks:await remoteStore.list(),terminals:[]}]}));
     process.kill(descriptor.pid,"SIGKILL");
     await expect(page.getByText(/연결 끊김 · 마지막 관찰/)).toBeVisible();
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","true");
@@ -110,6 +119,18 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","false");
     const recovered=await client.terminals() as {id:string;paneId:string}[];
     expect(recovered).toHaveLength(1);expect(recovered[0].paneId).toBe(before[0].paneId);
+    await page.getByRole("menuitem",{name:"설정",exact:true}).click();
+    const reopenedSettings=page.getByRole("dialog",{name:"설정",exact:true});
+    await reopenedSettings.getByRole("button",{name:"원격",exact:true}).click();
+    await reopenedSettings.getByRole("button",{name:"검증 PC 작업·결과 보기"}).click();
+    await reopenedSettings.getByRole("button",{name:/원격 결과 보존/}).click();
+    await expect(reopenedSettings.getByText("사용자 확인 전 결과",{exact:true}).first()).toBeVisible();
+    await expect(reopenedSettings.getByRole("button",{name:"결과 확인",exact:true})).toBeDisabled();
+    await expect(reopenedSettings.getByRole("button",{name:"메시지 보내기",exact:true})).toBeDisabled();
+    await expect(reopenedSettings.getByText(/호스트 연결 끊김 · 마지막 수신/)).toBeVisible();
+    await expect(reopenedSettings.getByText(/Error invoking remote method/)).toHaveCount(0);
+    await reopenedSettings.locator(".v2-remote-tasks").screenshot({path:info.outputPath("remote-task-offline.png")});
+    await page.keyboard.press("Escape");
     expect(await fs.readFile(path.join(registry,"projects.json"),"utf8")).toContain("Herdr 검증");
     await expect(fs.access(path.join(directory,`recovery/v1.55.1-recovery/recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
     succeeded = true;

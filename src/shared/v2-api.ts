@@ -8,10 +8,11 @@ export interface McwV2Api {
   readonly version: 1 | 2;
   enabled(): Promise<boolean>;
   configuration(): Promise<{hostId:string;launchProfiles:LaunchProfile[];defaultLaunchProfiles:Partial<Record<"claude"|"codex",string>>}>;
-  listTasks():Promise<Task[]>;
+  listTasks(hostId?:string):Promise<Task[]>;
   createTask(input:TaskCreateInput):Promise<Task>;
-  inspectTask(id:string):Promise<Task>;
-  taskAction(id:string,action:"acknowledge"|"answer"|"acknowledge-result"|"message"|"cancel",input:Record<string,unknown>):Promise<void>;
+  inspectTask(id:string,hostId?:string):Promise<Task>;
+  taskAction(id:string,action:"acknowledge"|"answer"|"acknowledge-result"|"message"|"cancel",input:Record<string,unknown>,hostId?:string):Promise<void>;
+  terminalViewId?(sessionId:string,hostId:string):Promise<string>;
   onState?(listener:(state:V2HostState)=>void):()=>void;
   hostState?():Promise<V2HostState>;
   localConnection?():Promise<LocalHostConnection>;
