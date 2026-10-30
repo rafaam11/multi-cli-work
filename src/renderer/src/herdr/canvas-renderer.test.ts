@@ -24,6 +24,14 @@ describe("Herdr Canvas drawing", () => {
     expect(clips[0]).toEqual([0, 0, 20, 20]);
     expect(text).toEqual(["한", "a"]);
   });
+  it('paints the blank spacer emitted by the native Windows initial resize without clipping Korean glyphs',()=>{
+    const clips:number[][]=[];
+    const ctx={save(){},restore(){},beginPath(){},clip(){},fillRect(){},fillText(){},rect(...args:number[]){clips.push(args);}};
+    const c=(symbol:string):CellData=>({symbol,fg:0,bg:0,modifier:0,skip:false,hyperlink:null});
+    drawFrame(ctx as unknown as CanvasRenderingContext2D,{width:5,height:1,cells:[c('한'),c(' '),c('글'),c(' '),c('x')],cursor:null,hyperlinks:[],graphics:[]},{cellWidth:10,cellHeight:20,fontSize:16,fontFamily:'monospace'},DEFAULT_CANVAS_THEME);
+    expect(clips[0]).toEqual([0,0,20,20]);
+    expect(clips).toContainEqual([20,0,20,20]);
+  });
   it("rejects oversized or malformed images without decoding and prunes unused assets", async () => {
     const cache = new GraphicsCache();
     const key = { source: { PaneLayer: { pane_id: "p", layer_id: "l" } }, image_width: 1, image_height: 1, format: "Rgba" as const, data_len: 4, data_fingerprint: "1" };

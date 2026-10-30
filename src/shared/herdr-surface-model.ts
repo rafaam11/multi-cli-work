@@ -1,4 +1,5 @@
 import type { CellData, FrameData, HerdrSurfaceEvent, PaneSurfaceFrame, PaneSurfacePane, SurfaceGraphicsAssetKey, SurfaceGraphicsScene, SurfaceRect } from "./herdr-surface-types";
+import stringWidth from 'string-width';
 
 export const MAX_SURFACE_CELLS = 250_000;
 const integer = (n: number, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(n) && n >= 0 && n <= max;
@@ -74,17 +75,35 @@ export function decodeColor(color: number, fallback: string): string {
   }
 }
 export interface CellPoint { x: number; y: number }
+/** Herdr normally marks wide tails empty/skip. A ConPTY initial resize can
+ * instead retain an ordinary blank with matching attributes. Only consume that
+ * one blank when the preceding grapheme is wide; never consume a real neighbor. */
+export function surfaceCellSpan(frame:FrameData,index:number):number {
+  const cell=frame.cells[index],remaining=frame.width-index%frame.width;
+  let span=1;
+  while(span<remaining&&(frame.cells[index+span].skip||frame.cells[index+span].symbol===''))span++;
+  if(span===1&&remaining>1&&(cell.symbol.codePointAt(0)??0)>=0x1100){
+    const tail=frame.cells[index+1];
+    if(tail.symbol===' '&&tail.fg===cell.fg&&tail.bg===cell.bg&&tail.modifier===cell.modifier&&stringWidth(cell.symbol)>=2)span=2;
+  }
+  return span;
+}
+function continuation(frame:FrameData,index:number):boolean {
+  const cell=frame.cells[index];
+  return cell.skip||cell.symbol===''||index%frame.width>0&&cell.symbol===' '&&surfaceCellSpan(frame,index-1)>1;
+}
 export function selectionText(surface: PaneSurfaceFrame, start: CellPoint, end: CellPoint): string {
   const { width, height, cells } = surface.frame;
   const pos = (p: CellPoint) => Math.max(0, Math.min(width * height - 1, p.y * width + p.x));
   let first = Math.min(pos(start), pos(end)), last = Math.max(pos(start), pos(end));
-  while (first % width > 0 && (cells[first].skip || cells[first].symbol === "")) first--;
+  while (first % width > 0 && continuation(surface.frame,first)) first--;
   const lines: string[] = [];
   for (let y = Math.floor(first / width); y <= Math.floor(last / width); y++) {
     let text = "";
     for (let x = y === Math.floor(first / width) ? first % width : 0; x <= (y === Math.floor(last / width) ? last % width : width - 1); x++) {
       const c = cells[y * width + x];
       if (!c.skip) text += c.symbol;
+      x+=surfaceCellSpan(surface.frame,y*width+x)-1;
     }
     lines.push(text.replace(/ +$/u, ""));
   }

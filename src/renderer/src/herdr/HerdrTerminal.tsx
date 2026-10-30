@@ -30,6 +30,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   const surfaceRef = useRef<PaneSurfaceFrame | null>(null), graphicsRef = useRef<GraphicsCache | null>(null);
   if (!graphicsRef.current) graphicsRef.current = new GraphicsCache();
   const ownershipRef = useRef({ ownerId, sizeOwnerId });
+  const viewerRef=useRef(viewerId);viewerRef.current=viewerId;
   const disconnectedRef = useRef(false), pendingSnapshotRef = useRef(true), aliveRef = useRef(true);
   const imeRef = useRef(new CompositionInput()), selectionRef = useRef<Selection | null>(null);
   const pointerRef = useRef<{ id: number; reporting: boolean; button: ClientMouseButton } | null>(null);
@@ -39,6 +40,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   const [ownership, setOwnership] = useState({ ownerId, sizeOwnerId });
   const [disconnectedAt, setDisconnectedAt] = useState<{observedAt:number|null} | null>(null), [synchronizing, setSynchronizing] = useState(true);
   const [selection, setSelection] = useState<Selection | null>(null), [blink, setBlink] = useState(true);
+  const [composing,setComposing]=useState(false);
   const [graphicsVersion, setGraphicsVersion] = useState(0), [error, setError] = useState<string | null>(null);
   const safeFontSize = Math.max(8, Math.min(40, fontSize));
   const [cellWidth, setCellWidth] = useState(safeFontSize * 0.6);
@@ -65,6 +67,8 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   useEffect(() => {
     aliveRef.current = true;
     readyRef.current?.(false);
+    setComposing(false);imeRef.current=new CompositionInput();
+    if(inputRef.current)inputRef.current.value='';
     surfaceRef.current = null; setSurface(null);
     selectionRef.current = null; setSelection(null);
     disconnectedRef.current = false; setDisconnectedAt(null);
@@ -75,10 +79,12 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
       if (!aliveRef.current) return;
       if (event.type === "ownership") {
         ownershipRef.current = { ownerId: event.ownerId, sizeOwnerId: event.sizeOwnerId };
+        if(event.ownerId!==viewerRef.current){setComposing(false);imeRef.current=new CompositionInput();if(inputRef.current)inputRef.current.value='';}
         setOwnership(ownershipRef.current); return;
       }
       if (event.type === "disconnected") {
         readyRef.current?.(false);
+        setComposing(false);imeRef.current=new CompositionInput();if(inputRef.current)inputRef.current.value='';
         disconnectedRef.current = true; setDisconnectedAt({observedAt:event.observedAt ?? null});
         pendingSnapshotRef.current = true; setSynchronizing(true); return;
       }
@@ -240,7 +246,10 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
           pointerRef.current = null; event.currentTarget.releasePointerCapture?.(event.pointerId);
         }}
         onPointerCancel={() => { pointerRef.current = null; }} />
-      <textarea ref={inputRef} className="herdr-terminal-input" aria-label="터미널 입력" aria-readonly={!writable} readOnly={!writable} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+      <textarea ref={inputRef} className={`herdr-terminal-input${composing?' is-composing':''}`} aria-label="터미널 입력" aria-readonly={!writable} readOnly={!writable} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+        style={{left:(surface?.frame.cursor?.x??0)*cellWidth,top:(surface?.frame.cursor?.y??0)*cellHeight,height:cellHeight,
+          maxWidth:`calc(100% - ${(surface?.frame.cursor?.x??0)*cellWidth}px)`,
+          fontSize:safeFontSize,fontFamily,lineHeight:`${cellHeight}px`,color:theme.foreground,background:theme.background}}
         onFocus={onFocus} onKeyDown={(event) => {
           if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "c") { event.preventDefault(); copy(); return; }
           if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "v") return;
@@ -248,8 +257,8 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
           const input = keyInput(event.nativeEvent);
           if (input) { event.preventDefault(); send(input); }
         }}
-        onCompositionStart={() => imeRef.current.start()}
-        onCompositionEnd={(event) => { send(imeRef.current.end(event.data)); event.currentTarget.value = ""; }}
+        onCompositionStart={() => {imeRef.current.start();setComposing(true);}}
+        onCompositionEnd={(event) => { send(imeRef.current.end(event.data));setComposing(false); event.currentTarget.value = ""; }}
         onInput={(event) => {
           const native = event.nativeEvent as InputEvent;
           const text = event.currentTarget.value;

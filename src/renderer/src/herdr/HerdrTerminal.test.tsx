@@ -15,6 +15,17 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("shared Herdr terminal ownership and input", () => {
+  it('positions visible composition at the terminal cursor and discards it when control is lost',()=>{
+    const t=transport();render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t}/>);
+    act(()=>receive({type:'surface',surface:{...surface(),frame:{...surface().frame,cursor:{x:1,y:0,shape:1,visible:true}}}}));
+    const input=screen.getByLabelText('터미널 입력');
+    expect(input).toHaveStyle({left:'9px',top:'0px'});
+    fireEvent.compositionStart(input);fireEvent.input(input,{target:{value:'한'},isComposing:true});
+    expect(input).toHaveClass('is-composing');expect(t.sendInput).not.toHaveBeenCalled();
+    act(()=>receive({type:'ownership',ownerId:'phone',sizeOwnerId:'phone'}));
+    expect(input).not.toHaveClass('is-composing');expect(input).toHaveValue('');
+    fireEvent.compositionEnd(input,{data:'한'});expect(t.sendInput).not.toHaveBeenCalled();
+  });
   it('reports readiness only after a surface is rendered and clears it on disconnect',()=>{
     const ready=vi.fn(),t=transport();render(<HerdrTerminal sessionId="s" viewerId="phone" ownerId={null} transport={t} onReady={ready}/>);
     expect(ready).not.toHaveBeenCalledWith(true);

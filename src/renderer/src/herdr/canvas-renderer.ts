@@ -1,5 +1,5 @@
 import type { FrameData, PaneSurfaceFrame } from "@shared/herdr-surface-types";
-import { decodeColor, type CellPoint } from "./surface-model";
+import { decodeColor, surfaceCellSpan, type CellPoint } from "./surface-model";
 import type { GraphicsCache } from "./graphics-cache";
 
 export interface CanvasMetrics { cellWidth: number; cellHeight: number; fontSize: number; fontFamily: string }
@@ -22,8 +22,7 @@ export function drawFrame(context: CanvasRenderingContext2D, frame: FrameData, m
   for (let y = 0; y < frame.height; y++) for (let x = 0; x < frame.width; x++) {
     const cell = frame.cells[y * frame.width + x], mod = cell.modifier;
     if (cell.skip || cell.symbol === "" || mod & 128 || mod & 48 && options.blinkVisible === false) continue;
-    let span = 1;
-    while (x + span < frame.width && (frame.cells[y * frame.width + x + span].skip || frame.cells[y * frame.width + x + span].symbol === "")) span++;
+    const span=surfaceCellSpan(frame,y*frame.width+x);
     context.save(); context.beginPath(); context.rect(x * cw, y * ch, span * cw, ch); context.clip();
     context.fillStyle = decodeColor(mod & 64 ? cell.bg : cell.fg, mod & 64 ? theme.background : theme.foreground);
     context.strokeStyle = context.fillStyle;
@@ -51,6 +50,7 @@ export function drawFrame(context: CanvasRenderingContext2D, frame: FrameData, m
     }
     if (mod & 256) line(x * cw, (x + span) * cw, y * ch + ch * 0.52);
     context.restore();
+    x+=span-1;
   }
   options.aboveText?.();
   if (options.selection) {

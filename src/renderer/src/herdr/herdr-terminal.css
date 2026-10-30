@@ -10,6 +10,7 @@
 .herdr-terminal-viewport{position:relative;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
 .herdr-terminal canvas{display:block;touch-action:pan-x pan-y;user-select:none}
 .herdr-terminal-input{position:absolute;left:0;top:0;width:1px;height:1px;padding:0;border:0;opacity:.01;resize:none;font-size:16px;overflow:hidden;white-space:pre;caret-color:transparent}
+.herdr-terminal-input.is-composing{opacity:1;width:24ch;max-width:100%;outline:none;caret-color:currentColor;z-index:1}
 .herdr-terminal-scroll{display:flex;align-items:center;gap:8px;padding:4px 8px;font-size:11px;color:var(--text-secondary,#a3aab8)}
 .herdr-terminal-scroll input{flex:1;min-width:40px;accent-color:var(--accent,#a8c7fa)}
 @media(max-width:600px){.herdr-terminal-toolbar{gap:6px}.herdr-terminal-size-owner{flex-basis:40%}.herdr-terminal button{padding:6px 9px}.herdr-terminal-scroll{min-height:32px}}

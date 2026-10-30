@@ -44,6 +44,12 @@ describe("Herdr surface state", () => {
     const realSpacer = fixture(); realSpacer.frame.cells[1].skip = false;
     expect(selectionText(realSpacer, { x: 1, y: 0 }, { x: 1, y: 0 })).toBe("한");
   });
+  it('copies native Windows blank wide-cell spacers without inserting spaces into Korean words',()=>{
+    const full=fixture();full.frame.width=7;full.frame.height=1;
+    full.frame.cells=['한',' ','글',' ',' ','C',' '].map(symbol=>({symbol,fg:0,bg:0,modifier:0,skip:false,hyperlink:null}));
+    expect(selectionText(full,{x:0,y:0},{x:6,y:0})).toBe('한글 C');
+    expect(selectionText(full,{x:1,y:0},{x:1,y:0})).toBe('한');
+  });
   it("decodes Reset, named, indexed and RGB without treating named colors as RGB", () => {
     expect(decodeColor(0, "#fefefe")).toBe("#fefefe");
     expect(decodeColor(1, "#fff")).toBe("#000000");

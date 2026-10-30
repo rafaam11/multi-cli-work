@@ -68,10 +68,11 @@ jobs:
       - run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
       - run: npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
       - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
+      - run: cargo build --locked --manifest-path native/herdr-bridge/Cargo.toml --example terminal-probe
       - name: Source GUI and phone gateway
         env:
           MCW_V2_E2E: '1'
-        run: npx playwright test e2e/herdr-v2.spec.ts
+        run: npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts
       - run: npx electron-builder --config electron-builder.v2.cjs --win --publish never
       - name: Verify actual stable package
         shell: pwsh
@@ -80,7 +81,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:MCW_V2_E2E='1'
           $env:MCW_V2_E2E_EXECUTABLE=(Resolve-Path 'release/win-unpacked/Multi CLI Work.exe').Path
-          npx playwright test e2e/herdr-v2.spec.ts --output=test-results/stable-packaged
+          npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts --output=test-results/stable-packaged
       - uses: actions/upload-artifact@v7
         with:
           name: release-windows
@@ -116,16 +117,17 @@ jobs:
       - run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
       - run: npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
       - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
+      - run: cargo build --locked --manifest-path native/herdr-bridge/Cargo.toml --example terminal-probe
       - name: Source GUI and phone gateway
         env:
           MCW_V2_E2E: '1'
-        run: xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts
+        run: xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts
       - name: Package Linux assets
         run: npx electron-builder --config electron-builder.v2.cjs --linux deb AppImage --x64 --publish never
       - name: Verify actual stable package
         run: |
           node scripts/v2/check-packaged-main.mjs release/linux-unpacked/resources/app.asar
-          MCW_V2_E2E=1 MCW_V2_E2E_EXECUTABLE="$PWD/release/linux-unpacked/multi-cli-work" xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts --output=test-results/stable-packaged
+          MCW_V2_E2E=1 MCW_V2_E2E_EXECUTABLE="$PWD/release/linux-unpacked/multi-cli-work" xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts --output=test-results/stable-packaged
       - uses: actions/upload-artifact@v7
         with:
           name: release-linux-x64
