@@ -6,6 +6,10 @@ The same unchanged native fixture was rerun after the startup-hydration correcti
 
 It passed again on workflow-corrected candidate `7c3b776fe918019a88ae40147fb1fc0a30aed03d` at 16:46:15 KST (one test, 6.10 seconds). The production transport and fixture remained unchanged.
 
+The font/fixture candidate `9452c46fff9593339643a90b6a08ed1fa09e39cb` passed the same native scenario at 17:14:58 KST (one test, 3.95 seconds; total runner duration 4.54 seconds).
+
+The final candidate `9476108b698e0f9791f8def8adbe3387bbffba62`, which additionally corrects the typography test parser, passed at 17:37:59 KST (one test, 3.28 seconds; total runner duration 3.85 seconds). This is the source-bound Windows SSH evidence for the release ledger.
+
 The fixture adapts the repository's Linux OpenSSH integration scenario to an isolated native Windows server: loopback-only ephemeral port, newly generated host/client keys and temporary `known_hosts`, public-key-only authentication, and a fixed authorized user. It uses its own configuration and child process. The existing system SSH service, user SSH keys, and machine configuration were not changed or stopped.
 
 Verified through actual SSH discovery and port forwarding:
