@@ -26,7 +26,10 @@ test('independent rescue restores original v1 offline when the first v2 Electron
   // The first Electron instruction never executes. Windows has already staged
   // during NSIS; the Linux wrapper stages before trying its missing payload.
   const payload=platform==='win32'?executable:`${executable}.electron`;
-  await fs.rename(payload,`${payload}.first-start-failure`);
+  // dpkg owns /opt; inject this failure with the same disposable-runner
+  // privilege used to install the package, without loosening its permissions.
+  if(platform==='deb')await run('sudo',['-n','mv','--',payload,`${payload}.first-start-failure`],{timeout:30000});
+  else await fs.rename(payload,`${payload}.first-start-failure`);
   await expect(run(executable,[],{env,windowsHide:true,timeout:30000,maxBuffer:1024*1024})).rejects.toThrow();
   const descriptor=JSON.parse(await fs.readFile(path.join(fixture.recoveryRoot,'startup-rescue.json'),'utf8'));
   expect(descriptor.v1UserData).toBe(fixture.userData);expect(descriptor.v1Registry).toBe(fixture.registry);
