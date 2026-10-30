@@ -55,11 +55,27 @@ export async function createInstallFixture(platform:InstallPlatform){
   };
   const authorizeOriginalDeb=async(assetsDirectory:string)=>{
     if(platform!=='deb')return async()=>{};
+    assertDisposableRunner();
     const command=`/usr/bin/dpkg --install ${path.join(assetsDirectory,ORIGINAL_INSTALLERS.deb.filename)}`;
-    const filename=`49-mcw-recovery-${randomUUID()}.rules`,source=path.join(directory,filename),target=path.join('/etc/polkit-1/rules.d',filename);
-    const rule=`polkit.addRule(function(action, subject) { if (action.id === 'org.freedesktop.policykit.exec' && subject.user === ${JSON.stringify(os.userInfo().username)} && action.lookup('program') === '/usr/bin/dpkg' && action.lookup('command_line') === ${JSON.stringify(command)}) return polkit.Result.YES; });\n`;
-    await fs.writeFile(source,rule);await run('sudo',['-n','install','-m','0644',source,target],{timeout:10000});
-    return async()=>{await run('sudo',['-n','rm','--',target],{timeout:10000});};
+    const key=`mcw-recovery-${randomUUID()}`,username=os.userInfo().username;
+    if(!/^[a-z_][a-z0-9_-]*[$]?$/.test(username))throw new Error('Unsupported disposable runner account');
+    const targets:string[]=[];
+    const installPolicy=async(name:string,target:string,contents:string)=>{const source=path.join(directory,name);await fs.writeFile(source,contents);targets.push(target);await run('sudo',['-n','install','-D','-m','0644',source,target],{timeout:10000});};
+    const cleanup=async()=>{if(targets.length)await run('sudo',['-n','rm','-f','--',...targets],{timeout:10000});};
+    try{
+      if(await fs.stat('/etc/polkit-1/rules.d').catch(()=>null)){
+        await installPolicy(`${key}.rules`,path.join('/etc/polkit-1/rules.d',`49-${key}.rules`),`polkit.addRule(function(action, subject) { if (action.id === 'org.freedesktop.policykit.exec' && subject.user === ${JSON.stringify(username)} && action.lookup('program') === '/usr/bin/dpkg' && action.lookup('command_line') === ${JSON.stringify(command)}) return polkit.Result.YES; });\n`);
+      }else{
+        // Ubuntu 22.04's 0.105 local authority uses .pkla, not JavaScript rules.
+        // A unique action restricts this short-lived grant to dpkg --install and
+        // the disposable runner (which already has passwordless sudo). The real
+        // controller still verifies and installs the pinned original artifact.
+        const action=`org.multicliwork.${key}`;
+        await installPolicy(`${key}.policy`,path.join('/usr/share/polkit-1/actions',`${action}.policy`),`<?xml version="1.0" encoding="UTF-8"?><policyconfig><action id="${action}"><description>Disposable MCW recovery installer test</description><message>Install original MCW fixture</message><defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>no</allow_active></defaults><annotate key="org.freedesktop.policykit.exec.path">/usr/bin/dpkg</annotate><annotate key="org.freedesktop.policykit.exec.argv1">--install</annotate></action></policyconfig>\n`);
+        await installPolicy(`${key}.pkla`,path.join('/etc/polkit-1/localauthority/50-local.d',`${key}.pkla`),`[Disposable recovery]\nIdentity=unix-user:${username}\nAction=${action}\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n`);
+      }
+      return cleanup;
+    }catch(error){await cleanup();throw error;}
   };
   const stopLaunchedV1=async(identity:ProcessIdentity)=>{
     assertDisposableRunner();const inventory=await readProcessInventory(bridge),actual=inventory.find(item=>item.pid===identity.pid);
