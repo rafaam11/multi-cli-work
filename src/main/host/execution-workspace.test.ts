@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, symlink, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -13,7 +13,8 @@ vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
 async function fixture() {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "mcw-workspace-")); directories.push(directory);
+  // Manually authored legacy manifests must use the real paths written by production, even under a CI temp alias.
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "mcw-workspace-"))); directories.push(directory);
   const repositoryPath = path.join(directory, "repository"); await mkdir(repositoryPath);
   const git = (...args: string[]) => exec("git", ["-C", repositoryPath, ...args]);
   await git("init"); await git("config", "user.email", "test@example.invalid"); await git("config", "user.name", "Test");

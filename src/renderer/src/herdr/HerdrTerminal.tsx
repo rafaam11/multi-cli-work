@@ -8,6 +8,7 @@ import "./herdr-terminal.css";
 import type { TerminalCommands } from "../TerminalPane";
 import { droppedPathsAsPromptText } from "../drop-paths";
 import { surfaceLinkAt } from "./surface-links";
+import { withKoreanFallback } from "./font-fallback";
 import type { FileLinkPosition, ResolvedFileLink } from "../terminal-link-provider";
 
 export interface HerdrTerminalProps {
@@ -39,7 +40,7 @@ const mouseButton = (button: number): ClientMouseButton => button === 1 ? "Middl
 
 /** The same DOM/Canvas component runs in Electron and the Android host gateway. */
 export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwnerId = ownerId,
-  fontSize = 14, fontFamily = '"Cascadia Code", "D2Coding", "Noto Sans Mono CJK KR", monospace',
+  fontSize = 14, fontFamily: preferredFontFamily = '"Cascadia Code", "D2Coding", "Noto Sans Mono CJK KR", monospace',
   theme = DEFAULT_CANVAS_THEME, onError, onFocus,onReady, onRegisterCommands, refreshRequest=0, onRefreshComplete, autoFocus=false, lineHeight=1.4, cursorStyle, cursorBlink, shiftEnterBytes, resolveFileLink, onOpenFileLink, onOpenExternal }: HerdrTerminalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null), viewportRef = useRef<HTMLDivElement>(null), inputRef = useRef<HTMLTextAreaElement>(null);
   const surfaceRef = useRef<PaneSurfaceFrame | null>(null), graphicsRef = useRef<GraphicsCache | null>(null);
@@ -65,6 +66,8 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   const refreshRef=useRef(refreshRequest), refreshPendingRef=useRef(false), refreshCompleteRef=useRef(onRefreshComplete);refreshCompleteRef.current=onRefreshComplete;
   const onCommandsRef=useRef(onRegisterCommands);onCommandsRef.current=onRegisterCommands;
   const [graphicsVersion, setGraphicsVersion] = useState(0), [error, setError] = useState<string | null>(null);
+  const [fontVersion,setFontVersion]=useState(0);
+  const fontFamily=withKoreanFallback(preferredFontFamily);
   const safeFontSize = Math.max(8, Math.min(40, fontSize));
   const [cellWidth, setCellWidth] = useState(safeFontSize * 0.6);
   const cellHeight = Math.ceil(safeFontSize * Math.max(1, Math.min(3,lineHeight)));
@@ -164,13 +167,20 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   useEffect(()=>()=>{if(refreshPendingRef.current){refreshPendingRef.current=false;refreshCompleteRef.current?.();}},[]);
   useEffect(()=>{if(autoFocus && writable)inputRef.current?.focus({preventScroll:true});},[autoFocus,writable]);
 
+  useEffect(()=>{
+    if(!document.fonts?.load)return;
+    let active=true;
+    void document.fonts.load('16px "MCW Noto Sans KR"', '한글').then(()=>{if(active)setFontVersion(version=>version+1);}).catch(reportError);
+    return ()=>{active=false;};
+  },[reportError]);
+
   useEffect(() => {
     const context = canvasRef.current?.getContext("2d");
     if (!context) return;
     context.font = `${safeFontSize}px ${fontFamily}`;
     const measured = context.measureText("M").width;
     if (measured > 0) setCellWidth(Math.ceil(measured * 100) / 100);
-  }, [safeFontSize, fontFamily]);
+  }, [safeFontSize, fontFamily, fontVersion]);
 
   useEffect(() => {
     if (!surface) return;
@@ -195,7 +205,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
     context.setTransform(scale, 0, 0, scale, 0, 0);
     drawSurface(context, surface, metrics, theme, graphicsRef.current!, { selection, blinkVisible: blink, cursorStyle, cursorBlink });
     if(!pendingSnapshotRef.current&&!disconnectedRef.current)readyRef.current?.(true);
-  }, [surface, cellWidth, cellHeight, safeFontSize, fontFamily, theme, selection, blink, graphicsVersion, cursorStyle, cursorBlink]);
+  }, [surface, cellWidth, cellHeight, safeFontSize, fontFamily, theme, selection, blink, graphicsVersion, fontVersion, cursorStyle, cursorBlink]);
 
   useEffect(() => {
     const viewport = viewportRef.current;

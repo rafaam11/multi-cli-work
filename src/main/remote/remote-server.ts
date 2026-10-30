@@ -38,6 +38,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
+  ".otf": "font/otf",
 };
 const ASSET_NAME = /^[\w.-]+$/;
 const MAX_PAIR_BODY_BYTES = 4_096;

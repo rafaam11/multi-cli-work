@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
@@ -39,7 +40,12 @@ export default defineConfig({
         "@shared": resolve("src/shared"),
       },
     },
-    plugins: [react()],
+    plugins: [react(), {
+      name: "bundled-font-notices",
+      generateBundle() {
+        for (const name of ["OFL.txt", "README.md"]) this.emitFile({type:"asset",fileName:`font-licenses/${name}`,source:readFileSync(resolve("src/renderer/src/assets/fonts",name))});
+      },
+    }],
     build: {
       rollupOptions: {
         input: {

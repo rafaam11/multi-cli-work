@@ -2,3 +2,6 @@
 scripts/v2/node-v22.12.0-SHASUMS256.txt -text
 # Release evidence is hash-bound, including explicitly authorized validation deferrals.
 docs/release/evidence/v2/** -text
+# Preserve the bundled upstream font license and binary hashes on Windows too.
+src/renderer/src/assets/fonts/OFL.txt -text
+src/renderer/src/assets/fonts/*.otf -text

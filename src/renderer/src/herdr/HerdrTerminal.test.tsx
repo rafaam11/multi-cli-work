@@ -15,6 +15,17 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("shared Herdr terminal ownership and input", () => {
+  it("remeasures and redraws the terminal after the bundled font finishes loading",async()=>{
+    let finish!:(faces:unknown[])=>void;
+    Object.defineProperty(document,"fonts",{configurable:true,value:{load:vi.fn(()=>new Promise(resolve=>{finish=resolve;}))}});
+    try {
+      const t=transport();render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t}/>);
+      act(()=>receive({type:"surface",surface:surface()}));
+      const before=vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
+      await act(async()=>{finish([]);await Promise.resolve();});
+      expect(vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length).toBeGreaterThan(before);
+    } finally {delete (document as unknown as {fonts?:unknown}).fonts;}
+  });
   it('positions visible composition at the terminal cursor and discards it when control is lost',()=>{
     const t=transport();render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t}/>);
     act(()=>receive({type:'surface',surface:{...surface(),frame:{...surface().frame,cursor:{x:1,y:0,shape:1,visible:true}}}}));

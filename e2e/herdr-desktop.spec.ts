@@ -44,6 +44,25 @@ test('desktop terminal accepts Korean composition, paste, mouse, graphics and sc
     const pane=page.locator(`[data-session-id="${sessionId}"]`),input=pane.getByLabel('터미널 입력',{exact:true}),canvas=pane.getByRole('img',{name:'터미널 화면'});
     await expect(canvas).toBeVisible();await pane.getByRole('button',{name:'제어 요청',exact:true}).click();
     await expect(input).toHaveAttribute('aria-readonly','false');
+    // A missing Korean face renders distinct syllables as the same tofu box.
+    // Check the packaged face loaded and rasterize through the real input's
+    // preferred-font stack so this detects missing Linux fonts without network.
+    const glyphs=await input.evaluate(async element=>{
+      const faces=await document.fonts.load('32px "MCW Noto Sans KR"','한글');
+      const family=getComputedStyle(element).fontFamily;
+      const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
+      const context=canvas.getContext('2d')!;context.font=`32px ${family}`;context.textBaseline='top';context.fillStyle='#fff';
+      const raster=(text:string)=>{context.clearRect(0,0,64,64);context.fillText(text,0,0);return Array.from(context.getImageData(0,0,64,64).data).filter((_,index)=>index%4===3);};
+      const a=raster('한'),b=raster('글');
+      // The fallback must not replace Latin with its proportional glyphs when
+      // the user's preferred monospace faces are unavailable on Linux.
+      context.font='32px "MCW nonexistent test font", "MCW Noto Sans KR", monospace';
+      const asciiI=context.measureText('iiiiiiii').width,asciiW=context.measureText('WWWWWWWW').width;
+      return {loaded:faces.some(face=>face.status==='loaded'),family,inkA:a.filter(value=>value>0).length,inkB:b.filter(value=>value>0).length,difference:a.reduce((sum,value,index)=>sum+(value!==b[index]?1:0),0),asciiI,asciiW};
+    });
+    expect(glyphs.loaded).toBe(true);expect(glyphs.family).toContain('MCW Noto Sans KR');
+    expect(glyphs.inkA).toBeGreaterThan(30);expect(glyphs.inkB).toBeGreaterThan(30);expect(glyphs.difference).toBeGreaterThan(50);
+    expect(Math.abs(glyphs.asciiI-glyphs.asciiW)).toBeLessThan(0.01);
     await expect.poll(()=>surface?.frame.cells.map(cell=>cell.symbol).join('')).toContain('READY>');
     await fs.writeFile(info.outputPath('initial-surface.json'),JSON.stringify(surface!.frame));
     await info.attach('initial-surface',{path:info.outputPath('initial-surface.json'),contentType:'application/json'});
