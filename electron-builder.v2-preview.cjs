@@ -12,6 +12,7 @@ module.exports = {
     { from: `build/herdr-bridge/${process.platform}-${process.arch}`, to: 'herdr-bridge' },
     { from: 'out/renderer', to: 'v2/mobile' },
     { from: 'scripts/recovery', to: 'recovery-scripts', filter: ['core.mjs', 'recover.mjs'] },
+    ...(require('node:fs').existsSync(require('node:path').join(__dirname, 'build/mobile/shell.apk')) ? base.extraResources : []),
   ],
   win: { ...base.win, signExecutable: false, artifactName: 'Multi-CLI-Work-Preview-${version}-${arch}.${ext}' },
   linux: { ...base.linux, artifactName: 'Multi-CLI-Work-Preview-${version}-${arch}.${ext}', desktop: {entry:{...base.linux.desktop.entry,Name:'Multi CLI Work Preview'}} },

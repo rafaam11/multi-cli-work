@@ -6,7 +6,13 @@ on:
 permissions:
   contents: read
 jobs:
+  android-package:
+    uses: ./.github/workflows/mobile-package.yml
+    secrets: inherit
   desktop:
+    needs: android-package
+    env:
+      MCW_V2_E2E_SHELL: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +30,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libnotify4 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1 libsecret-1-0 libfuse2 policykit-1 openssh-server && sudo mkdir -p /run/sshd
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
+      - uses: actions/download-artifact@v8
+        with:
+          name: mobile-shell
+          path: build/mobile
       - name: Acquire digest-pinned resources
         shell: bash
         env:

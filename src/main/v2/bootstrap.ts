@@ -52,7 +52,7 @@ export async function prepareV2Data(options:V2BootstrapOptions){
  const settingsPath=path.join(layout.userData,"settings.json");
  const settings=await exists(settingsPath)?JSON.parse(await fs.readFile(settingsPath,"utf8")):{};
  if(!settings||typeof settings!=="object"||Array.isArray(settings))throw new Error("v1 설정 파일을 확인해야 합니다.");
- settings.general={...settings.general,autoResumeSessions:false,repoSyncOnSessionStart:false,autoCheckUpdates:false,jkMcp:false};
+ settings.general={...settings.general,autoResumeSessions:false,repoSyncOnSessionStart:false,jkMcp:false};
  await fs.writeFile(settingsPath,JSON.stringify(settings,null,2),{mode:0o600});
  await fs.writeFile(marker,JSON.stringify({schemaVersion:2,backupDirectory,createdAt:new Date().toISOString()}),{flag:"wx",mode:0o600});
  return {...layout,backupDirectory,modBackupDirectory};

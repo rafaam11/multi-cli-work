@@ -299,7 +299,7 @@ if (!hasSingleInstanceLock) {
         console.error("Tray creation failed; close will quit instead of hiding the app.", error);
       }
       initUpdater({
-        autoCheck: !v2Enabled && (runtime?.settings.current().general.autoCheckUpdates ?? true),
+        autoCheck: process.env.MCW_RUNTIME !== 'v2-preview' && !app.getVersion().includes('-') && (runtime?.settings.current().general.autoCheckUpdates ?? true),
         getWindow: () => mainWindow,
       });
       if (shouldFocusWhenReady) showMainWindow();

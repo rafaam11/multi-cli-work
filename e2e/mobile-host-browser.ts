@@ -1,6 +1,8 @@
 import {chromium,expect,type TestInfo} from '@playwright/test';
 import type {HostClient} from '../src/main/host/host-client';
 import type {StoredPairing} from '../src/renderer/src/mobile/remote-client';
+import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 /** Desktop Chrome at a narrow viewport. This is gateway/browser verification,
  * explicitly not physical Android, Android IME or APK verification. */
 export async function openMobileHostBrowser(input:{client:HostClient;pairing:StoredPairing;sessionId:string;info:TestInfo}){
@@ -20,6 +22,11 @@ export async function openMobileHostBrowser(input:{client:HostClient;pairing:Sto
     await expect(page.getByLabel('터미널 입력',{exact:true})).toHaveAttribute('aria-readonly','true');
     await page.screenshot({path:input.info.outputPath('mobile-host-observer-chrome.png')});
     return {page,async afterGuiQuit(surfaceText:()=>string){
+      if(process.env.MCW_V2_E2E_SHELL==='1'){
+        const expected=JSON.parse(await readFile('build/mobile/shell.json','utf8'));
+        const response=await page.request.get(new URL('/shell.apk',status.url).href);expect(response.status()).toBe(200);
+        expect(createHash('sha256').update(await response.body()).digest('hex')).toBe(expected.sha256);
+      }
       await page.reload();await expect(page.getByRole('button',{name:'제어 요청',exact:true})).toBeEnabled();
       await page.getByRole('button',{name:'제어 요청',exact:true}).click();await expect(page.getByLabel('터미널 입력',{exact:true})).toHaveAttribute('aria-readonly','false');
       await page.getByLabel('터미널 입력',{exact:true}).pressSequentially('echo MCW_PHONE_SURVIVES');await page.getByLabel('터미널 입력',{exact:true}).press('Enter');
