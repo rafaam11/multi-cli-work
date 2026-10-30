@@ -78,9 +78,16 @@ export async function createInstallFixture(platform:InstallPlatform){
     }catch(error){await cleanup();throw error;}
   };
   const stopLaunchedV1=async(identity:ProcessIdentity)=>{
-    assertDisposableRunner();const inventory=await readProcessInventory(bridge),actual=inventory.find(item=>item.pid===identity.pid);
-    expect(actual?.startId).toBe(identity.startId);
-    const owned=captureProcessTree(identity.pid,inventory);if(owned.some(item=>!item.startId))throw new Error('Fixture process tree cannot be identified');
+    assertDisposableRunner();let owned:ProcessIdentity[]=[];
+    // Electron starts and retires utility children while the native snapshot
+    // is read. Retry observation only; never signal an unidentified process.
+    await expect.poll(async()=>{
+      const inventory=await readProcessInventory(bridge),actual=inventory.find(item=>item.pid===identity.pid);
+      expect(actual?.startId).toBe(identity.startId);
+      const tree=captureProcessTree(identity.pid,inventory);
+      if(tree.some(item=>!item.startId))return false;
+      owned=tree;return true;
+    },{timeout:10000,message:'Fixture process tree must have native creation identities before cleanup'}).toBe(true);
     // Only this no-session fixture's newly launched v1 is stopped. A developer
     // process can never reach this code, and each PID is rechecked for reuse.
     for(const known of owned){const fresh=(await readProcessInventory(bridge)).find(item=>item.pid===known.pid);if(fresh?.startId===known.startId)try{process.kill(known.pid,'SIGTERM');}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}}
