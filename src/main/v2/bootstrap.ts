@@ -3,11 +3,19 @@ import path from "node:path";
 import { createV1Backup, verifyV1Backup, getV2DataLayout, compareV1WithBackup, createModBackup,verifyModBackup,compareModBackup } from "../recovery";
 import {discoverV1ModSources} from "../recovery/mod-sources";
 
-export interface V2BootstrapOptions {v1UserData:string;v1Registry:string;v1ClaudeConfig?:string;recoveryRoot:string;assertStopped:()=>Promise<void>}
+export interface PreparedV2Data {userData:string;registry:string;recoveryRoot:string;backupDirectory:string;modBackupDirectory:string|null}
+export interface V2BootstrapOptions {v1UserData:string;v1Registry:string;v1ClaudeConfig?:string;recoveryRoot:string;assertStopped:()=>Promise<void>;beforeInitialize?(prepared:PreparedV2Data):Promise<void>}
 const exists=async(file:string)=>{try{await fs.lstat(file);return true;}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return false;throw error;}};
 async function writableTree(directory:string):Promise<void>{for(const entry of await fs.readdir(directory,{withFileTypes:true})){const file=path.join(directory,entry.name);if(entry.isDirectory())await writableTree(file);else if(entry.isFile())await fs.chmod(file,0o600);}}
+async function copySnapshotRoot(source:string,destination:string){
+ await fs.mkdir(destination,{recursive:true,mode:0o700});
+ // Electron's Node rejects an existing destination directory with errorOnExist,
+ // while Node 22 merges it. Copy each child exclusively on both runtimes, keeping
+ // the early host identity and refusing every conflicting destination entry.
+ for(const name of await fs.readdir(source))await fs.cp(path.join(source,name),path.join(destination,name),{recursive:true,errorOnExist:true,force:false});
+}
 /** Called while the v1 userData single-instance lock is held and before registry modules load. */
-export async function prepareV2Data(options:V2BootstrapOptions){
+export async function prepareV2Data(options:V2BootstrapOptions):Promise<PreparedV2Data>{
  const layout=getV2DataLayout(options),backupDirectory=path.join(layout.recoveryRoot,"v1-before-v2");
  await options.assertStopped();
  const samePath=(a:string,b:string)=>process.platform==='win32'?path.resolve(a).toLowerCase()===path.resolve(b).toLowerCase():path.resolve(a)===path.resolve(b);
@@ -27,6 +35,13 @@ export async function prepareV2Data(options:V2BootstrapOptions){
  }
  else {await fs.mkdir(options.v1UserData,{recursive:true});await fs.mkdir(options.v1Registry,{recursive:true});await createV1Backup({destination:backupDirectory,sources,assertStopped:options.assertStopped});}
  const modBackupDirectory=options.v1ClaudeConfig?path.join(layout.recoveryRoot,"v1-mods-before-v2"):null;
+ if(!initialized){
+  if(await exists(layout.userData)||await exists(layout.registry))throw new Error("v2 초기 복사본이 불완전합니다. 보존된 폴더를 확인한 후 복구해야 합니다.");
+  await options.assertStopped();
+  // The caller may create only the new host identity/empty roots and independent
+  // recovery launchers here. No host, provider or external mod starts before copy.
+  await options.beforeInitialize?.({...layout,backupDirectory,modBackupDirectory});
+ }
  if(modBackupDirectory&&options.v1ClaudeConfig) {
   const modSources=await discoverV1ModSources(options.v1ClaudeConfig);
   if(await exists(modBackupDirectory))await verifyModBackup(modBackupDirectory);
@@ -44,10 +59,9 @@ export async function prepareV2Data(options:V2BootstrapOptions){
   await fs.writeFile(path.join(layout.recoveryRoot,"v1-differences.json"),JSON.stringify(await compareV1WithBackup({backupDirectory,sources}),null,2),{mode:0o600});
   return {...layout,backupDirectory,modBackupDirectory};
  }
- if(await exists(layout.userData)||await exists(layout.registry))throw new Error("v2 초기 복사본이 불완전합니다. 보존된 폴더를 확인한 후 복구해야 합니다.");
  await options.assertStopped();
- await fs.cp(path.join(backupDirectory,"data","userData"),layout.userData,{recursive:true,errorOnExist:true,force:false});
- await fs.cp(path.join(backupDirectory,"data","registry"),layout.registry,{recursive:true,errorOnExist:true,force:false});
+ await copySnapshotRoot(path.join(backupDirectory,"data","userData"),layout.userData);
+ await copySnapshotRoot(path.join(backupDirectory,"data","registry"),layout.registry);
  await writableTree(layout.userData);await writableTree(layout.registry);
  const settingsPath=path.join(layout.userData,"settings.json");
  const settings=await exists(settingsPath)?JSON.parse(await fs.readFile(settingsPath,"utf8")):{};

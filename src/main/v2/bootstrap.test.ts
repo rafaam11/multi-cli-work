@@ -2,9 +2,44 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { expect,it } from "vitest";
+import { expect,it,vi } from "vitest";
 import { prepareV2Data } from "./bootstrap";
 import { createSettingsService } from "../settings/settings-store";
+import {verifyV1Backup} from '../recovery';
+import {ensureDesktopHostIdentity} from './desktop-host';
+import {openOfflineRecoveryHost} from '../recovery/offline-host';
+
+it.each([false,true])('preserves recovery before cloning v2 data, including a failed copy (failure=%s)',async(failure)=>{
+ const root=await fs.mkdtemp(path.join(tmpdir(),'mcw-before-copy-'));
+ try{
+  const input={v1UserData:path.join(root,'v1'),v1Registry:path.join(root,'registry'),recoveryRoot:path.join(root,'recovery'),assertStopped:async()=>{}};
+  await fs.mkdir(input.v1UserData);await fs.mkdir(input.v1Registry);
+  const settings='{"general":{"autoCheckUpdates":true}}';await fs.writeFile(path.join(input.v1UserData,'settings.json'),settings);
+  let hostId='';
+  const beforeInitialize=vi.fn(async(prepared:{userData:string;registry:string;backupDirectory:string})=>{
+    await verifyV1Backup(prepared.backupDirectory);
+    await expect(fs.access(path.join(prepared.userData,'settings.json'))).rejects.toThrow();
+    hostId=(await ensureDesktopHostIdentity(prepared.userData)).hostId;
+    await fs.mkdir(prepared.registry);
+    await fs.writeFile(path.join(input.recoveryRoot,'launcher-ready'),'independent recovery can use the verified backup');
+    if(failure)await fs.writeFile(path.join(prepared.userData,'settings.json'),'conflicting partial copy');
+  });
+  const result=prepareV2Data({...input,beforeInitialize});
+  if(failure)await expect(result).rejects.toThrow();else await result;
+  expect(beforeInitialize).toHaveBeenCalledOnce();
+  expect(await fs.readFile(path.join(input.recoveryRoot,'launcher-ready'),'utf8')).toContain('verified backup');
+  expect(await fs.readFile(path.join(input.v1UserData,'settings.json'),'utf8')).toBe(settings);
+  const userData=`${input.v1UserData}-v2`;
+  expect(JSON.parse(await fs.readFile(path.join(userData,'host/identity.json'),'utf8')).hostId).toBe(hostId);
+  const authority=await openOfflineRecoveryHost({directory:path.join(userData,'host'),hostId,bridgePath:path.join(root,'bridge'),runtimePaths:[],inventory:async()=>[]});
+  try{expect(await authority.request('/recovery-plan')).toMatchObject({canShutdown:true,accepting:false});}finally{await authority.close();}
+  if(failure){
+    expect(await fs.readFile(path.join(userData,'settings.json'),'utf8')).toBe('conflicting partial copy');
+    await expect(fs.access(path.join(userData,'v2-initialized.json'))).rejects.toThrow();
+    await expect(prepareV2Data({...input,beforeInitialize})).rejects.toThrow(/불완전/);expect(beforeInitialize).toHaveBeenCalledOnce();
+  }
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+});
 it('does not replace the original recovery source when a later launch changes roots',async()=>{
  const root=await fs.mkdtemp(path.join(tmpdir(),'mcw-bootstrap-origin-'));
  try{

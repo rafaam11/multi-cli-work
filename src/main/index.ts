@@ -1,8 +1,9 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, dialog, shell } from "electron";
 import path from "node:path";
+import fs from 'node:fs/promises';
 import type { DesktopRuntime, DesktopWindowHost } from "./runtime";
 import os from "node:os";
-import { prepareV2Data, v2RegistryEnvironment } from "./v2/bootstrap";
+import { prepareV2Data, v2RegistryEnvironment, type PreparedV2Data } from "./v2/bootstrap";
 import { startDesktopHost, preserveRecoveryRuntime,ensureDesktopHostIdentity } from "./v2/desktop-host";
 import { trayIconDataUrl } from "./tray-icon";
 import { checkForUpdates, initUpdater, quitAndInstall, suspendUpdaterForRecovery, assertUpdaterAvailable } from "./updater";
@@ -30,6 +31,7 @@ let trayUnavailable = false;
 let windowAttention: AttentionSnapshot = { window: "none", unread: {} };
 const v2Enabled = process.env.MCW_RUNTIME === "v2-preview" || /^2\./.test(app.getVersion());
 let v2Host: DesktopWindowHost["v2"];
+let v2RecoveryDirectory:string|undefined;
 const quitCoordinator = new QuitCoordinator(async () => {
   await runtime?.dispose();
 });
@@ -259,21 +261,31 @@ if (!hasSingleInstanceLock) {
     try {
       if (v2Enabled) {
         const v1UserData = app.getPath("userData");
-        await assertRecoveryStartupAllowed(process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`);
-        const prepared = await prepareV2Data({v1UserData, v1Registry: process.env.MCW_V1_REGISTRY ?? path.join(os.homedir(), ".multi-cli-work"), v1ClaudeConfig:process.env.MULTI_CLI_WORK_CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(),".claude"), recoveryRoot: process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`,
-          assertStopped: async () => {if (!hasSingleInstanceLock || runtime) throw new Error("v1 종료를 확인하지 못했습니다.");}});
-        app.setPath("userData", prepared.userData);
-        Object.assign(process.env, v2RegistryEnvironment(prepared.registry));
+        const recoveryRoot=process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`;
+        if(!path.isAbsolute(recoveryRoot))throw new Error('독립 복구 위치는 절대 경로여야 합니다.');
+        v2RecoveryDirectory=recoveryRoot;
+        await assertRecoveryStartupAllowed(recoveryRoot);
         const sourceRoot = path.resolve(__dirname,"../..");
         const resourcesDirectory = app.isPackaged ? path.join(process.resourcesPath,"v2") : path.join(sourceRoot,"build/v2");
         const bridgeDirectory = app.isPackaged ? path.join(process.resourcesPath,"herdr-bridge") : path.join(sourceRoot,`build/herdr-bridge/${process.platform}-${process.arch}`);
-        const recoveryAssets=await preserveRecoveryRuntime(resourcesDirectory, prepared.recoveryRoot, path.dirname(process.execPath), app.isPackaged ? path.join(process.resourcesPath,"recovery-scripts") : path.join(sourceRoot,"scripts/recovery"),bridgeDirectory);
-        const {hostId}=await ensureDesktopHostIdentity(prepared.userData);
+        await fs.mkdir(recoveryRoot,{recursive:true,mode:0o700});
+        const recoveryAssets=await preserveRecoveryRuntime(resourcesDirectory, recoveryRoot, path.dirname(process.execPath), app.isPackaged ? path.join(process.resourcesPath,"recovery-scripts") : path.join(sourceRoot,"scripts/recovery"),bridgeDirectory);
         const appImage=process.platform==='linux'?process.env.APPIMAGE:undefined;
         const cacheRoot=process.platform==='win32'?(process.env.LOCALAPPDATA??path.join(os.homedir(),'AppData/Local')):(process.env.XDG_CACHE_HOME??path.join(os.homedir(),'.cache'));
-        const recoveryOptions={hostId,v1ProviderEnvironment:captureV1ProviderEnvironment(process.env),backupDirectory:prepared.backupDirectory,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
-        // Keep the independent launchers usable even if daemon initialization fails.
-        await preserveRecoveryInstallation(recoveryOptions);
+        const prepareRecovery=async(data:PreparedV2Data)=>{
+          await fs.mkdir(data.registry,{recursive:true,mode:0o700});
+          const {hostId}=await ensureDesktopHostIdentity(data.userData);
+          const options={hostId,v1ProviderEnvironment:captureV1ProviderEnvironment(process.env),backupDirectory:data.backupDirectory,recoveryRoot:data.recoveryRoot,assetsDirectory:recoveryAssets,userData:data.userData,registryRoot:data.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
+          await preserveRecoveryInstallation(options);return options;
+        };
+        const prepared = await prepareV2Data({v1UserData, v1Registry: process.env.MCW_V1_REGISTRY ?? path.join(os.homedir(), ".multi-cli-work"), v1ClaudeConfig:process.env.MULTI_CLI_WORK_CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(),".claude"), recoveryRoot,
+          assertStopped: async () => {if (!hasSingleInstanceLock || runtime) throw new Error("v1 종료를 확인하지 못했습니다.");},
+          // A failed data/mod copy still leaves a verified backup and an independent
+          // controller for the empty, never-started host. No provider has run yet.
+          beforeInitialize:async(data)=>{await prepareRecovery(data);}});
+        app.setPath("userData", prepared.userData);
+        Object.assign(process.env, v2RegistryEnvironment(prepared.registry));
+        const recoveryOptions=await prepareRecovery(prepared);
         const mobileDirectory=app.isPackaged?path.join(resourcesDirectory,'mobile'):path.join(sourceRoot,'out/renderer');
         const shellCandidate=app.isPackaged?path.join(process.resourcesPath,'mobile'):path.join(sourceRoot,'build/mobile');
         const shellDirectory=await import('node:fs/promises').then(fs=>fs.stat(shellCandidate).then(info=>info.isDirectory()?shellCandidate:undefined,error=>{if(error.code==='ENOENT')return undefined;throw error;}));
@@ -305,11 +317,16 @@ if (!hasSingleInstanceLock) {
       if (shouldFocusWhenReady) showMainWindow();
     } catch (error) {
       console.error("Desktop startup failed", error);
+      let detail=error instanceof Error ? error.message : String(error);
+      if(v2RecoveryDirectory){
+        const launcher=path.join(v2RecoveryDirectory,`return-to-v1.${process.platform==='win32'?'cmd':'sh'}`);
+        if(await fs.access(launcher).then(()=>true,()=>false))detail+=`\n\n앱을 닫은 뒤 독립 복구 실행기로 v1.55.1 복귀를 진행할 수 있습니다:\n${launcher}`;
+      }
       await dialog.showMessageBox({
         type: "error",
         title: "멀티 터미널 작업기",
         message: "앱을 시작할 수 없습니다.",
-        detail: error instanceof Error ? error.message : String(error),
+        detail,
       });
       app.quit();
       return;

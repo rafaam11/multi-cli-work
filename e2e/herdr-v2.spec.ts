@@ -16,6 +16,7 @@ import {exerciseRecoveryHold} from './recovery-hold';
 import {exerciseOfflineRecovery} from './recovery-offline';
 import {RemoteDeviceStore} from '../src/main/remote/device-store';
 import {createServer} from 'node:net';
+import {randomUUID} from 'node:crypto';
 import {openMobileHostBrowser} from './mobile-host-browser';
 
 test("v2 Canvas and independent host survive GUI quit and reconnect without launching a duplicate", async ({}, info) => {
@@ -221,4 +222,43 @@ test('a reconnect error keeps terminal controls inside the workspace at desktop 
       expect(rectangles[1]).toBeLessThanOrEqual(rectangles[0]+1);
     }
   }finally{await browser.close();}
+});
+
+test('packaged startup failure leaves an independent recovery controller before data cloning',async({},info)=>{
+  test.skip(process.env.MCW_V2_E2E!=='1'||!process.env.MCW_V2_E2E_EXECUTABLE,'Uses a packaged candidate; never executes an installer');
+  test.setTimeout(90000);
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'mcw-v2-before-copy-'));
+  const userData=path.join(directory,'user-data'),registry=path.join(directory,'registry'),recoveryRoot=path.join(directory,'recovery'),claude=path.join(directory,'claude');
+  await fs.mkdir(userData);await fs.mkdir(registry);await fs.mkdir(path.join(claude,'plugins'),{recursive:true});
+  await fs.writeFile(path.join(userData,'settings.json'),'{"general":{"autoCheckUpdates":true}}');
+  // An unverifiable v1 mod registry must stop initialization after the data backup,
+  // without requiring a working GUI/host to inspect and cancel independent recovery.
+  await fs.writeFile(path.join(claude,'plugins/installed_plugins.json'),'{"plugins":[]}');
+  const environment={...process.env,MCW_RUNTIME:'v2-preview',MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:recoveryRoot,MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:claude};
+  delete (environment as NodeJS.ProcessEnv).ELECTRON_RUN_AS_NODE;
+  let app:ElectronApplication|undefined,succeeded=false;
+  try{
+    app=await electron.launch({executablePath:process.env.MCW_V2_E2E_EXECUTABLE!,args:[],env:Object.fromEntries(Object.entries(environment).filter((entry):entry is [string,string]=>typeof entry[1]==='string'))});
+    const installationFile=path.join(recoveryRoot,'installation.json');
+    await expect.poll(()=>fs.access(installationFile).then(()=>true,()=>false),{timeout:30000}).toBe(true);
+    const installation=JSON.parse(await fs.readFile(installationFile,'utf8'));
+    await expect(fs.access(path.join(recoveryRoot,`return-to-v1.${process.platform==='win32'?'cmd':'sh'}`))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(`${userData}-v2`,'v2-initialized.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(installation.hostDirectory,'mcw-host.json'))).rejects.toThrow();
+    const child=app.process();await app.evaluate(({app})=>app.quit());await expect.poll(()=>child.exitCode,{timeout:15000}).not.toBe(null);app=undefined;
+    const operationId=randomUUID(),operationDirectory=path.join(recoveryRoot,'operations',operationId);await fs.mkdir(operationDirectory,{recursive:true});
+    const request={...installation,operationId,operationDirectory,destination:path.join(operationDirectory,'prepared'),expectedHostIds:[installation.localHostId],guiProcess:null};
+    const requestFile=path.join(operationDirectory,'request.json');await fs.writeFile(requestFile,JSON.stringify(request));
+    const runtime=path.join(installation.assetsDirectory,process.platform==='win32'?'recovery-node.exe':'recovery-node');
+    const script=`(async()=>{const request=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));const {createAdapter}=require(process.argv[2]);const adapter=await createAdapter(request);try{await adapter.stopNewWork();const observations=await adapter.observeHosts();await adapter.cancel();process.stdout.write(JSON.stringify({observations,phase:adapter.state().phase}));}finally{await adapter.close();}})().catch(error=>{console.error(error);process.exitCode=1;});`;
+    // No gracefulStop, installer, data activation or v1 launch is invoked here.
+    const result=await promisify(execFile)(runtime,['-e',script,requestFile,path.join(installation.assetsDirectory,'recovery-controller.cjs')],{env:environment,windowsHide:true,timeout:30000,maxBuffer:65536});
+    expect(JSON.parse(result.stdout)).toMatchObject({phase:'cancelled',observations:[{hostId:installation.localHostId,state:'completed'}]});
+    expect(await fs.readFile(path.join(userData,'settings.json'),'utf8')).toBe('{"general":{"autoCheckUpdates":true}}');
+    expect(await fs.readFile(path.join(claude,'plugins/installed_plugins.json'),'utf8')).toBe('{"plugins":[]}');
+    await info.attach('independent-startup-recovery',{body:result.stdout,contentType:'application/json'});succeeded=true;
+  }finally{
+    if(app){const child=app.process();await app.evaluate(({app})=>app.quit()).catch(()=>undefined);await expect.poll(()=>child.exitCode,{timeout:15000}).not.toBe(null);}
+    if(succeeded)await fs.rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100});else await info.attach('startup-failure-fixture',{body:directory,contentType:'text/plain'});
+  }
 });
