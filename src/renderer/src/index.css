@@ -4411,6 +4411,9 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .workspace-body {
   display: grid;
+  /* Error banners must shrink with this column instead of widening the terminal
+     underneath the file explorer through the implicit auto track. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;

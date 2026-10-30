@@ -24,7 +24,7 @@ import { projectName, relativeTime, sessionLabel, statusLabels } from "./session
 import { TagEditor } from "./TagEditor";
 import { categoryAccentClass } from "./work-project-accent";
 import { errorMessage } from "./ipc-error";
-import { TaskPanel } from "./herdr/TaskPanel";
+import { ProjectTasks } from "./herdr/ProjectTasks";
 import { HostTerminalPane } from "./herdr/HostTerminalPane";
 
 const STATUS_OPTIONS: Array<ProjectStatus | ""> = ["", "진행중", "보류", "완료", "보관"];
@@ -442,7 +442,7 @@ export function WorkProjectDetailPage({
         </p>
       ) : null}
       {window.mcwV2?.version === 2 && <>
-        <TaskPanel projectId={workProject.id} defaultCwd={members[0]?.project.rootPath ?? ""} onOpenTerminal={setTaskTerminal} />
+        <ProjectTasks project={workProject} defaultCwd={members[0]?.project.rootPath ?? ""} onOpenTerminal={setTaskTerminal} onLinksChange={async(hostProjects)=>onRegistryChanged(await window.multiCliWork.workProjects.update(workProject.id,{hostProjects}))} />
         {taskTerminal && <section style={{height:480,position:"relative"}} aria-label="작업 터미널"><button type="button" onClick={() => setTaskTerminal(null)}>터미널 접기</button><HostTerminalPane sessionId={taskTerminal} /></section>}
       </>}
       <div className="detail-grid work-project-grid">

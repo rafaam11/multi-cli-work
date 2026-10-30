@@ -1,4 +1,4 @@
-import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
+import { _electron as electron, chromium, expect, test, type ElectronApplication } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -131,7 +131,8 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     // Seed only this disposable host's last observation. The remote connection
     // stays disabled; this checks offline UI without contacting a real PC.
     const remoteId="offline-fixture",remoteStore=new TaskStore({directory:path.join(directory,"remote-fixture"),hostId:remoteId});
-    const remoteTask=await remoteStore.createTask({title:"원격 결과 보존",brief:"연결이 끊겨도 검증 결과를 보존합니다.",lead:{provider:"claude",profileId:"fixture",hostId:remoteId},workers:[]});
+    const remoteProjectId='33333333-3333-4333-8333-333333333333';
+    const remoteTask=await remoteStore.createTask({title:"원격 결과 보존",brief:"연결이 끊겨도 검증 결과를 보존합니다.",projectId:remoteProjectId,lead:{provider:"claude",profileId:"fixture",hostId:remoteId},workers:[]});
     const remoteIdentity=await remoteStore.bind({taskId:remoteTask.id,participantId:remoteTask.participants[0].id,attemptId:remoteTask.participants[0].attempt.id,generation:1});
     await remoteStore.submitResult(remoteIdentity,{summary:"사용자 확인 전 결과",changes:[],verification:["원격 검증 근거"],artifacts:[],issues:[]});
     await client.request("/hosts","POST",{name:"검증 PC",enabled:false,ssh:{hostId:remoteId,destination:"unconnected.invalid",platform:"linux",nodeExecutable:"/fixture/node",hostEntrypoint:"/fixture/host.js",dataRoot:"/fixture/data"}});
@@ -163,7 +164,16 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await expect(reopenedSettings.getByText(/Error invoking remote method/)).toHaveCount(0);
     await reopenedSettings.locator(".v2-remote-tasks").screenshot({path:info.outputPath("remote-task-offline.png")});
     await page.keyboard.press("Escape");
+    await page.evaluate(({workProjectId,remoteId,remoteProjectId})=>window.multiCliWork.workProjects.update(workProjectId,{hostProjects:[{hostId:remoteId,projectId:remoteProjectId,projectName:'원격 검증 프로젝트'}]}),{workProjectId,remoteId,remoteProjectId});
+    await page.reload();
+    await page.getByRole('button',{name:'협업 검증 프로젝트 프로젝트 열기',exact:true}).click();
+    await page.getByLabel('대표 실행 PC',{exact:true}).selectOption(remoteId);
+    await page.getByRole('button',{name:/원격 결과 보존/}).click();
+    await expect(page.getByText('사용자 확인 전 결과',{exact:true}).first()).toBeVisible();
+    await expect(page.getByRole('button',{name:'결과 확인',exact:true})).toBeDisabled();
+    await page.getByRole('region',{name:'프로젝트 작업 PC'}).screenshot({path:info.outputPath('project-remote-owner-offline.png')});
     expect(await fs.readFile(path.join(registry,"projects.json"),"utf8")).toContain("Herdr 검증");
+    expect(await fs.readFile(path.join(registry,'work-projects.json'),'utf8')).not.toContain('hostProjects');
     await expect(fs.access(path.join(recovery,`recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
     await expect(fs.access(path.join(recovery,'recovery-controller.cjs'))).resolves.toBeUndefined();
     const finalGui=app.process();await app.evaluate(({app})=>app.quit());await expect.poll(()=>finalGui.exitCode).not.toBe(null);app=undefined;
@@ -174,6 +184,10 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await exerciseOfflineRecovery(directory);
     succeeded = true;
   } catch (error) {
+    if(app)await app.firstWindow().then(async page=>{
+      await page.screenshot({path:info.outputPath('v2-failure.png')});
+      console.error('v2 geometry:',await page.evaluate(()=>Object.fromEntries(['.terminal-workspace','.workspace-body','.workspace-grid','.herdr-terminal','.herdr-terminal-actions','.file-explorer'].map(selector=>{const element=document.querySelector(selector),rect=element?.getBoundingClientRect();return [selector,rect?{x:rect.x,y:rect.y,width:rect.width,height:rect.height,scrollLeft:element!.scrollLeft}:null];}))));
+    }).catch(()=>undefined);
     if(app)for(const window of app.windows()) console.error("v2 renderer diagnostic:",await window.evaluate(()=>document.body.innerText).catch(()=>null));
     console.error("v2 scenario failure:",error);
     console.error("v2 Electron main stderr:", errors.join(""));
@@ -192,4 +206,19 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     if(succeeded)await fs.rm(directory,{recursive:true,force:true,maxRetries:15,retryDelay:100});
     else await info.attach("fixture",{body:directory,contentType:"text/plain"});
   }
+});
+
+test('a reconnect error keeps terminal controls inside the workspace at desktop widths',async()=>{
+  test.skip(process.env.MCW_V2_E2E!=='1','Desktop browser verification for the v2 candidate');
+  const browser=await chromium.launch({channel:'chrome',headless:true});
+  try{
+    const page=await browser.newPage(),css=await fs.readFile('src/renderer/src/index.css','utf8')+await fs.readFile('src/renderer/src/herdr/herdr-terminal.css','utf8');
+    await page.setContent(`<style>${css}</style><div class="app-shell"><aside style="grid-column:1">Projects</aside><section class="terminal-workspace"><header>Session</header><div class="workspace-body"><div class="workspace-message-area"><div class="action-error"><span>Error invoking remote method 'v2:terminal-command': Error: 호스트 연결이 복구되면 제어권을 다시 요청하세요.</span><button>닫기</button></div></div><div class="workspace-grid" style="grid-template-columns:1fr;grid-template-rows:1fr"><div class="grid-pane"><div>Header</div><section class="herdr-terminal"><div class="herdr-terminal-toolbar"><span>관찰 중</span><span>크기 소유자: 없음</span><div class="herdr-terminal-actions"><button>제어 요청</button><button>복사</button></div></div><div class="herdr-terminal-viewport"><canvas width="1200" height="500"></canvas></div></section></div></div></div></section><aside class="file-explorer"><div>Files</div><div role="tree" class="file-tree">fixture.txt</div></aside></div>`);
+    for(const width of [900,1280]){
+      await page.setViewportSize({width,height:680});
+      await page.getByRole('button',{name:'제어 요청',exact:true}).click();
+      const rectangles=await page.evaluate(()=>['.terminal-workspace','.workspace-grid'].map(selector=>document.querySelector(selector)!.getBoundingClientRect().right));
+      expect(rectangles[1]).toBeLessThanOrEqual(rectangles[0]+1);
+    }
+  }finally{await browser.close();}
 });

@@ -70,6 +70,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
   const selectedWorkers=()=>foreignWorkers.length?{remoteWorkers:foreignWorkers.map(member=>({participantId:member.id,selection:workerSelections[member.id]}))}:{};
   const choiceCatalog=(choice:TaskAgentChoice)=>choice.hostId&&choice.hostId!==choices?.hostId?workerCatalogs[choice.hostId]:choices;
   const visibleTasks = tasks.filter((task) => projectId === undefined || task.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt);
+  const createRepositories=catalog?.repositories.filter(repo=>projectId===undefined||repo.projectId===projectId)??[];
   const listTasks=()=>hostId?api!.listTasks(hostId):api!.listTasks();
   const readCatalog=async()=>{
     if(api?.executionHosts){const hosts=await api.executionHosts(hostId);if(alive.current)setWorkerHosts(hosts);}
@@ -146,7 +147,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
     }
   };
   const create = () => {
-    if (!api || !choices || (hostId&&!catalog?.repositories.some(repo=>repo.id===createRepository))) return;
+    if (!api || !choices || (hostId&&!createRepositories.some(repo=>repo.id===createRepository))) return;
     void run(async () => {
       const selectedProject=hostId?catalog!.repositories.find(repo=>repo.id===createRepository)!.projectId:projectId;
       const input={ title: title.trim(), brief: brief.trim(), ...(selectedProject == null ? {} : { projectId:selectedProject }),lead: { ...lead, hostId: choices.hostId }, workers };
@@ -190,7 +191,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
     {offline && <p role="status">호스트 연결 끊김 · 마지막 수신: {hostState?.observedAt == null ? "없음" : new Date(hostState.observedAt).toLocaleString()}. 아래 상태는 마지막 관찰입니다.</p>}
     {loading && <p role="status">호스트 작업을 불러오는 중…</p>}
     {(!hostId||catalog)&&<form className="herdr-task-create" onSubmit={(event) => { event.preventDefault(); create(); }}>
-      {hostId&&catalog&&<label><span>작업 저장소 · {hostName??hostId}</span><select aria-label="작업 저장소" value={createRepository} disabled={busy} onChange={event=>setCreateRepository(event.target.value)}><option value="">저장소 선택</option>{catalog.repositories.map(repo=><option key={repo.id} value={repo.id}>{repo.projectName?`${repo.projectName} / `:""}{repo.name}</option>)}</select></label>}
+      {hostId&&catalog&&<label><span>작업 저장소 · {hostName??hostId}</span><select aria-label="작업 저장소" value={createRepository} disabled={busy} onChange={event=>setCreateRepository(event.target.value)}><option value="">저장소 선택</option>{createRepositories.map(repo=><option key={repo.id} value={repo.id}>{repo.projectName?`${repo.projectName} / `:""}{repo.name}</option>)}</select></label>}
       <label><span>작업 제목</span><input aria-label="작업 제목" value={title} maxLength={200} required disabled={busy} onChange={(event) => setTitle(event.currentTarget.value)} /></label>
       <label><span>작업 지시</span><textarea aria-label="작업 지시" value={brief} maxLength={20000} required rows={3} disabled={busy} onChange={(event) => setBrief(event.currentTarget.value)} /></label>
       <div className="herdr-task-agents">

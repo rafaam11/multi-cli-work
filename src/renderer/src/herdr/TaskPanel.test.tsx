@@ -14,6 +14,23 @@ function api() {
 }
 afterEach(cleanup);
 describe("v2 task dashboard", () => {
+  it('offers only repositories from the explicitly associated remote project',async()=>{
+    const host=api();
+    host.hostState=vi.fn(async()=>({tasks:[],terminals:[],hosts:[{hostId:'remote',name:'Remote',enabled:true,connected:true,observedAt:1000,error:null,tasks:[],terminals:[]}],connected:true,observedAt:1000}));
+    host.executionCatalog=vi.fn(async()=>({version:1,platform:'linux',...(await host.configuration()),hostId:'remote',availableProviders:['codex'],repositories:[
+      {id:'selected-repo',name:'Mapped repository',path:'/mapped',projectId:'remote-project',projectName:'Mapped'},
+      {id:'other-repo',name:'Unrelated repository',path:'/other',projectId:'other-project',projectName:'Other'},
+    ]} as import('@shared/execution-catalog').ExecutionCatalog));
+    host.inspectHostRepository=vi.fn();host.startRegisteredTask=vi.fn();
+    render(<TaskPanel api={host} hostId="remote" projectId="remote-project"/>);
+    await screen.findByRole('option',{name:'Mapped / Mapped repository'});
+    expect(screen.queryByRole('option',{name:/Unrelated repository/})).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('작업 저장소'),{target:{value:'selected-repo'}});
+    fireEvent.change(screen.getByLabelText('작업 제목'),{target:{value:'Mapped task'}});
+    fireEvent.change(screen.getByLabelText('작업 지시'),{target:{value:'Use the remote project brief'}});
+    fireEvent.click(screen.getByRole('button',{name:'작업 만들기'}));
+    await waitFor(()=>expect(host.createTask).toHaveBeenCalledWith(expect.objectContaining({projectId:'remote-project',lead:expect.objectContaining({hostId:'remote'})}),'remote'));
+  });
   it('uses the connected local host catalog when a phone explicitly selects this PC',async()=>{
     const host=api();
     host.hostState=vi.fn(async()=>({tasks:[task()],terminals:[],hosts:[],connected:true,observedAt:1000}));

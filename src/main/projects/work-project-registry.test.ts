@@ -21,6 +21,18 @@ const PROJECT_IDS = {
   docs: "22222222-2222-4222-8222-222222222222",
 } as const;
 
+it('preserves explicit remote project links and rejects ambiguous ownership',()=>{
+  const registry=sampleRegistry();
+  const link={hostId:'remote-pc',projectId:WORK_PROJECT_IDS.second,projectName:'원격 과제'};
+  Object.assign(registry.workProjects[WORK_PROJECT_IDS.first],{hostProjects:[link]});
+  expect(parseWorkProjectRegistry(registry).workProjects[WORK_PROJECT_IDS.first]).toMatchObject({hostProjects:[link]});
+  registry.workProjects[WORK_PROJECT_IDS.second]={...registry.workProjects[WORK_PROJECT_IDS.first],id:WORK_PROJECT_IDS.second,members:[]};
+  expect(()=>parseWorkProjectRegistry(registry)).toThrow(/both claim|duplicate/i);
+  delete registry.workProjects[WORK_PROJECT_IDS.second];
+  Object.assign(registry.workProjects[WORK_PROJECT_IDS.first],{hostProjects:[link,{...link,projectId:WORK_PROJECT_IDS.first}]});
+  expect(()=>parseWorkProjectRegistry(registry)).toThrow(/duplicate/i);
+});
+
 async function tempWorkspace(name: string): Promise<string> {
   const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), `mcw-${name}-`));
   tempRoots.push(root);

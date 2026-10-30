@@ -572,6 +572,9 @@ describe("main IPC boundary", () => {
     const notionLinks = [{ label: "채널", url: "https://notion.so/x" }];
     await handlers.get("work-projects:update")!({}, "wp-1", { notionLinks });
     expect(workProjectService.updateWorkProjectMetadata).toHaveBeenCalledWith("wp-1", { notionLinks });
+      const hostProjects=[{hostId:'remote',projectId:'remote-project',projectName:'Remote'}];
+      await handlers.get('work-projects:update')!({},'wp-1',{hostProjects});
+      expect(workProjectService.updateWorkProjectMetadata).toHaveBeenCalledWith('wp-1',{hostProjects});
     await handlers.get("work-projects:remove")!({}, "wp-1");
     expect(workProjectService.removeWorkProject).toHaveBeenCalledWith("wp-1");
     await handlers.get("work-projects:add-member")!({}, "wp-1", "project-1", "repo");

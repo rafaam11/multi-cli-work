@@ -21,6 +21,7 @@ import type { SessionIndicatorsUpdate, TerminalEvent, TerminalKind, TerminalStat
 import type { UsageSnapshot } from "./usage-types";
 import type {
   WorkProjectLocalFolder,
+  WorkProjectHostProject,
   WorkProjectNotionLink,
   WorkProjectRegistryV1,
   WorkProjectRole,
@@ -62,6 +63,7 @@ export interface ProjectMetadataPatch {
 }
 
 export interface WorkProjectMetadataPatch {
+  hostProjects?: WorkProjectHostProject[];
   name?: string;
   category?: string;
   status?: ProjectStatus | null;
