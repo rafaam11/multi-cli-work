@@ -8,14 +8,19 @@ import { WebSocket, WebSocketServer } from "ws";
 import { TaskStore } from "./task-store";
 import { isFetchPort } from "./http-port";
 import { TaskMcpServer } from "../mcw-task-mcp";
-import type { AttemptRef, TaskCreateInput, TaskIdentity } from "../../shared/host-types";
+import {readTaskMcpConnection} from "../mcw-task-mcp-client";
+import type { AttemptRef, TaskCreateInput, TaskIdentity,Task } from "../../shared/host-types";
 import type { LocalHostConnection, HostRegistration } from "../../shared/host-connection-types";
 import type { HostConnections } from "./host-connections";
 import type { HostTerminalSocket } from "./host-client";
 import { resolveRemoteSession } from "../v2/observed-terminals";
-import { validateTaskSnapshot } from "./task-validation";
+import { validateTaskSnapshot,validateTaskIdentity } from "./task-validation";
 import type {HostExecutionCatalog} from "./execution-catalog";
 import {parseExecutionCatalog} from "../../shared/execution-catalog";
+import type {RegisteredTaskStart} from "../../shared/execution-catalog";
+import type {WorkerExecutor} from "./worker-executor";
+import type {WorkerReplicas,WorkerReplica} from "./worker-replicas";
+import type {WorkerTransfer} from "../../shared/remote-task-types";
 
 /** The independent daemon owns this service. Closing a viewer never stops a session. */
 export interface HostTerminalService {
@@ -32,7 +37,7 @@ export interface HostTerminalService {
   releaseOwnership(sessionId: string, viewerId: string): Promise<void>;
 }
 export interface HostDescriptor { schemaVersion: 2; pid: number; instanceId: string; hostId: string; url: string; token: string; startedAt: number }
-interface Credentials { schemaVersion: 2; owner: string; capabilities: { token: string; identity: TaskIdentity }[] }
+interface Credentials { schemaVersion: 2; owner: string; capabilities: { token: string; identity: TaskIdentity;scope?:"replica" }[] }
 export interface HostGatewayOptions {
   directory: string; store: TaskStore; terminals: HostTerminalService;
   bindAddress?: string; port?: number; allowRemote?: boolean; advertisedHost?: string; allowedOrigins?: string[];
@@ -42,6 +47,7 @@ export interface HostGatewayOptions {
   prepare?: () => Promise<void>;
   startTask?: (taskId: string, input: unknown) => Promise<unknown>;
   executionCatalog?:Pick<HostExecutionCatalog,"read"|"inspectRepository"|"validateCreate"|"prepare">;
+  workers?:Pick<WorkerExecutor,"prepare"|"admit">&{replicas:WorkerReplicas};
   hosts?: Pick<HostConnections,"snapshot"|"registrations"|"configure"|"remove"|"onChange"|"client">;
   connectionInfo?:()=>LocalHostConnection;
 }
@@ -60,6 +66,8 @@ function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError(400, "Expected JSON object");
   return value as Record<string, unknown>;
 }
+function exactObject(value:unknown,fields:string[]):Record<string,unknown>{const result=object(value);if(Object.keys(result).sort().join(",")!==fields.sort().join(","))throw new HttpError(400,"Unexpected request fields");return result;}
+function workerTransfer(record:WorkerReplica):WorkerTransfer{return {id:record.id,ownerHostId:record.ownerHostId,identity:record.identity,selection:record.selection,attempt:record.attempt,pending:record.operations.filter(item=>!item.acknowledged).map(item=>item.operation)};}
 function text(value: unknown, max = 256): string { if (typeof value !== "string" || !value.length || value.length > max || /[\x00-\x1f]/.test(value)) throw new HttpError(400, "Invalid text"); return value; }
 function integer(value: unknown, min: number, max: number): number { if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) throw new HttpError(400, "Invalid integer"); return value; }
 function bearer(request: IncomingMessage): string | undefined { const value = request.headers.authorization; return value?.startsWith("Bearer ") ? value.slice(7) : undefined; }
@@ -112,6 +120,7 @@ export class HostGateway {
       try {
         const parsed = JSON.parse(await fs.readFile(credentialsFile, "utf8")) as Credentials;
         if (parsed.schemaVersion !== 2 || !/^[A-Za-z0-9_-]{43}$/.test(parsed.owner) || !Array.isArray(parsed.capabilities) || parsed.capabilities.some(capability => !/^[A-Za-z0-9_-]{43}$/.test(capability.token) || !capability.identity)) throw new Error("Invalid host credentials");
+        for(const capability of parsed.capabilities){validateTaskIdentity(capability.identity);if(capability.scope!==undefined&&capability.scope!=="replica")throw new Error("Invalid capability scope");}
         this.credentials = parsed; await fs.chmod(credentialsFile, 0o600);
       } catch (error) { if (!missing(error)) throw error; this.credentials = { schemaVersion: 2, owner: secret(), capabilities: [] }; await writePrivateJson(credentialsFile, this.credentials); }
       await this.options.prepare?.();
@@ -127,8 +136,21 @@ export class HostGateway {
       const url = `http://${advertised.includes(":") ? `[${advertised}]` : advertised}:${listening.port}`;
       this.descriptorValue = { schemaVersion: 2, pid: process.pid, instanceId: randomUUID(), hostId: this.options.store.options.hostId, url, token: this.credentials.owner, startedAt: Date.now() };
       await writePrivateJson(hostDescriptorPath(this.options.directory), this.descriptorValue);
+      await this.refreshTaskConnections(url);
       return this.descriptor;
     } catch (error) { await this.close(); throw error; }
+  }
+  private async refreshTaskConnections(url:string):Promise<void>{
+    for(const capability of this.credentials.capabilities){
+      if(!/^[\w-]{1,128}$/.test(capability.identity.attemptId))continue;
+      const file=path.join(this.options.directory,"task-mcp",`${capability.identity.attemptId}.connection.json`);
+      // Refresh only the current MCW-owned capability. Preserve unrecognized or
+      // replaced files; an old credential must never overwrite a newer one.
+      let current:{endpoint:string;token:string};
+      try{current=await readTaskMcpConnection(["--connection-file",file],{});}
+      catch(error){if(!missing(error))process.stderr.write("Task connection file could not be refreshed; preserved for inspection.\n");continue;}
+      if(equal(current.token,capability.token))await writePrivateJson(file,{endpoint:`${url}/mcp`,token:capability.token});
+    }
   }
   private validateRequest(request: IncomingMessage): URL {
     const descriptor = this.descriptor;
@@ -140,16 +162,23 @@ export class HostGateway {
     if (url.origin !== expected.origin || url.search || url.hash) throw new HttpError(400, "Unexpected URL");
     return url;
   }
-  private authorize(token: string | undefined): { owner: true } | { owner: false; identity: TaskIdentity } {
+  private authorize(token: string | undefined): { owner: true } | { owner: false; identity: TaskIdentity;scope?:"replica" } {
     if (!token || token.length > 128) throw new HttpError(401, "Authentication required");
     if (equal(token, this.credentials.owner)) return { owner: true };
     const capability = this.credentials.capabilities.find(item => equal(token, item.token));
     if (!capability) throw new HttpError(401, "Authentication required");
-    return { owner: false, identity: structuredClone(capability.identity) };
+    return { owner: false, identity: structuredClone(capability.identity),scope:capability.scope };
   }
   async issueTaskToken(ref: AttemptRef): Promise<string> {
-    const identity = await this.options.store.bind(ref); const token = secret();
-    const write = this.authWrites.then(async () => { const next = { ...this.credentials, capabilities: [...this.credentials.capabilities, { token, identity }] }; await writePrivateJson(path.join(this.options.directory, "mcw-host-auth.json"), next); this.credentials = next; });
+    return this.saveTaskCapability(await this.options.store.bind(ref));
+  }
+  async issueWorkerTaskToken(ref:AttemptRef):Promise<string>{
+    if(!this.options.workers)throw new Error("Worker replicas unavailable");
+    return this.saveTaskCapability(await this.options.workers.replicas.bind(ref),"replica");
+  }
+  private async saveTaskCapability(identity:TaskIdentity,scope?:"replica"):Promise<string>{
+    const token = secret();
+    const write = this.authWrites.then(async () => { const next = { ...this.credentials, capabilities: [...this.credentials.capabilities, { token, identity,...(scope?{scope}:{}) }] }; await writePrivateJson(path.join(this.options.directory, "mcw-host-auth.json"), next); this.credentials = next; });
     this.authWrites = write.catch(() => undefined); await write;
     return token;
   }
@@ -162,17 +191,44 @@ export class HostGateway {
   async canShutdown(): Promise<boolean> {
     const sessions = await this.options.terminals.list();
     const uncertainSession = sessions.some(value => { const session = value as Record<string, unknown> | null; return !session || session.status !== "exited" || session.connected !== true || session.delivery === "unknown" || session.delivery === "pending"; });
-    return this.pendingCreates === 0 && !uncertainSession && !(await this.options.store.list()).some(task => task.participants.some(({ attempt }) => ["running", "idle", "lost"].includes(attempt.execution) || ["pending", "unknown"].includes(attempt.delivery) || (attempt.delivery === "delivered" && attempt.execution !== "exited")));
+    const uncertain=(attempt:import("../../shared/host-types").TaskAttempt)=>["running", "idle", "lost"].includes(attempt.execution) || ["pending", "unknown"].includes(attempt.delivery) || (attempt.delivery === "delivered" && attempt.execution !== "exited");
+    return this.pendingCreates === 0 && !uncertainSession && !(await this.options.store.list()).some(task => task.participants.some(({attempt})=>uncertain(attempt))) && !(await this.options.workers?.replicas.list()??[]).some(({attempt})=>uncertain(attempt));
   }
   private async route(request: IncomingMessage, response: ServerResponse): Promise<void> {
     try {
       const url = this.validateRequest(request); const auth = this.authorize(bearer(request)); const method = request.method;
       if (url.pathname === "/mcp" && method === "POST") {
         if (auth.owner) throw new HttpError(403, "Task-scoped capability required");
-        const result = await new TaskMcpServer(this.options.store, auth.identity).handle(await body(request, this.limit));
+        const authority=auth.scope==="replica"?this.options.workers?.replicas:this.options.store;
+        if(!authority)throw new HttpError(403,"Worker capability unavailable");
+        const result = await new TaskMcpServer(authority, auth.identity).handle(await body(request, this.limit));
         reply(response, result === null ? 202 : 200, result); return;
       }
       if (!auth.owner) throw new HttpError(403, "Owner capability required");
+      if(url.pathname==="/workers/prepare"&&method==="POST"){
+        if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.workers)throw new HttpError(503,"Worker execution unavailable");
+        const input=exactObject(await body(request,this.limit),["task","identity","selection"]);this.pendingCreates++;
+        try{reply(response,200,workerTransfer(await this.options.workers.prepare(input.task as Task,input.identity as TaskIdentity,input.selection as RegisteredTaskStart)));}finally{this.pendingCreates--;}
+        return;
+      }
+      if(url.pathname==="/workers"&&method==="GET"){reply(response,200,(await this.options.workers?.replicas.list()??[]).map(workerTransfer));return;}
+      const workerRoute=/^\/workers\/([^/]+)(?:\/(admit|sync))?$/.exec(url.pathname);
+      if(workerRoute){
+        if(!this.options.workers)throw new HttpError(503,"Worker execution unavailable");
+        const id=text(decodeURIComponent(workerRoute[1])),workers=this.options.workers;
+        if(!workerRoute[2]&&method==="GET"){reply(response,200,workerTransfer(await workers.replicas.get(id)));return;}
+        if(workerRoute[2]==="sync"&&method==="POST"){
+          const input=exactObject(await body(request,this.limit),["task","acknowledged"]);
+          await workers.replicas.synchronize(id,input.task as Task,input.acknowledged as string[]);reply(response,200,{});return;
+        }
+        if(workerRoute[2]==="admit"&&method==="POST"){
+          if(!this.accepting)throw new HttpError(409,"Host is draining");
+          const input=exactObject(await body(request,this.limit),["task","commandId"]);this.pendingCreates++;
+          try{reply(response,200,await workers.admit(id,text(input.commandId),input.task as Task));}finally{this.pendingCreates--;}
+          return;
+        }
+        throw new HttpError(405,"Unsupported worker operation");
+      }
       if(url.pathname==="/connection"&&method==="GET"){if(!this.options.connectionInfo)throw new HttpError(503,"Host connection info unavailable");reply(response,200,this.options.connectionInfo());return;}
       if(url.pathname==="/hosts"&&method==="GET"){reply(response,200,{registrations:this.options.hosts?.registrations()??[],observations:this.options.hosts?.snapshot()??[]});return;}
       if(url.pathname==="/hosts"&&method==="POST"){

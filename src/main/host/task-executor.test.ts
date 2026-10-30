@@ -28,6 +28,28 @@ async function setup() {
   const input = { repositoryPath, expectedHead, profiles: task.participants.map(member => ({ participantId: member.id, executable: process.execPath, profile: { id: member.profileId, agentId: member.provider, name: "Selected", model: "chosen-model", effort: "high" } })) };
   return { directory, repositoryPath, store, task, create, sessions, executor, input, git };
 }
+it("prepares every selected host before launching and stops admission after an uncertain remote reply",async()=>{
+  const f=await setup(),order:string[]=[];
+  const task=await f.store.createTask({title:"Across PCs",brief:"Collect separately",lead:{hostId:"local",provider:"codex",profileId:"selected"},workers:[{hostId:"remote",provider:"claude",profileId:"remote-profile"},{provider:"claude",profileId:"selected-worker"}]});
+  const remoteWorkers={prepare:vi.fn(async()=>{order.push("prepare remote");}),admit:vi.fn(async()=>{order.push("admit remote");throw new Error("uncertain remote reply");})};
+  const executor=new TaskExecutor({...f.executor.options,remoteWorkers});
+  f.create.mockImplementation(async input=>{order.push("launch local");return {...input,id:input.sessionId,delivery:"delivered",status:"working",connected:true};});
+  const remoteSelection={participantId:task.participants[1].id,selection:{repositoryId:"remote-repo",expectedPath:f.repositoryPath,expectedHead:f.input.expectedHead}};
+  const input={...f.input,profiles:task.participants.filter(p=>p.hostId==="local").map(p=>({participantId:p.id,executable:process.execPath,profile:{id:p.profileId,agentId:p.provider,name:"selected",model:null,effort:null}})),remoteWorkers:[remoteSelection]};
+  await expect(executor.start(task.id,input)).rejects.toThrow("uncertain remote reply");
+  expect(order).toEqual(["prepare remote","launch local","admit remote"]);
+  expect(f.create).toHaveBeenCalledTimes(1);
+  expect(remoteWorkers.prepare).toHaveBeenCalledWith(task,expect.objectContaining({hostId:"remote",participantId:task.participants[1].id}),remoteSelection.selection);
+  expect((await f.store.inspect(task.id)).participants[2].attempt.delivery).toBe("none");
+});
+it("rejects missing or mismatched remote checkout confirmation before any launch",async()=>{
+  const f=await setup(),task=await f.store.createTask({title:"Across PCs",brief:"Collect",lead:{hostId:"local",provider:"codex",profileId:"selected"},workers:[{hostId:"remote",provider:"claude",profileId:"remote-profile"}]});
+  const remoteWorkers={prepare:vi.fn(async()=>{}),admit:vi.fn(async()=>({}))},executor=new TaskExecutor({...f.executor.options,remoteWorkers});
+  const input={...f.input,profiles:[{...f.input.profiles[0],participantId:task.participants[0].id}]};
+  await expect(executor.start(task.id,input)).rejects.toThrow();
+  await expect(executor.start(task.id,{...input,remoteWorkers:[{participantId:task.participants[1].id,selection:{repositoryId:"remote-repo",expectedPath:f.repositoryPath,expectedHead:"b".repeat(40)}}]})).rejects.toThrow();
+  expect(f.create).not.toHaveBeenCalled();expect(remoteWorkers.prepare).not.toHaveBeenCalled();
+});
 it("launches selected profiles once in isolated directories with task-scoped MCP, leaving the base unchanged", async () => {
   const { directory, repositoryPath, store, task, create, executor, input, git } = await setup();
   await writeFile(path.join(repositoryPath, "source.txt"), "user edit\n");

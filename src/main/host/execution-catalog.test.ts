@@ -70,3 +70,27 @@ it("captures the owner's project brief at task creation without rewriting saved 
   await expect(catalog.validateCreate({...input,lead:{...input.lead,hostId:"other"}})).rejects.toThrow();
   await expect(catalog.validateCreate({...input,workers:[{hostId:"other",provider:"codex",profileId:"remote-profile"}]})).rejects.toThrow();
 });
+it("resolves a foreign owner's worker against this host's explicitly selected checkout and profile",async()=>{
+  const {directory,catalog,repository}=await fixture();
+  const owner=new TaskStore({directory:path.join(directory,"another-owner"),hostId:"another-owner"});
+  const task=await owner.createTask({title:"Foreign team",brief:"Owner context",projectId:"owner-project",lead:{hostId:"another-owner",provider:"claude",profileId:"lead"},workers:[{hostId:"remote",provider:"codex",profileId:"remote-profile"}]});
+  const member=task.participants[1],identity={taskId:task.id,participantId:member.id,attemptId:member.attempt.id,generation:1,role:member.role,hostId:member.hostId};
+  const inspected=await catalog.inspectRepository("ee22ee22-2222-4222-8222-222222222222"),selection={repositoryId:inspected.repository.id,expectedHead:inspected.expectedHead,expectedPath:repository};
+  await expect(catalog.prepare(task,selection)).rejects.toThrow();
+  expect(await catalog.prepareWorker(task,identity,selection)).toMatchObject({repositoryPath:repository,projectId:inspected.repository.id,profiles:[{participantId:member.id,profile:{id:"remote-profile"}}]});
+  await expect(catalog.prepareWorker(task,{...identity,hostId:"another-host"},selection)).rejects.toThrow();
+});
+it("validates cross-host choices against their own catalog and resolves only owner-local executable profiles",async()=>{
+  const f=await fixture(),foreign=await f.catalog.read();foreign.hostId="worker-pc";
+  foreign.launchProfiles=[...foreign.launchProfiles.filter(p=>p.id!=="remote-profile"),{id:"worker-only",agentId:"codex",name:"Worker model",model:null,effort:null}];
+  const remoteCatalog=vi.fn(async()=>foreign),catalog=new HostExecutionCatalog({...f.catalog.options,remoteCatalog});
+  const input={title:"Cross-host",brief:"Collect",lead:{hostId:"remote",provider:"codex" as const,profileId:"remote-profile"},workers:[{hostId:"worker-pc",provider:"codex" as const,profileId:"worker-only"}]};
+  const selected=await catalog.validateCreate(input);expect(selected.workers?.[0].profileId).toBe("worker-only");
+  const owner=new TaskStore({directory:path.join(f.directory,"cross-host"),hostId:"remote"}),task=await owner.createTask(selected);
+  const inspection=await catalog.inspectRepository("ee22ee22-2222-4222-8222-222222222222"),selection={repositoryId:inspection.repository.id,expectedPath:inspection.repository.path,expectedHead:inspection.expectedHead};
+  const remoteWorkers=[{participantId:task.participants[1].id,selection}];
+  const prepared=await catalog.prepare(task,{...selection,remoteWorkers});
+  expect(prepared.profiles.map(p=>p.participantId)).toEqual([task.participants[0].id]);expect(prepared.remoteWorkers).toEqual(remoteWorkers);
+  await expect(catalog.validateCreate({...input,workers:[{...input.workers[0],profileId:"remote-profile"}]})).rejects.toThrow();
+  remoteCatalog.mockRejectedValueOnce(new Error("offline"));await expect(catalog.validateCreate(input)).rejects.toThrow("offline");
+});

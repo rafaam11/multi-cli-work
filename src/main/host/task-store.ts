@@ -5,6 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { readJsonStore, updateJsonStore, type JsonStoreSpec } from "../storage/json-store";
 import type { AttemptRef, RemoteTaskResult, Task, TaskAgentChoice, TaskAttempt, TaskCreateInput, TaskDelivery, TaskEvent, TaskExecution, TaskHostSnapshot, TaskIdentity, TaskInbox, TaskParticipant, TaskResult, TaskResultInput } from "../../shared/host-types";
 import { TaskValidationError, validateRemoteResult, validateTaskChoice, validateTaskCreate, validateTaskId, validateTaskIdentity, validateTaskInteger, validateTaskResult, validateTaskSnapshot, validateTaskText } from "./task-validation";
+import {sameTaskIdentity,validateRemoteTaskOperation} from "./remote-operations";
+import {validateTaskAttempt} from "./task-validation";
 
 export interface TaskStoreOptions { directory: string; hostId: string }
 export class TaskStore {
@@ -81,6 +83,23 @@ export class TaskStore {
     await this.update(state => { const attempt = this.authorize(this.task(state, identity.taskId), identity).attempt; attempt.execution = execution; if (execution !== "lost") attempt.observedAt = Date.now(); });
   }
   /** Explicit recovery observation; never resends a command or infers completion. */
+  async observeRemoteAttempt(identity:TaskIdentity,observation:TaskAttempt):Promise<void>{
+    validateTaskAttempt(observation);
+    await this.update(state=>{
+      const task=this.task(state,identity.taskId),attempt=this.authorize(task,identity).attempt;
+      if(identity.role!=="worker"||identity.hostId===task.ownerHostId||observation.id!==attempt.id||observation.generation!==attempt.generation)throw new Error("Remote observation scope mismatch");
+      if(observation.commandId!==attempt.commandId){if(observation.delivery==="none")return;throw new Error("Remote command differs from admitted command");}
+      if(attempt.delivery==="none")return;
+      if(["pending","unknown"].includes(attempt.delivery)&&["delivered","rejected","unknown"].includes(observation.delivery))attempt.delivery=observation.delivery;
+      if(attempt.delivery!==observation.delivery)return;
+      if(attempt.observedAt!==null&&observation.observedAt!==null&&observation.observedAt<attempt.observedAt)return;
+      if(attempt.execution==="exited"&&observation.execution!=="exited")return;
+      attempt.execution=observation.execution;
+      if(observation.observedAt!==null)attempt.observedAt=observation.observedAt;
+      // Submission is recorded only by ingesting the attributed result payload.
+    });
+  }
+  /** Explicit recovery observation; never resends a command or infers completion. */
   async recover(): Promise<void> {
     await this.update(state => { for (const task of state.tasks) for (const { attempt } of task.participants) { if (attempt.delivery === "pending") attempt.delivery = "unknown"; if (attempt.execution === "running" || attempt.execution === "idle") attempt.execution = "lost"; } });
   }
@@ -142,6 +161,38 @@ export class TaskStore {
   async ingestRemoteResult(input: RemoteTaskResult, authenticatedHostId: string): Promise<TaskResult> {
     validateRemoteResult(input); validateTaskId(authenticatedHostId); if (input.ownerHostId !== this.options.hostId || input.source.hostId !== authenticatedHostId || input.id !== this.resultId(input.source)) throw new Error("Unauthorized remote result");
     return this.submitResult(input.source, input.result);
+  }
+  /** One atomic receipt + mutation. Only already committed data can be acknowledged for an old attempt. */
+  async ingestRemoteOperation(value:unknown,authenticatedHostId:string):Promise<TaskEvent|TaskResult>{
+    const operation=validateRemoteTaskOperation(value),{source,action}=operation;
+    validateTaskId(authenticatedHostId);
+    if(operation.ownerHostId!==this.options.hostId||source.hostId!==authenticatedHostId||source.hostId===this.options.hostId||source.role!=="worker")throw new Error("Unauthorized remote task operation");
+    return this.update(state=>{
+      const task=this.task(state,source.taskId),existing=task.events.find(event=>event.id===operation.id);
+      if(existing&&!sameTaskIdentity(existing.source,source))throw new Error("Conflicting remote operation identity");
+      if(action.kind==="result"){
+        if(existing&&existing.kind!=="result")throw new Error("Conflicting remote operation kind");
+        const prior=task.results.find(result=>result.id===this.resultId(source));
+        if(prior){
+          if(!sameTaskIdentity(prior.source,source)||(["summary","changes","verification","artifacts","issues"] as const).some(key=>JSON.stringify(prior[key])!==JSON.stringify(action.result[key])))throw new Error("Conflicting remote result");
+          return prior;
+        }
+        const result=this.submit(task,source,action.result);
+        task.events[task.events.length-1].id=operation.id;return result;
+      }
+      const kind=action.kind==="message"?"message":"question",to=action.kind==="message"?action.to:null;
+      if(existing){
+        if(existing.kind!==kind||existing.text!==action.text||existing.to!==to||(kind==="question"&&task.questions.find(question=>question.id===existing.id)?.kind!==action.kind))throw new Error("Conflicting remote operation payload");
+        return existing;
+      }
+      this.authorize(task,source);
+      if(to!==null&&!task.participants.some(member=>member.id===to))throw new Error("Unknown message recipient");
+      const event=this.event(task,kind,source.participantId,action.text,to);event.id=operation.id;
+      if(action.kind!=="message"){
+        task.questions.push({id:event.id,participantId:source.participantId,kind:action.kind,text:action.text,acknowledged:false,answer:null,source:{...source}});this.attention(task);
+      }
+      return event;
+    });
   }
   /** Sender removes only after receiver has committed and acknowledged; failed sends stay queued. */
   async flushOutbox(deliver: (envelope: RemoteTaskResult) => Promise<void>): Promise<void> {

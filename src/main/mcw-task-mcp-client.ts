@@ -31,15 +31,15 @@ export async function readTaskMcpConnection(args: string[], env: NodeJS.ProcessE
     return {endpoint:record.endpoint,token:record.token};
   }finally{await handle.close();}
 }
-export async function runTaskMcpClient(options: { endpoint: string; token: string; input?: Readable; output?: Writable }): Promise<void> {
+export async function runTaskMcpClient(options: { endpoint: string; token: string; resolveConnection?:()=>Promise<{endpoint:string;token:string}>; input?: Readable; output?: Writable }): Promise<void> {
   const input: Readable = options.input ?? process.stdin; const output: Writable = options.output ?? process.stdout;
   const decoder = new StringDecoder("utf8"); let pending = "";
   const processLine = async (line: string) => {
     if (!line.trim()) return;
     let request: unknown;
     try { request = JSON.parse(line); } catch { output.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } })}\n`); return; }
-    try { const response = await forwardTaskMcp(options.endpoint, options.token, request); if (response !== null) output.write(`${JSON.stringify(response)}\n`); }
-    catch { const id = request && typeof request === "object" && "id" in request ? (request as { id: unknown }).id : undefined; if (id !== undefined) output.write(`${JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message: "Task host unavailable or capability rejected" } })}\n`); }
+    try { const connection=options.resolveConnection?await options.resolveConnection():options; const response = await forwardTaskMcp(connection.endpoint, connection.token, request); if (response !== null) output.write(`${JSON.stringify(response)}\n`); }
+    catch { const id = request && typeof request === "object" && "id" in request ? (request as { id: unknown }).id : undefined; if (id !== undefined) output.write(`${JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message: "Task host unavailable or capability rejected. A mutation may have committed; inspect the task before repeating it." } })}\n`); }
   };
   for await (const chunk of input) {
     pending += decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -50,5 +50,6 @@ export async function runTaskMcpClient(options: { endpoint: string; token: strin
   pending += decoder.end(); if (pending.trim()) await processLine(pending);
 }
 if (process.argv.includes("--task-mcp-client")) {
-  void readTaskMcpConnection(process.argv,process.env).then(runTaskMcpClient).catch(() => { process.stderr.write("Task MCP transport closed.\n"); process.exitCode = 1; });
+  const resolveConnection=()=>readTaskMcpConnection(process.argv,process.env);
+  void resolveConnection().then(connection=>runTaskMcpClient({...connection,resolveConnection})).catch(() => { process.stderr.write("Task MCP transport closed.\n"); process.exitCode = 1; });
 }

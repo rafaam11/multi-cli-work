@@ -1,9 +1,19 @@
-import type { TaskIdentity } from "../shared/host-types";
-import { TaskStore } from "./host/task-store";
+import type { TaskIdentity,TaskAgentChoice,TaskResultInput,TaskInbox } from "../shared/host-types";
 import { validateTaskChoice, validateTaskResult } from "./host/task-validation";
 
 type RecordValue = Record<string, unknown>;
 export interface TaskMcpResponse { jsonrpc: "2.0"; id: string | number | null; result?: unknown; error?: { code: number; message: string } }
+export interface TaskMcpAuthority {
+  inspect(taskId:string,identity?:TaskIdentity):Promise<unknown>;
+  receive(identity:TaskIdentity,cursor?:number):Promise<TaskInbox>;
+  wait(identity:TaskIdentity,cursor?:number,timeoutMs?:number):Promise<TaskInbox>;
+  assign(identity:TaskIdentity,choice:TaskAgentChoice):Promise<unknown>;
+  message(identity:TaskIdentity,to:string|null,text:string):Promise<unknown>;
+  ask(identity:TaskIdentity,kind:"question"|"approval",text:string):Promise<unknown>;
+  answer(identity:TaskIdentity,eventId:string,text:string):Promise<void>;
+  submitResult(identity:TaskIdentity,result:TaskResultInput):Promise<unknown>;
+  cancel(identity:TaskIdentity):Promise<void>;
+}
 function record(value: unknown): RecordValue { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected object"); return value as RecordValue; }
 function fields(value: unknown, allowed: string[], required: string[] = []): RecordValue {
   const args = record(value);
@@ -36,12 +46,12 @@ export const TASK_MCP_TOOLS = [
 /** Transport authenticates and binds identity once. No operation accepts client task/role/generation overrides. */
 export class TaskMcpServer {
   private readonly identity: TaskIdentity;
-  constructor(private readonly store: TaskStore, identity: TaskIdentity) { this.identity = structuredClone(identity); }
+  constructor(private readonly store: TaskMcpAuthority, identity: TaskIdentity) { this.identity = structuredClone(identity); }
   async dispatch(name: string, input: unknown = {}): Promise<unknown> {
     // Revalidate current run even on inspect so a superseded capability loses all task access.
     await this.store.receive(this.identity, 0);
     switch (name) {
-      case "task_inspect": fields(input, []); return this.store.inspect(this.identity.taskId);
+      case "task_inspect": fields(input, []); return this.store.inspect(this.identity.taskId,this.identity);
       case "task_assign": return this.store.assign(this.identity, validateTaskChoice(input));
       case "task_message": {
         const args = fields(input, ["kind", "to", "text", "eventId"], ["text"]);

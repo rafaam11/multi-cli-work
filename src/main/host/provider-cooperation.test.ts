@@ -20,6 +20,12 @@ const exec=promisify(execFile);
 // Never runs in ordinary CI. Only this test-created repository receives a transient
 // Codex trust override; Claude trust is confined to disposable CLI config copies.
 it.skipIf(process.env.MCW_PROVIDER_PROBE!=="1")("real Claude/Codex workers exchange messages and submit separate unintegrated results",async()=>{
+  const sourceConfig=process.env.CLAUDE_CONFIG_DIR??path.join(os.homedir(),".claude");
+  const authorization=JSON.parse(await fs.readFile(path.join(sourceConfig,".credentials.json"),"utf8"));
+  // A copied expiring OAuth refresh token is not an isolated authentication
+  // session. Require a fresh existing login for this bounded probe instead of
+  // letting separate fixture copies race to refresh the same account token.
+  if(typeof authorization.claudeAiOauth?.expiresAt==="number"&&authorization.claudeAiOauth.expiresAt<Date.now()+300_000)throw new Error("Claude login expired or expires during the probe; complete /login in Claude Code before rerunning. No provider was launched.");
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"mcw-provider-probe-")),repo=path.join(root,"repository"),directory=path.join(root,"host");
   console.log(`Provider probe evidence: ${root}`);
   await fs.mkdir(repo);await fs.mkdir(directory);

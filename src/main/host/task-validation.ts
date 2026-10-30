@@ -1,4 +1,4 @@
-import type { TaskAgentChoice, TaskCreateInput, TaskHostSnapshot, TaskIdentity, TaskResultInput, RemoteTaskResult } from "../../shared/host-types";
+import type { TaskAgentChoice, TaskCreateInput, TaskHostSnapshot, TaskIdentity, TaskResultInput, RemoteTaskResult, TaskAttempt } from "../../shared/host-types";
 
 type Check = (value: unknown) => void;
 export class TaskValidationError extends Error {}
@@ -32,6 +32,7 @@ const storedResult: Check = value => { const item = value as Record<string, unkn
 const task = object({ id, ownerHostId: id, title: text(1000), brief: text(100000), projectId: id, workerPool: array(choice, 3), createdAt: integer, participants: array(participant, 4), events: array(event), questions: array(question), attention, results: array(storedResult), review: one("none", "pending", "acknowledged"), cancellation: one("none", "requested") }, ["projectId"]);
 const envelope = object({ id, ownerHostId: id, source: identity, result });
 export function validateTaskIdentity(value: unknown): TaskIdentity { identity(value); return value as TaskIdentity; }
+export function validateTaskAttempt(value:unknown):TaskAttempt {attempt(value);const parsed=value as TaskAttempt;if(parsed.generation<1||(parsed.delivery==="none")!==(parsed.commandId===null))fail();return parsed;}
 export function validateTaskResult(value: unknown): TaskResultInput { result(value); return value as TaskResultInput; }
 export function validateTaskChoice(value: unknown): TaskAgentChoice { choice(value); return value as TaskAgentChoice; }
 export function validateTaskCreate(value: unknown): TaskCreateInput { object({ title: text(1000), brief: text(100000), projectId: id, lead: choice, workers: array(choice, 3), workerPool: array(choice, 3) }, ["workers", "projectId", "workerPool"])(value); const input = value as TaskCreateInput; id(input.lead.hostId); return input; }
