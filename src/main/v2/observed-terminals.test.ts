@@ -12,3 +12,9 @@ it("keeps identical session and repository IDs on different PCs distinct without
   expect(resolveRemoteSession([host],result[1].id)).toEqual({host,terminal});
   expect(()=>resolveRemoteSession([host],result[2].id)).toThrow(/registered/);
 });
+it('passes only the validated repository identity into observed remote views',()=>{
+ const repo={id:'same-project',name:'Code',path:'/repo',projectId:'project',projectName:'Research'};
+ const host={hostId:'pc',name:'Lab',enabled:true,connected:false,observedAt:13,error:null,tasks:[],terminals:[terminal],catalog:{version:1,hostId:'pc',platform:'linux',launchProfiles:[],defaultLaunchProfiles:{},availableProviders:[],repositories:[repo]}} as const;
+ const result=observedTerminals({tasks:[],terminals:[],hosts:[host as any]});
+ expect(result[0].projectId).toBeNull();expect(result[0].remote?.repository).toEqual(repo);
+});

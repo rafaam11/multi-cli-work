@@ -67,7 +67,7 @@ export interface TerminalSession {
   exitCode: number | null;
 }
 
-export interface RemoteTerminalSource {hostId:string;name:string;sessionId:string;projectId:string|null;connected:boolean;observedAt:number|null}
+export interface RemoteTerminalSource {hostId:string;name:string;sessionId:string;projectId:string|null;connected:boolean;observedAt:number|null;repository?:import('./execution-catalog').HostRepository}
 
 export interface TerminalLaunchSpec {
   sessionId: string;

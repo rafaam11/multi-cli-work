@@ -40,6 +40,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/v2/assets.mjs --download --platform $(node -p 'process.platform')
       - run: npm run build:v2
+      - name: Pre-Electron rescue staging without installer execution
+        run: node scripts/recovery/startup-stage-smoke.mjs
       # Keep the real hook's 10s deadline; isolate cold PowerShell startup from
       # simultaneous jsdom/worker initialization on the small hosted runners.
       - name: Provider hooks in a dedicated worker
@@ -95,14 +97,14 @@ jobs:
         if: runner.os == 'Windows'
         env:
           MCW_RECOVERY_ROUNDTRIP: win32
-        run: npx playwright test e2e/recovery-roundtrip.spec.ts --output=test-results/roundtrip-win32
+        run: npx playwright test e2e/recovery-roundtrip.spec.ts e2e/startup-rescue.spec.ts --output=test-results/roundtrip-win32
       - name: Original deb and AppImage offline roundtrips
         if: runner.os == 'Linux'
         shell: bash
         run: |
           node_binary="$(command -v node)"
           for flavor in deb appimage; do
-            MCW_RECOVERY_ROUNDTRIP="$flavor" xvfb-run -a sudo -E unshare --net bash scripts/recovery/offline-linux.sh "$node_binary" node_modules/@playwright/test/cli.js test e2e/recovery-roundtrip.spec.ts --output="test-results/roundtrip-$flavor"
+            MCW_RECOVERY_ROUNDTRIP="$flavor" xvfb-run -a sudo -E unshare --net bash scripts/recovery/offline-linux.sh "$node_binary" node_modules/@playwright/test/cli.js test e2e/recovery-roundtrip.spec.ts e2e/startup-rescue.spec.ts --output="test-results/roundtrip-$flavor"
           done
       - uses: actions/upload-artifact@v7
         if: always()

@@ -38,6 +38,16 @@ it('rejects unauthenticated work and closes revoked sockets before further comma
   f.hub.disconnectDevice('phone');f.receive({type:'v2-terminal',sessionId:'session',command:{type:'takeOwnership'}});
   await new Promise(resolve=>setTimeout(resolve,10));expect(f.terminal.close).toHaveBeenCalled();expect(f.terminal.send).not.toHaveBeenCalled();
 });
+it('forwards bounded terminal requests and rejects invalid request identities',async()=>{
+  const f=fixture();await f.login();f.receive({type:'attach',sessionId:'session'});await vi.waitFor(()=>expect(f.client.terminalSocket).toHaveBeenCalled());
+  const search={type:'search',requestId:'req-1',params:{query:'word',direction:'forward',cursor:{row:0,col:0},content_revision:2}};
+  f.receive({type:'v2-terminal',sessionId:'session',command:search});
+  f.receive({type:'v2-terminal',sessionId:'session',command:{type:'selection',requestId:'req-2',params:{content_revision:2}}});
+  f.receive({type:'v2-terminal',sessionId:'session',command:{type:'clear',requestId:'x'.repeat(65)}});
+  await vi.waitFor(()=>expect(f.terminal.send).toHaveBeenCalledTimes(2));
+  expect(f.terminal.send).toHaveBeenCalledWith(search);
+  await vi.waitFor(()=>expect(f.send).toHaveBeenCalledWith(expect.objectContaining({type:'error'})));
+});
 it('does not proxy administrative operations, replacement authentication or arbitrary terminal targets',async()=>{
   const f=fixture();await f.login();f.receive({type:'v2-request',requestId:'1',operation:'shutdown',args:[]});
   await vi.waitFor(()=>expect(f.send).toHaveBeenCalledWith(expect.objectContaining({type:'v2-reply',requestId:'1',error:expect.any(String)})));

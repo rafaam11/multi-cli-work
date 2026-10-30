@@ -32,6 +32,74 @@ describe("shared Herdr terminal ownership and input", () => {
     act(()=>receive({type:'surface',surface:surface()}));expect(ready).toHaveBeenLastCalledWith(true);
     act(()=>receive({type:'disconnected',observedAt:1000}));expect(ready).toHaveBeenLastCalledWith(false);
   });
+  it("publishes commands, honors shift-enter bytes and completes refresh after a snapshot",async()=>{
+    const t=transport(), clear=vi.fn(async()=>{});t.clear=clear;t.selection=vi.fn(async()=>({text:"scrollback and visible"}));
+    let commands:import("../TerminalPane").TerminalCommands|null=null;
+    const complete=vi.fn(),register=vi.fn((value:import("../TerminalPane").TerminalCommands|null)=>{commands=value;});
+    const view=render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t} onRegisterCommands={register} onRefreshComplete={complete} shiftEnterBytes={"\x1b\r"}/>);
+    const base=surface();act(()=>receive({type:"surface",surface:{...base,panes:[{pane_id:"p",content_revision:2,rect:{x:0,y:0,width:2,height:1},inner_rect:{x:0,y:0,width:2,height:1},scrollbar_rect:null,scroll:{offset_from_bottom:0,max_offset_from_bottom:5,viewport_rows:1},focused:true,mouse_reporting:false,sgr_pixel_mouse:false,alternate_screen_active:false,pixel_width:18,pixel_height:20}]}}));
+    fireEvent.keyDown(screen.getByLabelText("터미널 입력"),{key:"Enter",shiftKey:true});
+    expect(t.sendInput).toHaveBeenCalledWith("s",{TextCommit:"\x1b\r"});
+    await act(async()=>{commands!.selectAll();await Promise.resolve();});expect(commands!.selectionText!()).toBe("scrollback and visible");
+    act(()=>commands!.clear());expect(clear).toHaveBeenCalledWith("s");
+    view.rerender(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t} onRegisterCommands={register} refreshRequest={1} onRefreshComplete={complete}/>);
+    expect(complete).not.toHaveBeenCalled();
+    act(()=>receive({type:"surface",surface:surface()}));expect(complete).toHaveBeenCalledOnce();
+    view.unmount();expect(register).toHaveBeenLastCalledWith(null);
+  });
+  it("ignores an obsolete search reply when content changes and preserves a later manual selection",async()=>{
+    const t=transport();let finish!:(value:unknown)=>void;t.search=vi.fn(()=>new Promise(resolve=>{finish=resolve;}));
+    const base=surface(),pane={pane_id:"p",content_revision:2,rect:{x:0,y:0,width:2,height:1},inner_rect:{x:0,y:0,width:2,height:1},scrollbar_rect:null,scroll:{offset_from_bottom:0,max_offset_from_bottom:5,viewport_rows:1},focused:true,mouse_reporting:false,sgr_pixel_mouse:false,alternate_screen_active:false,pixel_width:18,pixel_height:20};
+    render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t}/>);
+    act(()=>receive({type:"surface",surface:{...base,panes:[pane]}}));
+    fireEvent.keyDown(screen.getByLabelText("터미널 입력"),{key:"f",ctrlKey:true});
+    fireEvent.change(screen.getByLabelText("찾을 텍스트"),{target:{value:"word"}});
+    fireEvent.keyDown(screen.getByLabelText("찾을 텍스트"),{key:"Enter"});
+    expect(t.search).toHaveBeenCalledOnce();
+    act(()=>receive({type:"surface",surface:{...base,surface_revision:2,panes:[{...pane,content_revision:4}]}}));
+    await act(async()=>finish({pane_id:"p",content_revision:2,matches:[{start:{row:0,col:0},end:{row:0,col:1}}],current:0,total:1}));
+    expect(t.scroll).not.toHaveBeenCalled();expect(screen.queryByText("1개 결과")).not.toBeInTheDocument();
+  });
+  it("does not restore a search highlight after a manual selection or use its previous match",async()=>{
+    vi.stubGlobal("PointerEvent",MouseEvent);
+    const t=transport();t.search=vi.fn(async()=>({pane_id:"p",content_revision:2,matches:[{start:{row:5,col:0},end:{row:5,col:1}}],current:0,total:1}));
+    const base=surface(),pane={pane_id:"p",content_revision:2,rect:{x:0,y:0,width:2,height:1},inner_rect:{x:0,y:0,width:2,height:1},scrollbar_rect:null,scroll:{offset_from_bottom:0,max_offset_from_bottom:5,viewport_rows:1},focused:true,mouse_reporting:false,sgr_pixel_mouse:false,alternate_screen_active:false,pixel_width:18,pixel_height:20};
+    let commands:import("../TerminalPane").TerminalCommands|null=null;
+    render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t} onRegisterCommands={value=>{commands=value;}}/>);
+    act(()=>receive({type:"surface",surface:{...base,panes:[pane]}}));
+    fireEvent.keyDown(screen.getByLabelText("터미널 입력"),{key:"f",ctrlKey:true});
+    fireEvent.change(screen.getByLabelText("찾을 텍스트"),{target:{value:"word"}});
+    await act(async()=>{fireEvent.keyDown(screen.getByLabelText("찾을 텍스트"),{key:"Enter"});await Promise.resolve();});
+    fireEvent.pointerDown(screen.getByLabelText("터미널 화면"),{button:0,pointerId:1,clientX:0,clientY:0});
+    expect(commands!.selectionText!()).toBe("한");
+    act(()=>receive({type:"surface",surface:{...base,surface_revision:2,panes:[pane]}}));
+    expect(commands!.selectionText!()).toBe("한");
+    await act(async()=>{fireEvent.keyDown(screen.getByLabelText("찾을 텍스트"),{key:"Enter"});await Promise.resolve();});
+    expect(vi.mocked(t.search!).mock.calls[1][1]).not.toHaveProperty("previous");
+  });
+  it("waits for full scrollback selection before copying",async()=>{
+    const t=transport();let finish!:(value:unknown)=>void;t.selection=vi.fn(()=>new Promise(resolve=>{finish=resolve;}));
+    const write=vi.fn(async()=>{});vi.stubGlobal("multiCliWork",{clipboard:{writeText:write}});
+    let commands:import("../TerminalPane").TerminalCommands|null=null;
+    const base=surface(),pane={pane_id:"p",content_revision:2,rect:{x:0,y:0,width:2,height:1},inner_rect:{x:0,y:0,width:2,height:1},scrollbar_rect:null,scroll:{offset_from_bottom:0,max_offset_from_bottom:5,viewport_rows:1},focused:true,mouse_reporting:false,sgr_pixel_mouse:false,alternate_screen_active:false,pixel_width:18,pixel_height:20};
+    render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t} onRegisterCommands={value=>{commands=value;}}/>);
+    act(()=>receive({type:"surface",surface:{...base,panes:[pane]}}));
+    act(()=>{commands!.selectAll();commands!.copySelection();});expect(write).not.toHaveBeenCalled();
+    await act(async()=>{finish({text:"older output\nvisible"});await Promise.resolve();await Promise.resolve();});
+    expect(write).toHaveBeenCalledWith("older output\nvisible");
+  });
+  it("opens safe OSC links through the supplied gateway and ignores unsafe schemes",async()=>{
+    vi.stubGlobal("PointerEvent",MouseEvent);
+    const t=transport(),open=vi.fn(async()=>{}),base=surface();
+    base.frame.cells=[{...base.frame.cells[0],symbol:"a",hyperlink:0},{...base.frame.cells[0],symbol:"b",hyperlink:1}];
+    base.frame.hyperlinks=["https://example.com","javascript:alert(1)"];
+    render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="desktop" transport={t} onOpenExternal={open}/>);
+    act(()=>receive({type:"surface",surface:base}));
+    const canvas=screen.getByLabelText("터미널 화면");
+    fireEvent.pointerDown(canvas,{button:0,ctrlKey:true,clientX:0,clientY:0});
+    fireEvent.pointerDown(canvas,{button:0,ctrlKey:true,clientX:10,clientY:0});
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://example.com");
+  });
   it("accepts a fresh connection's lower surface revision after host restart without taking control",()=>{
     const t=transport();render(<HerdrTerminal sessionId="s" viewerId="viewer" ownerId={null} transport={t}/>);
     act(()=>receive({type:"surface",surface:{...surface(),surface_revision:70}}));

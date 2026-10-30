@@ -1,6 +1,7 @@
 import {open,readFile,rename,rm,lstat,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
 import lockfile from 'proper-lockfile';
 import type {CoordinateRollbackOptions,RecoveryHostObservation,RecoveryPhase} from '../../shared/recovery-types';
 import {observeProcessTree,type ProcessIdentity} from '../herdr/process-observation';
@@ -35,7 +36,18 @@ export function recoveryControllerRunning(state:Pick<RecoveryOperationState,'con
 export async function writeRecoveryState(filename:string,value:unknown):Promise<void>{
   const temporary=`${filename}.${randomUUID()}.tmp`,file=await open(temporary,'wx',0o600);
   try{await file.writeFile(JSON.stringify(value,null,2)+'\n');await file.sync();}finally{await file.close();}
-  try{await rename(temporary,filename);}finally{await rm(temporary,{force:true});}
+  try{
+    for(let attempt=0;;attempt++){
+      try{await rename(temporary,filename);break;}
+      catch(error){
+        // Windows readers can briefly deny replacement. Retry only this atomic
+        // filesystem operation, keeping the old journal and the exact synced
+        // replacement intact. Never unlink the destination or replay an action.
+        if(attempt>=8||!['EPERM','EACCES','EBUSY'].includes((error as NodeJS.ErrnoException).code??''))throw error;
+        await delay(Math.min(25*2**attempt,250));
+      }
+    }
+  }finally{await rm(temporary,{force:true});}
 }
 export async function readRecoveryState(directory:string):Promise<RecoveryOperationState|null>{
   try{

@@ -275,7 +275,7 @@ if (!hasSingleInstanceLock) {
         const prepareRecovery=async(data:PreparedV2Data)=>{
           await fs.mkdir(data.registry,{recursive:true,mode:0o700});
           const {hostId}=await ensureDesktopHostIdentity(data.userData);
-          const options={hostId,v1ProviderEnvironment:captureV1ProviderEnvironment(process.env),backupDirectory:data.backupDirectory,recoveryRoot:data.recoveryRoot,assetsDirectory:recoveryAssets,userData:data.userData,registryRoot:data.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
+          const options={hostId,v1ProviderEnvironment:captureV1ProviderEnvironment(process.env),backupDirectory:data.backupDirectory,recoveryRoot:data.recoveryRoot,assetsDirectory:recoveryAssets,userData:data.userData,registryRoot:data.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[process.execPath,path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
           await preserveRecoveryInstallation(options);return options;
         };
         const prepared = await prepareV2Data({v1UserData, v1Registry: process.env.MCW_V1_REGISTRY ?? path.join(os.homedir(), ".multi-cli-work"), v1ClaudeConfig:process.env.MULTI_CLI_WORK_CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(),".claude"), recoveryRoot,
@@ -290,7 +290,7 @@ if (!hasSingleInstanceLock) {
         const shellCandidate=app.isPackaged?path.join(process.resourcesPath,'mobile'):path.join(sourceRoot,'build/mobile');
         const shellDirectory=await import('node:fs/promises').then(fs=>fs.stat(shellCandidate).then(info=>info.isDirectory()?shellCandidate:undefined,error=>{if(error.code==='ENOENT')return undefined;throw error;}));
         const managed=await stageManagedHostRuntime({resourcesDirectory,bridgeDirectory,recoveryRoot:prepared.recoveryRoot,mobileDirectory,shellDirectory});
-        recoveryOptions.runtimePaths=managed.runtimePaths;
+        recoveryOptions.runtimePaths=[process.execPath,...managed.runtimePaths];
         await preserveRecoveryInstallation(recoveryOptions);
         v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory:managed.resourcesDirectory,bridgeDirectory:managed.bridgeDirectory,entryPath:managed.entryPath}),backupDirectory:prepared.backupDirectory};
         v2Host.recovery=await createDesktopRecovery({...recoveryOptions,...v2Host,suspendUpdater:suspendUpdaterForRecovery,quit:requestQuit,openDirectory:directory=>shell.openPath(directory)});

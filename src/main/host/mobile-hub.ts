@@ -18,7 +18,7 @@ interface Options {
 interface Viewer {connection:RemoteConnection;device:RemoteDevice|null;ready:boolean;closed:boolean;timer:ReturnType<typeof setTimeout>;terminals:Map<string,HostTerminalSocket>;requests:Set<string>;queued:number}
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const identifier=(value:unknown):value is string=>typeof value==='string'&&/^[\w-]{1,128}$/.test(value);
-const terminalFields:Record<string,string[]>={snapshot:[],takeOwnership:[],releaseOwnership:[],input:['data'],resize:['cols','rows','cellWidthPx','cellHeightPx'],scroll:['delta']};
+const terminalFields:Record<string,string[]>={snapshot:[],takeOwnership:[],releaseOwnership:[],input:['data'],resize:['cols','rows','cellWidthPx','cellHeightPx'],scroll:['delta'],clear:['requestId'],search:['requestId','params'],selection:['requestId','params']};
 
 /** A phone connects directly to this PC. Owner credentials stay in this process;
  * each viewed pane has its own authenticated socket and explicit control owner. */
@@ -135,6 +135,8 @@ export class HostMobileHub {
     if(message.type==='v2-terminal'){
       const command=message.command;
       if(!identifier(message.sessionId)||!object(command)||typeof command.type!=='string'||!Object.hasOwn(terminalFields,command.type)||Object.keys(command).some(key=>key!=='type'&&!terminalFields[command.type as string].includes(key)))throw new Error('Invalid terminal command');
+      if(['clear','search','selection'].includes(command.type) && (typeof command.requestId!=='string'||!/^[\w-]{1,64}$/.test(command.requestId)))throw new Error('Invalid terminal request');
+      if(['search','selection'].includes(command.type) && !object(command.params))throw new Error('Invalid terminal parameters');
       const terminal=viewer.terminals.get(message.sessionId);if(!terminal)throw new Error('Terminal is not attached');terminal.send(command);return;
     }
     if(message.type==='v2-request'){

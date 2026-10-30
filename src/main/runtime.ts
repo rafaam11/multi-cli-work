@@ -2,6 +2,7 @@ import { codexIndicatorUpdate } from "./providers/codex-indicators";
 import { indicatorsFromMetadata } from "../shared/herdr-metadata";
 import { observeHost } from "./v2/host-observer";
 import { observedTerminals,observedTaskNotices } from "./v2/observed-terminals";
+import { shouldShowTerminalStatusNotification } from "./notification-policy";
 import { hostSessionView } from "./v2/worker-gateway";
 import {
   app,
@@ -351,6 +352,8 @@ export async function createDesktopRuntime(
   const worktrees: WorktreeService = new WorktreeService({
     ...(worktreeRegistryPath ? { registryPath: worktreeRegistryPath } : {}),
     getProject,
+    holdWorktreeRemoval: (cwd,id) => coordinator.holdWorktreeRemoval(cwd,id),
+    settleWorktreeRemoval: (id) => coordinator.settleWorktreeRemoval(id),
     stopWorktreeSessions: (worktreeId) => coordinator.stopWorktreeSessions(worktreeId),
     removeWorktreeSessions: (worktreeId) => coordinator.removeWorktreeSessions(worktreeId),
     hasWorktreeSessions: (worktreeId) => coordinator.list().some((session) => session.worktreeId === worktreeId),
@@ -694,6 +697,7 @@ export async function createDesktopRuntime(
   const notifiedTaskEvents = new Set<string>();
   onTaskState = () => {
     publishAttention(attention.snapshot());
+    void coordinator.state().then(({state:selection})=>{
     const state=v2Watcher?.snapshot();if(!state?.connected)return;
     const settings=settingsService.current().notifications;
     for(const {task,sessionId,notice,hostId,hostName,connected} of observedTaskNotices(state)){
@@ -702,9 +706,12 @@ export async function createDesktopRuntime(
       const keys=ids.map(id=>JSON.stringify([hostId,task.id,id]));
       const fresh=keys.some(id=>!notifiedTaskEvents.has(id));keys.forEach(id=>notifiedTaskEvents.add(id));
       if(!fresh || !settings.desktop || !settings.statuses[notice.kind==="approval"?"awaiting-approval":"awaiting-input"] || notificationsMuted(settings,new Date()) || !Notification.isSupported())continue;
+      const window=mainWindowState(host.getMainWindow());
+      if(!shouldShowTerminalStatusNotification({eventSessionId:sessionId,selectedSessionId:selection.selectedSessionId,visibleSessionIds:selection.visibleSessionIds??[],windowVisible:window.visible,windowFocused:window.focused}))continue;
       const notification=new Notification({title:notice.kind==="approval"?"작업 승인 대기":notice.kind==="question"?"작업 질문 도착":"작업 결과 제출",body:hostName?`${hostName} · ${task.title}`:task.title});
       notification.on("click",()=>{showMainWindow();sendToMainWindow(host.getMainWindow(),"navigation:session-requested",{sessionId});});notification.show();
     }
+    }).catch(error=>console.error('Failed to read task notification visibility',error));
   };
   onTaskState();
 
@@ -1185,7 +1192,7 @@ export async function createDesktopRuntime(
         projectActions.openInEditor(await resolveWorkspaceEntryPath(rootPath, relativePath), position),
       resolveTerminalPath: async (sessionId, raw) => {
         const view = coordinator.list().find((session) => session.id === sessionId);
-        if (!view?.projectId) return null;
+        if (!view?.projectId || view.remote) return null;
         const target: FileExplorerTarget = view.worktreeId
           ? { kind: "worktree", id: view.worktreeId }
           : { kind: "project", id: view.projectId };

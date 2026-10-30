@@ -49,7 +49,7 @@ export async function createInstallFixture(platform:InstallPlatform){
   const install=async(version:'v1'|'v2')=>{
     assertDisposableRunner();await assertNoApps();const file=version==='v1'?original:candidate;
     if(version==='v1')expect(await digest(file)).toBe(ORIGINAL_INSTALLERS[platform].sha256);
-    if(platform==='win32')await run(file,['/S',`/D=${path.dirname(executable)}`],{windowsHide:true,windowsVerbatimArguments:true,timeout:180000,maxBuffer:4*1024*1024});
+    if(platform==='win32')await run(file,['/S',`/D=${path.dirname(executable)}`],{env:version==='v2'?v2Environment:environment,windowsHide:true,windowsVerbatimArguments:true,timeout:180000,maxBuffer:4*1024*1024});
     else if(platform==='deb')await run('sudo',['-n','/usr/bin/dpkg','--install',file],{timeout:180000,maxBuffer:4*1024*1024});
     else{await fs.copyFile(file,executable);await fs.chmod(executable,0o700);}
   };

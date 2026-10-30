@@ -2407,6 +2407,19 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   list-style: none;
 }
 
+/* Remote host, repository and checkout levels share the sidebar's narrow rail. */
+.remote-project-tree ul {
+  margin: 0;
+  padding-left: 10px;
+  list-style: none;
+}
+.remote-project-tree summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-project-tree details, .remote-project-tree li { min-width: 0; }
+
 .work-project-empty {
   margin: 2px 0 2px 10px;
   padding: 6px 10px;

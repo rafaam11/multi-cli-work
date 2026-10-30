@@ -35,6 +35,7 @@ vi.mock("./worktree-registry", () => ({
   readWorktreeRegistry: async () => ({ worktrees: {} }),
   applyWorktreeEntryChanges: vi.fn(async () => undefined),
 }));
+vi.mock("./pending-worktree-removals",()=>({PendingWorktreeRemovals:class {async list(){return {};}}}));
 import { WorktreeService } from "./worktree-service";
 import { readGitStatus } from "./git-status";
 

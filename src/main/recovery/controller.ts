@@ -8,7 +8,7 @@ import {connectSshHost,validateSshHostConfiguration} from '../host/ssh-host';
 import type {HostRegistration} from '../../shared/host-connection-types';
 import type {RollbackLifecycleAdapter,RecoveryHostObservation} from '../../shared/recovery-types';
 import {readProcessInventory,observeProcessTree} from '../herdr/process-observation';
-import {findRecoveryProcesses} from './residual-processes';
+import {findRecoveryProcesses,MCW_GUI_PROCESS_NAMES} from './residual-processes';
 import {RecoveryWorkHolds} from './work-holds';
 import {RecoveryWorkSession} from './work-session';
 import {openLocalRecoveryAuthority} from './local-authority';
@@ -83,7 +83,8 @@ export async function createAdapter(request:RecoveryRequest,forCancellation=fals
       await update('waiting-gui');
       for(;;){
         await checkCancel();const processes=await readProcessInventory(request.bridgePath);
-        const apps=findRecoveryProcesses(processes,{applicationNames:['Multi CLI Work.exe','Multi CLI Work Preview.exe','multi-cli-work','multi-cli-work-preview'],runtimePaths:[request.executablePath],trackedPids:[]},process.platform);
+        const guiPaths=request.runtimePaths.filter(file=>MCW_GUI_PROCESS_NAMES.some(name=>name.toLowerCase()===path.basename(file).toLowerCase()));
+        const apps=findRecoveryProcesses(processes,{applicationNames:MCW_GUI_PROCESS_NAMES,runtimePaths:[request.executablePath,...guiPaths],trackedPids:[]},process.platform);
         if((!request.guiProcess||observeProcessTree([request.guiProcess],processes).status==='exited')&&apps.length===0)break;
         await delay(1000);
       }

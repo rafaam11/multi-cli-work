@@ -61,7 +61,7 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
   handle("host-remove",(hostId:string)=>{if(typeof hostId!=="string"||!/^[\w-]{1,128}$/.test(hostId))throw new Error("Invalid host ID");return options.client.request(`/hosts/${encodeURIComponent(hostId)}`,"DELETE");});
   handle("configuration", async () => ({ hostId: options.hostId, ...await options.configuration() }));
   handle("tasks", (hostId?:string) => {ownerTaskRoute(undefined,hostId);return options.client.tasks(hostId);});
-  handle("task-create", (input,hostId?:string) => {ownerTaskRoute(undefined,hostId);return options.client.createTask(input,hostId);});
+  handle("task-create", (input,hostId?:string) => {ownerTaskRoute(undefined,hostId);return !hostId&&input?.projectId?options.client.request("/tasks/registered","POST",input):options.client.createTask(input,hostId);});
   handle("execution-catalog",(hostId:string)=>{const prefix=ownerTaskRoute(undefined,hostId).replace(/\/tasks$/,"/execution-catalog");return options.client.request(prefix);});
   const workerRoute=(ownerHostId?:string,workerHostId?:string)=>{
     if(workerHostId!==undefined)ownerTaskRoute(undefined,workerHostId);
@@ -94,8 +94,20 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
     resolveRemoteSession(options.state?.().hosts??[],viewId);return viewId;
   });
   handle("task-start", async (id: string, input: { repositoryPath: string; expectedHead: string;remoteWorkers?:import("../../shared/remote-task-types").RemoteWorkerSelection[] }) => {
+    ownerTaskRoute(id);
     if (!input || typeof input.repositoryPath !== "string" || typeof input.expectedHead !== "string" || Object.keys(input).some(key => !["repositoryPath", "expectedHead","remoteWorkers"].includes(key))||(input.remoteWorkers!==undefined&&!Array.isArray(input.remoteWorkers))) throw new Error("작업 시작 정보가 올바르지 않습니다.");
-    const task = await options.client.inspectTask(id), configuration = await options.configuration();
+    const task = await options.client.inspectTask(id);
+    if(task.projectId){
+      const catalog=await options.client.request<import("../../shared/execution-catalog").ExecutionCatalog>("/execution-catalog");
+      const normalize=(value:string)=>{const normalized=path.normalize(value);return process.platform==="win32"?normalized.toLowerCase():normalized;};
+      const repository=catalog.repositories.find(repo=>repo.projectId===task.projectId&&normalize(repo.path)===normalize(input.repositoryPath));
+      if(!repository)throw new Error("작업 프로젝트에 속한 등록 저장소를 선택하세요.");
+      const inspected=await options.client.request<import("../../shared/execution-catalog").RepositoryInspection>(`/execution-catalog/repositories/${encodeURIComponent(repository.id)}`);
+      if(inspected.expectedHead!==input.expectedHead)throw new Error("기준 커밋이 바뀌었습니다. 다시 확인하세요.");
+      const result=await options.client.request(`/tasks/${encodeURIComponent(id)}/start-registered`,"POST",{repositoryId:repository.id,expectedPath:inspected.repository.path,expectedHead:input.expectedHead,...input.remoteWorkers===undefined?{}:{remoteWorkers:input.remoteWorkers}});
+      await options.reconcile();return result;
+    }
+    const configuration = await options.configuration();
     const profiles = await Promise.all(task.participants.filter(member=>!member.hostId||member.hostId===options.hostId).map(async member => {
       const profile = configuration.launchProfiles.find(profile => profile.id === member.profileId && profile.agentId === member.provider);
       const executable = await options.executable(member.provider);
@@ -122,7 +134,7 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
   handle("terminal-unsubscribe", (id: string, reference: string) => { const viewer = viewers.get(id); viewer?.references.delete(reference); if (viewer && !viewer.references.size) { closeViewer(viewer); viewers.delete(id); } });
   handle("terminal-command", (id: string, command: Record<string, unknown>) => {
     const viewer = viewers.get(id); if (!viewer) throw new Error("Terminal viewer not attached");
-    if (!command || !["snapshot", "input", "resize", "scroll", "takeOwnership", "releaseOwnership"].includes(String(command.type))) throw new Error("Invalid terminal command");
+    if (!command || !["snapshot", "input", "resize", "scroll", "takeOwnership", "releaseOwnership", "clear", "search", "selection"].includes(String(command.type))) throw new Error("Invalid terminal command");
     if (!viewer.ready) {if(command.type==="snapshot")return;throw new Error("호스트 연결이 복구되면 제어권을 다시 요청하세요.");}
     viewer.socket!.send(command);
   });

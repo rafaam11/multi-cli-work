@@ -9,6 +9,6 @@ module.exports = {
   directories: { output: 'release-v2-recovery' },
   win: { ...preview.win, artifactName: 'MCW-Recovery-Candidate-${version}-${arch}.${ext}' },
   linux: { ...preview.linux, artifactName: 'MCW-Recovery-Candidate-${version}-${arch}.${ext}', desktop: original.linux.desktop },
-  nsis: { ...original.nsis, shortcutName: original.productName },
+  nsis: { ...original.nsis, include: 'build/v2-installer.nsh', shortcutName: original.productName },
   publish: null,
 };

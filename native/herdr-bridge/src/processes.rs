@@ -201,3 +201,58 @@ mod tests {
         assert!(parse_stat("12 malformed").is_err());
     }
 }
+
+/// Kernel boot identity, independent of wall clock and process PID reuse.
+#[cfg(target_os = "linux")]
+pub fn boot_identity() -> io::Result<String> {
+    Ok(std::fs::read_to_string("/proc/sys/kernel/random/boot_id")?
+        .trim()
+        .to_owned())
+}
+#[cfg(windows)]
+pub fn boot_identity() -> io::Result<String> {
+    #[repr(C)]
+    struct BootEnvironment {
+        identifier: [u8; 16],
+        firmware_type: u32,
+        flags: u64,
+    }
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtQuerySystemInformation(
+            class: u32,
+            data: *mut std::ffi::c_void,
+            length: u32,
+            returned: *mut u32,
+        ) -> i32;
+    }
+    let mut value: BootEnvironment = unsafe { std::mem::zeroed() };
+    let mut returned = 0;
+    let status = unsafe {
+        NtQuerySystemInformation(
+            90,
+            &mut value as *mut _ as *mut _,
+            std::mem::size_of::<BootEnvironment>() as u32,
+            &mut returned,
+        )
+    };
+    if status < 0 || returned < 16 || value.identifier == [0; 16] {
+        return Err(io::Error::other(format!(
+            "Cannot verify native boot identity ({status})"
+        )));
+    }
+    Ok(value
+        .identifier
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+#[cfg(test)]
+mod boot_tests {
+    #[test]
+    fn boot_identity_is_nonempty_and_stable() {
+        let first = super::boot_identity().unwrap();
+        assert!(!first.is_empty());
+        assert_eq!(first, super::boot_identity().unwrap());
+    }
+}

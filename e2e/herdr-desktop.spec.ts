@@ -5,7 +5,7 @@ import os from 'node:os';
 import {HostClient,type HostTerminalSocket} from '../src/main/host/host-client';
 import {HerdrApiClient} from '../src/main/herdr/api-client';
 import {resolveHerdrPaths} from '../src/main/herdr/runtime';
-import {applySurfaceEvent} from '../src/shared/herdr-surface-model';
+import {applySurfaceEvent,selectionText} from '../src/shared/herdr-surface-model';
 import type {PaneSurfaceFrame,HerdrSurfaceEvent} from '../src/shared/herdr-surface-types';
 
 // Real Chromium composition, clipboard and pointer events -> Canvas -> host ->
@@ -19,10 +19,13 @@ test('desktop terminal accepts Korean composition, paste, mouse, graphics and sc
   await fs.mkdir(userData);await fs.mkdir(registry);
   const probe=path.resolve('native/herdr-bridge/target/debug/examples',process.platform==='win32'?'terminal-probe.exe':'terminal-probe');
   await fs.access(probe);
-  const env:NodeJS.ProcessEnv={...process.env,MCW_RUNTIME:'v2-preview',MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:recoveryRoot,MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,'claude'),MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,'codex')};
+  const env:NodeJS.ProcessEnv={...process.env,MCW_RUNTIME:process.env.MCW_V2_E2E_RUNTIME??'v2-preview',MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:recoveryRoot,MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,'claude'),MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,'codex')};
   delete env.ELECTRON_RUN_AS_NODE;
   let app:ElectronApplication|undefined,client:HostClient|undefined,observer:HostTerminalSocket|undefined,surface:PaneSurfaceFrame|null=null,succeeded=false;
   const errors:string[]=[];
+  // Native cells include wide-glyph continuation slots. Read their displayed
+  // text rather than concatenating padding cells into Korean words.
+  const surfaceText=()=>surface?selectionText(surface,{x:0,y:0},{x:surface.frame.width-1,y:surface.frame.height-1}):'';
   const readInput=async()=>{const raw=await fs.readFile(path.join(directory,'input.jsonl'),'utf8').catch(()=> '');return Buffer.from(raw.trim().split('\n').filter(Boolean).flatMap(line=>JSON.parse(line) as number[])).toString('utf8');};
   let sequence=0;
   const emit=async(content:string)=>{const id=++sequence;await fs.writeFile(path.join(directory,'emit.json'),JSON.stringify({id,content}));await expect.poll(()=>fs.readFile(path.join(directory,'emitted'),'utf8').catch(()=>'' )).toBe(String(id));};
@@ -37,7 +40,7 @@ test('desktop terminal accepts Korean composition, paste, mouse, graphics and sc
     await client.createTerminal({sessionId,kind:process.platform==='win32'?'powershell':'bash',cwd:directory,executable:probe,args:[directory],env:{},projectId:null,createdAt:new Date().toISOString()});
     observer=client.terminalSocket(sessionId,event=>{const outer=event as {snapshot?:HerdrSurfaceEvent;frame?:HerdrSurfaceEvent};const value=outer.snapshot??outer.frame;if(value&&['surface','patch'].includes(value.type))surface=applySurfaceEvent(surface,value).surface;});
     await expect.poll(()=>fs.access(path.join(directory,'ready')).then(()=>true,()=>false)).toBe(true);
-    await page.locator('.session-row').first().click();
+    await page.getByRole('region',{name:'세션 패널',exact:true}).getByRole('button',{name:/패인 열기/}).first().click();
     const pane=page.locator(`[data-session-id="${sessionId}"]`),input=pane.getByLabel('터미널 입력',{exact:true}),canvas=pane.getByRole('img',{name:'터미널 화면'});
     await expect(canvas).toBeVisible();await pane.getByRole('button',{name:'제어 요청',exact:true}).click();
     await expect(input).toHaveAttribute('aria-readonly','false');
@@ -70,8 +73,37 @@ test('desktop terminal accepts Korean composition, paste, mouse, graphics and sc
     await expect.poll(()=>surface?.panes[0]?.scroll?.offset_from_bottom??0).toBeGreaterThan(50);
     await pane.getByRole('button',{name:'맨 아래',exact:true}).click();
     await expect.poll(()=>surface?.panes[0]?.scroll?.offset_from_bottom).toBe(0);
+    await page.getByRole('menuitem',{name:'편집',exact:true}).click();
+    await page.getByRole('menuitem',{name:/^모두 선택/}).click();
+    await page.getByRole('menuitem',{name:'편집',exact:true}).click();
+    await page.getByRole('menuitem',{name:/^복사/}).click();
+    await expect.poll(()=>app!.evaluate(({clipboard})=>clipboard.readText())).toContain('SELECT 한글 COPY');
+    expect(await app.evaluate(({clipboard})=>clipboard.readText())).toContain('BOTTOM');
+    await input.press('Control+f');
+    const search=pane.getByRole('search',{name:'터미널에서 찾기',exact:true});
+    await search.getByLabel('찾을 텍스트',{exact:true}).fill('SELECT 한글 COPY');
+    await search.getByLabel('찾을 텍스트',{exact:true}).press('Enter');
+    await expect(search.getByText(/개 결과$/)).toBeVisible();
+    await expect.poll(surfaceText).toContain('SELECT 한글 COPY');
+    await pane.getByRole('button',{name:'복사',exact:true}).click();
+    await expect.poll(()=>app!.evaluate(({clipboard})=>clipboard.readText())).toContain('SELECT 한글 COPY');
+    const searchBox=(await search.boundingBox())!,paneBox=(await pane.boundingBox())!;
+    expect(searchBox.y).toBeGreaterThanOrEqual(paneBox.y);expect(searchBox.x).toBeGreaterThanOrEqual(paneBox.x);
+    expect(searchBox.x+searchBox.width).toBeLessThanOrEqual(paneBox.x+paneBox.width+1);
+    // An opaque theme selection must not paint over the matched glyphs.
+    await expect.poll(()=>canvas.evaluate(element=>{const c=element as HTMLCanvasElement,scale=c.width/c.getBoundingClientRect().width;const pixels=c.getContext('2d')!.getImageData(0,0,Math.ceil(130*scale),Math.ceil(19*scale)).data;let light=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>150&&pixels[i+1]>150&&pixels[i+2]>150)light++;return light;})).toBeGreaterThan(30);
+    await pane.screenshot({path:info.outputPath('scrollback-search.png')});
+    await search.getByRole('button',{name:'닫기',exact:true}).click();
+    await pane.getByRole('button',{name:'맨 아래',exact:true}).click();
+    await expect.poll(()=>surface?.panes[0]?.scroll?.offset_from_bottom).toBe(0);
+    await page.getByRole('menuitem',{name:'세션',exact:true}).click();
+    await page.getByRole('menuitem',{name:/^새로고침/}).click();
+    await expect(input).toHaveAttribute('aria-readonly','false');
+    await page.getByRole('menuitem',{name:'세션',exact:true}).click();
+    await expect(page.getByRole('menuitem',{name:/^새로고침/})).toBeEnabled();
+    await page.keyboard.press('Escape');
     await emit('\x1b[2J\x1b[HSELECT 한글 COPY\r\n');
-    await expect.poll(()=>surface?.frame.cells.map(cell=>cell.symbol).join('')).toContain('SELECT 한글 COPY');
+    await expect.poll(surfaceText).toContain('SELECT 한글 COPY');
     const selectionBox=(await canvas.boundingBox())!,cw=selectionBox.width/surface!.frame.width,ch=selectionBox.height/surface!.frame.height;
     await page.mouse.move(selectionBox.x+cw*.3,selectionBox.y+ch*.5);await page.mouse.down();await page.mouse.move(selectionBox.x+cw*15.8,selectionBox.y+ch*.5,{steps:4});await page.mouse.up();
     await pane.getByRole('button',{name:'복사',exact:true}).click();
@@ -87,6 +119,11 @@ test('desktop terminal accepts Korean composition, paste, mouse, graphics and sc
     await expect.poll(()=>surface?.graphics.placements.length??0).toBeGreaterThan(0);
     await expect.poll(()=>canvas.evaluate(element=>{const c=element as HTMLCanvasElement;const pixels=c.getContext('2d')!.getImageData(0,0,c.width,c.height).data;let red=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>240&&pixels[i+1]<10&&pixels[i+2]<10)red++;return red;})).toBeGreaterThan(100);
     await pane.screenshot({path:info.outputPath('kitty-graphics.png')});
+    await emit('\x1b[2J\x1b[HMCW_CLEAR_SCREEN\r\n');
+    await expect.poll(()=>surface?.frame.cells.map(cell=>cell.symbol).join('')).toContain('MCW_CLEAR_SCREEN');
+    await page.getByRole('menuitem',{name:'편집',exact:true}).click();
+    await page.getByRole('menuitem',{name:'터미널 지우기',exact:true}).click();
+    await expect.poll(()=>surface?.frame.cells.map(cell=>cell.symbol).join('')).not.toContain('MCW_CLEAR_SCREEN');
     const loadStarted=Date.now(),extraDirectories:string[]=[];
     const questionTask=await client.createTask({title:'숨긴 세션 질문 검증',brief:'Disposable UI observation only; no provider launch.',lead:{provider:'codex',profileId:'fixture',hostId:descriptor.hostId},workers:[]});
     const participant=questionTask.participants[0];
@@ -125,7 +162,7 @@ test('desktop terminal accepts Korean composition, paste, mouse, graphics and sc
     await expect(page.getByRole('img',{name:'터미널 화면'})).toHaveCount(6);
     await page.screenshot({path:info.outputPath('six-visible-of-fifteen.png')});
     await client.request(`/tasks/${questionTask.id}/cancel`,'POST',{});
-    const observations={platform:process.platform,ime:'Chromium CDP composition and commit, not physical OS IME',paste:true,selection:true,scrollback:true,mouse:'SGR press and release',graphics:'Kitty RGB pixels rendered',sessions:15,concurrentVisible:6,creationMs,restoreMs,hiddenOutputSessions:14,hiddenQuestionUnread:true};
+    const observations={platform:process.platform,ime:'Chromium CDP composition and commit, not physical OS IME',paste:true,selection:true,selectAllScrollback:true,clear:true,scrollback:true,search:true,refreshCompletion:true,mouse:'SGR press and release',graphics:'Kitty RGB pixels rendered',sessions:15,concurrentVisible:6,creationMs,restoreMs,hiddenOutputSessions:14,hiddenQuestionUnread:true};
     await fs.writeFile(info.outputPath('terminal-observations.json'),JSON.stringify(observations,null,2));
     await info.attach('terminal-observations',{path:info.outputPath('terminal-observations.json'),contentType:'application/json'});
     succeeded=true;

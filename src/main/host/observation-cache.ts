@@ -3,9 +3,11 @@ import type { ManagedSession } from "../herdr/terminal-service";
 import { parseHerdrSessionRegistry } from "../herdr/terminal-service";
 import { validateTaskSnapshot } from "./task-validation";
 import type { JsonStoreSpec } from "../storage/json-store";
+import {parseExecutionCatalog,type ExecutionCatalog} from '../../shared/execution-catalog';
 
 export interface CachedHostObservation {
   hostId:string;platform:"win32"|"linux";observedAt:number;tasks:Task[];terminals:ManagedSession[];
+  catalog?:ExecutionCatalog;
 }
 interface ObservationCache {version:2;observations:CachedHostObservation[]}
 class ObservationCacheError extends Error {}
@@ -18,10 +20,11 @@ export const observationCacheSpec:JsonStoreSpec<ObservationCache>={
       if(!data||data.version!==2||Object.keys(data).some(key=>!["version","observations"].includes(key))||!Array.isArray(data.observations)||data.observations.length>32)throw Error();
       const ids=new Set<string>();
       for(const item of data.observations){
-        if(!item||Object.keys(item).some(key=>!["hostId","platform","observedAt","tasks","terminals"].includes(key))||typeof item.hostId!=="string"||!/^[\w-]{1,128}$/.test(item.hostId)||ids.has(item.hostId)||!["win32","linux"].includes(item.platform)||!Number.isSafeInteger(item.observedAt)||item.observedAt<0)throw Error();
+        if(!item||Object.keys(item).some(key=>!["hostId","platform","observedAt","tasks","terminals","catalog"].includes(key))||typeof item.hostId!=="string"||!/^[\w-]{1,128}$/.test(item.hostId)||ids.has(item.hostId)||!["win32","linux"].includes(item.platform)||!Number.isSafeInteger(item.observedAt)||item.observedAt<0)throw Error();
         ids.add(item.hostId);
         validateTaskSnapshot({schemaVersion:2,hostId:item.hostId,tasks:item.tasks,outbox:[]});
         parseHerdrSessionRegistry({version:2,sessions:item.terminals},item.platform);
+        if(item.catalog){const catalog=parseExecutionCatalog(item.catalog,item.hostId);if(catalog.platform!==item.platform)throw Error();item.catalog=catalog;}
       }
       return data;
     }catch{throw new ObservationCacheError("Invalid remote host observations");}

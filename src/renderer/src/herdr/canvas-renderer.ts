@@ -5,7 +5,7 @@ import type { GraphicsCache } from "./graphics-cache";
 export interface CanvasMetrics { cellWidth: number; cellHeight: number; fontSize: number; fontFamily: string }
 export interface CanvasTheme { foreground: string; background: string; cursor: string; selection: string }
 export const DEFAULT_CANVAS_THEME: CanvasTheme = { foreground: "#e5e5e5", background: "#15171b", cursor: "#a8c7fa", selection: "#7396cf66" };
-interface DrawOptions { selection?: { start: CellPoint; end: CellPoint } | null; blinkVisible?: boolean; behindText?(): void; aboveText?(): void }
+interface DrawOptions { selection?: { start: CellPoint; end: CellPoint } | null; blinkVisible?: boolean; cursorStyle?: "block" | "underline" | "bar"; cursorBlink?:boolean; behindText?(): void; aboveText?(): void }
 /** Cell width comes from the server grid, never from JS string length. */
 export function drawFrame(context: CanvasRenderingContext2D, frame: FrameData, metrics: CanvasMetrics, theme: CanvasTheme, options: DrawOptions = {}): void {
   const { cellWidth: cw, cellHeight: ch, fontSize, fontFamily } = metrics;
@@ -16,6 +16,19 @@ export function drawFrame(context: CanvasRenderingContext2D, frame: FrameData, m
     const cell = frame.cells[y * frame.width + x];
     context.fillStyle = decodeColor(cell.modifier & 64 ? cell.fg : cell.bg, cell.modifier & 64 ? theme.foreground : theme.background);
     context.fillRect(x * cw, y * ch, cw, ch);
+  }
+  // Selection colors supplied by desktop themes may be opaque. They belong
+  // behind glyphs, otherwise selecting or finding text erases it visually.
+  if (options.selection) {
+    const { start, end } = options.selection;
+    const a = Math.min(start.y * frame.width + start.x, end.y * frame.width + end.x);
+    const b = Math.max(start.y * frame.width + start.x, end.y * frame.width + end.x);
+    context.fillStyle = theme.selection;
+    for (let y = Math.floor(a / frame.width); y <= Math.floor(b / frame.width); y++) {
+      const left = y === Math.floor(a / frame.width) ? a % frame.width : 0;
+      const right = y === Math.floor(b / frame.width) ? b % frame.width : frame.width - 1;
+      context.fillRect(left * cw, y * ch, (right - left + 1) * cw, ch);
+    }
   }
   options.behindText?.();
   context.textBaseline = "alphabetic";
@@ -53,19 +66,9 @@ export function drawFrame(context: CanvasRenderingContext2D, frame: FrameData, m
     x+=span-1;
   }
   options.aboveText?.();
-  if (options.selection) {
-    const { start, end } = options.selection;
-    const a = Math.min(start.y * frame.width + start.x, end.y * frame.width + end.x);
-    const b = Math.max(start.y * frame.width + start.x, end.y * frame.width + end.x);
-    context.fillStyle = theme.selection;
-    for (let y = Math.floor(a / frame.width); y <= Math.floor(b / frame.width); y++) {
-      const left = y === Math.floor(a / frame.width) ? a % frame.width : 0;
-      const right = y === Math.floor(b / frame.width) ? b % frame.width : frame.width - 1;
-      context.fillRect(left * cw, y * ch, (right - left + 1) * cw, ch);
-    }
-  }
-  const cursor = frame.cursor;
-  if (cursor?.visible && (cursor.shape !== 0 && !(cursor.shape % 2) || options.blinkVisible !== false)) {
+  const originalCursor = frame.cursor;
+  const cursor = originalCursor && options.cursorStyle ? {...originalCursor, shape: options.cursorStyle === "underline" ? 4 : options.cursorStyle === "bar" ? 6 : 2} : originalCursor;
+  if (cursor?.visible && (options.cursorBlink === false || options.cursorBlink !== true && cursor.shape !== 0 && !(cursor.shape % 2) || options.blinkVisible !== false)) {
     context.fillStyle = theme.cursor;
     if (cursor.shape === 3 || cursor.shape === 4) context.fillRect(cursor.x * cw, (cursor.y + 1) * ch - 2, cw, 2);
     else if (cursor.shape === 5 || cursor.shape === 6) context.fillRect(cursor.x * cw, cursor.y * ch, 2, ch);

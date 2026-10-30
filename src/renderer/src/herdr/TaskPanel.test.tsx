@@ -108,7 +108,7 @@ describe("v2 task dashboard", () => {
     host.taskAction=vi.fn(async()=>{});host.terminalViewId=vi.fn(async()=>"mcwr-observed");
     vi.mocked(host.listTasks).mockResolvedValue([remote]);vi.mocked(host.inspectTask).mockResolvedValue(remote);
     let changed!:Parameters<NonNullable<McwV2Api["onState"]>>[0];host.onState=listener=>{changed=listener;return()=>{};};
-    const state=(connected:boolean)=>({tasks:[task()],terminals:[],observedAt:2000,connected:true,hosts:[{hostId:"remote",name:"Lab",enabled:true,connected,observedAt:1000,error:null,tasks:[remote],terminals:[]}]});
+    const state=(connected:boolean)=>({tasks:[task()],terminals:[],observedAt:2000,connected:true,hosts:[{hostId:"remote",name:"Lab",enabled:true,connected,observedAt:1000,error:null,tasks:[remote],terminals:[{id:'attempt',kind:'codex',cwd:'/repo',projectId:null,status:'idle',connected:true,observedAt:1,tabId:'t',paneId:'p',generation:'g',createdAt:'now'}]}]}) as any;
     host.hostState=vi.fn(async()=>state(true));const open=vi.fn();
     render(<TaskPanel api={host} hostId="remote" hostName="Lab" onOpenTerminal={open}/>);
     await screen.findByText("Remote task");expect(host.listTasks).toHaveBeenCalledWith("remote");
@@ -202,4 +202,13 @@ describe("v2 task dashboard", () => {
     await waitFor(() => expect(host.startTask).toHaveBeenCalledWith("task", { repositoryPath: "C:/other", expectedHead: "a".repeat(40) }));
     expect(open).toHaveBeenCalledWith("session");
   });
+});
+it('requires direct observation of a worker before offering its terminal',async()=>{
+  const host=api(),remote=task();remote.ownerHostId='remote';remote.title='Owner task';remote.participants[0].hostId='worker';
+  host.hostState=vi.fn(async()=>({tasks:[],terminals:[],connected:true,observedAt:1,hosts:[{hostId:'remote',name:'Owner',enabled:true,connected:true,observedAt:1,error:null,tasks:[remote],terminals:[]}]}));
+  vi.mocked(host.listTasks).mockResolvedValue([remote]);
+  render(<TaskPanel api={host} hostId='remote'/>);
+  fireEvent.click(await screen.findByRole('button',{name:/Owner task/}));
+  expect(screen.queryByRole('button',{name:'터미널 열기'})).not.toBeInTheDocument();
+  expect(screen.getByText(/해당 PC에 직접 연결/)).toBeInTheDocument();
 });

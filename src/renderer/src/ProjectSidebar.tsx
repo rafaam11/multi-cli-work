@@ -43,6 +43,7 @@ import { reorderWorkProjects } from "./work-project-order";
 import { ProjectMetadataEditor } from "./ProjectMetadataEditor";
 import { SessionPanel } from "./SessionPanel";
 import { RemoteHostsSection } from "./RemoteHostsSection";
+import { RemoteProjectTree } from "./RemoteProjectTree";
 import { UpdateBadge } from "./UpdateBadge";
 import { AgentIcon, GitHubIcon } from "./brand-icons";
 import { DocsFolderIcon } from "./docs-folder-icon";
@@ -1092,6 +1093,7 @@ export function ProjectSidebar({
             </ul>
           )
         ) : null}
+        {sectionExpanded&&workProject&&<RemoteProjectTree links={workProject.hostProjects??[]} sessions={sessions} onSelectSession={onSelectSession} renderSession={renderSession}/>}
       </li>
     );
   };

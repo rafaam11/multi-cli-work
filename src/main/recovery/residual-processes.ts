@@ -5,6 +5,7 @@ import path from "node:path";
 
 export interface RecoveryProcess {pid:number;name:string;executable:string|null}
 export interface RecoveryProcessTargets {applicationNames:string[];runtimePaths:string[];trackedPids:number[]}
+export const MCW_GUI_PROCESS_NAMES=['Multi CLI Work.exe','Multi CLI Work Preview.exe','multi-cli-work','multi-cli-work-preview','multi-cli-work.electron','multi-cli-work-preview.electron'];
 const exec=promisify(execFile);
 function validate(values:unknown):RecoveryProcess[]{
   if(!Array.isArray(values)||values.length>100000)throw new Error("Process inventory unavailable");
@@ -44,5 +45,9 @@ export function findRecoveryProcesses(inventory:RecoveryProcess[],targets:Recove
   const normalize=(file:string)=>platform==="win32"?path.win32.normalize(file).toLowerCase():file.replace(/ \(deleted\)$/,'');
   const processName=(file:string)=>platform==="win32"?path.win32.basename(file).replace(/\.exe$/i,"").toLowerCase():path.posix.basename(file);
   const names=new Set(targets.applicationNames.map(processName)),runtimes=new Set(targets.runtimePaths.map(normalize)),runtimeNames=new Set(targets.runtimePaths.map(file=>processName(systemPath.basename(file))));
-  return inventory.filter(item=>names.has(processName(item.name))||targets.trackedPids.includes(item.pid)||(item.executable!==null?runtimes.has(normalize(item.executable)):runtimeNames.has(processName(item.name))));
+  // Linux comm exposes at most 15 bytes, including for renamed Electron payloads.
+  // Treat a matching truncated configured name conservatively, even if /proc/exe
+  // cannot be read or the GUI lives in a different AppImage mount.
+  const matches=(name:string,expected:Set<string>)=>expected.has(processName(name))||(platform==='linux'&&[...expected].some(value=>Buffer.from(value).subarray(0,15).toString()===processName(name)));
+  return inventory.filter(item=>matches(item.name,names)||targets.trackedPids.includes(item.pid)||(item.executable!==null?(runtimes.has(normalize(item.executable))||names.has(processName(normalize(item.executable)))):matches(item.name,runtimeNames)));
 }

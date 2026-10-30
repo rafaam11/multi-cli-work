@@ -17,6 +17,10 @@ it("matches Linux paths with case sensitivity and rejects malformed inventories"
 it('still recognizes a replaced Linux runtime whose executable is marked deleted',()=>{
   expect(findRecoveryProcesses([{pid:8,name:'node',executable:'/opt/mcw/node (deleted)'}],{applicationNames:[],runtimePaths:['/opt/mcw/node'],trackedPids:[]},'linux').map(p=>p.pid)).toEqual([8]);
 });
+it('blocks renamed Linux GUI payloads using truncated kernel comm names even when their paths are unavailable or from another mount',()=>{
+  const processes=[{pid:80,name:'multi-cli-work.',executable:'/tmp/new-mount/multi-cli-work.electron'},{pid:81,name:'multi-cli-work.',executable:null},{pid:82,name:'multi-cli-work-',executable:null},{pid:83,name:'node',executable:'/unrelated/node'}];
+  expect(findRecoveryProcesses(processes,{applicationNames:['multi-cli-work.electron','multi-cli-work-preview.electron'],runtimePaths:['/tmp/old-mount/multi-cli-work.electron'],trackedPids:[]},'linux').map(item=>item.pid)).toEqual([80,81,82]);
+});
 it("reads a real process inventory and finds this fixture process without stopping anything",async()=>{
   const processes=await readRecoveryProcesses();
   expect(findRecoveryProcesses(processes,{applicationNames:[],runtimePaths:[],trackedPids:[process.pid]},process.platform).some(p=>p.pid===process.pid)).toBe(true);

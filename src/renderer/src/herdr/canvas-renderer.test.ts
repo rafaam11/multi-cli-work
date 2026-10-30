@@ -4,6 +4,14 @@ import { drawFrame, DEFAULT_CANVAS_THEME } from "./canvas-renderer";
 import { GraphicsCache } from "./graphics-cache";
 
 describe("Herdr Canvas drawing", () => {
+  it('keeps glyphs readable when the chosen theme has an opaque selection color',()=>{
+    const paint:string[]=[];
+    const ctx={fillStyle:'',save(){},restore(){},beginPath(){},clip(){},rect(){},fillRect(){paint.push(this.fillStyle);},fillText(text:string){paint.push(text);}};
+    const cell:CellData={symbol:'한',fg:0,bg:0,modifier:0,skip:false,hyperlink:null};
+    drawFrame(ctx as unknown as CanvasRenderingContext2D,{width:2,height:1,cells:[cell,{...cell,symbol:''}],cursor:null,hyperlinks:[],graphics:[]},{cellWidth:10,cellHeight:20,fontSize:16,fontFamily:'monospace'},{...DEFAULT_CANVAS_THEME,selection:'#355e56'},{selection:{start:{x:0,y:0},end:{x:1,y:0}}});
+    expect(paint.indexOf('#355e56')).toBeLessThan(paint.indexOf('한'));
+    expect(paint.at(-1)).toBe('한');
+  });
   it("paints wide graphemes once, inverse colors, decorations and a bar cursor", () => {
     const text: unknown[][] = [], rects: unknown[][] = [];
     const ctx = { save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, moveTo() {}, lineTo() {}, stroke() {},

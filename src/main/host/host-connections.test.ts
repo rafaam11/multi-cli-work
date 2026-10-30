@@ -72,3 +72,13 @@ it("preserves corrupt observation files while allowing independent local work to
   expect(restarted.snapshot()[0]).toMatchObject({connected:false,observedAt:null,error:expect.stringContaining("기존 파일")});
   await restarted.close();expect(await readFile(file,"utf8")).toBe("broken primary");expect(await readFile(file+".bak","utf8")).toBe("broken backup");
 });
+it('restores validated repository membership with observations after an offline restart',async()=>{
+ const f=await setup();
+ const catalog={version:1,hostId:'remote',platform:'linux',launchProfiles:[],defaultLaunchProfiles:{},availableProviders:[],repositories:[{id:'repo',name:'Code',path:'/repo',projectId:'project',projectName:'Research'}]};
+ Object.assign(f.connection.client,{request:vi.fn(async()=>catalog)});
+ await f.manager.configure(registration);await vi.waitFor(()=>expect(f.listeners).toHaveLength(1));
+ f.listeners[0]({type:'state',tasks:[],terminals:[{id:'s',kind:'codex',cwd:'/repo/wt',projectId:'repo',createdAt:'2026-10-30T00:00:00Z',generation:'g',tabId:'t',paneId:'p',delivery:'delivered',status:'working',observedAt:12,connected:true}]});
+ await vi.waitFor(()=>expect(f.manager.snapshot()[0].catalog).toEqual(catalog));await f.manager.close();
+ const restarted=new HostConnections({directory:f.directory,localHostId:'local',connect:(async()=>{throw Error('offline');}) as never,retryMs:60000});managers.push(restarted);await restarted.start();
+ expect(restarted.snapshot()[0]).toMatchObject({connected:false,catalog,terminals:[{id:'s',projectId:'repo',connected:false}]});
+});

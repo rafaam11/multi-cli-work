@@ -65,6 +65,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/v2/assets.mjs --download --platform win32
       - run: npm run build:v2
+      - run: node scripts/recovery/startup-stage-smoke.mjs
       - run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
       - run: npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
       - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
@@ -80,6 +81,7 @@ jobs:
           node scripts/v2/check-packaged-main.mjs release/win-unpacked/resources/app.asar
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:MCW_V2_E2E='1'
+          $env:MCW_V2_E2E_RUNTIME='v2'
           $env:MCW_V2_E2E_EXECUTABLE=(Resolve-Path 'release/win-unpacked/Multi CLI Work.exe').Path
           npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts --output=test-results/stable-packaged
       - uses: actions/upload-artifact@v7
@@ -114,6 +116,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/v2/assets.mjs --download --platform linux
       - run: npm run build:v2
+      - run: node scripts/recovery/startup-stage-smoke.mjs
       - run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
       - run: npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
       - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
@@ -127,7 +130,7 @@ jobs:
       - name: Verify actual stable package
         run: |
           node scripts/v2/check-packaged-main.mjs release/linux-unpacked/resources/app.asar
-          MCW_V2_E2E=1 MCW_V2_E2E_EXECUTABLE="$PWD/release/linux-unpacked/multi-cli-work" xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts --output=test-results/stable-packaged
+          MCW_V2_E2E=1 MCW_V2_E2E_RUNTIME=v2 MCW_V2_E2E_EXECUTABLE="$PWD/release/linux-unpacked/multi-cli-work" xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts --output=test-results/stable-packaged
       - uses: actions/upload-artifact@v7
         with:
           name: release-linux-x64

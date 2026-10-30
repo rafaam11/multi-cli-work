@@ -29,6 +29,13 @@ export class HostWorkerGateway implements TerminalWorkerGateway {
     const [terminals,tasks,{observations:hosts}]=await Promise.all([this.client.terminals() as Promise<V2TerminalSummary[]>,this.client.tasks(),this.client.request<{observations:RemoteHostObservation[]}>("/hosts")]);
     return observedTerminals({tasks,terminals,hosts}).map(s=>({...hostSessionView(s),generation:s.generation}));
   }
+  async holdCheckoutRemoval(cwd:string,id:string):Promise<import("../projects/worktree-service").WorktreeRemovalLease> {
+    await this.client.request("/checkout-removal/acquire","POST",{cwd,id,pid:process.pid});
+    const release=async()=>{await this.settleCheckoutRemoval(id);};
+    release.removeGit=async(repo:string,cwd:string,force:boolean)=>{await this.client.request("/checkout-removal/remove","POST",{id,repo,cwd,force});};
+    return release;
+  }
+  async settleCheckoutRemoval(id:string):Promise<void>{await this.client.request("/checkout-removal/release","POST",{id});}
   async create(spec:TerminalLaunchSpec) {
     const env=Object.fromEntries(Object.entries(spec.env).filter(([key])=>!/^HERDR_|^MCW_HERDR_|^MULTI_CLI_WORK_CONTROL_|^JK_/i.test(key)));
     return hostSessionView(await this.client.createTerminal({...spec,env}) as V2TerminalSummary);

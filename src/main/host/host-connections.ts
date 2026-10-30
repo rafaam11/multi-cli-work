@@ -7,6 +7,7 @@ import { validateTaskSnapshot } from "./task-validation";
 import { connectSshHost, validateSshHostConfiguration } from "./ssh-host";
 import type { HostTerminalSocket } from "./host-client";
 import {observationCacheSpec,type CachedHostObservation} from "./observation-cache";
+import {parseExecutionCatalog} from '../../shared/execution-catalog';
 
 class ConnectionRegistryError extends Error {}
 interface Registry {version:2;hosts:HostRegistration[]}
@@ -83,7 +84,7 @@ export class HostConnections {
   private track<T>(operation:Promise<T>):Promise<T>{this.pending.add(operation);void operation.finally(()=>this.pending.delete(operation)).catch(()=>undefined);return operation;}
   private apply(registration:HostRegistration,cached?:CachedHostObservation):void{
     const previous=this.slots.get(registration.ssh.hostId);if(previous)this.invalidate(previous);
-    const slot:Slot={registration,epoch:0,observedPlatform:previous?.observedPlatform??cached?.platform??registration.ssh.platform,state:{hostId:registration.ssh.hostId,name:registration.name,enabled:registration.enabled,connected:false,observedAt:previous?.state.observedAt??cached?.observedAt??null,error:this.cacheWarning,tasks:previous?.state.tasks??cached?.tasks??[],terminals:(previous?.state.terminals??cached?.terminals??[]).map(terminal=>({...terminal,connected:false}))}};
+    const slot:Slot={registration,epoch:0,observedPlatform:previous?.observedPlatform??cached?.platform??registration.ssh.platform,state:{hostId:registration.ssh.hostId,name:registration.name,enabled:registration.enabled,connected:false,observedAt:previous?.state.observedAt??cached?.observedAt??null,error:this.cacheWarning,tasks:previous?.state.tasks??cached?.tasks??[],terminals:(previous?.state.terminals??cached?.terminals??[]).map(terminal=>({...terminal,connected:false})),catalog:previous?.state.catalog??cached?.catalog}};
     this.slots.set(registration.ssh.hostId,slot);this.changes.emit("change");
     if(registration.enabled)void this.track(this.connect(slot));
   }
@@ -98,6 +99,11 @@ export class HostConnections {
     try{
       const connection=await (this.options.connect??connectSshHost)(slot.registration.ssh,{signal:controller.signal,onDisconnect:()=>lost("SSH 연결이 끊겼습니다.")});
       if(!this.current(slot,epoch)){await connection.close();return;}slot.connection=connection;
+      if(typeof connection.client.request==='function')void this.track((async()=>{try{
+        const catalog=parseExecutionCatalog(await connection.client.request('/execution-catalog'),slot.state.hostId);
+        if(!this.current(slot,epoch)||catalog.platform!==slot.registration.ssh.platform)return;
+        slot.state={...slot.state,catalog};this.changes.emit('change');this.scheduleCache();
+      }catch{/* Retain the last validated catalog on a temporary failure. */}})());
       slot.watcher=connection.client.watch(event=>{
         if(!this.current(slot,epoch)||!event||typeof event!=="object")return;
         const value=event as {type:string;tasks:unknown;terminals:unknown};
@@ -119,7 +125,7 @@ export class HostConnections {
   private persistCache():Promise<void>{
     if(!this.cacheReady)return Promise.resolve();
     const observations=[...this.slots.values()].filter(slot=>slot.state.observedAt!==null).map(slot=>({hostId:slot.state.hostId,platform:slot.observedPlatform,observedAt:slot.state.observedAt!,tasks:slot.state.tasks,
-      terminals:parseHerdrSessionRegistry({version:2,sessions:slot.state.terminals},slot.observedPlatform).sessions}));
+      terminals:parseHerdrSessionRegistry({version:2,sessions:slot.state.terminals},slot.observedPlatform).sessions,...slot.state.catalog?.platform===slot.observedPlatform?{catalog:slot.state.catalog}:{}}));
     const snapshot=structuredClone(observations);
     this.cacheWrites=this.cacheWrites.then(async()=>{
       await updateJsonStore(observationCacheSpec,this.cacheFile,()=>({version:2,observations:snapshot}));

@@ -3,7 +3,7 @@ import path from 'node:path';
 import {readProcessInventory,parseProcessInventory,observeProcessTree,type ProcessIdentity} from '../herdr/process-observation';
 import {parseHerdrSessionRegistry,type ManagedSession} from '../herdr/terminal-service';
 import {requirePlainPath} from './controller-state';
-import {findRecoveryProcesses} from './residual-processes';
+import {findRecoveryProcesses,MCW_GUI_PROCESS_NAMES} from './residual-processes';
 
 export interface LocalProcessProofOptions {
   directory:string;hostId:string;bridgePath:string;runtimePaths:string[];
@@ -37,7 +37,7 @@ export async function proveLocalProcessesStopped(options:LocalProcessProofOption
     }
   }
   for(const identity of [host,options.hostProcess,options.includeGui?options.guiProcess:null])if(identity&&observeProcessTree([identity],processes).status!=='exited')throw new Error('MCW GUI or host is still running or unobserved');
-  const residual=findRecoveryProcesses(processes,{applicationNames:options.includeGui?['Multi CLI Work.exe','Multi CLI Work Preview.exe','multi-cli-work','multi-cli-work-preview']:[],runtimePaths:options.runtimePaths,trackedPids:[]},process.platform).filter(item=>item.pid!==process.pid);
+  const residual=findRecoveryProcesses(processes,{applicationNames:options.includeGui?MCW_GUI_PROCESS_NAMES:[],runtimePaths:options.runtimePaths,trackedPids:[]},process.platform).filter(item=>item.pid!==process.pid);
   if(residual.length)throw new Error(`Other MCW runtime instances remain (${residual.map(item=>item.pid).join(', ')}); no process was terminated`);
   const runtime=await readRecoveryJson(path.join(options.directory,'herdr/runtime-processes.json'));
   if(runtime!==null){const identities=parseProcessInventory(runtime);if(identities.length&&observeProcessTree(identities,processes).status!=='exited')throw new Error('Herdr process exit is not confirmed');}

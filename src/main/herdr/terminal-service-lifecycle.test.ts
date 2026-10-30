@@ -11,6 +11,7 @@ vi.mock("./runtime", () => ({ startHerdrRuntime: mocks.start }));
 vi.mock("node:child_process", async original => ({...await original<typeof import("node:child_process")>(), spawn: mocks.spawn }));
 vi.mock("./process-observation",async original=>({...await original<typeof import("./process-observation")>(),readProcessInventory:mocks.processes}));
 import { createHerdrTerminalService } from "./terminal-service";
+import { hostTerminalAdapter } from "../mcw-host";
 
 class Child extends EventEmitter {
   stdin = new PassThrough(); stdout = new PassThrough(); stderr = new PassThrough();
@@ -47,6 +48,27 @@ async function ready(child:Child) {
 }
 
 describe("host bridge lifecycle", () => {
+  it("scopes clear and search to the controlled pane and rejects stale search revisions", async () => {
+    const {service}=await make();const adapter=hostTerminalAdapter(()=>service);const child=children[0];await ready(child);
+    await expect(adapter.clear!("s","other")).rejects.toThrow(/control/i);
+    await adapter.takeOwnership("s","owner");
+    child.event({type:"surface",surface:{...frame,surface_revision:2,panes:[{...frame.panes[0],content_revision:2}]}});
+    const params={query:"alpha",direction:"forward",cursor:{row:0,col:0},content_revision:2};
+    await expect(adapter.search!("s","owner",{...params,content_revision:1})).rejects.toThrow(/changed/i);
+    await expect(adapter.search!("s","owner",{...params,query:"x".repeat(4097)})).rejects.toThrow(/invalid/i);
+    const pending=adapter.search!("s","owner",params);
+    const sent=child.commands.filter(command=>command.type==="request").at(-1)!;
+    expect(sent.request).toMatchObject({method:"pane.copy_search",params:{...params,pane_id:"p"}});
+    child.event({type:"response",bootId:"b",requestId:sent.request.id,finalChunk:true,dataBytes:[...Buffer.from(JSON.stringify({id:sent.request.id,result:{matches:[],total:0}}))]});
+    await expect(pending).resolves.toMatchObject({total:0});
+    const selection=adapter.selection!("s","owner",{content_revision:2});const selectionRequest=child.commands.filter(command=>command.type==="request").at(-1)!;
+    expect(selectionRequest.request).toMatchObject({method:"pane.selection.read",params:{pane_id:"p",anchor:{row:0,col:0},cursor:{row:129,col:89},content_revision:2}});
+    child.event({type:"response",bootId:"b",requestId:selectionRequest.request.id,finalChunk:true,dataBytes:[...Buffer.from(JSON.stringify({id:selectionRequest.request.id,result:{text:"full scrollback"}}))]});
+    await expect(selection).resolves.toMatchObject({text:"full scrollback"});
+    const clear=adapter.clear!("s","owner");const clearRequest=child.commands.filter(command=>command.type==="request").at(-1)!;
+    expect(clearRequest.request).toMatchObject({method:"pane.clear",params:{pane_id:"p"}});
+    child.event({type:"disconnected",reason:"lost"});await expect(clear).rejects.toThrow();
+  });
   it("does not report a successful stop when Herdr removes a pane but its process survives",async()=>{
     const {service,root}=await make();
     request.mockImplementation(async(method:string)=>{if(method==="tab.close")snapshot.panes=[];return {snapshot};});
@@ -125,4 +147,20 @@ describe("host bridge lifecycle", () => {
     await vi.advanceTimersByTimeAsync(16000);await outcome;
     expect(children[0].kill).toHaveBeenCalled();
   });
+});
+
+it("host adapter drains pending launches before acquiring the checkout removal guard",async()=>{
+ const {service,root}=await make([]),adapter=hostTerminalAdapter(()=>service);
+ let launchReached!:()=>void,finishLaunch!:()=>void;
+ const reached=new Promise<void>(r=>launchReached=r),gate=new Promise<void>(r=>finishLaunch=r);
+ const original=request.getMockImplementation()!;
+ request.mockImplementation(async(method:string,...args:unknown[])=>{if(method==="layout.apply"){launchReached();await gate;}return original(method,...args);});
+ const input={sessionId:"first",kind:"shell",cwd:root,executable:"shell",args:[],env:{},projectId:null,createdAt:"2026-10-30T00:00:00Z"};
+ const pending=adapter.create(input);await reached;
+ const hold=adapter.acquireCheckoutRemoval!(root,"hold",10);let held=false;void hold.then(()=>held=true);
+ await Promise.resolve();expect(held).toBe(false);finishLaunch();await pending;await hold;
+ await expect(adapter.create({...input,sessionId:"denied"})).rejects.toThrow(/removal/);
+ expect(request.mock.calls.filter(c=>c[0]==="layout.apply")).toHaveLength(1);
+ await adapter.releaseCheckoutRemoval!("hold");await adapter.create({...input,sessionId:"reopened"});
+ expect(request.mock.calls.filter(c=>c[0]==="layout.apply")).toHaveLength(2);
 });

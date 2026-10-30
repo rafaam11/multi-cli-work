@@ -18,6 +18,22 @@ import {HostClient} from './host/host-client';
 export async function startHost(options: HostGatewayOptions): Promise<HostGateway> {
   const gateway = new HostGateway(options); await gateway.start(); return gateway;
 }
+/** The same adapter is used by the daemon and exercised against the native bridge. */
+export function hostTerminalAdapter(get:()=>Awaited<ReturnType<typeof createHerdrTerminalService>>):HostGatewayOptions["terminals"] {
+  return {
+    acquireCheckoutRemoval:(cwd,id,pid)=>get().acquireCheckoutRemoval(cwd,id,pid),
+    releaseCheckoutRemoval:id=>get().releaseCheckoutRemoval(id),
+    removeCheckout:(id,repo,cwd,force)=>get().removeCheckout(id,repo,cwd,force),
+    checkoutRemovalBusy:()=>get().checkoutRemovalBusy(),
+    refreshObservation:()=>get().refreshObservation(), onChange: callback => get().onChange(callback),
+    list: () => get().list(), create: input => get().create(input), stop: id => get().stop(id), snapshot: id => get().snapshot(id),
+    subscribeFrames: (id, callback) => get().subscribeFrames(id, callback), input: (id, viewer, data) => get().input(id, viewer, data),
+    resize: (id, viewer, cols, rows, width, height) => get().resize(id, viewer, cols, rows, width, height), scroll: (id, viewer, delta) => get().scroll(id, viewer, delta),
+    clear: (id, viewer) => get().clear(id, viewer), search: (id, viewer, params) => get().search(id, viewer, params),
+    selection: (id, viewer, params) => get().selection(id, viewer, params),
+    takeOwnership: (id, viewer) => get().takeOwnership(id, viewer), releaseOwnership: (id, viewer) => get().releaseOwnership(id, viewer),
+  };
+}
 export async function runHostProcess(argv: string[] = process.argv.slice(2)): Promise<HostGateway> {
   function option(name: string, required = true): string | undefined {
     const index = argv.indexOf(name); const value = index >= 0 ? argv[index + 1] : undefined;
@@ -42,14 +58,7 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   let stopObservation: (() => void) | undefined;
   let mobile:Awaited<ReturnType<typeof createHostMobileAccess>>|undefined;
   let initialized=false;
-  const service: HostGatewayOptions["terminals"] = {
-    refreshObservation:()=>terminals!.refreshObservation(),
-    onChange: callback => terminals!.onChange(callback),
-    list: () => terminals!.list(), create: input => terminals!.create(input), stop: id => terminals!.stop(id), snapshot: id => terminals!.snapshot(id),
-    subscribeFrames: (id, callback) => terminals!.subscribeFrames(id, callback), input: (id, viewer, data) => terminals!.input(id, viewer, data),
-    resize: (id, viewer, cols, rows, width, height) => terminals!.resize(id, viewer, cols, rows, width, height), scroll: (id, viewer, delta) => terminals!.scroll(id, viewer, delta),
-    takeOwnership: (id, viewer) => terminals!.takeOwnership(id, viewer), releaseOwnership: (id, viewer) => terminals!.releaseOwnership(id, viewer),
-  };
+  const service = hostTerminalAdapter(()=>terminals!);
   let gateway!: HostGateway;
   const finish = async () => { clearInterval(syncTimer);stopObservation?.();await mobile?.dispose(); await hosts.close(); await terminals?.close(true); process.exit(0); };
   try {

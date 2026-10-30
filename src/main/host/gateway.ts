@@ -26,6 +26,10 @@ import type {WorkerTransfer} from "../../shared/remote-task-types";
 
 /** The independent daemon owns this service. Closing a viewer never stops a session. */
 export interface HostTerminalService {
+  acquireCheckoutRemoval?(cwd:string,id:string,pid:number):Promise<void>;
+  releaseCheckoutRemoval?(id:string):Promise<void>;
+  removeCheckout?(id:string,repo:string,cwd:string,force:boolean):Promise<void>;
+  checkoutRemovalBusy?():Promise<boolean>;
   refreshObservation?():Promise<void>;
   onChange?(callback: () => void): () => void;
   list(): Promise<unknown[]>;
@@ -36,6 +40,9 @@ export interface HostTerminalService {
   input(sessionId: string, viewerId: string, data: unknown): Promise<void>;
   resize(sessionId: string, viewerId: string, cols: number, rows: number, cellWidthPx?: number, cellHeightPx?: number): Promise<void>;
   scroll(sessionId: string, viewerId: string, delta: number): Promise<void>;
+  clear?(sessionId: string, viewerId: string): Promise<void>;
+  search?(sessionId: string, viewerId: string, params: Record<string, unknown>): Promise<unknown>;
+  selection?(sessionId: string, viewerId: string, params: Record<string, unknown>): Promise<unknown>;
   takeOwnership(sessionId: string, viewerId: string): Promise<void>;
   releaseOwnership(sessionId: string, viewerId: string): Promise<void>;
 }
@@ -203,7 +210,7 @@ export class HostGateway {
     await this.options.terminals.refreshObservation?.();
     const sessions = await this.options.terminals.list();
     const uncertainSession = sessions.some(value => { const session = value as Record<string, unknown> | null; return !session || session.status !== "exited" || session.connected !== true || session.delivery === "unknown" || session.delivery === "pending"; });
-    return this.pendingCreates === 0 && !uncertainSession && !(await this.options.store.listForRecovery()).some(task => task.participants.some(participant=>[participant.attempt,...participant.previousAttempts].some(attemptNeedsObservation))) && !(await this.options.workers?.replicas.listForRecovery()??[]).some(replica=>attemptNeedsObservation(replica.attempt)||replica.operations.some(operation=>!operation.acknowledged));
+    return !await this.options.terminals.checkoutRemovalBusy?.() && this.pendingCreates === 0 && !uncertainSession && !(await this.options.store.listForRecovery()).some(task => task.participants.some(participant=>[participant.attempt,...participant.previousAttempts].some(attemptNeedsObservation))) && !(await this.options.workers?.replicas.listForRecovery()??[]).some(replica=>attemptNeedsObservation(replica.attempt)||replica.operations.some(operation=>!operation.acknowledged));
     }catch{return false;}
   }
   private async route(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -423,6 +430,22 @@ export class HostGateway {
           if (taskRoute[2] === "cancel") { await this.options.store.cancelAsUser(taskId);reply(response,200,{});return; }
         }
       }
+      if(url.pathname==="/checkout-removal/acquire"&&method==="POST"){
+        if(!this.options.terminals.acquireCheckoutRemoval)throw new HttpError(503,"Checkout admission guard unavailable");
+        const input=exactObject(await body(request,this.limit),["cwd","id","pid"]);
+        await this.options.terminals.acquireCheckoutRemoval(text(input.cwd,32768),text(input.id,128),integer(input.pid,1,0x7fffffff));reply(response,200,{held:true});return;
+      }
+      if(url.pathname==="/checkout-removal/remove"&&method==="POST"){
+        if(!this.options.terminals.removeCheckout)throw new HttpError(503,"Host checkout removal unavailable");
+        const input=exactObject(await body(request,this.limit),["id","repo","cwd","force"]);
+        if(typeof input.force!=="boolean")throw new HttpError(400,"Explicit removal force choice required");
+        await this.options.terminals.removeCheckout(text(input.id,128),text(input.repo,32768),text(input.cwd,32768),input.force);reply(response,200,{removed:true});return;
+      }
+      if(url.pathname==="/checkout-removal/release"&&method==="POST"){
+        if(!this.options.terminals.releaseCheckoutRemoval)throw new HttpError(503,"Checkout admission guard unavailable");
+        const input=exactObject(await body(request,this.limit),["id"]);
+        await this.options.terminals.releaseCheckoutRemoval(text(input.id,128));reply(response,200,{released:true});return;
+      }
       if (url.pathname === "/terminals" && method === "GET") { reply(response, 200, await this.options.terminals.list()); return; }
       if (url.pathname === "/terminals" && method === "POST") { if (!this.accepting) throw new HttpError(409, "Host is draining"); this.pendingCreates++; try { reply(response, 201, await this.options.terminals.create(object(await body(request, this.limit)))); } finally { this.pendingCreates--; } return; }
       const terminalRoute = /^\/terminals\/([^/]+)$/.exec(url.pathname);
@@ -510,7 +533,7 @@ export class HostGateway {
         if (!sessionId) throw new HttpError(400, "Subscribe first");
         if(sessionId.startsWith("mcwr-")){
           if(!remoteReady||!remote)throw new HttpError(409,"Remote terminal is not connected");
-          if(!["snapshot","input","resize","scroll","takeOwnership","releaseOwnership"].includes(String(message.type)))throw new HttpError(400,"Unknown terminal command");
+          if(!["snapshot","input","resize","scroll","takeOwnership","releaseOwnership","clear","search","selection"].includes(String(message.type)))throw new HttpError(400,"Unknown terminal command");
           remote.send(message);return;
         }
         if (message.type === "takeOwnership") {
@@ -520,6 +543,17 @@ export class HostGateway {
           send({ type: "ownership", owner: true, viewerId, ownerId: viewerId }); return;
         }
         if (message.type === "snapshot") { send({ type: "snapshot", sessionId, snapshot: await this.options.terminals.snapshot(sessionId), viewerId, ownerId: this.owners.get(sessionId) ?? null }); return; }
+        if (message.type === "clear" || message.type === "search" || message.type === "selection") {
+          const requestId = text(message.requestId, 64);
+          try {
+            if (this.owners.get(sessionId) !== viewerId) throw new Error("Terminal control is required");
+            const result = message.type === "clear" ? await this.options.terminals.clear!(sessionId, viewerId)
+              : message.type === "search" ? await this.options.terminals.search!(sessionId, viewerId, object(message.params))
+              : await this.options.terminals.selection!(sessionId, viewerId, object(message.params));
+            send({type:"terminal-result", requestId, result:result ?? null});
+          } catch (error) { send({type:"terminal-result", requestId, error:error instanceof Error ? error.message : "Operation rejected"}); }
+          return;
+        }
         if (this.owners.get(sessionId) !== viewerId) throw new HttpError(403, "Viewer does not own terminal input and size");
         if (message.type === "releaseOwnership") { await this.options.terminals.releaseOwnership(sessionId, viewerId); this.owners.delete(sessionId); send({ type: "ownership", owner: false, viewerId, ownerId: null }); return; }
         if (message.type === "input") { await this.options.terminals.input(sessionId, viewerId, object(message.data)); return; }

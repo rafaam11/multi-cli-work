@@ -11,7 +11,7 @@ module.exports = {
   extraResources: [...preview.extraResources.filter(resource => resource.to !== 'mobile'), ...base.extraResources],
   win: base.win,
   linux: base.linux,
-  nsis: base.nsis,
+  nsis: { ...base.nsis, include: preview.nsis.include },
   publish: base.publish,
   beforePack: async () => {
     const {verifyDistributionShell} = await import('./scripts/v2/distribution.mjs');

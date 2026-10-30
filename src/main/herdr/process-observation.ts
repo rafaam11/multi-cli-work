@@ -44,3 +44,10 @@ export function observeProcessTree(known:ProcessIdentity[]|undefined,inventory:P
   for(const p of tree)next.set(p.pid,p);
   return {status:uncertain||tree.some(p=>p.startId===null)?"unknown":live.length?"running":"exited",processes:[...next.values()]};
 }
+
+export async function readBootIdentity(bridgePath:string):Promise<string>{
+ const result=await exec(bridgePath,["--boot-identity"],{windowsHide:true,timeout:10000,maxBuffer:4096});
+ const value=JSON.parse(result.stdout) as {bootId?:unknown};
+ if(typeof value.bootId!=="string"||!/^[-a-fA-F0-9]{16,128}$/.test(value.bootId))throw new Error("Cannot verify native boot identity");
+ return value.bootId;
+}

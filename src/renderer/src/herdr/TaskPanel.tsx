@@ -64,6 +64,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
   const defaultProfile = (provider: TaskProvider, config:Configuration|null = choices) => config?.defaultLaunchProfiles[provider]
     ?? config?.launchProfiles.find((profile) => profile.agentId === provider)?.id ?? "";
   const selected = tasks.find((task) => task.id === selectedId) ?? null;
+  const directlyObserved=(host:string,session:string)=>host===configuration?.hostId||!!hostState?.hosts?.some(item=>item.hostId===host&&item.enabled&&item.connected&&item.terminals.some(terminal=>terminal.id===session&&terminal.connected));
   const foreignWorkers=selected?.participants.filter(member=>member.hostId!==selected.ownerHostId)??[];
   const ownerHead=hostId?inspection?.expectedHead??null:expectedHead;
   const workersChecked=foreignWorkers.every(member=>workerSelections[member.id]?.expectedHead===ownerHead&&ownerHead!==null);
@@ -210,7 +211,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
       {selected && <article className="herdr-task-detail" aria-label="선택한 작업">
         <h3>{selected.title}</h3><p className="herdr-task-brief">{selected.brief}</p>
         <table><thead><tr><th>역할 · 도구</th><th>실행 관찰</th><th>명령 전달</th><th>마지막 관찰</th></tr></thead><tbody>{selected.participants.map((participant) => <tr key={participant.id}>
-          <td>{participant.role === "lead" ? "대표" : "작업자"} · {providerName(participant.provider)}<small>{choices?.launchProfiles.find((profile) => profile.id === participant.profileId)?.name || participant.profileId} · {participant.hostId === configuration?.hostId ? "이 PC" : participant.hostId===hostId?hostName??hostId:participant.hostId}</small>{participant.attempt.delivery === "delivered" && participant.attempt.execution !== "exited" && <button type="button" disabled={busy} onClick={() => openTerminal(participant.attempt.id,participant.hostId)}>터미널 열기</button>}</td>
+          <td>{participant.role === "lead" ? "대표" : "작업자"} · {providerName(participant.provider)}<small>{choices?.launchProfiles.find((profile) => profile.id === participant.profileId)?.name || participant.profileId} · {participant.hostId === configuration?.hostId ? "이 PC" : participant.hostId===hostId?hostName??hostId:participant.hostId}</small>{participant.attempt.delivery === "delivered" && participant.attempt.execution !== "exited" && (directlyObserved(participant.hostId,participant.attempt.id)?<button type="button" disabled={busy} onClick={() => openTerminal(participant.attempt.id,participant.hostId)}>터미널 열기</button>:<small>터미널을 열려면 해당 PC에 직접 연결하고 세션을 관찰하세요.</small>)}</td>
           <td>{executionLabel[participant.attempt.execution]}</td><td>{deliveryLabel[participant.attempt.delivery]}</td><td>{participant.attempt.observedAt === null ? "관찰 없음" : new Date(participant.attempt.observedAt).toLocaleString()}</td>
         </tr>)}</tbody></table>
         {startable&&hostId&&catalog&&<div className="herdr-task-start">

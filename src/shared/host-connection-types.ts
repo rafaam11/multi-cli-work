@@ -9,5 +9,6 @@ export interface HostRegistration {name:string;ssh:SshHostConfiguration;enabled:
 export interface RemoteHostObservation {
   hostId:string;name:string;enabled:boolean;connected:boolean;observedAt:number|null;error:string|null;
   tasks:Task[];terminals:V2TerminalSummary[];
+  catalog?:import('./execution-catalog').ExecutionCatalog;
 }
 export type LocalHostConnection = Pick<SshHostConfiguration,"hostId"|"platform"|"nodeExecutable"|"hostEntrypoint"|"dataRoot">;

@@ -5,7 +5,7 @@ import { registerV2Ipc, type V2IpcOptions } from "./ipc";
 afterEach(()=>vi.useRealTimers());
 function setup() {
   const handlers=new Map<string,Function>();
-  const client={tasks:vi.fn(),inspectTask:vi.fn(async()=>({id:"task",participants:[{id:"lead",profileId:"selected",provider:"codex"}],projectId:"project"})),startTask:vi.fn(async()=>({terminals:[]})),request:vi.fn(),terminalSocket:vi.fn()};
+  const client={tasks:vi.fn(),inspectTask:vi.fn(async()=>({id:"task",participants:[{id:"lead",profileId:"selected",provider:"codex"}]})),startTask:vi.fn(async()=>({terminals:[]})),request:vi.fn(),terminalSocket:vi.fn()};
   const reconcile=vi.fn(async()=>{}),profile={id:"selected",name:"Chosen",agentId:"codex",model:"chosen-model",effort:"high"};
   const options={ipc:{handle:(name:string,fn:Function)=>handlers.set(name,fn),removeHandler:(name:string)=>handlers.delete(name)},authorize:(event:unknown)=>event==="trusted",send:vi.fn(),client,hostId:"host",backupDirectory:"backup",configuration:async()=>({launchProfiles:[profile],defaultLaunchProfiles:{}}),executable:async()=>"C:/trusted/codex.exe",reconcile} as unknown as V2IpcOptions;
   const dispose=registerV2Ipc(options);
@@ -92,4 +92,20 @@ it("reconnects a retained Canvas viewer without replaying input or taking contro
   listeners[0]({type:"ownership",ownerId:"first"});
   expect(options.send).not.toHaveBeenLastCalledWith("v2:terminal-event","session",{type:"ownership",ownerId:"first"});
   dispose();await vi.advanceTimersByTimeAsync(3000);expect(sockets).toHaveLength(2);
+});
+it("uses registered local project creation and checkout validation",async()=>{
+  const {call,client,dispose}=setup();
+  client.inspectTask.mockResolvedValue({...await client.inspectTask(),projectId:"project"} as any);
+  await call("task-create",{title:"T",brief:"B",projectId:"project",lead:{hostId:"host",provider:"codex",profileId:"selected"}});
+  expect(client.request).toHaveBeenCalledWith("/tasks/registered","POST",expect.objectContaining({projectId:"project"}));
+  client.request.mockImplementation(async (route:string)=>route==="/execution-catalog"?{repositories:[{id:"repo",path:"C:/repo",projectId:"project"}]}:route.includes("/repositories/")?{repository:{id:"repo",path:"C:/repo"},expectedHead:"a".repeat(40)}:{});
+  await call("task-start","task",{repositoryPath:"C:/repo",expectedHead:"a".repeat(40)});
+  expect(client.request).toHaveBeenCalledWith("/tasks/task/start-registered","POST",{repositoryId:"repo",expectedPath:"C:/repo",expectedHead:"a".repeat(40)});
+  expect(client.startTask).not.toHaveBeenCalled();dispose();
+});
+it("rejects a checkout outside the local task project before start",async()=>{
+  const {call,client,dispose}=setup();client.inspectTask.mockResolvedValue({...await client.inspectTask(),projectId:'project'} as any);
+  client.request.mockResolvedValue({repositories:[{id:'wrong',path:'C:/other',projectId:'other'}]});
+  await expect(call('task-start','task',{repositoryPath:'C:/other',expectedHead:'a'.repeat(40)})).rejects.toThrow(/프로젝트/);
+  expect(client.startTask).not.toHaveBeenCalled();expect(client.request).not.toHaveBeenCalledWith(expect.stringContaining('start'),'POST',expect.anything());dispose();
 });

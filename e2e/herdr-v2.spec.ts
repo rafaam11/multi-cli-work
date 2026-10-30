@@ -44,7 +44,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   await fs.writeFile(path.join(registry,"projects.json"),JSON.stringify({schemaVersion:1,updatedAt:now,projects:{[projectId]:{id:projectId,rootPath,displayName:"Herdr 검증",sources:["manual"],providerRefs:{claude:[],codex:[]},status:"진행중",memo:"",tracks:[],hidden:false,order:0,createdAt:now,updatedAt:now}}}));
   const workProjectId="22222222-2222-4222-8222-222222222222";
   await fs.writeFile(path.join(registry,"work-projects.json"),JSON.stringify({schemaVersion:1,updatedAt:now,teamsSyncRoot:null,workProjects:{[workProjectId]:{id:workProjectId,name:"협업 검증 프로젝트",category:"work",status:null,memo:"보존할 프로젝트 메모",notionLinks:[],localFolders:[],members:[{projectId,role:"repo"}],order:0,createdAt:now,updatedAt:now}}}));
-  const env:NodeJS.ProcessEnv={...process.env,MCW_RUNTIME:"v2-preview",MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:path.join(directory,"recovery"),MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_REMOTE_BIND:'127.0.0.1',MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,"codex"),MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,"claude")};
+  const env:NodeJS.ProcessEnv={...process.env,MCW_RUNTIME:process.env.MCW_V2_E2E_RUNTIME??"v2-preview",MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:path.join(directory,"recovery"),MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_REMOTE_BIND:'127.0.0.1',MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,"codex"),MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,"claude")};
   delete env.ELECTRON_RUN_AS_NODE;
   let app:ElectronApplication|undefined, client:HostClient|undefined;
   let observer: ReturnType<HostClient["terminalSocket"]> | undefined, surface: PaneSurfaceFrame | null = null;
@@ -59,6 +59,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   };
   try {
     app=await launch(); let page=await app.firstWindow();
+    if(process.env.MCW_V2_E2E_RUNTIME==='v2')expect(await app.evaluate(({app})=>app.getVersion())).toBe('2.0.0');
     page.on("pageerror",error=>errors.push(`renderer: ${error.message}`));
     await expect.poll(()=>page.evaluate(()=>window.mcwV2?.version)).toBe(2);
     const descriptor=JSON.parse(await fs.readFile(path.join(`${userData}-v2`,"host/mcw-host.json"),"utf8")); client=new HostClient(descriptor);
@@ -96,7 +97,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
       if(value && ["surface","patch"].includes(value.type)) surface=applySurfaceEvent(surface,value).surface;
     });
     await expect.poll(()=>client!.terminals()).toHaveLength(1);
-    const row=page.locator(".session-row").first(); await expect(row).toBeVisible(); await row.click();
+    const row=page.locator(".session-row").first(); await expect(row).toBeVisible(); await row.getByRole('button',{name:/패인 열기/}).click();
     await expect(row).toContainText("상태 미확인");
     await expect(page.getByRole("img",{name:"터미널 화면"})).toBeVisible();
     await page.getByRole("button",{name:"제어 요청",exact:true}).click();
@@ -124,7 +125,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     const after=await client.terminals() as {id:string;paneId:string}[];expect(after).toHaveLength(1);expect(after[0].paneId).toBe(before[0].paneId);
     // Crash only the authenticated host created inside this test fixture. Herdr and the shell
     // remain independent; the explicit restart must recover observation without rerunning work.
-    await page.locator(".session-row").first().click();
+    await page.getByRole('region',{name:'세션 패널',exact:true}).getByRole('button',{name:/패인 열기/}).first().click();
     await expect(page.getByRole("img",{name:"터미널 화면"})).toBeVisible();
     await page.getByRole("button",{name:"제어 요청",exact:true}).click();
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","false");
@@ -133,11 +134,12 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     // stays disabled; this checks offline UI without contacting a real PC.
     const remoteId="offline-fixture",remoteStore=new TaskStore({directory:path.join(directory,"remote-fixture"),hostId:remoteId});
     const remoteProjectId='33333333-3333-4333-8333-333333333333';
+    const remoteRepositoryId='remote-repo-fixture',remoteSessionId='remote-worker-fixture';
     const remoteTask=await remoteStore.createTask({title:"원격 결과 보존",brief:"연결이 끊겨도 검증 결과를 보존합니다.",projectId:remoteProjectId,lead:{provider:"claude",profileId:"fixture",hostId:remoteId},workers:[]});
     const remoteIdentity=await remoteStore.bind({taskId:remoteTask.id,participantId:remoteTask.participants[0].id,attemptId:remoteTask.participants[0].attempt.id,generation:1});
     await remoteStore.submitResult(remoteIdentity,{summary:"사용자 확인 전 결과",changes:[],verification:["원격 검증 근거"],artifacts:[],issues:[]});
     await client.request("/hosts","POST",{name:"검증 PC",enabled:false,ssh:{hostId:remoteId,destination:"unconnected.invalid",platform:"linux",nodeExecutable:"/fixture/node",hostEntrypoint:"/fixture/host.js",dataRoot:"/fixture/data"}});
-    await fs.writeFile(path.join(`${userData}-v2`,"host/host-observations.json"),JSON.stringify({version:2,observations:[{hostId:remoteId,platform:"linux",observedAt:Date.now(),tasks:await remoteStore.list(),terminals:[]}]}));
+    await fs.writeFile(path.join(`${userData}-v2`,"host/host-observations.json"),JSON.stringify({version:2,observations:[{hostId:remoteId,platform:"linux",observedAt:Date.now(),tasks:await remoteStore.list(),terminals:[{id:remoteSessionId,kind:'codex',cwd:'/fixture/project-wt/worker',projectId:remoteRepositoryId,createdAt:now,generation:'fixture-generation',tabId:'fixture-tab',paneId:'fixture-pane',delivery:'delivered',status:'unknown',observedAt:Date.now(),connected:false}],catalog:{version:1,hostId:remoteId,platform:'linux',launchProfiles:[],defaultLaunchProfiles:{},availableProviders:[],repositories:[{id:remoteRepositoryId,name:'원격 저장소',path:'/fixture/project',projectId:remoteProjectId,projectName:'원격 검증 프로젝트'}]}}]}));
     process.kill(descriptor.pid,"SIGKILL");
     await expect(page.getByText(/연결 끊김 · 마지막 관찰/)).toBeVisible();
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","true");
@@ -173,10 +175,29 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await expect(page.getByText('사용자 확인 전 결과',{exact:true}).first()).toBeVisible();
     await expect(page.getByRole('button',{name:'결과 확인',exact:true})).toBeDisabled();
     await page.getByRole('region',{name:'프로젝트 작업 PC'}).screenshot({path:info.outputPath('project-remote-owner-offline.png')});
+    const remoteTree=page.getByRole('list',{name:'원격 프로젝트 세션',exact:true});
+    await expect(remoteTree.getByText('원격 저장소',{exact:true})).toBeVisible();
+    await expect(remoteTree.getByText('/fixture/project-wt/worker',{exact:true})).toBeVisible();
+    await expect(remoteTree.getByRole('button',{name:'Codex 세션 열기',exact:true})).toBeVisible();
+    await expect(remoteTree.getByText('원격 저장소 연결 끊김 · 마지막 확인 내용',{exact:true})).toBeVisible();
+    expect((await page.evaluate(()=>window.multiCliWork.terminals.list())).find(value=>value.remote?.sessionId===remoteSessionId)?.projectId).toBeNull();
+    await remoteTree.screenshot({path:info.outputPath('remote-sidebar-offline.png')});
     expect(await fs.readFile(path.join(registry,"projects.json"),"utf8")).toContain("Herdr 검증");
     expect(await fs.readFile(path.join(registry,'work-projects.json'),'utf8')).not.toContain('hostProjects');
     await expect(fs.access(path.join(recovery,`recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
     await expect(fs.access(path.join(recovery,'recovery-controller.cjs'))).resolves.toBeUndefined();
+    // A host-launched worker has no renderer-supplied worktreeId. Reconciliation
+    // must recover ownership before the normal worktree deletion flow can stop it.
+    const owned=await page.evaluate(({projectId,fixtureHead})=>window.multiCliWork.worktrees.create(projectId,{kind:'new',branch:'fixture-worker-removal',startPoint:fixtureHead}),{projectId,fixtureHead});
+    const fixtureRelative=path.relative(await fs.realpath(directory),await fs.realpath(owned.worktree.path));
+    expect(fixtureRelative).not.toBe('');expect(fixtureRelative).not.toMatch(/^\.\.(?:[\\/]|$)/);expect(path.isAbsolute(fixtureRelative)).toBe(false);
+    const workerId='owned-worktree-worker';
+    await client.createTerminal({sessionId:workerId,kind:windows?'powershell':'bash',cwd:owned.worktree.path,executable:path.join(resourcesDirectory,windows?'node/windows/node.exe':'node/linux/node'),args:['-e','setInterval(()=>{},1000)'],env:{},projectId,createdAt:new Date().toISOString()});
+    await expect.poll(()=>page.evaluate(()=>window.multiCliWork.terminals.list())).toEqual(expect.arrayContaining([expect.objectContaining({id:workerId,worktreeId:owned.worktree.id,pid:0})]));
+    expect(await page.evaluate(id=>window.multiCliWork.worktrees.remove(id,false),owned.worktree.id)).toEqual({removed:true});
+    await expect(fs.stat(owned.worktree.path)).rejects.toMatchObject({code:'ENOENT'});
+    await expect.poll(()=>client!.terminals()).toEqual(expect.arrayContaining([expect.objectContaining({id:workerId,status:'exited'})]));
+    expect((await git('status','--porcelain')).stdout.trim()).toBe('');expect((await git('rev-parse','HEAD')).stdout.trim()).toBe(fixtureHead);
     const finalGui=app.process();await app.evaluate(({app})=>app.quit());await expect.poll(()=>finalGui.exitCode).not.toBe(null);app=undefined;
     observer?.close();observer=undefined;
     await mobile.close();mobile=undefined;

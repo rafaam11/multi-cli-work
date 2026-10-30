@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import {normalizeWorkspacePath} from '../projects/git-worktree';
 import type { AgentDefinition, AgentId } from "../../shared/agent-types";
 import {
   MAX_VISIBLE_SESSIONS,
@@ -88,6 +89,8 @@ export function resumeSeparatorText(nowIso: string): string {
 }
 
 export interface TerminalWorkerGateway {
+  holdCheckoutRemoval?(cwd:string,id:string):Promise<import("../projects/worktree-service").WorktreeRemovalLease>;
+  settleCheckoutRemoval?(id:string):Promise<void>;
   listExisting?(): Promise<(TerminalSession & {generation:string})[]>;
   create(spec: TerminalLaunchSpec): Promise<TerminalSession>;
   attach(sessionId: string): Promise<TerminalAttachment>;
@@ -272,6 +275,11 @@ export class TerminalCoordinator {
       if (this.removedSessionIds.has(session.id)) continue;
       const previous = this.views.get(session.id);
       const view: TerminalSessionView = { ...previous, ...session, title: previous?.title ?? null, name: previous?.name ?? null, interruptedByShutdown: false };
+      if(session.pid===0&&!session.remote&&session.projectId&&this.options.resolveWorkspace&&(!previous||previous.pid!==0||previous.cwd!==session.cwd||previous.projectId!==session.projectId)){
+        const workspace=await this.options.resolveWorkspace(session.projectId,session.cwd);
+        if(workspace?.worktreeId)view.worktreeId=workspace.worktreeId;
+        else delete view.worktreeId;
+      }
       if (previous && JSON.stringify(previous) === JSON.stringify(view)) continue;
       this.views.set(session.id, view);
       this.generations.set(session.id, session.generation);
@@ -637,11 +645,31 @@ export class TerminalCoordinator {
     await this.removeSessions(this.list().filter((session) => session.worktreeId === worktreeId));
   }
 
+  async holdWorktreeRemoval(cwd:string,id:string):Promise<import("../projects/worktree-service").WorktreeRemovalLease> {
+    return this.options.worker.holdCheckoutRemoval?.(cwd,id)??(async()=>{});
+  }
+
+  async settleWorktreeRemoval(id:string):Promise<void>{await this.options.worker.settleCheckoutRemoval?.(id);}
+
   async stopWorktreeSessions(worktreeId: string): Promise<void> {
-    const sessions = this.list().filter((session) => session.worktreeId === worktreeId);
+    // A host can have started a worker since the GUI's last observation. A failed
+    // fresh read must block directory removal, not certify the cached list empty.
+    if(this.options.worker.listExisting)await this.reconcileHostSessions();
+    const worktree=await this.options.getWorktree?.(worktreeId);
+    if(this.options.worker.listExisting&&!worktree)throw new Error('작업 폴더의 현재 경로를 확인할 수 없어 삭제를 보류합니다.');
+    const root=worktree?normalizeWorkspacePath(worktree.path):null;
+    const sessions = this.list().filter(session=>{
+      if(session.remote)return false;
+      if(session.worktreeId===worktreeId)return true;
+      if(!root)return false;
+      const relative=path.relative(root,normalizeWorkspacePath(session.cwd));
+      return relative===''||!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith(`..${path.sep}`);
+    });
     const failures: unknown[] = [];
     for (const session of sessions) {
-      if (session.pid === null || session.status === "exited" || session.status === "error") continue;
+      if(worktree&&session.worktreeId!==worktreeId){session.worktreeId=worktreeId;session.projectId=worktree.projectId;await this.persistView(session);}
+      // Host-managed error means observation lost; only the host can prove exit.
+      if (session.pid === null || session.status === "exited" || session.status === "error"&&session.pid!==0) continue;
       try {
         await this.options.worker.stop(session.id);
       } catch (error) {

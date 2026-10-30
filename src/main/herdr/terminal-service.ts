@@ -1,3 +1,4 @@
+import {CheckoutAdmission} from "./checkout-admission";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
@@ -12,7 +13,7 @@ import { HerdrCommandError, HerdrDeliveryUnknownError } from "./api-client";
 import { applySurfaceEvent } from "../../shared/herdr-surface-model";
 import { parseMetadataTokens } from "../../shared/herdr-metadata";
 import { configureProviderMods } from "../v2/provider-mods";
-import {captureProcessTree,observeProcessTree,parseProcessInventory,readProcessInventory,type ProcessIdentity} from "./process-observation";
+import {captureProcessTree,observeProcessTree,parseProcessInventory,readProcessInventory,readBootIdentity,type ProcessIdentity} from "./process-observation";
 
 type JsonObject = Record<string, unknown>;
 type Launch = {sessionId:string; kind:string; cwd:string; executable:string; args:string[]; env:Record<string,string>; projectId:string|null; createdAt:string; generation?:string};
@@ -79,7 +80,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
   let observationDirty=false;
   let latestSnapshot:JsonObject={};
   let reconnectTimer: ReturnType<typeof setTimeout>|undefined;
-  let mutation = Promise.resolve();
+  const admission = new CheckoutAdmission(options.root,()=>readProcessInventory(options.bridgePath),()=>readBootIdentity(options.bridgePath));
   const persist = async () => { await updateJsonStore(sessionSpec,file,()=>({version:2 as const,sessions:[...sessions.values()]})); };
   const session = (id:string) => { const s=sessions.get(id); if(!s) throw new Error("Unknown MCW session"); return s; };
   const emit = (bridge:Bridge,event:unknown) => { for(const listener of bridge.listeners) {try {listener(event);} catch {bridge.listeners.delete(listener);}} };
@@ -162,6 +163,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
   };
   const endpointRequest = (bridge:Bridge,method:string,params:JsonObject):Promise<unknown> => {
     const id=randomUUID();
+    if(bridge.pending.size>=64) return Promise.reject(new Error("Too many pending terminal requests"));
     if(!bridge.bootId) return Promise.reject(new Error("Terminal handshake is not ready"));
     return new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>{bridge.pending.delete(id);reject(new HerdrDeliveryUnknownError(id,"Endpoint acknowledgement timed out"));},10_000);
@@ -277,12 +279,14 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
     onChange(callback:()=>void) {observers.add(callback);return ()=>observers.delete(callback);},
     async refreshObservation(){try{await refresh();}catch(error){stale(error instanceof Error?error:new Error(String(error)));throw error;}},
     async list() {return [...sessions.values()].map(s=>({...s}));},
+    acquireCheckoutRemoval:(cwd:string,id:string,pid:number)=>admission.acquire(cwd,id,pid),
+    releaseCheckoutRemoval:(id:string)=>admission.release(id),
+    removeCheckout:(id:string,repo:string,cwd:string,force:boolean)=>admission.remove(id,repo,cwd,force),
+    checkoutRemovalBusy:()=>admission.busy(),
     async create(input:JsonObject):Promise<ManagedSession> {
       const spec=parseLaunchSpec(input);
       if(spec.sessionId.startsWith("mcwr-"))throw new Error("Reserved remote viewer session ID");
-      let finish!:()=>void;
-      const prior=mutation;mutation=new Promise<void>(resolve=>finish=resolve);await prior;
-      try {
+      return admission.launch(spec.cwd,async()=>{
         if(sessions.has(spec.sessionId)) throw new Error("Session id already admitted; inspect its delivery state instead of retrying");
         await fs.access(spec.cwd);
         const s:ManagedSession={id:spec.sessionId,kind:spec.kind,cwd:spec.cwd,projectId:spec.projectId,createdAt:spec.createdAt,generation:spec.generation??randomUUID(),tabId:null,paneId:null,delivery:"pending",status:"starting",observedAt:null,connected:true};
@@ -301,7 +305,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
           s.geometry=tabGeometry(s.tabId)??{cols:80,rows:24,cellWidthPx:8,cellHeightPx:16};
           await persist(); await observe().catch(stale); return {...s};
         } catch(error) {if(!layoutConfirmed) s.delivery=layoutAttempted&&!(error instanceof HerdrCommandError)?"unknown":"rejected";await persist();throw error;}
-      } finally {finish();}
+      });
     },
     async stop(id:string) {
       const s=session(id);if(!s.tabId) throw new Error("Cannot stop an unconfirmed terminal");
@@ -326,6 +330,24 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
     async input(id:string,viewer:string,event:unknown) {if(!object(event)||Object.keys(event).length!==1||!["Key","TextCommit","Paste","Mouse"].includes(Object.keys(event)[0])) throw new Error("Invalid semantic terminal input");write(requireControl(id,viewer),{type:"input",paneId:session(id).paneId,events:[event]});},
     async resize(id:string,viewer:string,cols:number,rows:number,cellWidthPx=8,cellHeightPx=16) {if(!Number.isInteger(cols)||!Number.isInteger(rows)||cols<2||rows<2||cols>500||rows>300||!Number.isInteger(cellWidthPx)||!Number.isInteger(cellHeightPx)||cellWidthPx<1||cellWidthPx>100||cellHeightPx<1||cellHeightPx>100) throw new Error("Invalid terminal size");const bridge=requireControl(id,viewer);session(id).geometry={cols,rows,cellWidthPx,cellHeightPx};await persist();write(bridge,{type:"resize",cols,rows,cellWidthPx,cellHeightPx});},
     async scroll(id:string,viewer:string,delta:number) {if(!Number.isInteger(delta)||Math.abs(delta)>100000) throw new Error("Invalid scroll delta");const bridge=requireControl(id,viewer);const pane=bridge.surface?.panes.find(p=>p.pane_id===session(id).paneId);if(!pane?.scroll) throw new Error('Terminal scroll geometry is not ready');const offset=Math.max(0,Math.min(pane.scroll.max_offset_from_bottom,pane.scroll.offset_from_bottom+delta));await endpointRequest(bridge,"pane.scroll",{pane_id:session(id).paneId,offset_from_bottom:offset});},
+    async clear(id:string,viewer:string) {const bridge=requireControl(id,viewer);await endpointRequest(bridge,"pane.clear",{pane_id:session(id).paneId});},
+    async selection(id:string,viewer:string,params:Record<string,unknown>) {
+      const bridge=requireControl(id,viewer),pane=bridge.surface?.panes.find(p=>p.pane_id===session(id).paneId);
+      if(!pane?.scroll || !Number.isSafeInteger(pane.content_revision) || pane.content_revision%2 || params.content_revision!==pane.content_revision) throw new Error("Terminal content changed; select again");
+      const lastRow=pane.scroll.max_offset_from_bottom+pane.scroll.viewport_rows-1;
+      if(!Number.isSafeInteger(lastRow)||lastRow<0||lastRow>0xffffffff||pane.inner_rect.width<1||pane.inner_rect.width>65536)throw new Error("Terminal selection geometry is invalid");
+      const result=await endpointRequest(bridge,"pane.selection.read",{pane_id:session(id).paneId,anchor:{row:0,col:0},cursor:{row:lastRow,col:pane.inner_rect.width-1},content_revision:pane.content_revision});
+      if(!object(result)||typeof result.text!=="string"||Buffer.byteLength(result.text)>1024*1024)throw new Error("Terminal selection exceeds the 1 MiB limit or has an invalid response");
+      return result;
+    },
+    async search(id:string,viewer:string,params:Record<string,unknown>) {
+      const bridge=requireControl(id,viewer), pane=bridge.surface?.panes.find(p=>p.pane_id===session(id).paneId);
+      const point=(v:unknown):v is {row:number;col:number} => object(v)&&Number.isSafeInteger(v.row)&&Number(v.row)>=0&&Number(v.row)<=0xffffffff&&Number.isInteger(v.col)&&Number(v.col)>=0&&Number(v.col)<=65535;
+      const previous=params.previous;
+      if(!pane || !Number.isSafeInteger(pane.content_revision) || pane.content_revision%2 || params.content_revision!==pane.content_revision) throw new Error("Terminal content changed; refresh and search again");
+      if(typeof params.query!=="string" || !params.query || Buffer.byteLength(params.query)>4096 || !["forward","backward"].includes(String(params.direction)) || !point(params.cursor) || (previous!==undefined&&(!object(previous)||!point(previous.start)||!point(previous.end)))) throw new Error("Invalid terminal search");
+      return endpointRequest(bridge,"pane.copy_search",{pane_id:session(id).paneId,query:params.query,direction:params.direction,cursor:params.cursor,content_revision:pane.content_revision,...(previous===undefined?{}:{previous})});
+    },
     async takeOwnership(id:string,viewer:string) {const bridge=existingBridge(id);if(bridge.owner&&bridge.owner!==viewer) throw new Error("Terminal is owned by another viewer");bridge.owner=viewer;owners.set(id,viewer);emit(bridge,{type:"ownership",ownerId:viewer,sizeOwnerId:viewer});},
     async releaseOwnership(id:string,viewer:string) {if(owners.get(id)===viewer) owners.set(id,null);const bridge=bridges.get(id);if(bridge?.owner===viewer) {bridge.owner=null;emit(bridge,{type:"ownership",ownerId:null,sizeOwnerId:null});}},
     async close(stopServer=false) {closed=true;clearTimeout(reconnectTimer);for(const timer of bridgeReconnects.values()) clearTimeout(timer);bridgeReconnects.clear();closeEvents?.();await refreshPromise?.catch(()=>{});for(const bridge of [...bridges.values()]) bridge.fail(new Error('Host terminal service closed'));if(stopServer) await runtime.stop();await persist();},

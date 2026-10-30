@@ -11,6 +11,9 @@ export async function preserveRecoveryRuntime(resourcesDirectory: string, recove
     {source:path.join(resourcesDirectory,'host/recovery-controller.cjs'),filename:'recovery-controller.cjs',executable:false},
     {source:path.join(bridgeDirectory,process.platform==='win32'?'mcw-herdr-bridge.exe':'mcw-herdr-bridge'),filename:process.platform==='win32'?'recovery-process-bridge.exe':'recovery-process-bridge',executable:true},
   ].map(async asset=>({...asset,sha256:createHash('sha256').update(await fs.readFile(asset.source)).digest('hex')})));
+  const startupRescue=path.join(resourcesDirectory,'host/startup-rescue.cjs');
+  try{const bytes=await fs.readFile(startupRescue);additionalAssets.push({source:startupRescue,filename:'startup-rescue.cjs',executable:false,sha256:createHash('sha256').update(bytes).digest('hex')});}
+  catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
   const bridgeReceipt=JSON.parse(await fs.readFile(path.join(bridgeDirectory,'bridge.json'),'utf8'));
   if(bridgeReceipt.herdrVersion!=='0.9.5'||bridgeReceipt.sha256!==additionalAssets[1].sha256)throw new Error('독립 복구용 프로세스 브리지 검증에 실패했습니다.');
   const revision=createHash('sha256').update(JSON.stringify(additionalAssets.map(({filename,sha256})=>({filename,sha256})))).update(await fs.readFile(path.join(scriptDirectory,'core.mjs'))).update(await fs.readFile(path.join(scriptDirectory,'recover.mjs'))).digest('hex').slice(0,16);

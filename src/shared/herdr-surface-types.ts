@@ -60,4 +60,7 @@ export interface HerdrTerminalTransport {
   requestControl(sessionId: string, viewerId: string): void | Promise<unknown>;
   releaseControl(sessionId: string, viewerId: string): void | Promise<unknown>;
   requestSnapshot(sessionId: string): void | Promise<unknown>;
+  clear?(sessionId: string): Promise<unknown>;
+  search?(sessionId: string, params: Record<string, unknown>): Promise<unknown>;
+  selection?(sessionId: string, params: Record<string, unknown>): Promise<unknown>;
 }

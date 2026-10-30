@@ -22,6 +22,18 @@ describe("host terminal transport adapter", () => {
     createHostTransport({subscribeTerminal:(_id,callback)=>{receive=callback;return()=>{};},terminalCommand:async()=>{}}).subscribe("s",event=>events.push(event));
     receive({type:"disconnected",observedAt:null});expect(events).toEqual([{type:"disconnected",observedAt:null,reason:undefined}]);
   });
+  it("correlates requests and rejects outstanding work on disconnect without replay", async () => {
+    let receive!:(event:unknown)=>void;
+    const api={subscribeTerminal:vi.fn((_id:string,cb:(e:unknown)=>void)=>{receive=cb;return ()=>{};}),terminalCommand:vi.fn(async(_id:string,_command:Record<string,unknown>)=>{})};
+    const adapter=createHostTransport(api);adapter.subscribe("s",()=>{});
+    const first=adapter.search!("s",{query:"hello"});
+    const command=api.terminalCommand.mock.calls[0][1] as Record<string,unknown>;
+    receive({type:"terminal-result",requestId:command.requestId,result:{total:1}});
+    await expect(first).resolves.toEqual({total:1});
+    const second=adapter.clear!("s");receive({type:"disconnected"});
+    await expect(second).rejects.toThrow("disconnected");
+    expect(api.terminalCommand).toHaveBeenCalledTimes(2);
+  });
   it("maps semantic input, resize, scroll and explicit ownership to host commands", async () => {
     const api = { subscribeTerminal: vi.fn(() => () => {}), terminalCommand: vi.fn(async () => {}) }, adapter = createHostTransport(api);
     await adapter.sendInput("s", { TextCommit: "한" });

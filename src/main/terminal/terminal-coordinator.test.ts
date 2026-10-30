@@ -1799,6 +1799,30 @@ describe("worktree sessions", () => {
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions[session.id].worktreeId).toBe(worktree.id);
   });
+  it('resolves host-owned worker worktrees on observation even when the cwd has not changed',async()=>{
+    const root=await tempRoot(),{instance}=worktreeCoordinator(root);await instance.initialize();
+    const observed={id:'host-worker',projectId:project.id,tool:null,kind:'codex',cwd:worktree.path,providerConversationId:null,status:'idle' as const,pid:0,createdAt:'2026-10-30T00:00:00.000Z',updatedAt:'2026-10-30T00:01:00.000Z',exitCode:null,generation:'host-generation'};
+    await instance.reconcileHostSessions([observed]);await instance.reconcileHostSessions([observed]);
+    expect(instance.list()[0]).toMatchObject({worktreeId:worktree.id,cwd:worktree.path});
+    expect((await readAppState({statePath:path.join(root,'state.json')})).state.sessions[observed.id].worktreeId).toBe(worktree.id);
+  });
+  it('refreshes host inventory and stops an unclassified local worker by cwd, including disconnected state',async()=>{
+    const {instance,worker}=worktreeCoordinator(await tempRoot());await instance.initialize();
+    const observed={id:'unclassified',projectId:null,tool:null,kind:'codex',cwd:worktree.path,providerConversationId:null,status:'error' as const,pid:0,createdAt:'2026-10-30T00:00:00.000Z',updatedAt:'2026-10-30T00:01:00.000Z',exitCode:null,generation:'host-generation'};
+    const listExisting=vi.fn(async()=>[observed,{...observed,id:'remote-same-path',remote:{hostId:'elsewhere',name:'Other PC',sessionId:'actual',projectId:null,connected:false,observedAt:12}}]);
+    Object.assign(worker,{listExisting});
+    worker.stop.mockRejectedValueOnce(new Error('Host cannot prove the worker stopped'));
+    await expect(instance.stopWorktreeSessions(worktree.id)).rejects.toThrow('Failed to stop');
+    expect(listExisting).toHaveBeenCalled();expect(worker.stop).toHaveBeenCalledExactlyOnceWith('unclassified');
+    expect(instance.list().find(view=>view.id==='unclassified')?.worktreeId).toBe(worktree.id);
+    await instance.stopWorktreeSessions(worktree.id);expect(worker.stop).toHaveBeenCalledTimes(2);
+  });
+  it('refuses worktree deletion when the independent host cannot provide a fresh inventory',async()=>{
+    const {instance,worker}=worktreeCoordinator(await tempRoot());await instance.initialize();
+    Object.assign(worker,{listExisting:vi.fn(async()=>{throw new Error('Host unavailable');})});
+    await expect(instance.stopWorktreeSessions(worktree.id)).rejects.toThrow('Host unavailable');
+    expect(worker.stop).not.toHaveBeenCalled();
+  });
 
   it("moves a PowerShell session with its owned CLI and persists the workspace without replacing the terminal", async () => {
     const root = await tempRoot();

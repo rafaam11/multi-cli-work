@@ -52,6 +52,9 @@ fn run() -> io::Result<()> {
     {
         return emit(&serde_json::to_value(processes::snapshot()?)?);
     }
+    if mode.as_deref() == Some(std::ffi::OsStr::new("--boot-identity")) && args.next().is_none() {
+        return emit(&json!({"bootId": processes::boot_identity()?}));
+    }
     if mode.as_deref() != Some(std::ffi::OsStr::new("--socket")) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

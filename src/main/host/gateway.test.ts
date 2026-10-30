@@ -11,6 +11,7 @@ import { HostClient } from "./host-client";
 import { TaskStore } from "./task-store";
 import { ensureHostProcess, readHostDescriptor } from "./host-process";
 import {remoteSessionId} from "../v2/observed-terminals";
+import {HostWorkerGateway} from "../v2/worker-gateway";
 import {WorkerReplicas} from "./worker-replicas";
 
 const directories: string[] = []; const gateways: HostGateway[] = []; const sockets: WebSocket[] = [];
@@ -405,4 +406,24 @@ it("rechecks terminal observation before recovery readiness and refuses stale ca
   expect(await gateway.canShutdown()).toBe(false);
   expect(await client.request("/recovery-readiness")).toMatchObject({hostId:"pc-a",accepting:true,canShutdown:true});
   expect(refresh).toHaveBeenCalledTimes(2);expect((await client.health()).accepting).toBe(true);
+});
+
+it("routes GUI checkout leases through owner-authenticated host admission and preserves lease identity",async()=>{
+ const acquire=vi.fn(async(_cwd:string,_id:string,_pid:number)=>{}),release=vi.fn(async(_id:string)=>{});
+ const terminals={...terminalService(),acquireCheckoutRemoval:acquire,releaseCheckoutRemoval:release};
+ const {client,store,gateway,descriptor}=await setup({terminals});
+ const worker=new HostWorkerGateway(client),cwd=path.resolve("checkout");
+ const unlock=await worker.holdCheckoutRemoval(cwd,"persisted-operation");
+ expect(acquire).toHaveBeenCalledWith(cwd,expect.any(String),process.pid);
+ expect(release).not.toHaveBeenCalled();await unlock();expect(release).toHaveBeenCalledWith(acquire.mock.calls[0][1]);
+ const task=await store.createTask(taskInput),lead=task.participants[0];
+ const token=await gateway.issueTaskToken({taskId:task.id,participantId:lead.id,attemptId:lead.attempt.id,generation:1});
+ const unauthorized=new HostClient({...descriptor,token});
+ await expect(unauthorized.request("/checkout-removal/acquire","POST",{cwd,id:"other",pid:process.pid})).rejects.toThrow(/Owner/);
+ expect(acquire).toHaveBeenCalledOnce();
+});
+
+it("refuses host shutdown while a checkout Git deletion is running or unknown",async()=>{
+ const busy=vi.fn(async()=>true),{gateway}=await setup({terminals:{...terminalService(),checkoutRemovalBusy:busy}});
+ expect(await gateway.canShutdown()).toBe(false);busy.mockResolvedValue(false);expect(await gateway.canShutdown()).toBe(true);
 });

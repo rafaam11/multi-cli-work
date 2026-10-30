@@ -24,7 +24,7 @@ export function observedTerminals(state:Pick<V2HostState,"tasks"|"terminals"|"ho
     ...(state.hosts??[]).flatMap(host=>{
       return host.terminals.map(terminal=>({...terminal,id:remoteSessionId(host.hostId,terminal.id),projectId:null,
         connected:host.connected&&terminal.connected,taskNotice:notices[remoteSessionId(host.hostId,terminal.id)]??null,
-        remote:{hostId:host.hostId,name:host.name,sessionId:terminal.id,projectId:terminal.projectId,connected:host.connected&&terminal.connected,observedAt:terminal.observedAt}}));
+        remote:{hostId:host.hostId,name:host.name,sessionId:terminal.id,projectId:terminal.projectId,connected:host.connected&&terminal.connected,observedAt:terminal.observedAt,repository:host.catalog?.repositories.find(repo=>repo.id===terminal.projectId)}}));
     })];
 }
 export function resolveRemoteSession(hosts:RemoteHostObservation[],viewId:string) {
