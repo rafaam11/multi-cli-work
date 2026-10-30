@@ -24,6 +24,7 @@ import type {WorkerTransfer} from "../../shared/remote-task-types";
 
 /** The independent daemon owns this service. Closing a viewer never stops a session. */
 export interface HostTerminalService {
+  refreshObservation?():Promise<void>;
   onChange?(callback: () => void): () => void;
   list(): Promise<unknown[]>;
   create(input: Record<string, unknown>): Promise<unknown>;
@@ -189,6 +190,7 @@ export class HostGateway {
   drain(): void { this.accepting = false; }
   /** Refuse daemon exit while work is live or its process state is unknown. */
   async canShutdown(): Promise<boolean> {
+    try{await this.options.terminals.refreshObservation?.();}catch{return false;}
     const sessions = await this.options.terminals.list();
     const uncertainSession = sessions.some(value => { const session = value as Record<string, unknown> | null; return !session || session.status !== "exited" || session.connected !== true || session.delivery === "unknown" || session.delivery === "pending"; });
     const uncertain=(attempt:import("../../shared/host-types").TaskAttempt)=>["running", "idle", "lost"].includes(attempt.execution) || ["pending", "unknown"].includes(attempt.delivery) || (attempt.delivery === "delivered" && attempt.execution !== "exited");
@@ -319,6 +321,7 @@ export class HostGateway {
         await this.options.hosts.remove(text(decodeURIComponent(hostRoute[1])));reply(response,200,{});return;
       }
       if (url.pathname === "/health" && method === "GET") { reply(response, 200, { schemaVersion: 2, hostId: this.descriptor.hostId, instanceId: this.descriptor.instanceId, accepting: this.accepting }); return; }
+      if(url.pathname==="/recovery-readiness"&&method==="GET"){reply(response,200,{hostId:this.descriptor.hostId,instanceId:this.descriptor.instanceId,accepting:this.accepting,canShutdown:await this.canShutdown(),checkedAt:Date.now()});return;}
       if (url.pathname === "/drain" && method === "POST") { this.drain(); reply(response, 200, { accepting: false }); return; }
       if (url.pathname === "/shutdown" && method === "POST") { this.drain(); if (!await this.canShutdown()) throw new HttpError(409, "Active or unobserved work prevents shutdown"); reply(response, 200, { shutdown: true }); setImmediate(() => { void this.close().then(() => this.options.onShutdown?.()); }); return; }
       if (url.pathname === "/tasks" && method === "GET") { reply(response, 200, await this.options.store.list()); return; }

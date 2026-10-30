@@ -2,6 +2,7 @@ use interprocess::{
     local_socket::{prelude::*, Stream},
     TryClone,
 };
+mod processes;
 use mcw_herdr_bridge::{
     decode_server, encode_client, read_frame, read_json_line, validate_welcome, write_frame,
     BridgeCommand,
@@ -46,7 +47,12 @@ enum Event {
 
 fn run() -> io::Result<()> {
     let mut args = std::env::args_os().skip(1);
-    if args.next().as_deref() != Some(std::ffi::OsStr::new("--socket")) {
+    let mode = args.next();
+    if mode.as_deref() == Some(std::ffi::OsStr::new("--process-snapshot")) && args.next().is_none()
+    {
+        return emit(&serde_json::to_value(processes::snapshot()?)?);
+    }
+    if mode.as_deref() != Some(std::ffi::OsStr::new("--socket")) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "usage: mcw-herdr-bridge --socket <absolute Herdr endpoint path>",

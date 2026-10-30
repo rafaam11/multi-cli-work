@@ -6,9 +6,10 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), spawn: vi.fn() }));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), spawn: vi.fn(), processes:vi.fn() }));
 vi.mock("./runtime", () => ({ startHerdrRuntime: mocks.start }));
-vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
+vi.mock("node:child_process", async original => ({...await original<typeof import("node:child_process")>(), spawn: mocks.spawn }));
+vi.mock("./process-observation",async original=>({...await original<typeof import("./process-observation")>(),readProcessInventory:mocks.processes}));
 import { createHerdrTerminalService } from "./terminal-service";
 
 class Child extends EventEmitter {
@@ -26,9 +27,10 @@ let snapshot: any, callback: (event: unknown) => void, request: ReturnType<typeo
 
 beforeEach(() => {
   children = [];
+  mocks.processes.mockResolvedValue([{pid:10,parentPid:1,startId:"windows:1",name:"shell",executable:"/shell"}]);
   snapshot = { panes:[{pane_id:"p",agent_status:"working"}], workspaces:[{workspace_id:"w",label:"MCW managed sessions"}], focused_tab_id:"t", layouts:[{tab_id:"t",area:{width:90,height:30}}] };
-  request = vi.fn(async (method: string) => method === "session.snapshot" ? {snapshot} : method === "layout.apply" ? {layout:{tab_id:"t",root:{pane_id:"p"}}} : {});
-  mocks.start.mockResolvedValue({api:{request,subscribe:vi.fn(async (_types, event) => {callback=event; return ()=>{};})},paths:{clientPath:path.resolve("fake.sock")},stop:vi.fn()});
+  request = vi.fn(async (method: string) => method === "session.snapshot" ? {snapshot} : method === "pane.process_info" ? {process_info:{shell_pid:10}} : method === "layout.apply" ? {layout:{tab_id:"t",root:{pane_id:"p"}}} : {});
+  mocks.start.mockResolvedValue({api:{request,subscribe:vi.fn(async (_types, event) => {callback=event; return ()=>{};})},paths:{clientPath:path.resolve("fake.sock")},stop:vi.fn(),observeProcesses:vi.fn()});
   mocks.spawn.mockImplementation(() => {const child = new Child(); children.push(child); return child;});
 });
 afterEach(async () => { for(const service of services) await service.close(); services=[];vi.useRealTimers();for(const root of roots) await fs.rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:10});roots=[];vi.clearAllMocks(); });
@@ -45,6 +47,28 @@ async function ready(child:Child) {
 }
 
 describe("host bridge lifecycle", () => {
+  it("does not report a successful stop when Herdr removes a pane but its process survives",async()=>{
+    const {service,root}=await make();
+    request.mockImplementation(async(method:string)=>{if(method==="tab.close")snapshot.panes=[];return {snapshot};});
+    await expect(service.stop("s")).rejects.toThrow(/process|exit/i);
+    expect((await service.list())[0]).toMatchObject({status:"orphaned",connected:true});
+    expect(children).toHaveLength(1);
+    const saved=JSON.parse(await fs.readFile(path.join(root,"terminal-sessions.json"),"utf8"));
+    expect(saved.sessions[0].processes).toMatchObject([{pid:10,startId:"windows:1"}]);
+    mocks.processes.mockResolvedValue([]);await service.refreshObservation();
+    expect((await service.list())[0]).toMatchObject({status:"exited",connected:true});
+  });
+  it("does not infer exit for a recovered absent pane with no recorded process identity",async()=>{
+    snapshot.panes=[];const {service}=await make();
+    await service.refreshObservation();
+    expect((await service.list())[0].status).toBe("unknown");
+  });
+  it("invalidates process-exit observations when OS inventory cannot be read",async()=>{
+    const {service}=await make();snapshot.panes=[];
+    mocks.processes.mockRejectedValue(new Error("process snapshot unavailable"));
+    await expect(service.refreshObservation()).rejects.toThrow("unavailable");
+    expect((await service.list())[0].connected).toBe(false);
+  });
   it("preopens recovered sessions at recorded geometry; observer reads never launch a bridge", async () => {
     const {service}=await make();
     expect(children).toHaveLength(1);

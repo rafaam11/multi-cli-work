@@ -4,6 +4,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { ensureHostProcess, readHostDescriptor } from "../host/host-process";
 import { HostClient } from "../host/host-client";
 import { stageRecoveryAssets, verifyRecoveryAssets, verifyStandaloneNodeRuntime } from "../recovery";
+import {resolveHerdrResource} from "./herdr-resource";
 
 export async function preserveRecoveryRuntime(resourcesDirectory: string, recoveryRoot: string, installDirectory: string, scriptDirectory: string): Promise<void> {
   const destination = path.join(recoveryRoot, "v1.55.1-recovery");
@@ -22,8 +23,7 @@ export interface DesktopHostOptions { userData: string; registryRoot:string; res
 export async function startDesktopHost(options: DesktopHostOptions) {
   const manifest = JSON.parse(await fs.readFile(path.join(options.resourcesDirectory, "assets.json"), "utf8"));
   if (manifest.herdrVersion !== "0.9.5" || !["win32", "linux"].includes(process.platform)) throw new Error("지원되는 Herdr 런타임이 없습니다.");
-  const binaryPath = path.join(options.resourcesDirectory, process.platform === "win32" ? "herdr/windows/herdr.exe" : "herdr/herdr-linux-x86_64");
-  const binarySha256 = process.platform === "win32" ? manifest.windowsMembers.find((entry: { file: string }) => entry.file === "herdr.exe")?.sha256 : manifest.assets.find((entry: { id: string }) => entry.id === "herdr-linux")?.sha256;
+  const {binaryPath,binarySha256}=await resolveHerdrResource(options.resourcesDirectory);
   const bridgePath = path.join(options.bridgeDirectory, process.platform === "win32" ? "mcw-herdr-bridge.exe" : "mcw-herdr-bridge");
   const bridge = JSON.parse(await fs.readFile(path.join(options.bridgeDirectory, "bridge.json"), "utf8"));
   const digest = createHash("sha256").update(await fs.readFile(bridgePath)).digest("hex");

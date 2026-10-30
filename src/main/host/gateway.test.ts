@@ -343,3 +343,12 @@ it("permits shutdown only for freshly confirmed exits and rejects pending termin
   expect((await fetchRoute("/shutdown", { method: "POST" })).status).toBe(409);
   resolveCreate(); expect((await creation).status).toBe(201);
 });
+it("rechecks terminal observation before recovery readiness and refuses stale cached exits",async()=>{
+  const {gateway,terminals,client}=await setup();
+  terminals.sessions.set("s",{status:"exited",connected:true,delivery:"delivered"});
+  const refresh=vi.fn().mockRejectedValueOnce(new Error("Herdr unavailable")).mockResolvedValue(undefined);
+  gateway.options.terminals.refreshObservation=refresh;
+  expect(await gateway.canShutdown()).toBe(false);
+  expect(await client.request("/recovery-readiness")).toMatchObject({hostId:"pc-a",accepting:true,canShutdown:true});
+  expect(refresh).toHaveBeenCalledTimes(2);expect((await client.health()).accepting).toBe(true);
+});

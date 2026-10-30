@@ -38,6 +38,7 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   let syncTimer:ReturnType<typeof setInterval>|undefined;
   let stopObservation: (() => void) | undefined;
   const service: HostGatewayOptions["terminals"] = {
+    refreshObservation:()=>terminals!.refreshObservation(),
     onChange: callback => terminals!.onChange(callback),
     list: () => terminals!.list(), create: input => terminals!.create(input), stop: id => terminals!.stop(id), snapshot: id => terminals!.snapshot(id),
     subscribeFrames: (id, callback) => terminals!.subscribeFrames(id, callback), input: (id, viewer, data) => terminals!.input(id, viewer, data),
@@ -45,7 +46,7 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
     takeOwnership: (id, viewer) => terminals!.takeOwnership(id, viewer), releaseOwnership: (id, viewer) => terminals!.releaseOwnership(id, viewer),
   };
   let gateway: HostGateway;
-  const finish = async () => { clearInterval(syncTimer);stopObservation?.(); await hosts.close(); await terminals?.close(); process.exit(0); };
+  const finish = async () => { clearInterval(syncTimer);stopObservation?.(); await hosts.close(); await terminals?.close(true); process.exit(0); };
   try {
     gateway = await startHost({ directory, store, terminals: service, hosts, executionCatalog,workers:{replicas,prepare:async(...args)=>{if(!workerExecutor)throw new Error("Worker execution unavailable");return workerExecutor.prepare(...args);},admit:async(...args)=>{if(!workerExecutor)throw new Error("Worker execution unavailable");return workerExecutor.admit(...args);}}, connectionInfo:()=>({hostId,platform:process.platform as "win32"|"linux",nodeExecutable:process.execPath,hostEntrypoint:path.join(__dirname,"mcw-host.js"),dataRoot:directory}), bindAddress: option("--bind-address", false), allowRemote: argv.includes("--allow-remote"), advertisedHost: option("--advertised-host", false), onShutdown: finish, startTask: (taskId, input) => executor!.start(taskId, input), prepare: async () => {
       terminals = await createHerdrTerminalService({ root: directory, binaryPath: config.binaryPath as string, binarySha256: config.binarySha256 as string, bridgePath: config.bridgePath as string, modsDirectory:config.modsDirectory as string|undefined });

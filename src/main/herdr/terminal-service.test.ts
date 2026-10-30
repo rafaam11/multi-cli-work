@@ -70,6 +70,8 @@ describe.skipIf(!process.env.MCW_HERDR_TEST_BINARY || !process.env.MCW_BRIDGE_TE
       const next=await service.create({...spec,sessionId:"session-2"});
       expect(next.delivery).toBe("delivered");
       await service.stop("session-2");
+      const checkedAfter=Date.now();await service.refreshObservation();
+      expect((await service.list()).every(session=>session.status==="exited"&&session.connected&&session.observedAt!>=checkedAfter)).toBe(true);
     } finally { await service.close(true); await fs.rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100}); }
   },40_000);
 });

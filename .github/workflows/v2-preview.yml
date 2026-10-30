@@ -45,7 +45,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:MCW_HERDR_TEST_BINARY=(Resolve-Path build/v2/herdr/windows/herdr.exe).Path
+          $env:MCW_HERDR_TEST_BINARY=(Resolve-Path build/v2/herdr/windows-mcw/herdr.exe).Path
           $env:MCW_BRIDGE_TEST_BINARY=(Resolve-Path build/herdr-bridge/win32-x64/mcw-herdr-bridge.exe).Path
           npx vitest run src/main/herdr --maxWorkers=2
       - name: Actual Herdr Linux broker tests

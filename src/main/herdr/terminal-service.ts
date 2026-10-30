@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import {setTimeout as delay} from "node:timers/promises";
 import type { HostTerminalService } from "../host/gateway";
 import type { PaneSurfaceFrame, PaneSurfacePatch } from "../../shared/herdr-surface-types";
 import { readJsonStore, updateJsonStore, type JsonStoreSpec } from "../storage/json-store";
@@ -11,11 +12,12 @@ import { HerdrCommandError, HerdrDeliveryUnknownError } from "./api-client";
 import { applySurfaceEvent } from "../../shared/herdr-surface-model";
 import { parseMetadataTokens } from "../../shared/herdr-metadata";
 import { configureProviderMods } from "../v2/provider-mods";
+import {captureProcessTree,observeProcessTree,parseProcessInventory,readProcessInventory,type ProcessIdentity} from "./process-observation";
 
 type JsonObject = Record<string, unknown>;
 type Launch = {sessionId:string; kind:string; cwd:string; executable:string; args:string[]; env:Record<string,string>; projectId:string|null; createdAt:string; generation?:string};
 interface Geometry {cols:number;rows:number;cellWidthPx:number;cellHeightPx:number}
-export interface ManagedSession {id:string; kind:string; cwd:string; projectId:string|null; createdAt:string; generation:string; tabId:string|null; paneId:string|null; delivery:"pending"|"delivered"|"unknown"|"rejected"; status:string; observedAt:number|null; connected:boolean;geometry?:Geometry|null;tokens?:Record<string,string>}
+export interface ManagedSession {id:string; kind:string; cwd:string; projectId:string|null; createdAt:string; generation:string; tabId:string|null; paneId:string|null; delivery:"pending"|"delivered"|"unknown"|"rejected"; status:string; observedAt:number|null; connected:boolean;geometry?:Geometry|null;tokens?:Record<string,string>;processes?:ProcessIdentity[]}
 interface Registry {version:2; sessions:ManagedSession[]}
 const object = (value: unknown): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 class RegistryContentError extends Error {}
@@ -28,6 +30,7 @@ export function parseHerdrSessionRegistry(value:unknown,platform:NodeJS.Platform
   for(const s of value.sessions) {
     if(!object(s)||!validText(s.id,128)||!/^[\w-]+$/.test(s.id)||ids.has(s.id)||!validText(s.generation,128)||!validText(s.cwd,32768)||!paths.isAbsolute(s.cwd)||!validText(s.kind,128)||!validText(s.createdAt,128)||!Number.isFinite(Date.parse(s.createdAt))||(s.projectId!==null&&!validText(s.projectId))||(s.tabId!==null&&!validText(s.tabId))||(s.paneId!==null&&!validText(s.paneId))||!['pending','delivered','unknown','rejected'].includes(String(s.delivery))||!validText(s.status,128)||typeof s.connected!=="boolean"||(s.observedAt!==null&&(!Number.isSafeInteger(s.observedAt)||Number(s.observedAt)<0))||(s.geometry!==undefined&&s.geometry!==null&&!validGeometry(s.geometry))||(s.delivery==='delivered'&&(!s.tabId||!s.paneId))) throw new RegistryContentError("Invalid Herdr session record");
     if(s.tokens!==undefined)try {parseMetadataTokens(s.tokens);}catch {throw new RegistryContentError("Invalid Herdr session metadata tokens");}
+    if(s.processes!==undefined)try {const records=parseProcessInventory(s.processes);if(!records.length||records.length>10000||records[0].startId===null)throw new Error();}catch {throw new RegistryContentError("Invalid Herdr process identities");}
     ids.add(s.id);
   }
   return value as unknown as Registry;
@@ -97,15 +100,29 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
         refreshDirty=false;
         const {snapshot} = await runtime.api.request<{snapshot:JsonObject&{panes:JsonObject[]}}>("session.snapshot",{});
         latestSnapshot=snapshot;
+        // One native read per observation, shared across all managed panes. No
+        // command-line arguments, WMI calls or termination signals are involved.
+        const inventory=sessions.size?await readProcessInventory(options.bridgePath):[];
+        if(sessions.size)await runtime.observeProcesses(inventory);
+        let identitiesChanged=false;
         for(const s of sessions.values()) {
           const pane=snapshot.panes.find(p=>p.pane_id===s.paneId);
-          // connected means the observation is current, including a confirmed absent/exited pane.
+          const previousProcesses=JSON.stringify(s.processes);
+          if(pane&&!s.processes?.length)try {
+            const result=await runtime.api.request<{process_info:{shell_pid?:number}}>("pane.process_info",{pane_id:s.paneId});
+            if(Number.isSafeInteger(result.process_info?.shell_pid))s.processes=captureProcessTree(result.process_info.shell_pid!,inventory);
+          }catch(error){if(!(error instanceof HerdrCommandError&&error.code==="pane_not_found")&&!(error instanceof Error&&/Cannot observe|identity is unavailable/.test(error.message)))throw error;}
+          const processes=observeProcessTree(s.processes,inventory);s.processes=processes.processes;
+          if(previousProcesses!==JSON.stringify(s.processes))identitiesChanged=true;
+          // A closed tab is not exit evidence: Herdr 0.9.5 can leave a child
+          // running on Windows. Kernel process identity survives host restart.
           s.connected=true; s.observedAt=Date.now();
           if(pane) {
             s.status=String(pane.agent_status ?? "unknown");
             try {s.tokens=parseMetadataTokens(pane.tokens??{});}catch {s.tokens={};}
-          } else if(s.delivery==="delivered") {s.status="exited";s.tokens={};}
+          } else if(s.delivery==="delivered") {s.status=processes.status==="running"?"orphaned":processes.status;s.tokens={};}
         }
+        if(identitiesChanged)await persist();
       } while(refreshDirty&&!closed);
       reconcileBridges();
       changed();
@@ -162,7 +179,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
   }
   function reconcileBridges() {
     if(closed) return;
-    for(const s of sessions.values()) if(s.delivery==='delivered'&&s.connected&&s.status!=='exited'&&!bridges.has(s.id)&&!bridgeReconnects.has(s.id)) {
+    for(const s of sessions.values()) if(s.delivery==='delivered'&&s.connected&&s.status!=='exited'&&Array.isArray(latestSnapshot.panes)&&latestSnapshot.panes.some(p=>object(p)&&p.pane_id===s.paneId)&&!bridges.has(s.id)&&!bridgeReconnects.has(s.id)) {
       try {openBridge(s.id);} catch(error) {s.connected=false; scheduleBridgeReconnect(s.id);}
     }
   }
@@ -258,6 +275,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
   const requireControl=(id:string,viewer:string)=>{const bridge=existingBridge(id);if(bridge.owner!==viewer) throw new Error("Terminal control is required");return bridge;};
   const service = {
     onChange(callback:()=>void) {observers.add(callback);return ()=>observers.delete(callback);},
+    async refreshObservation(){try{await refresh();}catch(error){stale(error instanceof Error?error:new Error(String(error)));throw error;}},
     async list() {return [...sessions.values()].map(s=>({...s}));},
     async create(input:JsonObject):Promise<ManagedSession> {
       const spec=parseLaunchSpec(input);
@@ -285,7 +303,17 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
         } catch(error) {if(!layoutConfirmed) s.delivery=layoutAttempted&&!(error instanceof HerdrCommandError)?"unknown":"rejected";await persist();throw error;}
       } finally {finish();}
     },
-    async stop(id:string) {const s=session(id);if(!s.tabId) throw new Error("Cannot stop an unconfirmed terminal");await runtime.api.request("tab.close",{tab_id:s.tabId});s.status="exited";s.tokens={};s.connected=true;s.observedAt=Date.now();await persist();changed();bridges.get(id)?.child.stdin.end();},
+    async stop(id:string) {
+      const s=session(id);if(!s.tabId) throw new Error("Cannot stop an unconfirmed terminal");
+      await service.refreshObservation();
+      if(s.status==="exited")return;
+      if(!s.processes?.length)throw new Error("Cannot verify the pane process identity; stop was not dispatched");
+      await runtime.api.request("tab.close",{tab_id:s.tabId});
+      const until=Date.now()+2000;
+      do {await service.refreshObservation();if(s.status==="exited"||Date.now()>=until)break;await delay(50);}while(!closed);
+      await persist();changed();bridges.get(id)?.child.stdin.end();
+      if(s.status!=="exited")throw new Error("Herdr closed the pane but process exit is unconfirmed; recovery remains blocked");
+    },
     async snapshot(id:string):Promise<{type:"surface";surface:PaneSurfaceFrame}> {
       const bridge=existingBridge(id); if(bridge.surface) return {type:"surface",surface:bridge.surface};
       return new Promise((resolve,reject)=>{
@@ -300,7 +328,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
     async scroll(id:string,viewer:string,delta:number) {if(!Number.isInteger(delta)||Math.abs(delta)>100000) throw new Error("Invalid scroll delta");const bridge=requireControl(id,viewer);const pane=bridge.surface?.panes.find(p=>p.pane_id===session(id).paneId);if(!pane?.scroll) throw new Error('Terminal scroll geometry is not ready');const offset=Math.max(0,Math.min(pane.scroll.max_offset_from_bottom,pane.scroll.offset_from_bottom+delta));await endpointRequest(bridge,"pane.scroll",{pane_id:session(id).paneId,offset_from_bottom:offset});},
     async takeOwnership(id:string,viewer:string) {const bridge=existingBridge(id);if(bridge.owner&&bridge.owner!==viewer) throw new Error("Terminal is owned by another viewer");bridge.owner=viewer;owners.set(id,viewer);emit(bridge,{type:"ownership",ownerId:viewer,sizeOwnerId:viewer});},
     async releaseOwnership(id:string,viewer:string) {if(owners.get(id)===viewer) owners.set(id,null);const bridge=bridges.get(id);if(bridge?.owner===viewer) {bridge.owner=null;emit(bridge,{type:"ownership",ownerId:null,sizeOwnerId:null});}},
-    async close(stopServer=false) {closed=true;clearTimeout(reconnectTimer);for(const timer of bridgeReconnects.values()) clearTimeout(timer);bridgeReconnects.clear();closeEvents?.();for(const bridge of [...bridges.values()]) bridge.fail(new Error('Host terminal service closed'));if(stopServer) await runtime.stop();await persist();},
+    async close(stopServer=false) {closed=true;clearTimeout(reconnectTimer);for(const timer of bridgeReconnects.values()) clearTimeout(timer);bridgeReconnects.clear();closeEvents?.();await refreshPromise?.catch(()=>{});for(const bridge of [...bridges.values()]) bridge.fail(new Error('Host terminal service closed'));if(stopServer) await runtime.stop();await persist();},
   } satisfies HostTerminalService & {close(stopServer?:boolean):Promise<void>};
   await observe();
   return service;

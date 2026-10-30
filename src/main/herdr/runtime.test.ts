@@ -24,7 +24,7 @@ describe("managed Herdr runtime", () => {
   });
 });
 
-describe.skipIf(!process.env.MCW_HERDR_TEST_BINARY)("real Herdr 0.9.5", () => {
+describe.skipIf(!process.env.MCW_HERDR_TEST_BINARY||!process.env.MCW_BRIDGE_TEST_BINARY)("real Herdr 0.9.5", () => {
   it("starts a private server, subscribes and creates an isolated session tab", async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(),"mcw-herdr-"));
     const binaryPath = process.env.MCW_HERDR_TEST_BINARY!;
@@ -32,8 +32,8 @@ describe.skipIf(!process.env.MCW_HERDR_TEST_BINARY)("real Herdr 0.9.5", () => {
     let runtime: Awaited<ReturnType<typeof startHerdrRuntime>> | undefined;
     let unsubscribe: (() => void) | undefined;
     try {
-      runtime = await startHerdrRuntime({root,binaryPath,binarySha256});
-      expect((await runtime.api.request("ping",{})).version).toBe("0.9.5");
+      runtime = await startHerdrRuntime({root,binaryPath,binarySha256,bridgePath:process.env.MCW_BRIDGE_TEST_BINARY!});
+      expect((await runtime.api.request("ping",{})).version).toBe(process.platform==="win32"?"0.9.5-mcw.1":"0.9.5");
       const events: unknown[] = [];
       unsubscribe = await runtime.api.subscribe(["workspace.created"], event => events.push(event), () => {});
       const result = await runtime.api.request("workspace.create",{cwd:root,label:"MCW TEST",focus:false});

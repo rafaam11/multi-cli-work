@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {createHash} from "node:crypto";
+import {resolveHerdrResource} from "../v2/herdr-resource";
 import {expect,it,vi} from "vitest";
 import {createHerdrTerminalService} from "../herdr/terminal-service";
 import {TaskStore} from "./task-store";
@@ -45,11 +45,11 @@ it.skipIf(process.env.MCW_PROVIDER_PROBE!=="1")("real Claude/Codex workers excha
     return config;
   };
   const resources=path.resolve("build/v2"),windows=process.platform==="win32";
-  const binaryPath=path.join(resources,windows?"herdr/windows/herdr.exe":"herdr/herdr-linux-x86_64");
+  const binary=await resolveHerdrResource(resources);
   const bridgePath=path.resolve(`build/herdr-bridge/${process.platform}-${process.arch}/${windows?"mcw-herdr-bridge.exe":"mcw-herdr-bridge"}`);
   const executables=await detectProviderExecutables([BUILTIN_AGENTS.claude,BUILTIN_AGENTS.codex]);
   if(!executables.agents.claude||!executables.agents.codex)throw new Error("Both installed providers are required");
-  const terminals=await createHerdrTerminalService({root:directory,binaryPath,binarySha256:createHash("sha256").update(await fs.readFile(binaryPath)).digest("hex"),bridgePath,modsDirectory:path.join(resources,"mods")});
+  const terminals=await createHerdrTerminalService({root:directory,...binary,bridgePath,modsDirectory:path.join(resources,"mods")});
   const store=new TaskStore({directory,hostId:"provider-probe"});let executor:TaskExecutor;
   const gateway=new HostGateway({directory,store,terminals,startTask:async(id,input)=>{
     try{return await executor.start(id,input);}catch(error){let message=String(error);for(const token of issuedTokens)message=message.replaceAll(token,"[task capability redacted]");await fs.writeFile(path.join(root,"launch-error.txt"),message,{mode:0o600});throw error;}

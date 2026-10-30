@@ -8,6 +8,7 @@ import { HostClient } from "../src/main/host/host-client";
 import { HerdrApiClient } from "../src/main/herdr/api-client";
 import { resolveHerdrPaths } from "../src/main/herdr/runtime";
 import { ensureHostProcess } from "../src/main/host/host-process";
+import {resolveHerdrResource} from "../src/main/v2/herdr-resource";
 import { TaskStore } from "../src/main/host/task-store";
 import { applySurfaceEvent } from "../src/shared/herdr-surface-model";
 import type { PaneSurfaceFrame, HerdrSurfaceEvent } from "../src/shared/herdr-surface-types";
@@ -126,9 +127,8 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     const executable=process.env.MCW_V2_E2E_EXECUTABLE;
     const resourcesDirectory=executable?path.join(path.dirname(executable),"resources/v2"):path.resolve("build/v2");
     const bridgeDirectory=executable?path.join(path.dirname(executable),"resources/herdr-bridge"):path.resolve(`build/herdr-bridge/${process.platform}-${process.arch}`);
-    const manifest=JSON.parse(await fs.readFile(path.join(resourcesDirectory,"assets.json"),"utf8"));
     const windows=process.platform==="win32";
-    const restarted=await ensureHostProcess({directory:path.join(`${userData}-v2`,"host"),hostId:descriptor.hostId,entryPath:path.join(resourcesDirectory,"host/mcw-host.js"),executablePath:path.join(resourcesDirectory,windows?"node/windows/node.exe":"node/linux/node"),electronExecutable:false,terminalConfig:{binaryPath:path.join(resourcesDirectory,windows?"herdr/windows/herdr.exe":"herdr/herdr-linux-x86_64"),binarySha256:windows?manifest.windowsMembers.find((entry:{file:string})=>entry.file==="herdr.exe").sha256:manifest.assets.find((entry:{id:string})=>entry.id==="herdr-linux").sha256,bridgePath:path.join(bridgeDirectory,windows?"mcw-herdr-bridge.exe":"mcw-herdr-bridge")}});
+    const restarted=await ensureHostProcess({directory:path.join(`${userData}-v2`,"host"),hostId:descriptor.hostId,entryPath:path.join(resourcesDirectory,"host/mcw-host.js"),executablePath:path.join(resourcesDirectory,windows?"node/windows/node.exe":"node/linux/node"),electronExecutable:false,terminalConfig:{...await resolveHerdrResource(resourcesDirectory),bridgePath:path.join(bridgeDirectory,windows?"mcw-herdr-bridge.exe":"mcw-herdr-bridge")}});
     client=new HostClient(restarted);
     await expect(page.getByRole("button",{name:"제어 요청",exact:true})).toBeEnabled({timeout:30000});
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","true");
