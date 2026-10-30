@@ -48,7 +48,7 @@ npm ci --ignore-scripts
 node node_modules/electron/install.js
 node scripts/v2/assets.mjs --download --platform win32
 npm run build:v2
-npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
+node node_modules/vitest/vitest.mjs run --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
 npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
 ```
 

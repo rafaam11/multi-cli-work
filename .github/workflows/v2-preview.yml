@@ -46,7 +46,7 @@ jobs:
       # simultaneous jsdom/worker initialization on the small hosted runners.
       - name: Provider hooks in a dedicated worker
         run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
-      - run: npm test -- --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
+      - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
       - name: Isolated OpenSSH host transport
         if: runner.os == 'Linux'
         env:

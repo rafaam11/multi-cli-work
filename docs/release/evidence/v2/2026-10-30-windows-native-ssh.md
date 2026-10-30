@@ -2,6 +2,8 @@
 
 Source candidate: `e2005d5a92d2d1ab28053419d97cc5f0c98a9c21`. Completed 2026-10-30 at 15:55:22 KST. One integration test passed in 5.55 seconds on Windows x64 using native `C:/Windows/System32/OpenSSH/ssh.exe` and `sshd.exe`.
 
+The same unchanged native fixture was rerun after the startup-hydration correction on candidate `ff118c9c71a90821aaa07ace6da0712bc6e532a0` at 16:28:49 KST. One test passed in 5.76 seconds; no system service or user credential configuration was changed.
+
 The fixture adapts the repository's Linux OpenSSH integration scenario to an isolated native Windows server: loopback-only ephemeral port, newly generated host/client keys and temporary `known_hosts`, public-key-only authentication, and a fixed authorized user. It uses its own configuration and child process. The existing system SSH service, user SSH keys, and machine configuration were not changed or stopped.
 
 Verified through actual SSH discovery and port forwarding:
