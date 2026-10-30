@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Task, TaskAgentChoice, TaskProvider } from "@shared/host-types";
 import type { McwV2Api, V2HostState } from "@shared/v2-api";
 import type { LaunchProfile } from "@shared/launch-profile";
-import type {ExecutionCatalog,RepositoryInspection} from "@shared/execution-catalog";
+import type {ExecutionCatalog,RepositoryInspection,ExecutionHost,RegisteredTaskStart} from "@shared/execution-catalog";
+import {WorkerCheckout} from "./WorkerCheckout";
 import "./task-panel.css";
 import { errorMessage } from "../ipc-error";
 
@@ -21,12 +22,15 @@ const deliveryLabel = { none: "전달 전", pending: "전달 중", delivered: "�
 const providerName = (provider: TaskProvider) => provider === "codex" ? "Codex" : "Claude Code";
 const message = errorMessage;
 
-function AgentFields({ label, value, profiles, disabled, onChange, onRemove,ownerName,availableProviders }: {
+function AgentFields({ label, value, profiles, disabled, onChange, onRemove,ownerName,availableProviders,hosts }: {
   label: string; value: TaskAgentChoice; profiles: LaunchProfile[]; disabled: boolean;
-  onChange(value: TaskAgentChoice): void; onRemove?(): void;ownerName?:string;availableProviders?:TaskProvider[];
+  onChange(value: TaskAgentChoice): void; onRemove?(): void;ownerName?:string;availableProviders?:TaskProvider[];hosts?:ExecutionHost[];
 }) {
   return <fieldset className="herdr-task-agent" disabled={disabled}>
     <legend>{label}</legend>
+    {hosts&&<label><span>실행 PC</span><select aria-label={`${label} 실행 PC`} value={value.hostId??""} onChange={event=>onChange({provider:value.provider,profileId:"",...(event.target.value?{hostId:event.target.value}:{})})}>
+      <option value="">대표와 같은 PC</option>{hosts.map(host=><option key={host.hostId} value={host.hostId} disabled={!host.connected}>{host.name}{host.connected?"":" · 연결 끊김"}</option>)}
+    </select></label>}
     <label><span>도구</span><select aria-label={`${label} 도구`} value={value.provider} onChange={(event) => onChange({ ...value, provider: event.currentTarget.value as TaskProvider, profileId: "" })}>
       {(["codex","claude"] as const).map(provider=><option key={provider} value={provider} disabled={availableProviders&&!availableProviders.includes(provider)}>{providerName(provider)}{availableProviders&&!availableProviders.includes(provider)?" · 실행 파일 없음":""}</option>)}
     </select></label>
@@ -34,7 +38,7 @@ function AgentFields({ label, value, profiles, disabled, onChange, onRemove,owne
       {!value.profileId && <option value="">프로필 선택</option>}
       {profiles.filter((profile) => profile.agentId === value.provider).map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.model ? ` · ${profile.model}` : ""}{profile.effort ? ` / ${profile.effort}` : ""}</option>)}
     </select></label>
-    <span className="herdr-task-hint">{label === "대표" ? `${ownerName??"이 PC"}에서 작업을 소유합니다.` : "대표와 같은 PC"}</span>
+    {label==="대표"&&<span className="herdr-task-hint">{ownerName??"이 PC"}에서 작업을 소유합니다.</span>}
     {onRemove && <button type="button" onClick={onRemove} aria-label={`${label} 제거`}>제거</button>}
   </fieldset>;
 }
@@ -43,6 +47,8 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
   const [configuration, setConfiguration] = useState<Configuration | null>(null), [tasks, setTasks] = useState<Task[]>([]);
   const [catalog,setCatalog]=useState<ExecutionCatalog|null>(null),[createRepository,setCreateRepository]=useState("");
   const [remoteRepository,setRemoteRepository]=useState(""),[inspection,setInspection]=useState<RepositoryInspection|null>(null);
+  const [workerHosts,setWorkerHosts]=useState<ExecutionHost[]>([]),[workerCatalogs,setWorkerCatalogs]=useState<Record<string,ExecutionCatalog>>({});
+  const [workerSelections,setWorkerSelections]=useState<Record<string,RegisteredTaskStart>>({});
   const remoteRepositoryRef=useRef("");
   const choices=hostId?catalog:configuration;
   const [selectedId, setSelectedId] = useState<string | null>(null), [title, setTitle] = useState(""), [brief, setBrief] = useState("");
@@ -58,9 +64,15 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
   const defaultProfile = (provider: TaskProvider, config:Configuration|null = choices) => config?.defaultLaunchProfiles[provider]
     ?? config?.launchProfiles.find((profile) => profile.agentId === provider)?.id ?? "";
   const selected = tasks.find((task) => task.id === selectedId) ?? null;
+  const foreignWorkers=selected?.participants.filter(member=>member.hostId!==selected.ownerHostId)??[];
+  const ownerHead=hostId?inspection?.expectedHead??null:expectedHead;
+  const workersChecked=foreignWorkers.every(member=>workerSelections[member.id]?.expectedHead===ownerHead&&ownerHead!==null);
+  const selectedWorkers=()=>foreignWorkers.length?{remoteWorkers:foreignWorkers.map(member=>({participantId:member.id,selection:workerSelections[member.id]}))}:{};
+  const choiceCatalog=(choice:TaskAgentChoice)=>choice.hostId&&choice.hostId!==choices?.hostId?workerCatalogs[choice.hostId]:choices;
   const visibleTasks = tasks.filter((task) => projectId === undefined || task.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt);
   const listTasks=()=>hostId?api!.listTasks(hostId):api!.listTasks();
   const readCatalog=async()=>{
+    if(api?.executionHosts){const hosts=await api.executionHosts(hostId);if(alive.current)setWorkerHosts(hosts);}
     if(!hostId||!api?.executionCatalog||!api.inspectHostRepository||!api.startRegisteredTask)return;
     const value=await api.executionCatalog(hostId);
     if(!alive.current)return;
@@ -92,7 +104,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
     }).catch((cause) => { if (alive.current) setError(message(cause)); }).finally(() => { if (alive.current) setLoading(false); });
     return () => { alive.current = false; unsubscribe?.(); };
   }, [api,hostId]);
-  useEffect(() => { setRepositoryPath(defaultCwd); setExpectedHead(null); checkedPath.current = null;setRemoteRepository("");remoteRepositoryRef.current="";setInspection(null); }, [selectedId, defaultCwd]);
+  useEffect(() => { setRepositoryPath(defaultCwd); setExpectedHead(null); checkedPath.current = null;setRemoteRepository("");remoteRepositoryRef.current="";setInspection(null);setWorkerSelections({}); }, [selectedId, defaultCwd]);
 
   const run = async (action: () => Promise<void>) => {
     if (offline) return;
@@ -117,7 +129,18 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
       const viewId=await api.terminalViewId(sessionId,ownerHostId);if(alive.current)onOpenTerminal?.(viewId);
     });
   };
-  const changeChoice = (value: TaskAgentChoice): TaskAgentChoice => ({ ...value, profileId: value.profileId || defaultProfile(value.provider) });
+  const changeChoice = (value: TaskAgentChoice): TaskAgentChoice => ({ ...value, profileId: value.profileId || defaultProfile(value.provider,choiceCatalog(value)??null) });
+  const changeWorker=(index:number,value:TaskAgentChoice)=>{
+    const apply=(choice:TaskAgentChoice)=>setWorkers(current=>current.map((prior,i)=>i===index?choice:prior));
+    apply(changeChoice(value));
+    if(value.hostId&&value.hostId!==choices?.hostId&&!workerCatalogs[value.hostId]&&api?.workerCatalog){
+      void run(async()=>{
+        const catalog=await api.workerCatalog!(value.hostId!,hostId);if(!alive.current)return;
+        setWorkerCatalogs(current=>({...current,[value.hostId!]:catalog}));
+        setWorkers(current=>current.map((prior,i)=>i===index&&prior.hostId===value.hostId?{...prior,profileId:defaultProfile(prior.provider,catalog)}:prior));
+      });
+    }
+  };
   const create = () => {
     if (!api || !choices || (hostId&&!catalog?.repositories.some(repo=>repo.id===createRepository))) return;
     void run(async () => {
@@ -130,10 +153,11 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
     });
   };
   const start = () => {
-    if (!api || !selected || !expectedHead || hostId || checkedPath.current !== repositoryPath) return;
+    if (!api || !selected || !expectedHead || hostId || checkedPath.current !== repositoryPath||!workersChecked) return;
     const taskId = selected.id, path = repositoryPath, head = expectedHead;
     void run(async () => {
-      const result = await api.startTask(taskId, { repositoryPath: path, expectedHead: head });
+      setExpectedHead(null);checkedPath.current=null;
+      const result = await api.startTask(taskId, { repositoryPath: path, expectedHead: head,...selectedWorkers() });
       if (!alive.current) return;
       setExpectedHead(null); checkedPath.current = null;
       onTaskStarted?.(taskId, result);
@@ -142,17 +166,17 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
     });
   };
   const startRemote=()=>{
-    if(!hostId||!selected||!inspection||inspection.repository.id!==remoteRepository||!api?.startRegisteredTask)return;
+    if(!hostId||!selected||!inspection||inspection.repository.id!==remoteRepository||!api?.startRegisteredTask||!workersChecked)return;
     const taskId=selected.id,checked=inspection;
     void run(async()=>{
       // Clear before dispatch: a missing reply must be inspected, never replayed.
       setInspection(null);
-      const result=await api.startRegisteredTask!(taskId,{repositoryId:checked.repository.id,expectedPath:checked.repository.path,expectedHead:checked.expectedHead},hostId);
+      const result=await api.startRegisteredTask!(taskId,{repositoryId:checked.repository.id,expectedPath:checked.repository.path,expectedHead:checked.expectedHead,...selectedWorkers()},hostId);
       if(!alive.current)return;onTaskStarted?.(taskId,result);
       const entries=await listTasks();if(alive.current)setTasks(entries);
     });
   };
-  const profilesValid = !!choices && [lead, ...workers].every((choice) => choices.launchProfiles.some((profile) => profile.id === choice.profileId && profile.agentId === choice.provider)&&(!catalog||catalog.availableProviders.includes(choice.provider)));
+  const profilesValid = !!choices && [lead, ...workers].every((choice) => {const own=choiceCatalog(choice);return !!own&&own.launchProfiles.some((profile) => profile.id === choice.profileId && profile.agentId === choice.provider)&&(!("availableProviders" in own)||(own as ExecutionCatalog).availableProviders.includes(choice.provider))&&(!choice.hostId||choice.hostId===choices.hostId||workerHosts.some(host=>host.hostId===choice.hostId&&host.connected));});
   const startable = selected?.cancellation === "none" && selected.participants.every((participant) => participant.attempt.delivery === "none" && participant.attempt.execution === "not_started");
 
   if (!api) return <section className="herdr-task-panel"><p role="status">v2 호스트 연결이 준비되지 않았습니다.</p></section>;
@@ -167,8 +191,8 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
       <label><span>작업 지시</span><textarea aria-label="작업 지시" value={brief} maxLength={20000} required rows={3} disabled={busy} onChange={(event) => setBrief(event.currentTarget.value)} /></label>
       <div className="herdr-task-agents">
         <AgentFields label="대표" value={lead} profiles={choices?.launchProfiles ?? []} disabled={busy || !choices} availableProviders={catalog?.availableProviders} ownerName={hostId?hostName??hostId:undefined} onChange={(value) => setLead(changeChoice(value))} />
-        {workers.map((worker, index) => <AgentFields key={index} label={`작업자 ${index + 1}`} value={worker} profiles={choices?.launchProfiles ?? []} disabled={busy} availableProviders={catalog?.availableProviders}
-          onChange={(value) => setWorkers((current) => current.map((choice, i) => i === index ? changeChoice(value) : choice))} onRemove={() => setWorkers((current) => current.filter((_, i) => i !== index))} />)}
+        {workers.map((worker, index) => <AgentFields key={index} label={`작업자 ${index + 1}`} value={worker} profiles={choiceCatalog(worker)?.launchProfiles ?? []} disabled={busy} availableProviders={(choiceCatalog(worker) as ExecutionCatalog|undefined)?.availableProviders} hosts={api.executionHosts?workerHosts:undefined}
+          onChange={(value) => changeWorker(index,value)} onRemove={() => setWorkers((current) => current.filter((_, i) => i !== index))} />)}
       </div>
       <div className="herdr-task-form-actions"><button type="button" disabled={busy || !configuration || workers.length >= 3} onClick={() => setWorkers((current) => [...current, { provider: "codex", profileId: defaultProfile("codex") }])}>작업자 추가</button>
         <span className="herdr-task-hint">최대 3명 · 생성 후 저장소와 기준 커밋을 확인하고 시작합니다.</span>
@@ -188,7 +212,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
           <label><span>실행 저장소 · {hostName??hostId}</span><select aria-label="실행 저장소" value={remoteRepository} disabled={busy} onChange={event=>{setRemoteRepository(event.target.value);remoteRepositoryRef.current=event.target.value;setInspection(null);}}><option value="">원격 저장소 선택</option>{catalog.repositories.filter(repo=>!selected.projectId||repo.projectId===selected.projectId).map(repo=><option key={repo.id} value={repo.id}>{repo.name} · {repo.path}</option>)}</select></label>
           <button type="button" disabled={busy||!remoteRepository} onClick={()=>{const id=remoteRepository;void run(async()=>{const checked=await api.inspectHostRepository!(id,hostId);if(alive.current&&remoteRepositoryRef.current===id)setInspection(checked);});}}>기준 커밋 확인</button>
           {inspection&&<><span>{inspection.repository.path}</span><code title={inspection.expectedHead}>{inspection.expectedHead.slice(0,12)}</code></>}
-          <button type="button" disabled={busy||!inspection||inspection.repository.id!==remoteRepository} onClick={startRemote}>선택한 구성으로 시작</button>
+          <button type="button" disabled={busy||!inspection||inspection.repository.id!==remoteRepository||!workersChecked} onClick={startRemote}>선택한 구성으로 시작</button>
         </div>}
         {startable && !hostId && <div className="herdr-task-start"><label><span>저장소 경로</span><input aria-label="저장소 경로" value={repositoryPath} disabled={busy} onChange={(event) => { setRepositoryPath(event.currentTarget.value); setExpectedHead(null); checkedPath.current = null; }} /></label>
           <button type="button" disabled={busy || !repositoryPath.trim()} onClick={() => {
@@ -196,8 +220,9 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
             void run(async () => { const head = await api.repositoryHead(path); if (alive.current) { checkedPath.current = path; setExpectedHead(head); } });
           }}>기준 커밋 확인</button>
           {expectedHead && <code title={expectedHead}>{expectedHead.slice(0, 12)}</code>}
-          <button type="button" disabled={busy || !expectedHead || checkedPath.current !== repositoryPath} onClick={start}>작업 시작</button>
+          <button type="button" disabled={busy || !expectedHead || checkedPath.current !== repositoryPath||!workersChecked} onClick={start}>작업 시작</button>
         </div>}
+        {startable&&foreignWorkers.map((member,index)=><WorkerCheckout key={member.id} api={api} ownerHostId={hostId} workerHostId={member.hostId} label={`원격 작업자 ${index+1}`} base={ownerHead} selected={workerSelections[member.id]} disabled={busy} onChange={value=>setWorkerSelections(current=>{const next={...current};if(value)next[member.id]=value;else delete next[member.id];return next;})}/>)}
         {selected.questions.filter((question) => question.answer === null).map((question) => <div className="herdr-task-question" key={question.id}>
           <strong>{question.kind === "approval" ? "승인 대기" : "질문 대기"} · {question.acknowledged ? "확인한 요청" : "미확인 요청"}</strong><p>{question.text}</p>
           {!question.acknowledged&&<button type="button" disabled={busy} onClick={()=>act("acknowledge",{eventId:question.id})}>요청 확인</button>}

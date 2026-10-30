@@ -13,6 +13,8 @@ import {HostConnections} from "./host-connections";
 import {HostClient,type HostTerminalSocket} from "./host-client";
 import {remoteSessionId} from "../v2/observed-terminals";
 import type {ExecutionCatalog} from "../../shared/execution-catalog";
+import {WorkerReplicas} from "./worker-replicas";
+import {RemoteWorkers} from "./remote-workers";
 
 const exec=promisify(execFile);
 it.skipIf(process.platform!=="linux"||process.env.MCW_SSH_TEST!=="1")("discovers and observes a host through actual strict OpenSSH without owning its lifetime",async()=>{
@@ -38,6 +40,12 @@ it.skipIf(process.platform!=="linux"||process.env.MCW_SSH_TEST!=="1")("discovers
     const starts:unknown[]=[];
     gateway=new HostGateway({directory,store:remoteStore,executionCatalog:{read:async()=>catalog,inspectRepository:async id=>{expect(id).toBe(repository.id);return {repository,expectedHead:"a".repeat(40)};},validateCreate:async input=>input as import("../../shared/host-types").TaskCreateInput,prepare:async(task,input)=>{expect(task.ownerHostId).toBe("ssh-fixture");expect(input).toEqual({repositoryId:repository.id,expectedHead:"a".repeat(40),expectedPath:root});return {repositoryPath:root,expectedHead:"a".repeat(40),profiles:[]};}},startTask:async(id,input)=>{starts.push({id,input});return {terminals:[]};},terminals:{list:async()=>[terminal],create:async()=>{throw Error("No execution authorized");},stop:async id=>{stops.push(id);},snapshot:async()=>({surface:"fixture"}),subscribeFrames:()=>()=>{},input:async(_id,_viewer,data)=>{inputs.push(data);},resize:async()=>{},scroll:async()=>{},takeOwnership:async()=>{},releaseOwnership:async()=>{}}});
     const descriptor=await gateway.start();
+    const replicas=new WorkerReplicas({directory,hostId:"ssh-fixture"});let workerAdmissions=0;
+    gateway.options.workers={replicas,prepare:(...args)=>replicas.register(...args),admit:async(id,commandId,task)=>{
+      const replica=await replicas.get(id);await replicas.synchronize(id,task,[]);await replicas.beginDelivery(replica.identity,commandId);workerAdmissions++;
+      await replicas.resolveDelivery(replica.identity,commandId,"delivered");await replicas.observeExecution(replica.identity,"idle");
+      return {replicaId:id,terminal:null,attempt:(await replicas.get(id)).attempt};
+    }};
     const choice={hostId:"ssh-fixture",destination:"127.0.0.1",port,username:os.userInfo().username,identityFile:identity,knownHostsFile,platform:"linux" as const,nodeExecutable:process.execPath,hostEntrypoint:path.resolve("build/v2/host/mcw-host.js"),dataRoot:directory};
     ssh=await connectSshHost(choice);expect((await ssh.client.health()).instanceId).toBe(descriptor.instanceId);
     const events:unknown[]=[];const watcher=ssh.client.watch(event=>events.push(event));await expect.poll(()=>events.some(event=>(event as {type:string}).type==="state")).toBe(true);watcher.close();
@@ -65,12 +73,27 @@ it.skipIf(process.platform!=="linux"||process.env.MCW_SSH_TEST!=="1")("discovers
     await expect.poll(()=>frames.some(event=>event.type==="snapshot")).toBe(true);
     terminalView.send({type:"takeOwnership"});await expect.poll(()=>frames.some(event=>event.type==="ownership"&&event.owner===true)).toBe(true);
     terminalView.send({type:"input",data:{TextCommit:"SSH routed once"}});await expect.poll(()=>inputs.length).toBe(1);
+    const distributedOwner=observerGateway.options.store;
+    const team=await distributedOwner.createTask({title:"SSH worker transfer",brief:"Retain remote data",lead:{hostId:"observer",provider:"codex",profileId:"fixture"},workers:[{hostId:"ssh-fixture",provider:"codex",profileId:"fixture"}]});
+    const worker=team.participants[1],workerIdentity=await distributedOwner.bind({taskId:team.id,participantId:worker.id,attemptId:worker.attempt.id,generation:1});
+    const remoteWorkers=new RemoteWorkers({directory:observerDirectory,store:distributedOwner,client:id=>manager!.client(id)});
+    await remoteWorkers.prepare(team,workerIdentity,{repositoryId:repository.id,expectedHead:"a".repeat(40),expectedPath:root});await remoteWorkers.admit(workerIdentity);
+    await replicas.message(workerIdentity,null,"SSH worker message");await remoteWorkers.synchronize();
+    expect((await distributedOwner.inspect(team.id)).events.some(event=>event.text==="SSH worker message")).toBe(true);
     await manager.close();manager=undefined;
+    await replicas.submitResult(workerIdentity,{summary:"Stored with SSH disconnected",changes:[],verification:["fixture admission only"],artifacts:[],issues:[]});
+    await remoteWorkers.synchronize();expect((await distributedOwner.inspect(team.id)).results).toHaveLength(0);
     await expect(observerClient.request(`/hosts/${choice.hostId}/tasks/${task.id}/message`,"POST",{text:"must not queue"})).rejects.toThrow();
     expect((await remoteStore.inspect(task.id)).events.some(event=>event.text==="must not queue")).toBe(false);
     await expect.poll(()=>frames.some(event=>event.type==="disconnected")).toBe(true);terminalView.close();terminalView=undefined;
     expect(stops).toEqual([]);expect(inputs).toEqual([{TextCommit:"SSH routed once"}]);
     expect((await fetch(descriptor.url+"/health",{headers:{authorization:`Bearer ${descriptor.token}`}})).status).toBe(200);
+    manager=new HostConnections({directory:observerDirectory,localHostId:"observer"});await manager.start();
+    await expect.poll(()=>manager!.snapshot()[0]?.connected,{timeout:15000}).toBe(true);
+    await remoteWorkers.synchronize();await remoteWorkers.synchronize();
+    expect((await distributedOwner.inspect(team.id)).results).toHaveLength(1);expect(workerAdmissions).toBe(1);
+    expect((await distributedOwner.inspect(team.id)).participants[1].attempt).toMatchObject({execution:"idle",delivery:"delivered"});
+    await manager.close();manager=undefined;
     await chmod(knownHostsFile,0o600);await writeFile(knownHostsFile,`[127.0.0.1]:${port} ${await readFile(identity+".pub","utf8")}`);
     await expect(connectSshHost(choice)).rejects.toThrow(/discovery failed/);
   }finally{

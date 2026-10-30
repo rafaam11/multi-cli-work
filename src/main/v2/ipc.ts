@@ -62,13 +62,23 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
   handle("tasks", (hostId?:string) => {ownerTaskRoute(undefined,hostId);return options.client.tasks(hostId);});
   handle("task-create", (input,hostId?:string) => {ownerTaskRoute(undefined,hostId);return options.client.createTask(input,hostId);});
   handle("execution-catalog",(hostId:string)=>{const prefix=ownerTaskRoute(undefined,hostId).replace(/\/tasks$/,"/execution-catalog");return options.client.request(prefix);});
+  const workerRoute=(ownerHostId?:string,workerHostId?:string)=>{
+    if(workerHostId!==undefined)ownerTaskRoute(undefined,workerHostId);
+    return ownerTaskRoute(undefined,ownerHostId).replace(/\/tasks$/,"/worker-hosts")+(workerHostId?`/${encodeURIComponent(workerHostId)}/execution-catalog`:"");
+  };
+  handle("execution-hosts",(ownerHostId?:string)=>options.client.request(workerRoute(ownerHostId)));
+  handle("worker-catalog",(workerHostId:string,ownerHostId?:string)=>{if(!workerHostId)throw new Error("Worker host required");return options.client.request(workerRoute(ownerHostId,workerHostId));});
+  handle("worker-repository",(repositoryId:string,workerHostId:string,ownerHostId?:string)=>{
+    if(typeof repositoryId!=="string"||!repositoryId||repositoryId.length>200||repositoryId.includes("\0")||!workerHostId)throw new Error("Invalid worker repository");
+    return options.client.request(`${workerRoute(ownerHostId,workerHostId)}/repositories/${encodeURIComponent(repositoryId)}`);
+  });
   handle("host-repository",(repositoryId:string,hostId:string)=>{
     if(typeof repositoryId!=="string"||!repositoryId||repositoryId.length>200||repositoryId.includes("\0"))throw new Error("Invalid repository ID");
     const prefix=ownerTaskRoute(undefined,hostId).replace(/\/tasks$/,"/execution-catalog");return options.client.request(`${prefix}/repositories/${encodeURIComponent(repositoryId)}`);
   });
   handle("task-start-registered",async(id:string,input:Record<string,unknown>,hostId:string)=>{
     const route=ownerTaskRoute(id,hostId);
-    if(!hostId||!input||typeof input!=="object"||Object.keys(input).some(key=>!["repositoryId","expectedHead","expectedPath"].includes(key))||[input.repositoryId,input.expectedHead,input.expectedPath].some(value=>typeof value!=="string"))throw new Error("원격 저장소와 기준 커밋을 확인하세요.");
+    if(!hostId||!input||typeof input!=="object"||Object.keys(input).some(key=>!["repositoryId","expectedHead","expectedPath","remoteWorkers"].includes(key))||[input.repositoryId,input.expectedHead,input.expectedPath].some(value=>typeof value!=="string")||(input.remoteWorkers!==undefined&&!Array.isArray(input.remoteWorkers)))throw new Error("원격 저장소와 기준 커밋을 확인하세요.");
     const result=await options.client.request(`${route}/start`,"POST",input);await options.reconcile();return result;
   });
   handle("task-inspect", (id:string,hostId?:string) => {ownerTaskRoute(id,hostId);return options.client.inspectTask(id,hostId);});
@@ -82,10 +92,10 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
     const viewId=remoteSessionId(hostId,sessionId);
     resolveRemoteSession(options.state?.().hosts??[],viewId);return viewId;
   });
-  handle("task-start", async (id: string, input: { repositoryPath: string; expectedHead: string }) => {
-    if (!input || typeof input.repositoryPath !== "string" || typeof input.expectedHead !== "string" || Object.keys(input).some(key => !["repositoryPath", "expectedHead"].includes(key))) throw new Error("작업 시작 정보가 올바르지 않습니다.");
+  handle("task-start", async (id: string, input: { repositoryPath: string; expectedHead: string;remoteWorkers?:import("../../shared/remote-task-types").RemoteWorkerSelection[] }) => {
+    if (!input || typeof input.repositoryPath !== "string" || typeof input.expectedHead !== "string" || Object.keys(input).some(key => !["repositoryPath", "expectedHead","remoteWorkers"].includes(key))||(input.remoteWorkers!==undefined&&!Array.isArray(input.remoteWorkers))) throw new Error("작업 시작 정보가 올바르지 않습니다.");
     const task = await options.client.inspectTask(id), configuration = await options.configuration();
-    const profiles = await Promise.all(task.participants.map(async member => {
+    const profiles = await Promise.all(task.participants.filter(member=>!member.hostId||member.hostId===options.hostId).map(async member => {
       const profile = configuration.launchProfiles.find(profile => profile.id === member.profileId && profile.agentId === member.provider);
       const executable = await options.executable(member.provider);
       if (!profile || !executable) throw new Error(`선택한 ${member.provider} 프로필 또는 실행 파일을 찾을 수 없습니다.`);

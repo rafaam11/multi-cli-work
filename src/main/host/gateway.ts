@@ -16,7 +16,7 @@ import type { HostTerminalSocket } from "./host-client";
 import { resolveRemoteSession } from "../v2/observed-terminals";
 import { validateTaskSnapshot,validateTaskIdentity } from "./task-validation";
 import type {HostExecutionCatalog} from "./execution-catalog";
-import {parseExecutionCatalog} from "../../shared/execution-catalog";
+import {parseExecutionCatalog,parseExecutionHosts} from "../../shared/execution-catalog";
 import type {RegisteredTaskStart} from "../../shared/execution-catalog";
 import type {WorkerExecutor} from "./worker-executor";
 import type {WorkerReplicas,WorkerReplica} from "./worker-replicas";
@@ -234,6 +234,26 @@ export class HostGateway {
       if(url.pathname==="/hosts"&&method==="POST"){
         if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.hosts)throw new HttpError(503,"Host connections unavailable");
         await this.options.hosts.configure(await body(request,this.limit) as HostRegistration);reply(response,200,{});return;
+      }
+      const workerCatalogRoute=/^(?:\/hosts\/([^/]+))?\/worker-hosts(?:\/([^/]+)\/execution-catalog(?:\/repositories\/([^/]+))?)?$/.exec(url.pathname);
+      if(workerCatalogRoute&&method==="GET"){
+        const [,ownerEncoded,workerEncoded,repositoryEncoded]=workerCatalogRoute;
+        const ownerId=ownerEncoded?text(decodeURIComponent(ownerEncoded)):undefined,workerId=workerEncoded?text(decodeURIComponent(workerEncoded)):undefined,repositoryId=repositoryEncoded?text(decodeURIComponent(repositoryEncoded)):undefined;
+        const observedClient=(id:string)=>{
+          const observed=this.options.hosts?.snapshot().find(host=>host.hostId===id);
+          if(!observed?.enabled||!observed.connected)throw new HttpError(409,"Remote host is not observed");return this.options.hosts!.client(id);
+        };
+        const owner=ownerId?observedClient(ownerId):undefined;
+        if(!workerId){
+          const value=owner?await owner.request("/worker-hosts"):(this.options.hosts?.snapshot()??[]).map(host=>({hostId:host.hostId,name:host.name,connected:host.enabled&&host.connected}));
+          reply(response,200,parseExecutionHosts(value));return;
+        }
+        const client=owner??observedClient(workerId),prefix=owner?`/worker-hosts/${encodeURIComponent(workerId)}/execution-catalog`:"/execution-catalog";
+        const catalog=parseExecutionCatalog(await client.request(prefix),workerId);
+        if(!repositoryId){reply(response,200,catalog);return;}
+        const result=object(await client.request(`${prefix}/repositories/${encodeURIComponent(repositoryId)}`)),repository=object(result.repository);
+        if(repository.id!==repositoryId||!catalog.repositories.some(repo=>repo.id===repositoryId)||typeof result.expectedHead!=="string"||!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(result.expectedHead))throw new HttpError(409,"Worker repository inspection changed");
+        reply(response,200,{repository:parseExecutionCatalog({...catalog,repositories:[repository]},workerId).repositories[0],expectedHead:result.expectedHead});return;
       }
       const catalogRoute=/^(?:\/hosts\/([^/]+))?\/execution-catalog(?:\/repositories\/([^/]+))?$/.exec(url.pathname);
       if(catalogRoute&&method==="GET"){

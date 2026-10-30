@@ -64,6 +64,18 @@ it("passes only registered remote selection through IPC and never resolves a rem
   expect(options.executable).not.toHaveBeenCalled();expect(options.repositoryProjectId).not.toHaveBeenCalled();
   dispose();
 });
+it("scopes worker catalog reads through the owner and resolves only local participant executables",async()=>{
+  const {call,client,options,dispose}=setup();
+  await call("execution-hosts","owner");expect(client.request).toHaveBeenLastCalledWith("/hosts/owner/worker-hosts");
+  await call("worker-catalog","worker","owner");expect(client.request).toHaveBeenLastCalledWith("/hosts/owner/worker-hosts/worker/execution-catalog");
+  await call("worker-repository","repo","worker","owner");expect(client.request).toHaveBeenLastCalledWith("/hosts/owner/worker-hosts/worker/execution-catalog/repositories/repo");
+  const task=await client.inspectTask();Object.assign(task.participants[0],{hostId:"host"});task.participants.push(Object.assign({...task.participants[0],id:"worker",profileId:"remote-only"},{hostId:"worker"}));client.inspectTask.mockResolvedValue(task);
+  options.executable=vi.fn(async()=>"C:/trusted/codex.exe");
+  const remoteWorkers=[{participantId:"worker",selection:{repositoryId:"repo",expectedPath:"/worker/repo",expectedHead:"a".repeat(40)}}];
+  await call("task-start","task",{repositoryPath:"C:/repo",expectedHead:"a".repeat(40),remoteWorkers});
+  expect(options.executable).toHaveBeenCalledTimes(1);expect(client.startTask).toHaveBeenCalledWith("task",expect.objectContaining({remoteWorkers,profiles:[expect.objectContaining({participantId:"lead"})]}));
+  dispose();
+});
 it("reconnects a retained Canvas viewer without replaying input or taking control",async()=>{
   vi.useFakeTimers();
   const {client,call,options,dispose}=setup(),listeners:((event:unknown)=>void)[]=[],sockets:{send:ReturnType<typeof vi.fn>;close:ReturnType<typeof vi.fn>}[]=[];

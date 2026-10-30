@@ -4,6 +4,15 @@ export interface HostRepository {id:string;name:string;path:string;projectId:str
 export interface ExecutionCatalog {version:1;hostId:string;platform:"win32"|"linux";launchProfiles:LaunchProfile[];defaultLaunchProfiles:Partial<Record<TaskProvider,string>>;availableProviders:TaskProvider[];repositories:HostRepository[]}
 export interface RepositoryInspection {repository:HostRepository;expectedHead:string}
 export interface RegisteredTaskStart {repositoryId:string;expectedHead:string;expectedPath:string}
+export interface ExecutionHost {hostId:string;name:string;connected:boolean}
+export function parseExecutionHosts(value:unknown):ExecutionHost[]{
+  if(!Array.isArray(value)||value.length>32)throw new Error("Invalid worker host list");
+  const result=value.map(item=>{
+    if(!object(item)||typeof item.hostId!=="string"||!/^[\w-]{1,128}$/.test(item.hostId)||!text(item.name,100)||typeof item.connected!=="boolean")throw new Error("Invalid worker host");
+    return {hostId:item.hostId,name:item.name,connected:item.connected};
+  });
+  if(new Set(result.map(item=>item.hostId)).size!==result.length)throw new Error("Duplicate worker host");return result;
+}
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==="object"&&!Array.isArray(value);
 const text=(value:unknown,max=512):value is string=>typeof value==="string"&&value.length>0&&value.length<=max&&!/[\x00-\x1f]/.test(value);
 /** Validate cross-host metadata before it becomes selectable. Paths stay on their owning host. */

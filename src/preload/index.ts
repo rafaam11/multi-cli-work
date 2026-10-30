@@ -390,6 +390,8 @@ if (process.argv.includes("--mcw-v2")) {
     listTasks: hostId => ipcRenderer.invoke("v2:tasks",hostId), createTask: (input,hostId) => ipcRenderer.invoke("v2:task-create", input,hostId), inspectTask: (id,hostId) => ipcRenderer.invoke("v2:task-inspect", id,hostId),
     executionCatalog:hostId=>ipcRenderer.invoke("v2:execution-catalog",hostId),inspectHostRepository:(id,hostId)=>ipcRenderer.invoke("v2:host-repository",id,hostId),
     startRegisteredTask:(id,input,hostId)=>ipcRenderer.invoke("v2:task-start-registered",id,input,hostId),
+    executionHosts:ownerHostId=>ipcRenderer.invoke("v2:execution-hosts",ownerHostId),workerCatalog:(workerHostId,ownerHostId)=>ipcRenderer.invoke("v2:worker-catalog",workerHostId,ownerHostId),
+    inspectWorkerRepository:(repositoryId,workerHostId,ownerHostId)=>ipcRenderer.invoke("v2:worker-repository",repositoryId,workerHostId,ownerHostId),
     taskAction: (id, action, input,hostId) => ipcRenderer.invoke("v2:task-action", id, action, input,hostId),
     terminalViewId: (sessionId,hostId) => ipcRenderer.invoke("v2:terminal-view-id",sessionId,hostId),
     onState: callback => {const listener=(_event:Electron.IpcRendererEvent,value:Parameters<typeof callback>[0])=>callback(value);ipcRenderer.on("v2:state",listener);return()=>ipcRenderer.removeListener("v2:state",listener);},

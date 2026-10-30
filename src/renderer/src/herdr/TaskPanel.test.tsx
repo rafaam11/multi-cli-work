@@ -14,6 +14,33 @@ function api() {
 }
 afterEach(cleanup);
 describe("v2 task dashboard", () => {
+  it("uses the selected worker PC's model profiles and requires its checked checkout before team launch",async()=>{
+    const host=api(),draft=task();draft.participants[0].attempt={...draft.participants[0].attempt,delivery:"none",execution:"not_started",commandId:null};
+    draft.participants.push({...draft.participants[0],id:"remote-worker",role:"worker",hostId:"worker-pc",profileId:"worker-profile",attempt:{...draft.participants[0].attempt,id:"worker-attempt"}});
+    const repository={id:"worker-repo",name:"Worker checkout",path:"/worker/repo",projectId:null,projectName:null};
+    host.executionHosts=vi.fn(async()=>[{hostId:"worker-pc",name:"Worker PC",connected:true}]);
+    host.workerCatalog=vi.fn(async():Promise<import("@shared/execution-catalog").ExecutionCatalog>=>({version:1,hostId:"worker-pc",platform:"linux",launchProfiles:[{id:"worker-profile",name:"Worker chosen model",agentId:"codex",model:"worker-model",effort:null}],defaultLaunchProfiles:{codex:"worker-profile"},availableProviders:["codex"],repositories:[repository]}));
+    host.inspectWorkerRepository=vi.fn(async()=>({repository,expectedHead:"b".repeat(40)}));
+    vi.mocked(host.listTasks).mockResolvedValue([draft]);
+    render(<TaskPanel api={host} defaultCwd="C:/owner/repo"/>);await screen.findByText("Existing task");
+    fireEvent.click(screen.getByRole("button",{name:"작업자 추가"}));
+    fireEvent.change(await screen.findByLabelText("작업자 1 실행 PC"),{target:{value:"worker-pc"}});
+    await screen.findByRole("option",{name:/Worker chosen model/});
+    fireEvent.change(screen.getByLabelText("작업 제목"),{target:{value:"New distributed"}});fireEvent.change(screen.getByLabelText("작업 지시"),{target:{value:"Collect only"}});
+    fireEvent.click(screen.getByRole("button",{name:"작업 만들기"}));
+    await waitFor(()=>expect(host.createTask).toHaveBeenCalledWith(expect.objectContaining({workers:[{hostId:"worker-pc",provider:"codex",profileId:"worker-profile"}]})));
+    fireEvent.click(screen.getByRole("button",{name:/Existing task/}));
+    fireEvent.click(screen.getByRole("button",{name:"기준 커밋 확인"}));
+    await screen.findByText("aaaaaaaaaaaa");expect(screen.getByRole("button",{name:"작업 시작"})).toBeDisabled();
+    fireEvent.change(await screen.findByLabelText("원격 작업자 1 저장소"),{target:{value:"worker-repo"}});
+    fireEvent.click(screen.getByRole("button",{name:"원격 작업자 1 기준 커밋 확인"}));
+    await screen.findByText(/대표 저장소와 기준 커밋이 다릅니다/);expect(screen.getByRole("button",{name:"작업 시작"})).toBeDisabled();
+    vi.mocked(host.inspectWorkerRepository).mockResolvedValue({repository,expectedHead:"a".repeat(40)});
+    fireEvent.click(screen.getByRole("button",{name:"원격 작업자 1 기준 커밋 확인"}));
+    await waitFor(()=>expect(screen.getByRole("button",{name:"작업 시작"})).toBeEnabled());
+    fireEvent.click(screen.getByRole("button",{name:"작업 시작"}));
+    await waitFor(()=>expect(host.startTask).toHaveBeenCalledWith("task",{repositoryPath:"C:/owner/repo",expectedHead:"a".repeat(40),remoteWorkers:[{participantId:"remote-worker",selection:{repositoryId:"worker-repo",expectedPath:"/worker/repo",expectedHead:"a".repeat(40)}}]}));
+  });
   it("selects the remote host's profiles and registered checkout, and sends the inspected path and commit back only to that owner",async()=>{
     const host=api(),remote=task();remote.id="new-remote";remote.title="Remote launch";remote.ownerHostId="remote";remote.projectId="remote-project";remote.participants[0].hostId="remote";remote.participants[0].profileId="remote-profile";
     remote.participants[0].attempt={...remote.participants[0].attempt,delivery:"none",execution:"not_started",commandId:null};

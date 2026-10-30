@@ -159,6 +159,20 @@ it("scopes worker MCP capabilities to durable replicas and exposes transfer/admi
   const response=await fetch(connection.url+"/mcp",{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:2,method:"tools/call",params:{name:"task_inspect",arguments:{}}})});
   expect((await response.json()).result.isError).toBe(false);
 });
+it("lists and inspects worker PCs reachable from the selected owner, without exposing host credentials",async()=>{
+  const remote=await setup({},"worker-pc");
+  const catalog={version:1 as const,hostId:"worker-pc",platform:"linux" as const,launchProfiles:[],defaultLaunchProfiles:{},availableProviders:[],repositories:[{id:"worker-repo",name:"Repo",path:"/srv/repo",projectId:null,projectName:null}]};
+  remote.gateway.options.executionCatalog={read:async()=>catalog,inspectRepository:async()=>({repository:catalog.repositories[0],expectedHead:"a".repeat(40)}),validateCreate:async()=>{throw new Error();},prepare:async()=>{throw new Error();}};
+  const observation={hostId:"worker-pc",name:"Worker PC",enabled:true,connected:true,observedAt:1,error:null,tasks:[],terminals:[]};
+  const hosts={snapshot:()=>[observation],registrations:()=>[],configure:vi.fn(),remove:vi.fn(),onChange:()=>()=>{},client:()=>remote.client};
+  const owner=await setup({hosts},"owner-pc"),ownerObservation={...observation,hostId:"owner-pc",name:"Owner"};
+  const viewer=await setup({hosts:{...hosts,snapshot:()=>[ownerObservation],client:()=>owner.client}},"viewer");
+  expect(await viewer.client.request("/hosts/owner-pc/worker-hosts")).toEqual([{hostId:"worker-pc",name:"Worker PC",connected:true}]);
+  expect(await viewer.client.request("/hosts/owner-pc/worker-hosts/worker-pc/execution-catalog")).toEqual(catalog);
+  expect(await viewer.client.request("/hosts/owner-pc/worker-hosts/worker-pc/execution-catalog/repositories/worker-repo")).toEqual({repository:catalog.repositories[0],expectedHead:"a".repeat(40)});
+  observation.connected=false;await expect(viewer.client.request("/hosts/owner-pc/worker-hosts/worker-pc/execution-catalog")).rejects.toThrow();
+  expect(await owner.client.request("/worker-hosts")).toEqual([{hostId:"worker-pc",name:"Worker PC",connected:false}]);
+});
 it("exposes SSH registrations and non-secret local connection info only to the owner and freezes edits while draining",async()=>{
   const hosts={registrations:vi.fn(()=>[]),snapshot:vi.fn(()=>[]),configure:vi.fn(async()=>{}),remove:vi.fn(async()=>{}),onChange:vi.fn(()=>()=>{}),client:vi.fn()};
   const info={hostId:"pc-a",platform:"linux" as const,nodeExecutable:"/opt/node",hostEntrypoint:"/opt/mcw-host.js",dataRoot:"/home/me/mcw"};

@@ -30,6 +30,8 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   await fs.writeFile(path.join(claudeConfig,"plugins/installed_plugins.json"),JSON.stringify({plugins:{"mcw-chips@jinmin":[{installPath:v1Mod}]}}));
   const projectId="11111111-1111-4111-8111-111111111111", now=new Date().toISOString();
   await fs.writeFile(path.join(registry,"projects.json"),JSON.stringify({schemaVersion:1,updatedAt:now,projects:{[projectId]:{id:projectId,rootPath,displayName:"Herdr 검증",sources:["manual"],providerRefs:{claude:[],codex:[]},status:"진행중",memo:"",tracks:[],hidden:false,order:0,createdAt:now,updatedAt:now}}}));
+  const workProjectId="22222222-2222-4222-8222-222222222222";
+  await fs.writeFile(path.join(registry,"work-projects.json"),JSON.stringify({schemaVersion:1,updatedAt:now,teamsSyncRoot:null,workProjects:{[workProjectId]:{id:workProjectId,name:"협업 검증 프로젝트",category:"work",status:null,memo:"보존할 프로젝트 메모",notionLinks:[],localFolders:[],members:[{projectId,role:"repo"}],order:0,createdAt:now,updatedAt:now}}}));
   const env={...process.env,MCW_RUNTIME:"v2-preview",MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:path.join(directory,"recovery"),MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,"codex"),MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,"claude")};
   delete env.ELECTRON_RUN_AS_NODE;
   let app:ElectronApplication|undefined, client:HostClient|undefined;
@@ -69,6 +71,12 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     const connectionInfo=await page.evaluate(()=>window.mcwV2!.localConnection!());expect(connectionInfo.hostId).toBe(descriptor.hostId);expect(connectionInfo).not.toHaveProperty("token");
     await settings.getByLabel("SSH 주소",{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath("host-settings.png")});
     await page.keyboard.press("Escape");
+    await page.getByRole("button",{name:"협업 검증 프로젝트 프로젝트 열기",exact:true}).click();
+    const taskPanel=page.getByRole("region",{name:"협업 작업",exact:true});
+    await taskPanel.getByRole("button",{name:"작업자 추가",exact:true}).click();
+    await expect(taskPanel.getByLabel("작업자 1 실행 PC",{exact:true})).toHaveValue("");
+    await expect(taskPanel.getByLabel("작업자 1 실행 PC",{exact:true})).toContainText("대표와 같은 PC");
+    await taskPanel.screenshot({path:info.outputPath("task-worker-selection.png")});
     const session=await page.evaluate(({projectId,kind})=>window.multiCliWork.terminals.create({projectId,kind,cols:100,rows:30}),{projectId,kind:process.platform==="win32"?"powershell":"bash"});
     observer=client.terminalSocket(session.id,event=>{
       const outer=event as {snapshot?:HerdrSurfaceEvent;frame?:HerdrSurfaceEvent};const value=outer.snapshot??outer.frame;
