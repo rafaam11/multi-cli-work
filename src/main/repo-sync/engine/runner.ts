@@ -148,7 +148,9 @@ export function startRepoSync(options: RepoSyncOptions): RepoSyncRun {
       try {
         // 잠금을 기다리는 사이 다른 프로세스가 끝낸 결과가 있으면 그것을 쓴다(쿨다운과 무관한 중복 제거).
         const latest = (await readRepoSyncState(options.stateDir)).repos[target.key];
-        if (latest && Date.parse(latest.finishedAt) >= waitingSince) return { ...latest, path: target.path, cached: true };
+        // Equal millisecond timestamps alone do not establish concurrent work:
+        // the result already read before taking the lock is still the old result.
+        if (latest && Date.parse(latest.finishedAt) >= waitingSince && JSON.stringify(latest) !== JSON.stringify(previous)) return { ...latest, path: target.path, cached: true };
 
         const result = await syncRepo(target.path, {
           git: options.git,
