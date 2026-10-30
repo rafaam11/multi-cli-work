@@ -5,7 +5,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import lockfile from 'proper-lockfile';
 import {requirePlainPath,writeRecoveryState} from '../recovery/controller-state';
 
-interface Options {resourcesDirectory:string;bridgeDirectory:string;recoveryRoot:string;platform?:'win32'|'linux'}
+interface Options {resourcesDirectory:string;bridgeDirectory:string;recoveryRoot:string;mobileDirectory?:string;shellDirectory?:string;platform?:'win32'|'linux'}
 interface Entry {path:string;bytes:number;sha256:string;mode:number}
 export interface ManagedHostRuntime {schemaVersion:1;directory:string;resourcesDirectory:string;bridgeDirectory:string;entryPath:string;runtimePaths:string[]}
 const sha=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
@@ -36,9 +36,9 @@ async function collect(filename:string,prefix:string,result:Entry[],sources?:Map
  * installation. Old revisions stay available to already-running hosts. */
 export async function stageManagedHostRuntime(options:Options):Promise<ManagedHostRuntime>{
   const platform=options.platform??process.platform;if(platform!=='win32'&&platform!=='linux')throw new Error('Unsupported host platform');
-  for(const directory of [options.resourcesDirectory,options.bridgeDirectory,options.recoveryRoot])await requirePlainPath(directory);
+  for(const directory of [options.resourcesDirectory,options.bridgeDirectory,options.recoveryRoot,...[options.mobileDirectory,options.shellDirectory].filter((value):value is string=>!!value)])await requirePlainPath(directory);
   const root=await fs.realpath(options.recoveryRoot);
-  for(const source of [options.resourcesDirectory,options.bridgeDirectory]){
+  for(const source of [options.resourcesDirectory,options.bridgeDirectory,...[options.mobileDirectory,options.shellDirectory].filter((value):value is string=>!!value)]){
     const canonical=await fs.realpath(source),a=path.relative(root,canonical),b=path.relative(canonical,root);
     if(!a||!b||(!a.startsWith('..')&&!path.isAbsolute(a))||(!b.startsWith('..')&&!path.isAbsolute(b)))throw new Error('Managed runtime storage must be outside its package sources');
   }
@@ -49,11 +49,14 @@ export async function stageManagedHostRuntime(options:Options):Promise<ManagedHo
       const entries:Entry[]=[];
       for(const relative of ['assets.json','host','mods',platform==='win32'?'node/windows':'node/linux',platform==='win32'?'herdr/windows-mcw':'herdr/herdr-linux-x86_64'])await collect(path.join(options.resourcesDirectory,relative),`v2/${relative}`,entries,sources);
       await collect(options.bridgeDirectory,'bridge',entries,sources);
+      if(options.mobileDirectory)await collect(options.mobileDirectory,'v2/mobile',entries,sources);
+      if(options.shellDirectory)await collect(options.shellDirectory,'v2/mobile-shell',entries,sources);
       return entries.sort((a,b)=>a.path.localeCompare(b.path,'en'));
     };
     const entries=await snapshot();
     const required=['v2/assets.json','v2/host/mcw-host.js','v2/host/mcw-task-mcp-client.js','v2/mods/mcw-chips-v2/hooks/register.ts','bridge/bridge.json',platform==='win32'?'v2/node/windows/node.exe':'v2/node/linux/node',platform==='win32'?'v2/herdr/windows-mcw/herdr.exe':'v2/herdr/herdr-linux-x86_64',platform==='win32'?'bridge/mcw-herdr-bridge.exe':'bridge/mcw-herdr-bridge'];
     if(required.some(file=>!entries.some(entry=>entry.path===file)))throw new Error('Missing managed host resource');
+    if(options.mobileDirectory&&!entries.some(entry=>entry.path==='v2/mobile/mobile-v2.html'))throw new Error('Missing mobile host entry');
     const serialized=JSON.stringify({schemaVersion:1,platform,entries}),revision=sha(serialized),directory=path.join(root,`host-runtime-${revision.slice(0,24)}`);
     const result:ManagedHostRuntime={schemaVersion:1,directory,resourcesDirectory:path.join(directory,'v2'),bridgeDirectory:path.join(directory,'bridge'),entryPath:path.join(directory,'v2/host/mcw-host.js'),runtimePaths:[path.join(directory,platform==='win32'?'v2/node/windows/node.exe':'v2/node/linux/node'),path.join(directory,platform==='win32'?'v2/herdr/windows-mcw/herdr.exe':'v2/herdr/herdr-linux-x86_64'),path.join(directory,platform==='win32'?'bridge/mcw-herdr-bridge.exe':'bridge/mcw-herdr-bridge')]};
     const verify=async(target:string)=>{

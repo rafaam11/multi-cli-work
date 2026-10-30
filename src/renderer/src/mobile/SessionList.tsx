@@ -51,6 +51,7 @@ interface SessionListProps {
   /** 넓은 화면 그리드에 떠 있는 세션들 — 포커스 세션을 포함한다. */
   onScreenSessionIds?: readonly string[];
   onNewSession(): void;
+  newSessionLabel?: string;
   /** 호스트 메인 창의 선반을 옮긴다. 없으면 숨기기 버튼을 그리지 않는다. */
   onMoveShelf?(sessionId: string, shelf: RemoteShelf): void;
   /** 머리줄 아래에 그리는 것 — 새 세션 폼. */
@@ -69,6 +70,7 @@ export function SessionList({
   activeSessionId = null,
   onScreenSessionIds = [],
   onNewSession,
+  newSessionLabel = '새 세션',
   onMoveShelf,
   children,
   footer,
@@ -147,7 +149,7 @@ export function SessionList({
       <header className="m-bar">
         <h1>{hostName}</h1>
         <button type="button" disabled={connection !== "open"} onClick={onNewSession}>
-          새 세션
+          {newSessionLabel}
         </button>
         <button type="button" onClick={onUnpair}>
           {leaveLabel ?? "연결 해제"}

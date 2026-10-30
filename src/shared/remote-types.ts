@@ -146,6 +146,7 @@ const MAX_REMOTE_SLOT = 12;
 export const REMOTE_SESSION_NAME_MAX = 120;
 
 export type RemoteClientMessage =
+  | import('./mobile-host-types').MobileHostClientMessage
   | { type: "hello"; token: string; protocolVersion: number; mode: "ui" }
   | { type: "list" }
   | { type: "attach"; sessionId: string }
@@ -179,6 +180,7 @@ export interface RemoteCatalog {
 export type RemoteErrorCode = "bad-message" | "protocol" | "unauthorized" | "not-attached" | "failed";
 
 export type RemoteServerMessage =
+  | import('./mobile-host-types').MobileHostServerMessage
   | {
       type: "welcome";
       hostId: string;

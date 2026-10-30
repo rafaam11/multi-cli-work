@@ -53,6 +53,8 @@ export interface HostGatewayOptions {
   workers?:Pick<WorkerExecutor,"prepare"|"admit">&{replicas:WorkerReplicas};
   hosts?: Pick<HostConnections,"snapshot"|"registrations"|"configure"|"remove"|"onChange"|"client">;
   connectionInfo?:()=>LocalHostConnection;
+  mobile?:()=>import('../remote/remote-access').RemoteAccess|undefined;
+  ready?:()=>boolean;
 }
 class HttpError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 const secret = () => randomBytes(32).toString("base64url");
@@ -215,6 +217,20 @@ export class HostGateway {
         reply(response, result === null ? 202 : 200, result); return;
       }
       if (!auth.owner) throw new HttpError(403, "Owner capability required");
+      if(url.pathname.startsWith('/mobile/')){
+        const mobile=this.options.mobile?.();if(!mobile)throw new HttpError(503,'Mobile gateway unavailable');
+        if(url.pathname==='/mobile/status'&&method==='GET'){reply(response,200,mobile.status());return;}
+        if(url.pathname==='/mobile/settings'&&method==='POST'){
+          const input=exactObject(await body(request,this.limit),['enabled','port']);
+          if(typeof input.enabled!=='boolean')throw new HttpError(400,'Invalid mobile settings');
+          const port=integer(input.port,1024,65535);reply(response,200,await mobile.apply({enabled:input.enabled,port}));return;
+        }
+        if(url.pathname==='/mobile/pairing'&&method==='POST'){reply(response,200,await mobile.issuePairingCode());return;}
+        if(url.pathname==='/mobile/devices'&&method==='GET'){reply(response,200,await mobile.listDevices());return;}
+        const device=/^\/mobile\/devices\/([^/]+)$/.exec(url.pathname);
+        if(device&&method==='DELETE'){await mobile.revokeDevice(text(decodeURIComponent(device[1])));reply(response,200,{});return;}
+        throw new HttpError(404,'Unknown mobile operation');
+      }
       if(url.pathname==="/workers/prepare"&&method==="POST"){
         if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.workers)throw new HttpError(503,"Worker execution unavailable");
         const input=exactObject(await body(request,this.limit),["task","identity","selection"]);this.pendingCreates++;
@@ -328,7 +344,7 @@ export class HostGateway {
         if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.hosts)throw new HttpError(503,"Host connections unavailable");
         await this.options.hosts.remove(text(decodeURIComponent(hostRoute[1])));reply(response,200,{});return;
       }
-      if (url.pathname === "/health" && method === "GET") { reply(response, 200, { schemaVersion: 2, hostId: this.descriptor.hostId, instanceId: this.descriptor.instanceId, accepting: this.accepting }); return; }
+      if (url.pathname === "/health" && method === "GET") { if(this.options.ready&&!this.options.ready())throw new HttpError(503,'Host is initializing');reply(response, 200, { schemaVersion: 2, hostId: this.descriptor.hostId, instanceId: this.descriptor.instanceId, accepting: this.accepting }); return; }
       if(url.pathname==="/recovery-readiness"&&method==="GET"){reply(response,200,{hostId:this.descriptor.hostId,instanceId:this.descriptor.instanceId,accepting:this.accepting,canShutdown:await this.canShutdown(),checkedAt:Date.now()});return;}
       if(url.pathname==="/recovery-plan"&&method==="GET"){
         const canShutdown=await this.canShutdown();

@@ -13,6 +13,14 @@ async function setup() {
 }
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true }))); });
 describe("MobileAttentionStore", () => {
+  it('distinguishes successive task questions even while terminal status stays idle',async()=>{
+    const {store}=await setup();
+    expect(await store.observe('s','awaiting-input',false,'question-1')).toEqual({generation:1,seenThrough:0});
+    await store.seen('s',1);
+    expect(await store.observe('s','awaiting-input',false,'question-2')).toEqual({generation:2,seenThrough:1});
+    expect(await store.observe('s','awaiting-input',false,'question-2')).toEqual({generation:2,seenThrough:1});
+    expect(await store.seen('s',1)).toEqual({generation:2,seenThrough:1});
+  });
   it("persists waits, deduplicates identical states, and never sees a newer wait through a stale ack", async () => {
     const { store, file } = await setup();
     expect(await store.observe("s", "awaiting-input")).toEqual({ generation: 1, seenThrough: 0 });

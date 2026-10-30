@@ -11,6 +11,8 @@ import {WorkerExecutor} from "./host/worker-executor";
 import {RemoteWorkers} from "./host/remote-workers";
 import {parseExecutionCatalog} from "../shared/execution-catalog";
 import {recordHostProcessIdentity} from './host/runtime-identity';
+import {createHostMobileAccess,type HostMobileConfig} from './host/mobile-access';
+import {HostClient} from './host/host-client';
 
 /** Separate Node entrypoint. Importing it never starts a host or touches a user's data. */
 export async function startHost(options: HostGatewayOptions): Promise<HostGateway> {
@@ -38,6 +40,8 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   let workerExecutor:WorkerExecutor|undefined;
   let syncTimer:ReturnType<typeof setInterval>|undefined;
   let stopObservation: (() => void) | undefined;
+  let mobile:Awaited<ReturnType<typeof createHostMobileAccess>>|undefined;
+  let initialized=false;
   const service: HostGatewayOptions["terminals"] = {
     refreshObservation:()=>terminals!.refreshObservation(),
     onChange: callback => terminals!.onChange(callback),
@@ -46,8 +50,8 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
     resize: (id, viewer, cols, rows, width, height) => terminals!.resize(id, viewer, cols, rows, width, height), scroll: (id, viewer, delta) => terminals!.scroll(id, viewer, delta),
     takeOwnership: (id, viewer) => terminals!.takeOwnership(id, viewer), releaseOwnership: (id, viewer) => terminals!.releaseOwnership(id, viewer),
   };
-  let gateway: HostGateway;
-  const finish = async () => { clearInterval(syncTimer);stopObservation?.(); await hosts.close(); await terminals?.close(true); process.exit(0); };
+  let gateway!: HostGateway;
+  const finish = async () => { clearInterval(syncTimer);stopObservation?.();await mobile?.dispose(); await hosts.close(); await terminals?.close(true); process.exit(0); };
   try {
     gateway = await startHost({ directory, store, terminals: service, hosts, executionCatalog,workers:{replicas,prepare:async(...args)=>{if(!workerExecutor)throw new Error("Worker execution unavailable");return workerExecutor.prepare(...args);},admit:async(...args)=>{if(!workerExecutor)throw new Error("Worker execution unavailable");return workerExecutor.admit(...args);}}, connectionInfo:()=>({hostId,platform:process.platform as "win32"|"linux",nodeExecutable:process.execPath,hostEntrypoint:path.join(__dirname,"mcw-host.js"),dataRoot:directory}), bindAddress: option("--bind-address", false), allowRemote: argv.includes("--allow-remote"), advertisedHost: option("--advertised-host", false), onShutdown: finish, startTask: (taskId, input) => executor!.start(taskId, input), prepare: async () => {
       // The gateway already owns the daemon runtime lock. Record the kernel
@@ -57,7 +61,7 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
       await store.recover();
       await replicas.recover();
       await hosts.start();
-    } });
+    },mobile:()=>mobile,ready:()=>initialized });
     const participantOptions={directory,terminals:service,gatewayUrl:()=>gateway.descriptor.url,mcpClientPath:path.join(__dirname,"mcw-task-mcp-client.js"),mcpElectron:!!process.versions.electron};
     executor = new TaskExecutor({...participantOptions,store,remoteWorkers,issueTaskToken:ref=>gateway.issueTaskToken(ref)});
     workerExecutor=new WorkerExecutor({...participantOptions,replicas,catalog:{prepareWorker:async(...args)=>{if(!executionCatalog)throw new Error("Host execution catalog unavailable");return executionCatalog.prepareWorker(...args);}},issueTaskToken:ref=>gateway.issueWorkerTaskToken(ref)});
@@ -71,7 +75,10 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
     stopObservation = terminals!.onChange(() => { void reconcile(); }); await reconcile();
     const synchronize=()=>{void remoteWorkers.synchronize().catch(()=>process.stderr.write("Remote worker data unavailable; execution was not repeated.\n"));};
     syncTimer=setInterval(synchronize,2000);syncTimer.unref();synchronize();
-  } catch (error) { await hosts.close();await terminals?.close(); throw error; }
+    const mobileConfig=option('--mobile-config',false);
+    if(mobileConfig)mobile=await createHostMobileAccess(new HostClient(gateway.descriptor),hostId,JSON.parse(mobileConfig) as HostMobileConfig);
+    initialized=true;
+  } catch (error) { clearInterval(syncTimer);stopObservation?.();await mobile?.dispose();await gateway?.close();await hosts.close();await terminals?.close(); throw error; }
   const stop = () => { gateway.drain(); void gateway.canShutdown().then(async safe => { if (safe) { await gateway.close(); await finish(); } }); };
   process.on("SIGTERM", stop); process.on("SIGINT", stop);
   return gateway;

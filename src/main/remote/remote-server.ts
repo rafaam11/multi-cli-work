@@ -15,6 +15,7 @@ export interface RemoteServerOptions {
   port: number;
   /** out/renderer — mobile.html과 assets/가 있는 곳. */
   rendererDir: string;
+  mobileEntry?: 'mobile.html'|'mobile-v2.html';
   hub: Pick<RemoteSessionHub, "open">;
   pair(code: string, deviceName: string, clientIp: string): Promise<PairOutcome>;
   pingIntervalMs?: number;
@@ -162,7 +163,7 @@ async function handleRequest(options: RemoteServerOptions, request: http.Incomin
   }
   if (pathname === "/install") return send(response, 200, installPage(options.shell ?? null), CONTENT_TYPES[".html"]);
   if (pathname === "/mobile" || pathname === "/mobile/") {
-    const served = await serveFile(response, path.join(options.rendererDir, "mobile.html"), "no-cache");
+    const served = await serveFile(response, path.join(options.rendererDir, options.mobileEntry??"mobile.html"), "no-cache");
     if (!served) send(response, 503, "모바일 화면 번들이 없습니다. 호스트에서 npm run build를 먼저 실행하세요.");
     return;
   }

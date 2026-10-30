@@ -53,7 +53,7 @@ export async function startDesktopHost(options: DesktopHostOptions) {
   if (!runtime) throw new Error("독립 호스트 런타임을 찾을 수 없습니다.");
   const executablePath = path.join(options.resourcesDirectory,node.directory,runtime.output);
   await verifyStandaloneNodeRuntime(executablePath,runtime.sha256);
-  const descriptor = await ensureHostProcess({ directory, hostId, entryPath: options.entryPath, executablePath, electronExecutable: false, catalogPaths:{userData:options.userData,registryRoot:options.registryRoot},terminalConfig: { binaryPath, binarySha256, bridgePath, modsDirectory:path.join(options.resourcesDirectory,"mods") } });
+  const descriptor = await ensureHostProcess({ directory, hostId, entryPath: options.entryPath, executablePath, electronExecutable: false, catalogPaths:{userData:options.userData,registryRoot:options.registryRoot},mobileConfig:{userData:options.userData,rendererDir:path.join(options.resourcesDirectory,'mobile'),shellDirectory:path.join(options.resourcesDirectory,'mobile-shell'),bindOverride:process.env.MULTI_CLI_WORK_REMOTE_BIND},terminalConfig: { binaryPath, binarySha256, bridgePath, modsDirectory:path.join(options.resourcesDirectory,"mods") } });
   const client = new HostClient(descriptor);
   return { hostId, client, refresh: async () => {
     const next = await readHostDescriptor(directory);

@@ -13,6 +13,7 @@ export interface HostProcessOptions {
   directory: string; hostId: string; entryPath: string; executablePath?: string; electronExecutable?: boolean;
   terminalConfig: { binaryPath: string; binarySha256: string; bridgePath: string; modsDirectory?:string };
   catalogPaths?:import("./execution-catalog").HostCatalogPaths;
+  mobileConfig?:import('./mobile-access').HostMobileConfig;
   bindAddress?: string; allowRemote?: boolean; advertisedHost?: string; startupTimeoutMs?: number;
 }
 export async function readHostDescriptor(directory: string): Promise<HostDescriptor | null> {
@@ -54,6 +55,7 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
       if (options.bindAddress) args.push("--bind-address", options.bindAddress);
       if (options.allowRemote) args.push("--allow-remote");
       if (options.advertisedHost) args.push("--advertised-host", options.advertisedHost);
+      if(options.mobileConfig)args.push('--mobile-config',JSON.stringify(options.mobileConfig));
       const filename=path.join(options.directory,'mcw-host-startup.log');await requirePlainPath(filename,true);
       const existingLog=await fs.lstat(filename).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
       if(existingLog&&!existingLog.isFile())throw new Error('Host startup log is not a regular file');

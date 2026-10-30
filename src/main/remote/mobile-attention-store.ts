@@ -38,12 +38,13 @@ export class MobileAttentionStore {
       return entry ? { generation: entry.generation, seenThrough: entry.seenThrough } : zero();
     });
   }
-  observe(sessionId: string, status: TerminalStatus, viewed = false): Promise<RemoteAttentionState> {
+  observe(sessionId: string, status: TerminalStatus, viewed = false, notificationKey?:string): Promise<RemoteAttentionState> {
     return this.serial(async () => {
       const file = await updateJsonStore(spec, this.filePath, current => {
         const previous = current.sessions[sessionId];
-        const generation = (previous?.generation ?? 0) + (notifiable.has(status) && previous?.status !== status ? 1 : 0);
-        const entry = { status, generation, seenThrough: viewed ? generation : previous?.seenThrough ?? 0 };
+        const identity=notificationKey===undefined?status:JSON.stringify([status,notificationKey]);
+        const generation = (previous?.generation ?? 0) + (notifiable.has(status) && previous?.status !== identity ? 1 : 0);
+        const entry = { status:identity, generation, seenThrough: viewed ? generation : previous?.seenThrough ?? 0 };
         return { ...current, sessions: { ...current.sessions, [sessionId]: entry } };
       });
       const { generation, seenThrough } = file.sessions[sessionId]!;

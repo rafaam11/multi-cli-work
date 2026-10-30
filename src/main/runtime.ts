@@ -143,6 +143,7 @@ import {
 import { consumeRecoveryMarker, writeRecoveryMarkerSync } from "./state/recovery-marker";
 import { createSummonShortcut } from "./summon-shortcut";
 import { RemoteAccess } from "./remote/remote-access";
+import {mobileAccessProxy} from './host/mobile-access';
 import { RemoteDeviceStore } from "./remote/device-store";
 import { PairingCodes } from "./remote/pairing-codes";
 import { RemoteSessionHub } from "./remote/remote-session-hub";
@@ -765,7 +766,7 @@ export async function createDesktopRuntime(
   };
   let mobileExposedSessions = new Set<string>();
   const remoteHub = new RemoteSessionHub({
-    attention: new MobileAttentionStore(path.join(userData, "mobile-attention.json")),
+    attention: host.v2 ? undefined : new MobileAttentionStore(path.join(userData, "mobile-attention.json")),
     gateway: {
       list: () => coordinator.list(),
       attach: (sessionId) => coordinator.attachForRenderer(sessionId),
@@ -832,7 +833,7 @@ export async function createDesktopRuntime(
     hostName: os.hostname(),
     shellLatest: () => shellArtifact?.release ?? null,
   });
-  const remoteAccess = new RemoteAccess({
+  const remoteAccess = host.v2 ? mobileAccessProxy(host.v2.client) : new RemoteAccess({
     hub: remoteHub,
     devices: remoteDevices,
     pairing: new PairingCodes(),

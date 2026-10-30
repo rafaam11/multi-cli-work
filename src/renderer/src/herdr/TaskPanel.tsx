@@ -85,16 +85,20 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
     setLoading(true); setError(null);
     if (!api) { setLoading(false); return; }
     const initialRevision=stateRevision.current;
+    let localHostId:string|undefined,lastSnapshot:V2HostState|null=null;
     const received = (state:V2HostState) => {
       stateRevision.current++;if(!alive.current)return;
-      const remote=hostId?state.hosts?.find(host=>host.hostId===hostId):undefined;
-      const scoped=hostId?{...state,tasks:remote?.tasks??[],terminals:remote?.terminals??[],connected:state.connected&&remote?.enabled===true&&remote.connected,observedAt:remote?.observedAt??null}:state;
+      lastSnapshot=state;
+      const remoteOwner=hostId&&hostId!==localHostId;
+      const remote=remoteOwner?state.hosts?.find(host=>host.hostId===hostId):undefined;
+      const scoped=remoteOwner?{...state,tasks:remote?.tasks??[],terminals:remote?.terminals??[],connected:state.connected&&remote?.enabled===true&&remote.connected,observedAt:remote?.observedAt??null}:state;
       sourceConnected.current=scoped.connected;setHostState(scoped);setTasks(scoped.tasks);
     };
     const unsubscribe=api.onState?.(received);
     void Promise.all([api.configuration(),api.hostState?.().catch(()=>null)??Promise.resolve(null)]).then(async([config,snapshot]) => {
       if (!alive.current) return;
-      if(snapshot&&stateRevision.current===initialRevision)received(snapshot);
+      localHostId=config.hostId;
+      if(snapshot&&stateRevision.current===initialRevision)received(snapshot);else if(lastSnapshot)received(lastSnapshot);
       setConfiguration(config);
       setLead((current) => ({ ...current, profileId: current.profileId || defaultProfile(current.provider, config) }));
       if(hostId&&sourceConnected.current!==true)return;
@@ -186,7 +190,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
     {offline && <p role="status">호스트 연결 끊김 · 마지막 수신: {hostState?.observedAt == null ? "없음" : new Date(hostState.observedAt).toLocaleString()}. 아래 상태는 마지막 관찰입니다.</p>}
     {loading && <p role="status">호스트 작업을 불러오는 중…</p>}
     {(!hostId||catalog)&&<form className="herdr-task-create" onSubmit={(event) => { event.preventDefault(); create(); }}>
-      {hostId&&catalog&&<label><span>작업 저장소 · {hostName??hostId}</span><select aria-label="작업 저장소" value={createRepository} disabled={busy} onChange={event=>setCreateRepository(event.target.value)}><option value="">원격 저장소 선택</option>{catalog.repositories.map(repo=><option key={repo.id} value={repo.id}>{repo.projectName?`${repo.projectName} / `:""}{repo.name}</option>)}</select></label>}
+      {hostId&&catalog&&<label><span>작업 저장소 · {hostName??hostId}</span><select aria-label="작업 저장소" value={createRepository} disabled={busy} onChange={event=>setCreateRepository(event.target.value)}><option value="">저장소 선택</option>{catalog.repositories.map(repo=><option key={repo.id} value={repo.id}>{repo.projectName?`${repo.projectName} / `:""}{repo.name}</option>)}</select></label>}
       <label><span>작업 제목</span><input aria-label="작업 제목" value={title} maxLength={200} required disabled={busy} onChange={(event) => setTitle(event.currentTarget.value)} /></label>
       <label><span>작업 지시</span><textarea aria-label="작업 지시" value={brief} maxLength={20000} required rows={3} disabled={busy} onChange={(event) => setBrief(event.currentTarget.value)} /></label>
       <div className="herdr-task-agents">
@@ -209,7 +213,7 @@ export function TaskPanel({ projectId, hostId,hostName,defaultCwd = "", api = wi
           <td>{executionLabel[participant.attempt.execution]}</td><td>{deliveryLabel[participant.attempt.delivery]}</td><td>{participant.attempt.observedAt === null ? "관찰 없음" : new Date(participant.attempt.observedAt).toLocaleString()}</td>
         </tr>)}</tbody></table>
         {startable&&hostId&&catalog&&<div className="herdr-task-start">
-          <label><span>실행 저장소 · {hostName??hostId}</span><select aria-label="실행 저장소" value={remoteRepository} disabled={busy} onChange={event=>{setRemoteRepository(event.target.value);remoteRepositoryRef.current=event.target.value;setInspection(null);}}><option value="">원격 저장소 선택</option>{catalog.repositories.filter(repo=>!selected.projectId||repo.projectId===selected.projectId).map(repo=><option key={repo.id} value={repo.id}>{repo.name} · {repo.path}</option>)}</select></label>
+          <label><span>실행 저장소 · {hostName??hostId}</span><select aria-label="실행 저장소" value={remoteRepository} disabled={busy} onChange={event=>{setRemoteRepository(event.target.value);remoteRepositoryRef.current=event.target.value;setInspection(null);}}><option value="">저장소 선택</option>{catalog.repositories.filter(repo=>!selected.projectId||repo.projectId===selected.projectId).map(repo=><option key={repo.id} value={repo.id}>{repo.name} · {repo.path}</option>)}</select></label>
           <button type="button" disabled={busy||!remoteRepository} onClick={()=>{const id=remoteRepository;void run(async()=>{const checked=await api.inspectHostRepository!(id,hostId);if(alive.current&&remoteRepositoryRef.current===id)setInspection(checked);});}}>기준 커밋 확인</button>
           {inspection&&<><span>{inspection.repository.path}</span><code title={inspection.expectedHead}>{inspection.expectedHead.slice(0,12)}</code></>}
           <button type="button" disabled={busy||!inspection||inspection.repository.id!==remoteRepository||!workersChecked} onClick={startRemote}>선택한 구성으로 시작</button>

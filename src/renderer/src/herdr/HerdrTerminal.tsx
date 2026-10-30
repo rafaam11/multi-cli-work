@@ -17,6 +17,7 @@ export interface HerdrTerminalProps {
   theme?: CanvasTheme;
   onError?(message: string): void;
   onFocus?(): void;
+  onReady?(ready:boolean): void;
 }
 type Selection = { start: CellPoint; end: CellPoint };
 const mouseButton = (button: number): ClientMouseButton => button === 1 ? "Middle" : button === 2 ? "Right" : "Left";
@@ -24,7 +25,7 @@ const mouseButton = (button: number): ClientMouseButton => button === 1 ? "Middl
 /** The same DOM/Canvas component runs in Electron and the Android host gateway. */
 export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwnerId = ownerId,
   fontSize = 14, fontFamily = '"Cascadia Code", "D2Coding", "Noto Sans Mono CJK KR", monospace',
-  theme = DEFAULT_CANVAS_THEME, onError, onFocus }: HerdrTerminalProps) {
+  theme = DEFAULT_CANVAS_THEME, onError, onFocus,onReady }: HerdrTerminalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null), viewportRef = useRef<HTMLDivElement>(null), inputRef = useRef<HTMLTextAreaElement>(null);
   const surfaceRef = useRef<PaneSurfaceFrame | null>(null), graphicsRef = useRef<GraphicsCache | null>(null);
   if (!graphicsRef.current) graphicsRef.current = new GraphicsCache();
@@ -33,6 +34,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   const imeRef = useRef(new CompositionInput()), selectionRef = useRef<Selection | null>(null);
   const pointerRef = useRef<{ id: number; reporting: boolean; button: ClientMouseButton } | null>(null);
   const errorRef = useRef(onError); errorRef.current = onError;
+  const readyRef=useRef(onReady);readyRef.current=onReady;
   const [surface, setSurface] = useState<PaneSurfaceFrame | null>(null);
   const [ownership, setOwnership] = useState({ ownerId, sizeOwnerId });
   const [disconnectedAt, setDisconnectedAt] = useState<{observedAt:number|null} | null>(null), [synchronizing, setSynchronizing] = useState(true);
@@ -62,6 +64,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
 
   useEffect(() => {
     aliveRef.current = true;
+    readyRef.current?.(false);
     surfaceRef.current = null; setSurface(null);
     selectionRef.current = null; setSelection(null);
     disconnectedRef.current = false; setDisconnectedAt(null);
@@ -75,6 +78,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
         setOwnership(ownershipRef.current); return;
       }
       if (event.type === "disconnected") {
+        readyRef.current?.(false);
         disconnectedRef.current = true; setDisconnectedAt({observedAt:event.observedAt ?? null});
         pendingSnapshotRef.current = true; setSynchronizing(true); return;
       }
@@ -86,6 +90,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
       if (result.status === "stale" && event.type !== "patch" && pendingSnapshotRef.current
         && event.surface.surface_revision === surfaceRef.current?.surface_revision) result = applySurfaceEvent(null, event);
       if (result.status === "resync") {
+        readyRef.current?.(false);
         if (!pendingSnapshotRef.current) { pendingSnapshotRef.current = true; setSynchronizing(true); requestSnapshot(); }
         return;
       }
@@ -104,7 +109,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
     };
     let unsubscribe = () => {};
     try { unsubscribe = transport.subscribe(sessionId, receive, reportError); requestSnapshot(); } catch (cause) { reportError(cause); }
-    return () => { aliveRef.current = false; unsubscribe(); graphicsRef.current?.dispose(); };
+    return () => { aliveRef.current = false;readyRef.current?.(false); unsubscribe(); graphicsRef.current?.dispose(); };
   }, [sessionId, transport, run, reportError]);
 
   useEffect(() => {
@@ -137,6 +142,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
     canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
     context.setTransform(scale, 0, 0, scale, 0, 0);
     drawSurface(context, surface, metrics, theme, graphicsRef.current!, { selection, blinkVisible: blink });
+    if(!pendingSnapshotRef.current&&!disconnectedRef.current)readyRef.current?.(true);
   }, [surface, cellWidth, cellHeight, safeFontSize, fontFamily, theme, selection, blink, graphicsVersion]);
 
   useEffect(() => {

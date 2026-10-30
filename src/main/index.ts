@@ -274,7 +274,10 @@ if (!hasSingleInstanceLock) {
         const recoveryOptions={hostId,v1ProviderEnvironment:captureV1ProviderEnvironment(process.env),backupDirectory:prepared.backupDirectory,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
         // Keep the independent launchers usable even if daemon initialization fails.
         await preserveRecoveryInstallation(recoveryOptions);
-        const managed=await stageManagedHostRuntime({resourcesDirectory,bridgeDirectory,recoveryRoot:prepared.recoveryRoot});
+        const mobileDirectory=app.isPackaged?path.join(resourcesDirectory,'mobile'):path.join(sourceRoot,'out/renderer');
+        const shellCandidate=app.isPackaged?path.join(process.resourcesPath,'mobile'):path.join(sourceRoot,'build/mobile');
+        const shellDirectory=await import('node:fs/promises').then(fs=>fs.stat(shellCandidate).then(info=>info.isDirectory()?shellCandidate:undefined,error=>{if(error.code==='ENOENT')return undefined;throw error;}));
+        const managed=await stageManagedHostRuntime({resourcesDirectory,bridgeDirectory,recoveryRoot:prepared.recoveryRoot,mobileDirectory,shellDirectory});
         recoveryOptions.runtimePaths=managed.runtimePaths;
         await preserveRecoveryInstallation(recoveryOptions);
         v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory:managed.resourcesDirectory,bridgeDirectory:managed.bridgeDirectory,entryPath:managed.entryPath}),backupDirectory:prepared.backupDirectory};

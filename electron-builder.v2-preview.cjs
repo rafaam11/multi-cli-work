@@ -10,6 +10,7 @@ module.exports = {
   extraResources: [
     { from: 'build/v2', to: 'v2', filter: ['assets.json', 'host/**', 'mods/**', ...(windows ? ['herdr/windows-mcw/**', 'node/windows/**', 'recovery/*.exe'] : ['herdr/herdr-linux-x86_64', 'node/linux/**', 'recovery/*.deb', 'recovery/*.AppImage'])] },
     { from: `build/herdr-bridge/${process.platform}-${process.arch}`, to: 'herdr-bridge' },
+    { from: 'out/renderer', to: 'v2/mobile' },
     { from: 'scripts/recovery', to: 'recovery-scripts', filter: ['core.mjs', 'recover.mjs'] },
   ],
   win: { ...base.win, signExecutable: false, artifactName: 'Multi-CLI-Work-Preview-${version}-${arch}.${ext}' },

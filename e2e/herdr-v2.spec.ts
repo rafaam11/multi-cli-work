@@ -14,6 +14,9 @@ import { applySurfaceEvent } from "../src/shared/herdr-surface-model";
 import type { PaneSurfaceFrame, HerdrSurfaceEvent } from "../src/shared/herdr-surface-types";
 import {exerciseRecoveryHold} from './recovery-hold';
 import {exerciseOfflineRecovery} from './recovery-offline';
+import {RemoteDeviceStore} from '../src/main/remote/device-store';
+import {createServer} from 'node:net';
+import {openMobileHostBrowser} from './mobile-host-browser';
 
 test("v2 Canvas and independent host survive GUI quit and reconnect without launching a duplicate", async ({}, info) => {
   test.skip(process.env.MCW_V2_E2E !== "1", "Requires pinned v2 runtime resources; run after build:v2");
@@ -21,6 +24,11 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mcw-v2-ui-"));
   const registry = path.join(directory,"registry"), userData = path.join(directory,"user-data"), rootPath=path.join(directory,"project");
   await fs.mkdir(registry); await fs.mkdir(userData); await fs.mkdir(rootPath);
+  const pairings=new RemoteDeviceStore(path.join(userData,'remote-devices.json'));
+  const legacyPair=await pairings.register('기존 폰');const legacyHostId=await pairings.hostId();
+  const portProbe=createServer();await new Promise<void>(resolve=>portProbe.listen(0,'127.0.0.1',resolve));
+  const mobilePort=(portProbe.address() as import('node:net').AddressInfo).port;await new Promise<void>((resolve,reject)=>portProbe.close(error=>error?reject(error):resolve()));
+  await fs.writeFile(path.join(userData,'settings.json'),JSON.stringify({remote:{enabled:true,port:mobilePort}}));
   const git=(...args:string[])=>promisify(execFile)("git",["-C",rootPath,...args],{windowsHide:true,timeout:10000});
   await git("init");await fs.writeFile(path.join(rootPath,"fixture.txt"),"MCW isolated checkout\n");await git("add",".");
   await git("-c","user.name=Fixture","-c","user.email=fixture@example.invalid","commit","-m","fixture");
@@ -35,14 +43,15 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   await fs.writeFile(path.join(registry,"projects.json"),JSON.stringify({schemaVersion:1,updatedAt:now,projects:{[projectId]:{id:projectId,rootPath,displayName:"Herdr 검증",sources:["manual"],providerRefs:{claude:[],codex:[]},status:"진행중",memo:"",tracks:[],hidden:false,order:0,createdAt:now,updatedAt:now}}}));
   const workProjectId="22222222-2222-4222-8222-222222222222";
   await fs.writeFile(path.join(registry,"work-projects.json"),JSON.stringify({schemaVersion:1,updatedAt:now,teamsSyncRoot:null,workProjects:{[workProjectId]:{id:workProjectId,name:"협업 검증 프로젝트",category:"work",status:null,memo:"보존할 프로젝트 메모",notionLinks:[],localFolders:[],members:[{projectId,role:"repo"}],order:0,createdAt:now,updatedAt:now}}}));
-  const env={...process.env,MCW_RUNTIME:"v2-preview",MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:path.join(directory,"recovery"),MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,"codex"),MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,"claude")};
+  const env:NodeJS.ProcessEnv={...process.env,MCW_RUNTIME:"v2-preview",MCW_V1_REGISTRY:registry,MCW_RECOVERY_ROOT:path.join(directory,"recovery"),MULTI_CLI_WORK_USER_DATA:userData,MULTI_CLI_WORK_REMOTE_BIND:'127.0.0.1',MULTI_CLI_WORK_CODEX_SESSIONS_DIR:path.join(directory,"codex"),MULTI_CLI_WORK_CLAUDE_CONFIG_DIR:path.join(directory,"claude")};
   delete env.ELECTRON_RUN_AS_NODE;
   let app:ElectronApplication|undefined, client:HostClient|undefined;
   let observer: ReturnType<HostClient["terminalSocket"]> | undefined, surface: PaneSurfaceFrame | null = null;
+  let mobile:Awaited<ReturnType<typeof openMobileHostBrowser>>|undefined;
   const errors:string[]=[]; let succeeded = false;
   const launch=async()=>{
     const executablePath=process.env.MCW_V2_E2E_EXECUTABLE;
-    const opened=await electron.launch({...(executablePath?{executablePath,args:[]}:{args:[path.resolve("out/main/index.js")]}),env,timeout:30000});
+    const opened=await electron.launch({...(executablePath?{executablePath,args:[]}:{args:[path.resolve("out/main/index.js")]}),env:Object.fromEntries(Object.entries(env).filter((entry):entry is [string,string]=>typeof entry[1]==='string')),timeout:30000});
     opened.process().stderr?.on("data",data=>errors.push(String(data)));
     opened.process().stdout?.on("data",data=>errors.push(String(data)));
     return opened;
@@ -101,8 +110,12 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await herdrApi.request("pane.report_metadata",{pane_id:before[0].paneId,source:"mcw-chips-v2",tokens:{"mcw-test":"green|검증 완료","mcw-progress":"normal|40"},ttl_ms:60000});
     await expect(page.getByTestId("pane-chip").filter({hasText:"검증 완료"})).toBeVisible();
     await page.screenshot({path:info.outputPath("herdr-metadata.png")});
+    expect(await new RemoteDeviceStore(path.join(`${userData}-v2`,'remote-devices.json')).hostId()).toBe(legacyHostId);
+    mobile=await openMobileHostBrowser({client,pairing:{token:legacyPair.token,deviceId:legacyPair.device.deviceId,hostName:'검증 PC'},sessionId:session.id,info});
+    await expect(page.getByLabel('터미널 입력',{exact:true})).toHaveAttribute('aria-readonly','false');
     await exerciseRecoveryHold({directory,recovery,userData,registry,app,page,client,info});
     const firstProcess=app.process(); await app.evaluate(({app})=>app.quit()); await expect.poll(()=>firstProcess.exitCode).not.toBe(null); app=undefined;
+    await mobile.afterGuiQuit(()=>surface?.frame.cells.map(cell=>cell.symbol).join('')??'');
     expect((await client.terminals() as {id:string}[])[0].id).toBe(session.id);
     app=await launch();page=await app.firstWindow();
     await expect(page.getByTestId("pane-chip").filter({hasText:"검증 완료"})).toBeVisible();
@@ -129,7 +142,8 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await expect.poll(()=>{try{process.kill(descriptor.pid,0);return true;}catch{return false;}}).toBe(false);
     const {resourcesDirectory,bridgeDirectory}=JSON.parse(await fs.readFile(path.join(directory,'recovery/active-host-runtime.json'),'utf8')) as {resourcesDirectory:string;bridgeDirectory:string};
     const windows=process.platform==="win32";
-    const restarted=await ensureHostProcess({directory:path.join(`${userData}-v2`,"host"),hostId:descriptor.hostId,entryPath:path.join(resourcesDirectory,"host/mcw-host.js"),executablePath:path.join(resourcesDirectory,windows?"node/windows/node.exe":"node/linux/node"),electronExecutable:false,terminalConfig:{...await resolveHerdrResource(resourcesDirectory),bridgePath:path.join(bridgeDirectory,windows?"mcw-herdr-bridge.exe":"mcw-herdr-bridge")}});
+    const layout={userData:`${userData}-v2`,registry:`${registry}-v2`};
+    const restarted=await ensureHostProcess({directory:path.join(`${userData}-v2`,"host"),hostId:descriptor.hostId,entryPath:path.join(resourcesDirectory,"host/mcw-host.js"),executablePath:path.join(resourcesDirectory,windows?"node/windows/node.exe":"node/linux/node"),electronExecutable:false,catalogPaths:{userData:layout.userData,registryRoot:layout.registry},mobileConfig:{userData:layout.userData,rendererDir:path.join(resourcesDirectory,'mobile'),bindOverride:'127.0.0.1'},terminalConfig:{...await resolveHerdrResource(resourcesDirectory),bridgePath:path.join(bridgeDirectory,windows?"mcw-herdr-bridge.exe":"mcw-herdr-bridge")}});
     client=new HostClient(restarted);
     await expect(page.getByRole("button",{name:"제어 요청",exact:true})).toBeEnabled({timeout:30000});
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","true");
@@ -154,6 +168,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await expect(fs.access(path.join(recovery,'recovery-controller.cjs'))).resolves.toBeUndefined();
     const finalGui=app.process();await app.evaluate(({app})=>app.quit());await expect.poll(()=>finalGui.exitCode).not.toBe(null);app=undefined;
     observer?.close();observer=undefined;
+    await mobile.close();mobile=undefined;
     for(const terminal of await client.terminals() as {id:string}[])await client.stopTerminal(terminal.id);
     await client.shutdown();client=undefined;
     await exerciseOfflineRecovery(directory);
@@ -165,6 +180,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     console.error("v2 startup fixture entries:", await fs.readdir(userData).catch(()=>[]), await fs.readdir(`${userData}-v2`).catch(()=>[]), await fs.readdir(path.join(directory,"recovery")).catch(()=>[]));
     throw error;
   } finally {
+    await mobile?.close();
     observer?.close();
     if(app){const child=app.process();await app.evaluate(({app})=>app.quit()).catch(()=>undefined);await expect.poll(()=>child.exitCode,{timeout:10000}).not.toBe(null);}
     try {

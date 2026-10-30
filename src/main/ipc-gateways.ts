@@ -132,7 +132,7 @@ export interface TerminalCoordinatorGateway {
 }
 
 export interface RemoteGateway {
-  status(): RemoteAccessStatus;
+  status(): RemoteAccessStatus|Promise<RemoteAccessStatus>;
   issuePairingCode(): Promise<RemotePairingCode>;
   listDevices(): Promise<RemoteDeviceInfo[]>;
   revokeDevice(deviceId: string): Promise<void>;

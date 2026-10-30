@@ -14,6 +14,16 @@ function api() {
 }
 afterEach(cleanup);
 describe("v2 task dashboard", () => {
+  it('uses the connected local host catalog when a phone explicitly selects this PC',async()=>{
+    const host=api();
+    host.hostState=vi.fn(async()=>({tasks:[task()],terminals:[],hosts:[],connected:true,observedAt:1000}));
+    host.executionCatalog=vi.fn(async():Promise<import('@shared/execution-catalog').ExecutionCatalog>=>({version:1,platform:'linux',...(await host.configuration()),availableProviders:['codex'],repositories:[]}));
+    host.inspectHostRepository=vi.fn();host.startRegisteredTask=vi.fn();
+    render(<TaskPanel api={host} hostId="host" hostName="This PC"/>);
+    await screen.findByText('Existing task');
+    await waitFor(()=>expect(host.executionCatalog).toHaveBeenCalledWith('host'));
+    expect(screen.queryByText(/호스트 연결 끊김/)).not.toBeInTheDocument();
+  });
   it("uses the selected worker PC's model profiles and requires its checked checkout before team launch",async()=>{
     const host=api(),draft=task();draft.participants[0].attempt={...draft.participants[0].attempt,delivery:"none",execution:"not_started",commandId:null};
     draft.participants.push({...draft.participants[0],id:"remote-worker",role:"worker",hostId:"worker-pc",profileId:"worker-profile",attempt:{...draft.participants[0].attempt,id:"worker-attempt"}});

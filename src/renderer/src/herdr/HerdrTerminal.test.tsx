@@ -15,6 +15,12 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("shared Herdr terminal ownership and input", () => {
+  it('reports readiness only after a surface is rendered and clears it on disconnect',()=>{
+    const ready=vi.fn(),t=transport();render(<HerdrTerminal sessionId="s" viewerId="phone" ownerId={null} transport={t} onReady={ready}/>);
+    expect(ready).not.toHaveBeenCalledWith(true);
+    act(()=>receive({type:'surface',surface:surface()}));expect(ready).toHaveBeenLastCalledWith(true);
+    act(()=>receive({type:'disconnected',observedAt:1000}));expect(ready).toHaveBeenLastCalledWith(false);
+  });
   it("accepts a fresh connection's lower surface revision after host restart without taking control",()=>{
     const t=transport();render(<HerdrTerminal sessionId="s" viewerId="viewer" ownerId={null} transport={t}/>);
     act(()=>receive({type:"surface",surface:{...surface(),surface_revision:70}}));
