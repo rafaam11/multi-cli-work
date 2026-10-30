@@ -127,9 +127,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await expect(page.getByText(/연결 끊김 · 마지막 관찰/)).toBeVisible();
     await expect(page.getByLabel("터미널 입력",{exact:true})).toHaveAttribute("aria-readonly","true");
     await expect.poll(()=>{try{process.kill(descriptor.pid,0);return true;}catch{return false;}}).toBe(false);
-    const executable=process.env.MCW_V2_E2E_EXECUTABLE;
-    const resourcesDirectory=executable?path.join(path.dirname(executable),"resources/v2"):path.resolve("build/v2");
-    const bridgeDirectory=executable?path.join(path.dirname(executable),"resources/herdr-bridge"):path.resolve(`build/herdr-bridge/${process.platform}-${process.arch}`);
+    const {resourcesDirectory,bridgeDirectory}=JSON.parse(await fs.readFile(path.join(directory,'recovery/active-host-runtime.json'),'utf8')) as {resourcesDirectory:string;bridgeDirectory:string};
     const windows=process.platform==="win32";
     const restarted=await ensureHostProcess({directory:path.join(`${userData}-v2`,"host"),hostId:descriptor.hostId,entryPath:path.join(resourcesDirectory,"host/mcw-host.js"),executablePath:path.join(resourcesDirectory,windows?"node/windows/node.exe":"node/linux/node"),electronExecutable:false,terminalConfig:{...await resolveHerdrResource(resourcesDirectory),bridgePath:path.join(bridgeDirectory,windows?"mcw-herdr-bridge.exe":"mcw-herdr-bridge")}});
     client=new HostClient(restarted);

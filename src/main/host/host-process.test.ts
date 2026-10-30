@@ -56,3 +56,9 @@ it("refuses a live unavailable descriptor without replacing or killing its proce
   await expect(ensureHostProcess({ directory, hostId: "fixture-host", entryPath: "NEVER-START.js", terminalConfig })).rejects.toThrow(/alive but unavailable/);
   expect(await readHostDescriptor(directory)).toEqual(descriptor);
 });
+it('retains private startup diagnostics when the bundled host exits before readiness',async()=>{
+  const directory=await mkdtemp(path.join(os.tmpdir(),'mcw-host-log-test-'));directories.push(directory);
+  const entryPath=path.join(directory,'missing-fixture.cjs');
+  await expect(ensureHostProcess({directory,hostId:'fixture-host',entryPath,terminalConfig,executablePath:process.execPath,electronExecutable:false,startupTimeoutMs:5000})).rejects.toThrow('exited before readiness');
+  expect(await readFile(path.join(directory,'mcw-host-startup.log'),'utf8')).toContain('missing-fixture.cjs');
+});

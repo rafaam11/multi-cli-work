@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import {constants} from 'node:fs';
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -6,6 +7,7 @@ import lockfile from "proper-lockfile";
 import { hostDescriptorPath, type HostDescriptor } from "./gateway";
 import { HostClient } from "./host-client";
 import { isolatedHostEnvironment } from "../v2/provider-mods";
+import {requirePlainPath} from '../recovery/controller-state';
 
 export interface HostProcessOptions {
   directory: string; hostId: string; entryPath: string; executablePath?: string; electronExecutable?: boolean;
@@ -42,7 +44,7 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
     }
     let child: ReturnType<typeof spawn> | undefined;
     let launchError: Error | undefined;
-    const launch = () => {
+    const launch = async () => {
       const executable = options.executablePath ?? process.execPath;
       const env = isolatedHostEnvironment(process.env);
       const electron = options.electronExecutable ?? (executable === process.execPath && !!process.versions.electron);
@@ -52,8 +54,15 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
       if (options.bindAddress) args.push("--bind-address", options.bindAddress);
       if (options.allowRemote) args.push("--allow-remote");
       if (options.advertisedHost) args.push("--advertised-host", options.advertisedHost);
-      child = spawn(executable, args, { detached: true, windowsHide: true, stdio: "ignore", env, cwd: path.dirname(path.resolve(options.entryPath)) });
-      child.once("error", error => { launchError = error; }); child.unref();
+      const filename=path.join(options.directory,'mcw-host-startup.log');await requirePlainPath(filename,true);
+      const existingLog=await fs.lstat(filename).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
+      if(existingLog&&!existingLog.isFile())throw new Error('Host startup log is not a regular file');
+      const log=await fs.open(filename,constants.O_WRONLY|constants.O_CREAT|constants.O_APPEND|(constants.O_NOFOLLOW??0),0o600);
+      try{
+        await log.chmod(0o600);
+        child = spawn(executable, args, { detached: true, windowsHide: true, stdio: ['ignore',log.fd,log.fd], env, cwd: path.dirname(path.resolve(options.entryPath)) });
+        child.once("error", error => { launchError = error; }); child.unref();
+      }finally{await log.close();}
     };
     const deadline = Date.now() + timeout;
     do {
@@ -61,7 +70,7 @@ export async function ensureHostProcess(options: HostProcessOptions): Promise<Ho
       if (child && child.exitCode !== null) throw new Error("Host process exited before readiness");
       const descriptor = await readHostDescriptor(options.directory);
       if (descriptor && descriptor.hostId === options.hostId && (!existing || descriptor.instanceId !== existing.instanceId) && await ready(descriptor)) return descriptor;
-      if (!child && !await lockfile.check(path.join(options.directory, "mcw-host-runtime"), { realpath: false, stale: 10000 })) launch();
+      if (!child && !await lockfile.check(path.join(options.directory, "mcw-host-runtime"), { realpath: false, stale: 10000 })) await launch();
       await delay(100);
     } while (Date.now() < deadline);
     // Leave a slow host alive: killing it could interrupt work already accepted elsewhere.

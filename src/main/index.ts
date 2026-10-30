@@ -9,6 +9,7 @@ import { checkForUpdates, initUpdater, quitAndInstall, suspendUpdaterForRecovery
 import {createDesktopRecovery,preserveRecoveryInstallation,assertRecoveryStartupAllowed} from './recovery/desktop-recovery';
 import {originalInstallTarget} from './recovery/install-target';
 import {captureV1ProviderEnvironment} from './recovery/v1-launch';
+import {stageManagedHostRuntime} from './v2/managed-runtime';
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
 import { taskbarBadgeSpec, trayTooltip } from "./window-badge";
 import type { AttentionSnapshot } from "./attention-policy";
@@ -273,7 +274,10 @@ if (!hasSingleInstanceLock) {
         const recoveryOptions={hostId,v1ProviderEnvironment:captureV1ProviderEnvironment(process.env),backupDirectory:prepared.backupDirectory,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
         // Keep the independent launchers usable even if daemon initialization fails.
         await preserveRecoveryInstallation(recoveryOptions);
-        v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory,bridgeDirectory,entryPath:path.join(resourcesDirectory,"host/mcw-host.js")}),backupDirectory:prepared.backupDirectory};
+        const managed=await stageManagedHostRuntime({resourcesDirectory,bridgeDirectory,recoveryRoot:prepared.recoveryRoot});
+        recoveryOptions.runtimePaths=managed.runtimePaths;
+        await preserveRecoveryInstallation(recoveryOptions);
+        v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory:managed.resourcesDirectory,bridgeDirectory:managed.bridgeDirectory,entryPath:managed.entryPath}),backupDirectory:prepared.backupDirectory};
         v2Host.recovery=await createDesktopRecovery({...recoveryOptions,...v2Host,suspendUpdater:suspendUpdaterForRecovery,quit:requestQuit,openDirectory:directory=>shell.openPath(directory)});
       }
       const {createDesktopRuntime} = await import("./runtime");

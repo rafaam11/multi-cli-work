@@ -95,6 +95,7 @@ test('original installer offline v1 → v2 → v1.55.1 → v2 preserves both dat
     for(const result of cleanup)if(result.status==='rejected')diagnostics.push(`Fixture cleanup: ${result.reason}`);
     await fs.writeFile(info.outputPath('recovery-diagnostics.txt'),diagnostics.join(''));
     if(operationDirectory)for(const name of ['state.json','recovery.log']){const data=await fs.readFile(path.join(operationDirectory,name)).catch(()=>null);if(data)await fs.writeFile(info.outputPath(name),data);}
+    for(const name of ['mcw-host-startup.log','herdr/herdr-server.log']){const data=await fs.readFile(path.join(`${fixture.userData}-v2`,'host',name)).catch(()=>null);if(data)await fs.writeFile(info.outputPath(path.basename(name)),data);}
     // The entire disposable installation and receipts remain available on failure.
     await info.attach('disposable-fixture',{body:fixture.directory,contentType:'text/plain'});
     if(cleanup.some(result=>result.status==='rejected'))throw new Error('Disposable policy/network cleanup failed; inspect recovery-diagnostics.txt');

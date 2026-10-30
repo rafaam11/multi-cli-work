@@ -83,5 +83,12 @@ if (process.argv.includes("--connection-info")) {
     process.stdout.write(JSON.stringify(descriptor)+"\n");
   }).catch(()=>{process.stderr.write("MCW SSH discovery unavailable; verify the running host and saved identity.\n");process.exitCode=1;});
 } else if (process.argv.includes("--mcw-host")) {
-  void runHostProcess().catch(() => { process.stderr.write("mcw-host startup failed; inspect private host state.\n"); process.exitCode = 1; });
+  void runHostProcess().catch(error => {
+    const details:string[]=[];let cause:unknown=error;
+    for(let depth=0;depth<4&&cause instanceof Error;depth++){
+      // A JSON parser may echo fragments of private records; keep those out of logs.
+      details.push(cause instanceof SyntaxError?'Stored JSON could not be parsed':(cause.stack??cause.message).slice(0,6000));cause=cause.cause;
+    }
+    process.stderr.write(`mcw-host startup failed; inspect private host state.\n${details.join('\nCaused by: ')}\n`);process.exitCode=1;
+  });
 }
