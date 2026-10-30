@@ -1,6 +1,6 @@
 # Offline v1.55.1 recovery
 
-This engine uses Node built-ins and does not import Electron, the app registry, provider transcripts, or Git. Every mutation takes explicit paths. Development tests use temporary directories only.
+The core engine uses Node built-ins and does not import Electron, provider transcripts, or Git. The bundled production controller additionally uses the host transport, its durable recovery holds, a native read-only process observer, and an ASAR reader to verify the installed package. Every mutation takes explicit paths. Development tests use temporary directories only.
 
 The main-process facade is `src/main/recovery/index.ts`; shared contracts are in `src/shared/recovery-types.ts`. Bootstrap must await `createV1Backup` or verify the existing backup before importing registry-bearing runtime modules. `getV2DataLayout` gives separate `-v2` userData and registry paths, and rejects overlaps with v1 and the outside-install recovery root.
 
@@ -16,7 +16,13 @@ The main-process facade is `src/main/recovery/index.ts`; shared contracts are in
 
 `stageRecoveryAssets` verifies original installer bytes against the hardcoded official v1.55.1 hashes, and writes the scripts, launcher, pinned standalone Node executable, asset digest manifest and installer outside the replaceable install directory. Explicit runtimes require `runtimeSha256`. Copying Electron alone is rejected: a real isolated executable probe must identify standalone Node >=22.12, and the copied runner must pass `runtime-smoke`. Packaged callers must provide `scriptDirectory: <resources>/recovery` and the pinned runtime from `<resources>/v2/node/<platform>`. A current standalone Node process can stage itself for developer use. Cross-platform resources must be staged and smoke-tested on their matching OS.
 
-Commands:
+The packaged desktop stages a digest-named runtime directory without replacing earlier recovery bundles. It contains `recovery-controller.cjs` and the process observer as verified assets, as well as the original installers, core scripts and standalone Node. `installation.json`, operation requests, phase journals and controller logs live beside these bundles, outside the app installation and both data generations. The recovery directory also has `return-to-v1`, `recovery-status`, and `cancel-return-to-v1` launchers (`.cmd`/`.sh`). The standalone begin command observes the existing host; unavailable host startup recovery still requires additional offline process/store reconciliation and is not claimed covered by this implementation.
+
+`Settings → 업데이트 → v1.55.1로 돌아가기` starts a separate controller after showing the restoration scope. It takes a durable host-wide admission hold locally and task-scoped holds on related PCs. Existing terminal input, observation and task messages remain available. Every hold intent is synced before dispatch. An unknown response is reconciled by read-only lookup, never by repeating the dispatch. Remote instance changes, missing scopes, pending delivery/outboxes, unobserved processes, or active work prevent restoration. Explicit cancellation releases only that operation's holds, remote scopes first. GUI observation of a recovery initiated outside the GUI also disables the updater quit hook; normal quit rechecks that state.
+
+Once work settles, the GUI exits normally. The independent controller observes process exit, asks the local host to shut down once, then confirms native process identities and residual MCW instances. Remote SSH links belong to the controller and stay usable while the GUI/host are stopped. Preservation re-observes the hosts before and after long copies. The original installer runs only after preservation and conflict checks. The restored working copy disables automatic update checks, session resume and repository synchronization. The updater cache is retained under a different name before v1 starts. A failed installation or activation blocks a new v2 startup/recovery until its retained journal is inspected; cancellation of admission holds does not declare interrupted data restoration repaired.
+
+Core commands:
 
 ```text
 node scripts/recovery/recover.mjs verify <backup-directory>
@@ -27,5 +33,7 @@ node scripts/recovery/recover.mjs backup|prepare|activate|rollback <request.json
 ```
 
 Mutating commands other than asset staging require an absolute `controllerModule` in the request. That trusted local ES module exports `createAdapter(options)` returning the lifecycle adapter. A static JSON `stopped: true` claim is intentionally insufficient. Offline rollback still needs actual local-process and remote-work authority; unavailable hosts block it until their work is verifiably stopped or an explicit user-stop decision is recorded by that authority. `compareV1WithBackup` reports added/removed/changed v1 paths for reupgrade without merging them into retained v2 state.
+
+The bundled controller also provides `begin|status|cancel <installation.json>` and `rollback|status|cancel <request.json>` directly. These are recovery operations, not a replacement session-control CLI. It never automatically resumes an interrupted installation. Debian elevation uses `pkexec` for `dpkg` alone; the controller and app-data restoration retain the user's UID.
 
 Validation includes real temporary filesystem copies and Node child processes, junction/symlink containment, manifest traversal, missing/corrupt/incomplete/extra files, version separation, safe restored settings, preserved v2 results, retained pre-restore directories, conflict journals, and injected ENOSPC/EACCES fsync failures. Fault injection demonstrates fail-closed handling, not a physical full disk or an OS permission round trip. Actual Windows installer, Linux deb/AppImage, installed-data launch verification, and Android rollback compatibility remain separate release gates. No platform installer is exercised by unit tests.

@@ -199,7 +199,7 @@ export interface DesktopRuntime {
 
 /** What the custom title bar needs from the app shell, which only `index.ts` owns. */
 export interface DesktopWindowHost {
-  v2?: {client: HostClient; hostId: string; backupDirectory: string; refresh?(): Promise<void>};
+  v2?: {client: HostClient; hostId: string; backupDirectory: string; refresh?(): Promise<void>;recovery?:import('./recovery/desktop-recovery').DesktopRecovery};
   /** Lazy, because the runtime is built before the window exists. */
   getMainWindow(): BrowserWindow | null;
   /** 파일▸종료: the confirm-then-tear-down path, not a bare `app.quit()`. */

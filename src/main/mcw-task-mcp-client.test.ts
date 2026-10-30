@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import {Readable,Writable} from "node:stream";
 import {afterEach,expect,it,vi} from "vitest";
-import {readTaskMcpConnection,runTaskMcpClient} from "./mcw-task-mcp-client";
+import {runTaskMcpClient} from "./mcw-task-mcp-client";
+import {readTaskMcpConnection} from './host/task-mcp-connection';
 const directories:string[]=[];
 afterEach(async()=>{vi.unstubAllGlobals();await Promise.all(directories.splice(0).map(directory=>rm(directory,{recursive:true,force:true})));});
 it("reads private task authority without command-line credentials and uses it for stdio requests",async()=>{

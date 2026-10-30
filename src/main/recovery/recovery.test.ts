@@ -65,6 +65,12 @@ describe('offline recovery', () => {
     }
     await expect(stat(join(f.root, 'restore'))).rejects.toThrow();
   });
+  it('refreshes host evidence around a long preservation instead of reusing stale observations', async () => {
+    const f=await fixture();await createV1Backup({...f,sources:{userData:f.userData,registry:f.registry},assertStopped:stopped});
+    const observeHosts=vi.fn(async()=>[{hostId:'local',state:'stopped' as const,observedAt:Date.now()}]);
+    await prepareRollback({backupDirectory:f.destination,destination:join(f.root,'restore'),expectedHostIds:['local'],hosts:[{hostId:'local',state:'stopped',observedAt:1}],observeHosts,preserveV2Sources:{},assertStopped:stopped});
+    expect(observeHosts).toHaveBeenCalledTimes(2);
+  });
   it('prepares safe v1 defaults and preserves v2 state without changing either original', async () => {
     const f = await fixture(); await createV1Backup({ ...f, sources: { userData: f.userData, registry: f.registry }, assertStopped: stopped });
     const v2 = join(f.root, 'v2'); await mkdir(v2); await writeFile(join(v2, 'results.json'), '{"result":"keep"}');
@@ -86,6 +92,12 @@ describe('offline recovery', () => {
     const f = await fixture(); const installer = join(f.root, 'invalid.exe'); await writeFile(installer, 'not-the-original');
     await expect(stageRecoveryAssets({ destination: join(f.root, 'assets'), installDirectory: join(f.root, 'app'), installers: { win32: installer } })).rejects.toThrow(/digest/i);
     await expect(stat(join(f.root, 'assets', 'assets.json'))).rejects.toThrow();
+  });
+  it('rejects replacement runtime names, traversal and changed controller bytes before staging',async()=>{
+    const f=await fixture(),source=join(f.root,'controller.cjs');await writeFile(source,'controller');
+    for(const filename of ['../escape','core.mjs','recovery-node.exe','assets.json'])await expect(stageRecoveryAssets({destination:join(f.root,'assets'),installDirectory:join(f.root,'app'),installers:{},additionalAssets:[{source,filename,sha256:'0'.repeat(64),executable:false}]})).rejects.toThrow(/additional recovery asset/i);
+    await expect(stageRecoveryAssets({destination:join(f.root,'assets'),installDirectory:join(f.root,'app'),installers:{},additionalAssets:[{source,filename:'controller.cjs',sha256:'0'.repeat(64),executable:false}]})).rejects.toThrow(/digest mismatch/i);
+    await expect(stat(join(f.root,'assets'))).rejects.toThrow();
   });
   it('rejects manifest traversal even if its companion digest is recomputed', async () => {
     const { createHash } = await import('node:crypto'); const f = await fixture();

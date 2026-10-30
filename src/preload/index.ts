@@ -408,6 +408,7 @@ if (process.argv.includes("--mcw-v2")) {
       return () => {ipcRenderer.removeListener("v2:terminal-event", listener);void ipcRenderer.invoke("v2:terminal-unsubscribe", id, reference).catch(() => undefined);};
     },
     terminalCommand: (id, command) => ipcRenderer.invoke("v2:terminal-command", id, command), recoveryStatus: () => ipcRenderer.invoke("v2:recovery-status"),
+    beginRecovery:()=>ipcRenderer.invoke('v2:recovery-start'),cancelRecovery:()=>ipcRenderer.invoke('v2:recovery-cancel'),openRecovery:()=>ipcRenderer.invoke('v2:recovery-open'),
   };
   contextBridge.exposeInMainWorld("mcwV2", v2);
 }

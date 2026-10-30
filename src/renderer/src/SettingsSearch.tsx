@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { SettingsTab } from "./SettingsDialog";
-const ENTRIES: { tab: SettingsTab; title: string; keywords: string; phase: string; target?: string; v1Only?:boolean }[] = [
+const ENTRIES: { tab: SettingsTab; title: string; keywords: string; phase: string; target?: string; v1Only?:boolean;v2Only?:boolean }[] = [
+  {tab:'updates',title:'v1.55.1로 돌아가기',keywords:'롤백 복원 복구 업데이트 rollback recovery',phase:'복귀 준비 후 적용',v2Only:true},
   { tab: "general", title: "테마", keywords: "theme dark light 시스템 밝기", target: "settings-theme", phase: "즉시 적용" },
   { tab: "general", title: "시각 효과", keywords: "애니메이션 관제실 풍부하게 최소 effects 모션", target: "settings-effects", phase: "즉시 적용" },
   { tab: "general", title: "화면 밀도", keywords: "간격 compact comfortable density", target: "settings-density", phase: "즉시 적용" },
@@ -21,7 +22,7 @@ const ENTRIES: { tab: SettingsTab; title: string; keywords: string; phase: strin
 ];
 export function SettingsSearch({ onSelect }: { onSelect(tab: SettingsTab): void }) {
   const [query, setQuery] = useState("");
-  const matches = query.trim() ? ENTRIES.filter(entry => !(entry.v1Only&&window.mcwV2?.version===2)&&`${entry.title} ${entry.keywords}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) : [];
+  const matches = query.trim() ? ENTRIES.filter(entry => !(entry.v1Only&&window.mcwV2?.version===2)&&!(entry.v2Only&&window.mcwV2?.version!==2)&&`${entry.title} ${entry.keywords}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) : [];
   const select = (entry: typeof ENTRIES[number]) => {
     onSelect(entry.tab); setQuery("");
     if (entry.target) requestAnimationFrame(() => document.getElementById(entry.target!)?.focus());

@@ -8,7 +8,9 @@ import { WebSocket, WebSocketServer } from "ws";
 import { TaskStore } from "./task-store";
 import { isFetchPort } from "./http-port";
 import { TaskMcpServer } from "../mcw-task-mcp";
-import {readTaskMcpConnection} from "../mcw-task-mcp-client";
+import {attemptNeedsObservation,recoveryWorkInventory,recoveryTasksReady} from "../recovery/work-inventory";
+import {RecoveryWorkHolds,validateRecoveryHold} from "../recovery/work-holds";
+import {readTaskMcpConnection} from "./task-mcp-connection";
 import type { AttemptRef, TaskCreateInput, TaskIdentity,Task } from "../../shared/host-types";
 import type { LocalHostConnection, HostRegistration } from "../../shared/host-connection-types";
 import type { HostConnections } from "./host-connections";
@@ -91,15 +93,18 @@ export class HostGateway {
   private releaseLock?: () => Promise<void>;
   private descriptorValue?: HostDescriptor;
   private accepting = true;
+  private manuallyDraining=false;
+  private readonly recoveryHolds:RecoveryWorkHolds;
   private readonly limit: number;
   private closing?: Promise<void>;
   private authWrites = Promise.resolve();
   private pendingCreates = 0;
   constructor(readonly options: HostGatewayOptions) {
+    this.recoveryHolds=new RecoveryWorkHolds(options.directory);
     this.limit = options.maxBodyBytes ?? 262144;
     this.server.requestTimeout = 65000; this.server.headersTimeout = 10000;
     this.server.on("upgrade", (request, socket, head) => {
-      try { const url = this.validateRequest(request); if (url.pathname !== "/terminal" || !this.accepting) throw new HttpError(404, "Unknown endpoint"); }
+      try { const url = this.validateRequest(request); if (url.pathname !== "/terminal" || this.closing) throw new HttpError(404, "Unknown endpoint"); }
       catch { socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); return; }
       this.sockets.handleUpgrade(request, socket, head, websocket => this.connect(websocket, bearer(request)));
     });
@@ -124,6 +129,7 @@ export class HostGateway {
         for(const capability of parsed.capabilities){validateTaskIdentity(capability.identity);if(capability.scope!==undefined&&capability.scope!=="replica")throw new Error("Invalid capability scope");}
         this.credentials = parsed; await fs.chmod(credentialsFile, 0o600);
       } catch (error) { if (!missing(error)) throw error; this.credentials = { schemaVersion: 2, owner: secret(), capabilities: [] }; await writePrivateJson(credentialsFile, this.credentials); }
+      this.accepting=!await this.recoveryHolds.blocksHost();
       await this.options.prepare?.();
       let listening: ReturnType<typeof this.server.address> = null;
       for (let attempt=0;attempt<10;attempt++) {
@@ -187,14 +193,16 @@ export class HostGateway {
     const write = this.authWrites.then(async () => { const next = { ...this.credentials, capabilities: this.credentials.capabilities.filter(item => !equal(item.token, token)) }; await writePrivateJson(path.join(this.options.directory, "mcw-host-auth.json"), next); this.credentials = next; });
     this.authWrites = write.catch(() => undefined); await write;
   }
-  drain(): void { this.accepting = false; }
+  drain(): void { this.manuallyDraining=true;this.accepting = false; }
+  private async assertAdmission(taskId:string):Promise<void>{if(!this.accepting||await this.recoveryHolds.blocks(taskId))throw new HttpError(409,"Task admission is held for recovery");}
   /** Refuse daemon exit while work is live or its process state is unknown. */
   async canShutdown(): Promise<boolean> {
-    try{await this.options.terminals.refreshObservation?.();}catch{return false;}
+    try{
+    await this.options.terminals.refreshObservation?.();
     const sessions = await this.options.terminals.list();
     const uncertainSession = sessions.some(value => { const session = value as Record<string, unknown> | null; return !session || session.status !== "exited" || session.connected !== true || session.delivery === "unknown" || session.delivery === "pending"; });
-    const uncertain=(attempt:import("../../shared/host-types").TaskAttempt)=>["running", "idle", "lost"].includes(attempt.execution) || ["pending", "unknown"].includes(attempt.delivery) || (attempt.delivery === "delivered" && attempt.execution !== "exited");
-    return this.pendingCreates === 0 && !uncertainSession && !(await this.options.store.list()).some(task => task.participants.some(({attempt})=>uncertain(attempt))) && !(await this.options.workers?.replicas.list()??[]).some(({attempt})=>uncertain(attempt));
+    return this.pendingCreates === 0 && !uncertainSession && !(await this.options.store.listForRecovery()).some(task => task.participants.some(participant=>[participant.attempt,...participant.previousAttempts].some(attemptNeedsObservation))) && !(await this.options.workers?.replicas.listForRecovery()??[]).some(replica=>attemptNeedsObservation(replica.attempt)||replica.operations.some(operation=>!operation.acknowledged));
+    }catch{return false;}
   }
   private async route(request: IncomingMessage, response: ServerResponse): Promise<void> {
     try {
@@ -210,7 +218,7 @@ export class HostGateway {
       if(url.pathname==="/workers/prepare"&&method==="POST"){
         if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.workers)throw new HttpError(503,"Worker execution unavailable");
         const input=exactObject(await body(request,this.limit),["task","identity","selection"]);this.pendingCreates++;
-        try{reply(response,200,workerTransfer(await this.options.workers.prepare(input.task as Task,input.identity as TaskIdentity,input.selection as RegisteredTaskStart)));}finally{this.pendingCreates--;}
+        try{await this.assertAdmission(text((input.task as Task)?.id));reply(response,200,workerTransfer(await this.options.workers.prepare(input.task as Task,input.identity as TaskIdentity,input.selection as RegisteredTaskStart)));}finally{this.pendingCreates--;}
         return;
       }
       if(url.pathname==="/workers"&&method==="GET"){reply(response,200,(await this.options.workers?.replicas.list()??[]).map(workerTransfer));return;}
@@ -226,7 +234,7 @@ export class HostGateway {
         if(workerRoute[2]==="admit"&&method==="POST"){
           if(!this.accepting)throw new HttpError(409,"Host is draining");
           const input=exactObject(await body(request,this.limit),["task","commandId"]);this.pendingCreates++;
-          try{reply(response,200,await workers.admit(id,text(input.commandId),input.task as Task));}finally{this.pendingCreates--;}
+          try{const replica=await workers.replicas.get(id);await this.assertAdmission(replica.identity.taskId);reply(response,200,await workers.admit(id,text(input.commandId),input.task as Task));}finally{this.pendingCreates--;}
           return;
         }
         throw new HttpError(405,"Unsupported worker operation");
@@ -322,6 +330,46 @@ export class HostGateway {
       }
       if (url.pathname === "/health" && method === "GET") { reply(response, 200, { schemaVersion: 2, hostId: this.descriptor.hostId, instanceId: this.descriptor.instanceId, accepting: this.accepting }); return; }
       if(url.pathname==="/recovery-readiness"&&method==="GET"){reply(response,200,{hostId:this.descriptor.hostId,instanceId:this.descriptor.instanceId,accepting:this.accepting,canShutdown:await this.canShutdown(),checkedAt:Date.now()});return;}
+      if(url.pathname==="/recovery-plan"&&method==="GET"){
+        const canShutdown=await this.canShutdown();
+        const inventory=recoveryWorkInventory(this.descriptor.hostId,await this.options.store.listForRecovery(),(await this.options.workers?.replicas.listForRecovery()??[]).map(replica=>({...replica,pendingOperations:replica.operations.filter(operation=>!operation.acknowledged).length})));
+        reply(response,200,{schemaVersion:1,hostId:this.descriptor.hostId,instanceId:this.descriptor.instanceId,accepting:this.accepting,checkedAt:Date.now(),canShutdown,...inventory});return;
+      }
+      if(url.pathname==="/recovery/holds"&&method==="GET"){reply(response,200,await this.recoveryHolds.list());return;}
+      if(url.pathname==="/recovery/holds"&&method==="POST"){
+        const input=await body(request,this.limit);validateRecoveryHold(input);
+        if(input.taskIds===null){if(input.requesterHostId!==this.descriptor.hostId)throw new HttpError(403,"A host-wide recovery hold must belong to this PC");}
+        else {
+          const tasks=await this.options.store.list(),replicas=await this.options.workers?.replicas.list()??[];
+          if(input.taskIds.some(id=>!tasks.some(task=>task.id===id&&(task.ownerHostId===input.requesterHostId||task.participants.some(member=>member.hostId===input.requesterHostId)))&&!replicas.some(replica=>replica.identity.taskId===id&&(replica.ownerHostId===input.requesterHostId||replica.identity.hostId===input.requesterHostId))))throw new HttpError(403,"Recovery scope does not belong to the requesting PC");
+        }
+        const hold=await this.recoveryHolds.hold(input);this.accepting=!this.manuallyDraining&&!await this.recoveryHolds.blocksHost();reply(response,201,hold);return;
+      }
+      const recoveryHoldRoute=/^\/recovery\/holds\/([^/]+)(?:\/(release|readiness))?$/.exec(url.pathname);
+      if(recoveryHoldRoute){
+        const id=text(decodeURIComponent(recoveryHoldRoute[1]));
+        if(!recoveryHoldRoute[2]&&method==="GET"){reply(response,200,await this.recoveryHolds.get(id));return;}
+        if(recoveryHoldRoute[2]==="readiness"&&method==="GET"){
+          const hold=await this.recoveryHolds.get(id),holdActive=!!hold&&hold.releasedAt===null;
+          let ready=false,missingTaskIds:string[]=[];
+          if(holdActive&&hold){
+            if(hold.taskIds===null)ready=await this.canShutdown();
+            else {
+              try{
+                await this.options.terminals.refreshObservation?.();
+                const state=recoveryTasksReady(this.descriptor.hostId,hold.taskIds,await this.options.store.listForRecovery(),(await this.options.workers?.replicas.listForRecovery()??[]).map(replica=>({...replica,pendingOperations:replica.operations.filter(operation=>!operation.acknowledged).length})),await this.options.terminals.list());
+                ready=this.pendingCreates===0&&state.ready;missingTaskIds=state.missingTaskIds;
+              }catch{ready=false;}
+            }
+          }
+          reply(response,200,{hostId:this.descriptor.hostId,instanceId:this.descriptor.instanceId,holdActive,ready,checkedAt:Date.now(),missingTaskIds});return;
+        }
+        if(recoveryHoldRoute[2]==="release"&&method==="POST"){
+          const input=exactObject(await body(request,this.limit),["requesterHostId"]);
+          await this.recoveryHolds.release(id,text(input.requesterHostId));this.accepting=!this.manuallyDraining&&!await this.recoveryHolds.blocksHost();reply(response,200,{released:true});return;
+        }
+        throw new HttpError(405,"Unsupported recovery hold operation");
+      }
       if (url.pathname === "/drain" && method === "POST") { this.drain(); reply(response, 200, { accepting: false }); return; }
       if (url.pathname === "/shutdown" && method === "POST") { this.drain(); if (!await this.canShutdown()) throw new HttpError(409, "Active or unobserved work prevents shutdown"); reply(response, 200, { shutdown: true }); setImmediate(() => { void this.close().then(() => this.options.onShutdown?.()); }); return; }
       if (url.pathname === "/tasks" && method === "GET") { reply(response, 200, await this.options.store.list()); return; }
@@ -344,6 +392,7 @@ export class HostGateway {
             if (!this.options.startTask) throw new HttpError(503, "Task execution unavailable");
             this.pendingCreates++;
             try {
+              await this.assertAdmission(taskId);
               if(taskRoute[2]==="start-registered"&&!this.options.executionCatalog)throw new HttpError(503,"Host execution catalog unavailable");
               const selected=taskRoute[2]==="start-registered"?await this.options.executionCatalog!.prepare(await this.options.store.inspect(taskId),input):input;
               reply(response, 200, await this.options.startTask(taskId, selected));

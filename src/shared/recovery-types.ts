@@ -21,12 +21,18 @@ export interface PrepareRollbackOptions extends RollbackHostInventory {
   backupDirectory: string; destination: string; preserveV2Sources: RecoverySources;
   /** Must throw when GUI/host/CLI state is running, unobservable, or not exclusively stopped. */
   assertStopped(): Promise<void>;
+  observeHosts?(): Promise<RecoveryHostObservation[]>;
 }
 export interface PreparedRollbackReceipt {
   schema: 1; kind: 'mcw-prepared-rollback'; version: '1.55.1'; backupDirectory: string; preparedAt: string;
   v1Entries: RecoveryEntry[]; v2Entries: RecoveryEntry[];
 }
 export type RecoveryInstallerPlatform = 'win32' | 'deb' | 'appimage';
+export type RecoveryPhase='starting'|'holding'|'waiting-work'|'waiting-gui'|'stopping-host'|'preserving'|'installing'|'verifying-install'|'clearing-updater'|'launching'|'complete'|'cancelled'|'failed';
+export interface RecoveryStatus {
+  available:boolean;backupDirectory:string;assetsDirectory?:string;reason?:string;
+  operation?:{id:string;phase:RecoveryPhase;observations:RecoveryHostObservation[];error?:string;canCancel:boolean;needsInspection:boolean};
+}
 export interface RecoveryAssetsManifest {
   schema: 1; version: '1.55.1'; runtimeName: string; runtimeSha256: string;
   assets: { filename: string; size: number; sha256: string }[]; installers: RecoveryInstallerPlatform[];

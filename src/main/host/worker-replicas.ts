@@ -76,6 +76,7 @@ export class WorkerReplicas {
   }
   onChange(callback:()=>void):()=>void{this.changes.on("change",callback);return()=>this.changes.off("change",callback);}
   async list():Promise<WorkerReplica[]>{return clone((await readJsonStore(this.spec,this.filePath)).value.replicas);}
+  async listForRecovery():Promise<WorkerReplica[]>{const stored=await readJsonStore(this.spec,this.filePath);if(!stored.writable)throw new ReplicaError(stored.warning??'Worker snapshot requires reconciliation');return clone(stored.value.replicas);}
   async get(id:string):Promise<WorkerReplica>{validateTaskId(id);const entry=(await this.list()).find(entry=>entry.id===id);if(!entry)throw new ReplicaError("Unknown worker replica");return entry;}
   private find(state:Registry,identity:TaskIdentity,current=true):WorkerReplica{validateTaskIdentity(identity);const entry=state.replicas.find(entry=>sameTaskIdentity(entry.identity,identity));if(!entry)throw new ReplicaError("Unknown worker identity");member(entry.task,identity,current);return entry;}
   private async update<T>(operation:(state:Registry)=>T):Promise<T>{let result!:T;await updateJsonStore(this.spec,this.filePath,state=>{result=operation(state);return state;});this.changes.emit("change");return clone(result);}

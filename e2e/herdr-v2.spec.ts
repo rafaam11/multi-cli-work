@@ -12,6 +12,7 @@ import {resolveHerdrResource} from "../src/main/v2/herdr-resource";
 import { TaskStore } from "../src/main/host/task-store";
 import { applySurfaceEvent } from "../src/shared/herdr-surface-model";
 import type { PaneSurfaceFrame, HerdrSurfaceEvent } from "../src/shared/herdr-surface-types";
+import {exerciseRecoveryHold} from './recovery-hold';
 
 test("v2 Canvas and independent host survive GUI quit and reconnect without launching a duplicate", async ({}, info) => {
   test.skip(process.env.MCW_V2_E2E !== "1", "Requires pinned v2 runtime resources; run after build:v2");
@@ -55,7 +56,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     const inspected=await client.request<import("../src/shared/execution-catalog").RepositoryInspection>(`/execution-catalog/repositories/${projectId}`);
     expect(inspected.expectedHead).toBe(fixtureHead);expect(inspected.repository.id).toBe(projectId);
     expect((await git("status","--porcelain")).stdout.trim()).toBe("");
-    const recovery=path.join(directory,"recovery/v1.55.1-recovery"),modBackup=path.join(directory,"recovery/v1-mods-before-v2");
+    const recovery=JSON.parse(await fs.readFile(path.join(directory,'recovery/active-runtime.json'),'utf8')).directory as string,modBackup=path.join(directory,"recovery/v1-mods-before-v2");
     const proof=await promisify(execFile)(path.join(recovery,process.platform==="win32"?"recovery-node.exe":"recovery-node"),[path.join(recovery,"recover.mjs"),"verify-mods",modBackup],{windowsHide:true,timeout:10000});
     expect(JSON.parse(proof.stdout).entries.some((entry:{path:string})=>entry.path.endsWith("/v1-source.txt"))).toBe(true);
     expect(await fs.readFile(path.join(v1Mod,"v1-source.txt"),"utf8")).toBe("v1 mod original\r\n");
@@ -99,6 +100,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await herdrApi.request("pane.report_metadata",{pane_id:before[0].paneId,source:"mcw-chips-v2",tokens:{"mcw-test":"green|검증 완료","mcw-progress":"normal|40"},ttl_ms:60000});
     await expect(page.getByTestId("pane-chip").filter({hasText:"검증 완료"})).toBeVisible();
     await page.screenshot({path:info.outputPath("herdr-metadata.png")});
+    await exerciseRecoveryHold({directory,recovery,userData,registry,app,page,client,info});
     const firstProcess=app.process(); await app.evaluate(({app})=>app.quit()); await expect.poll(()=>firstProcess.exitCode).not.toBe(null); app=undefined;
     expect((await client.terminals() as {id:string}[])[0].id).toBe(session.id);
     app=await launch();page=await app.firstWindow();
@@ -149,7 +151,8 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     await reopenedSettings.locator(".v2-remote-tasks").screenshot({path:info.outputPath("remote-task-offline.png")});
     await page.keyboard.press("Escape");
     expect(await fs.readFile(path.join(registry,"projects.json"),"utf8")).toContain("Herdr 검증");
-    await expect(fs.access(path.join(directory,`recovery/v1.55.1-recovery/recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(recovery,`recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(recovery,'recovery-controller.cjs'))).resolves.toBeUndefined();
     succeeded = true;
   } catch (error) {
     if(app)for(const window of app.windows()) console.error("v2 renderer diagnostic:",await window.evaluate(()=>document.body.innerText).catch(()=>null));

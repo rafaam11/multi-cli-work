@@ -33,5 +33,8 @@ export interface McwV2Api {
   createTerminal(input:Record<string,unknown>):Promise<V2TerminalSummary>;
   subscribeTerminal(sessionId:string,onEvent:(event:unknown)=>void):()=>void;
   terminalCommand(sessionId:string,command:Record<string,unknown>):Promise<void>;
-  recoveryStatus():Promise<{available:boolean;backupDirectory:string;reason?:string}>;
+  recoveryStatus():Promise<import('./recovery-types').RecoveryStatus>;
+  beginRecovery?():Promise<import('./recovery-types').RecoveryStatus>;
+  cancelRecovery?():Promise<import('./recovery-types').RecoveryStatus>;
+  openRecovery?():Promise<void>;
 }

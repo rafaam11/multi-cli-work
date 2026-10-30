@@ -6,16 +6,25 @@ import { HostClient } from "../host/host-client";
 import { stageRecoveryAssets, verifyRecoveryAssets, verifyStandaloneNodeRuntime } from "../recovery";
 import {resolveHerdrResource} from "./herdr-resource";
 
-export async function preserveRecoveryRuntime(resourcesDirectory: string, recoveryRoot: string, installDirectory: string, scriptDirectory: string): Promise<void> {
-  const destination = path.join(recoveryRoot, "v1.55.1-recovery");
-  try { await fs.lstat(destination); await verifyRecoveryAssets(destination, process.platform === "win32" ? "win32" : "deb"); if (process.platform === "linux") await verifyRecoveryAssets(destination,"appimage"); return; }
+export async function preserveRecoveryRuntime(resourcesDirectory: string, recoveryRoot: string, installDirectory: string, scriptDirectory: string, bridgeDirectory:string): Promise<string> {
+  const additionalAssets=await Promise.all([
+    {source:path.join(resourcesDirectory,'host/recovery-controller.cjs'),filename:'recovery-controller.cjs',executable:false},
+    {source:path.join(bridgeDirectory,process.platform==='win32'?'mcw-herdr-bridge.exe':'mcw-herdr-bridge'),filename:process.platform==='win32'?'recovery-process-bridge.exe':'recovery-process-bridge',executable:true},
+  ].map(async asset=>({...asset,sha256:createHash('sha256').update(await fs.readFile(asset.source)).digest('hex')})));
+  const bridgeReceipt=JSON.parse(await fs.readFile(path.join(bridgeDirectory,'bridge.json'),'utf8'));
+  if(bridgeReceipt.herdrVersion!=='0.9.5'||bridgeReceipt.sha256!==additionalAssets[1].sha256)throw new Error('독립 복구용 프로세스 브리지 검증에 실패했습니다.');
+  const revision=createHash('sha256').update(JSON.stringify(additionalAssets.map(({filename,sha256})=>({filename,sha256})))).update(await fs.readFile(path.join(scriptDirectory,'core.mjs'))).update(await fs.readFile(path.join(scriptDirectory,'recover.mjs'))).digest('hex').slice(0,16);
+  const destination = path.join(recoveryRoot, `v1.55.1-recovery-${revision}`);
+  const remember=async()=>{const temporary=path.join(recoveryRoot,`active-runtime-${randomUUID()}.tmp`);await fs.writeFile(temporary,JSON.stringify({schemaVersion:1,directory:destination}),{mode:0o600,flag:'wx'});await fs.rename(temporary,path.join(recoveryRoot,'active-runtime.json'));return destination;};
+  try { await fs.lstat(destination); await verifyRecoveryAssets(destination, process.platform === "win32" ? "win32" : "deb"); if (process.platform === "linux") await verifyRecoveryAssets(destination,"appimage"); return remember(); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   const manifest = JSON.parse(await fs.readFile(path.join(resourcesDirectory, "assets.json"), "utf8"));
   const node = manifest.nodeRuntimes.find((entry: {platform: string}) => entry.platform === process.platform);
   if (!node) throw new Error("독립 복구 런타임을 찾을 수 없습니다.");
   const runtime = node.members.find((entry: {output: string}) => entry.output === (process.platform === "win32" ? "node.exe" : "node"));
   const installers = Object.fromEntries(manifest.assets.filter((entry: {role: string; platform: string}) => entry.role === "original-v1-installer" && entry.platform === process.platform).map((entry: {id: string; file: string}) => [entry.id === "recovery-windows" ? "win32" : entry.id === "recovery-deb" ? "deb" : "appimage", path.join(resourcesDirectory, entry.file)]));
-  await stageRecoveryAssets({destination,installDirectory,installers,runtimeExecutable:path.join(resourcesDirectory,node.directory,runtime.output),runtimeSha256:runtime.sha256,scriptDirectory});
+  await stageRecoveryAssets({destination,installDirectory,installers,runtimeExecutable:path.join(resourcesDirectory,node.directory,runtime.output),runtimeSha256:runtime.sha256,scriptDirectory,additionalAssets});
+  return remember();
 }
 
 export interface DesktopHostOptions { userData: string; registryRoot:string; resourcesDirectory: string; bridgeDirectory: string; entryPath: string }

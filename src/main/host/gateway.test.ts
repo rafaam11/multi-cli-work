@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat,writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
@@ -342,6 +342,60 @@ it("permits shutdown only for freshly confirmed exits and rejects pending termin
   expect(await gateway.canShutdown()).toBe(false);
   expect((await fetchRoute("/shutdown", { method: "POST" })).status).toBe(409);
   resolveCreate(); expect((await creation).status).toBe(201);
+});
+
+it("reports related remote work in a read-only owner recovery plan",async()=>{
+  const {client,store,fetchRoute,gateway}=await setup();
+  const task=await store.createTask({...taskInput,workers:[{provider:"codex",profileId:"remote",hostId:"pc-b"}]});
+  const worker=task.participants[1],ref={taskId:task.id,participantId:worker.id,attemptId:worker.attempt.id,generation:worker.attempt.generation};
+  await store.beginDelivery(await store.bind(ref),"pending-remote");
+  const response=await fetchRoute("/recovery-plan");expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({schemaVersion:1,hostId:"pc-a",accepting:true,canShutdown:false,related:[{hostId:"pc-b",taskIds:[task.id]}]});
+  expect((await client.health()).accepting).toBe(true);
+  const lead=task.participants[0],token=await gateway.issueTaskToken({taskId:task.id,participantId:lead.id,attemptId:lead.attempt.id,generation:lead.attempt.generation});
+  expect((await fetchRoute("/recovery-plan",{headers:{authorization:`Bearer ${token}`}})).status).toBe(403);
+});
+
+it("keeps terminal observation available after new work is drained",async()=>{
+  const {gateway,descriptor,terminals}=await setup();terminals.sessions.set("s",{id:"s"});gateway.drain();
+  const connected=await viewer(descriptor.url,descriptor.token);
+  connected.send({type:"subscribe",sessionId:"s"});expect(await connected.next("snapshot")).toMatchObject({type:"snapshot"});
+});
+
+it("enforces durable scoped recovery holds while leaving other tasks and messages available",async()=>{
+  const startTask=vi.fn(async()=>({started:true}));const {store,client,fetchRoute,gateway,directory,terminals}=await setup({startTask});
+  const first=await store.createTask(taskInput),second=await store.createTask(taskInput);
+  const hold={id:"recovery-fixture",requesterHostId:"pc-a",taskIds:[first.id]};
+  const response=await fetchRoute("/recovery/holds",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(hold)});
+  expect(response.status).toBe(201);
+  await expect(client.startTask(first.id,{})).rejects.toThrow(/recovery|held/i);
+  await expect(client.startTask(second.id,{})).resolves.toMatchObject({started:true});
+  terminals.sessions.set("unrelated",{id:"unrelated",status:"working",connected:true,delivery:"delivered"});
+  expect(await client.request(`/recovery/holds/${hold.id}/readiness`)).toMatchObject({hostId:"pc-a",ready:true,holdActive:true});
+  await client.request(`/tasks/${first.id}/message`,"POST",{text:"preserve this message"});
+  expect((await store.inspect(first.id)).events.at(-1)?.text).toBe("preserve this message");
+  await gateway.close();const replacement=new HostGateway({directory,store,terminals,startTask});gateways.push(replacement);const next=new HostClient(await replacement.start());
+  await expect(next.startTask(first.id,{})).rejects.toThrow(/recovery|held/i);
+  await next.request(`/recovery/holds/${hold.id}/release`,"POST",{requesterHostId:"pc-a"});
+  expect(await next.request(`/recovery/holds/${hold.id}/readiness`)).toMatchObject({ready:false,holdActive:false});
+  await expect(next.startTask(first.id,{})).resolves.toMatchObject({started:true});
+});
+it("does not use an older fallback task snapshot as proof that recovery work is settled",async()=>{
+  const {store,gateway,client}=await setup();
+  await store.createTask(taskInput);await store.createTask(taskInput);
+  await writeFile(store.filePath,'{corrupt');
+  expect(await store.list()).toHaveLength(1); // The history remains viewable.
+  expect(await gateway.canShutdown()).toBe(false);
+  await expect(client.request('/recovery-plan')).rejects.toThrow();
+});
+it("keeps independent host-wide holds separate and refuses a foreign host-wide request",async()=>{
+  const {client,gateway,fetchRoute}=await setup();
+  const hold=(id:string)=>({id,requesterHostId:'pc-a',taskIds:null});
+  expect((await fetchRoute('/recovery/holds',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...hold('foreign'),requesterHostId:'pc-b'})})).status).toBe(403);
+  await client.request('/recovery/holds','POST',hold('one'));await client.request('/recovery/holds','POST',hold('two'));
+  await client.request('/recovery/holds/one/release','POST',{requesterHostId:'pc-a'});expect((await client.health()).accepting).toBe(false);
+  gateway.drain();await client.request('/recovery/holds/two/release','POST',{requesterHostId:'pc-a'});expect((await client.health()).accepting).toBe(false);
+  expect(await client.request('/recovery/holds')).toHaveLength(2);
 });
 it("rechecks terminal observation before recovery readiness and refuses stale cached exits",async()=>{
   const {gateway,terminals,client}=await setup();

@@ -5,6 +5,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 await mkdir(path.join(root, 'build/v2/host'), { recursive: true });
 await build({ absWorkingDir: root, entryPoints: ['src/main/mcw-host.ts', 'src/main/mcw-task-mcp-client.ts'], outdir: 'build/v2/host', platform: 'node', target: 'node22', format: 'cjs', bundle: true, packages: 'bundle', external: ['bufferutil', 'utf-8-validate'], legalComments: 'eof' });
+await build({absWorkingDir:root,entryPoints:['src/main/recovery/recovery-entry.ts'],outfile:'build/v2/host/recovery-controller.cjs',platform:'node',target:'node22',format:'cjs',bundle:true,packages:'bundle',external:['bufferutil','utf-8-validate','original-fs'],banner:{js:'const __mcwModuleUrl = require("node:url").pathToFileURL(__filename).href;'},define:{'import.meta.url':'__mcwModuleUrl'},legalComments:'eof'});
 await copyFile(path.join(root, 'scripts/v2/assets.json'), path.join(root, 'build/v2/assets.json'));
 const mod=path.join(root,'build/v2/mods/mcw-chips-v2');
 await mkdir(path.join(mod,'.claude-plugin'),{recursive:true});

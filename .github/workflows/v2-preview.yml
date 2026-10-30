@@ -63,6 +63,20 @@ jobs:
           DEBUG: pw:browser
         run: xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts
       - run: npx electron-builder --config electron-builder.v2-preview.cjs --publish never
+      - name: Verify packaged Windows modules and GUI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node scripts/v2/check-packaged-main.mjs release-v2-preview/win-unpacked/resources/app.asar
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:MCW_V2_E2E='1'
+          $env:MCW_V2_E2E_EXECUTABLE=(Resolve-Path 'release-v2-preview/win-unpacked/Multi CLI Work Preview.exe').Path
+          npx playwright test e2e/herdr-v2.spec.ts --output=test-results/packaged
+      - name: Verify packaged Linux modules and GUI
+        if: runner.os == 'Linux'
+        run: |
+          node scripts/v2/check-packaged-main.mjs release-v2-preview/linux-unpacked/resources/app.asar
+          MCW_V2_E2E=1 MCW_V2_E2E_EXECUTABLE="$PWD/release-v2-preview/linux-unpacked/multi-cli-work" xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts --output=test-results/packaged
       - run: node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release-v2-preview
       - uses: actions/upload-artifact@v7
         if: always()

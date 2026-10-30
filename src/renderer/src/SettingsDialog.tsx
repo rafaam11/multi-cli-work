@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import {RecoverySettings} from './herdr/RecoverySettings';
 import { isCategoryCode, sortCategoriesByCode } from "@shared/category-code";
 import { DRIVE_KINDS, driveKindLabel, inferDriveKind } from "@shared/drive-kind";
 import type { PcRootsInfo } from "@shared/pc-roots-types";
@@ -47,6 +48,7 @@ import { errorMessage } from "./ipc-error";
 
 export type SettingsTab =
   | "general"
+  | "updates"
   | "terminal"
   | "notifications"
   | "projects"
@@ -61,6 +63,7 @@ export type SettingsTab =
 
 const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "general", label: "일반" },
+  { id: "updates", label: "업데이트" },
   { id: "terminal", label: "터미널" },
   { id: "notifications", label: "알림" },
   { id: "projects", label: "프로젝트" },
@@ -1180,7 +1183,7 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
     >
       <div className="confirm-dialog settings-dialog" role="dialog" aria-modal="true" aria-label="설정">
         <nav className="settings-nav" aria-label="설정 분류">
-          {TABS.map((candidate) => (
+          {TABS.filter(candidate=>candidate.id!=='updates'||window.mcwV2?.version===2).map((candidate) => (
             <button
               key={candidate.id}
               type="button"
@@ -1193,6 +1196,7 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
         </nav>
         <div className="settings-body">
           <SettingsSearch onSelect={setTab} />
+          {tab==='updates'&&window.mcwV2?.version===2&&<RecoverySettings api={window.mcwV2}/>}
           {tab === "general" ? (
             <>
               <h2>일반</h2>

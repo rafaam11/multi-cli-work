@@ -1,11 +1,13 @@
-import { app, BrowserWindow, Menu, nativeImage, Tray, dialog } from "electron";
+import { app, BrowserWindow, Menu, nativeImage, Tray, dialog, shell } from "electron";
 import path from "node:path";
 import type { DesktopRuntime, DesktopWindowHost } from "./runtime";
 import os from "node:os";
 import { prepareV2Data, v2RegistryEnvironment } from "./v2/bootstrap";
 import { startDesktopHost, preserveRecoveryRuntime } from "./v2/desktop-host";
 import { trayIconDataUrl } from "./tray-icon";
-import { checkForUpdates, initUpdater, quitAndInstall } from "./updater";
+import { checkForUpdates, initUpdater, quitAndInstall, suspendUpdaterForRecovery, assertUpdaterAvailable } from "./updater";
+import {createDesktopRecovery,assertRecoveryStartupAllowed} from './recovery/desktop-recovery';
+import {resolveHerdrResource} from './v2/herdr-resource';
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
 import { taskbarBadgeSpec, trayTooltip } from "./window-badge";
 import type { AttentionSnapshot } from "./attention-policy";
@@ -177,6 +179,7 @@ async function confirmStoppingSessions(title: string, message: string, confirmLa
 
 async function requestQuit(): Promise<void> {
   if (!runtime || quitCoordinator.isCommitted()) return;
+  await v2Host?.recovery?.prepareQuit();
   await quitCoordinator.request({
     confirm: () => v2Enabled ? Promise.resolve(true) : confirmStoppingSessions(
       "멀티 터미널 작업기 종료",
@@ -190,6 +193,7 @@ async function requestQuit(): Promise<void> {
 // The updater must not call quitAndInstall on its own: this app owns PTYs whose state is only
 // persisted by runtime.dispose(), so the restart goes through the same teardown as an explicit Quit.
 async function installUpdateAndQuit(): Promise<void> {
+  await v2Host?.recovery?.prepareQuit();assertUpdaterAvailable();
   if (!runtime || quitCoordinator.isCommitted()) return;
   await quitCoordinator.request({
     confirm: () => confirmStoppingSessions(
@@ -253,6 +257,7 @@ if (!hasSingleInstanceLock) {
     try {
       if (v2Enabled) {
         const v1UserData = app.getPath("userData");
+        await assertRecoveryStartupAllowed(process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`);
         const prepared = await prepareV2Data({v1UserData, v1Registry: process.env.MCW_V1_REGISTRY ?? path.join(os.homedir(), ".multi-cli-work"), v1ClaudeConfig:process.env.MULTI_CLI_WORK_CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(),".claude"), recoveryRoot: process.env.MCW_RECOVERY_ROOT ?? `${v1UserData}-recovery`,
           assertStopped: async () => {if (!hasSingleInstanceLock || runtime) throw new Error("v1 종료를 확인하지 못했습니다.");}});
         app.setPath("userData", prepared.userData);
@@ -260,8 +265,12 @@ if (!hasSingleInstanceLock) {
         const sourceRoot = path.resolve(__dirname,"../..");
         const resourcesDirectory = app.isPackaged ? path.join(process.resourcesPath,"v2") : path.join(sourceRoot,"build/v2");
         const bridgeDirectory = app.isPackaged ? path.join(process.resourcesPath,"herdr-bridge") : path.join(sourceRoot,`build/herdr-bridge/${process.platform}-${process.arch}`);
-        await preserveRecoveryRuntime(resourcesDirectory, prepared.recoveryRoot, path.dirname(process.execPath), app.isPackaged ? path.join(process.resourcesPath,"recovery-scripts") : path.join(sourceRoot,"scripts/recovery"));
+        const recoveryAssets=await preserveRecoveryRuntime(resourcesDirectory, prepared.recoveryRoot, path.dirname(process.execPath), app.isPackaged ? path.join(process.resourcesPath,"recovery-scripts") : path.join(sourceRoot,"scripts/recovery"),bridgeDirectory);
         v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory,bridgeDirectory,entryPath:path.join(resourcesDirectory,"host/mcw-host.js")}),backupDirectory:prepared.backupDirectory};
+        const appImage=process.platform==='linux'?process.env.APPIMAGE:undefined;
+        const cacheRoot=process.platform==='win32'?(process.env.LOCALAPPDATA??path.join(os.homedir(),'AppData/Local')):(process.env.XDG_CACHE_HOME??path.join(os.homedir(),'.cache'));
+        const {binaryPath}=await resolveHerdrResource(resourcesDirectory);
+        v2Host.recovery=await createDesktopRecovery({...v2Host,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,installDirectory:appImage??path.dirname(process.execPath),executablePath:appImage??(process.platform==='win32'?path.join(path.dirname(process.execPath),'Multi CLI Work.exe'):path.join(path.dirname(process.execPath),'multi-cli-work')),runtimePaths:[binaryPath,path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],platform:process.platform==='win32'?'win32':appImage?'appimage':'deb',packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}],suspendUpdater:suspendUpdaterForRecovery,quit:requestQuit,openDirectory:directory=>shell.openPath(directory)});
       }
       const {createDesktopRuntime} = await import("./runtime");
       runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit, updateWindowAttention, {

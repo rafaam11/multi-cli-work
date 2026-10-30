@@ -212,7 +212,8 @@ export async function compareModBackup(directory,currentSources={}) {
 }
 export async function prepareRollback(options) {
   const { backupDirectory, destination, preserveV2Sources, assertStopped } = options;
-  requireStopped(assertStopped); assertRollbackHosts({ hosts: options.hosts, expectedHostIds: options.expectedHostIds }); await assertStopped();
+  const observe = async () => assertRollbackHosts({ hosts: options.observeHosts ? await options.observeHosts() : options.hosts, expectedHostIds: options.expectedHostIds });
+  requireStopped(assertStopped); await observe(); await assertStopped();
   await verifyV1Backup(backupDirectory); disjoint(destination, backupDirectory);
   const preservedRoots = sourcesList(preserveV2Sources); for (const [, root] of preservedRoots) disjoint(destination, root);
   await freshDirectory(destination); const v1 = path.join(destination, 'v1'); await mkdir(v1, { mode: 0o700 });
@@ -228,7 +229,7 @@ export async function prepareRollback(options) {
   settings.general = { ...settings.general, autoCheckUpdates: false, autoResumeSessions: false, repoSyncOnSessionStart: false };
   await writeFile(settingsPath, json(settings), { mode: 0o600 });
   await writeExclusive(path.join(destination, 'v2-preserved-manifest.json'), json({ schema: 1, entries: v2Entries }));
-  await verifyV1Backup(backupDirectory); assertRollbackHosts({ hosts: options.hosts, expectedHostIds: options.expectedHostIds });
+  await verifyV1Backup(backupDirectory); await observe();
   const receipt = { schema: 1, kind: 'mcw-prepared-rollback', version: '1.55.1', backupDirectory: path.resolve(backupDirectory), preparedAt: new Date().toISOString(), v1Entries: await scan(v1), v2Entries };
   await writeExclusive(path.join(destination, 'prepared.json'), json(receipt)); await unlink(path.join(destination, '.incomplete'));
   return receipt;
@@ -275,7 +276,14 @@ export async function restoreSharedConfig(journalDirectory) {
     return { restored, conflict: !restored };
   });
 }
-export async function stageRecoveryAssets({ destination, installDirectory, installers, runtimeExecutable, runtimeSha256, scriptDirectory = path.dirname(fileURLToPath(import.meta.url)) }) {
+export async function stageRecoveryAssets({ destination, installDirectory, installers, runtimeExecutable, runtimeSha256, additionalAssets = [], scriptDirectory = path.dirname(fileURLToPath(import.meta.url)) }) {
+  const reserved = new Set(['core.mjs', 'recover.mjs', 'assets.json', 'recover.cmd', 'recover.sh', 'recovery-node', 'recovery-node.exe', ...Object.values(ORIGINAL_INSTALLERS).map(item => item.filename)]);
+  if (!Array.isArray(additionalAssets) || additionalAssets.length > 16) throw new Error('Invalid additional recovery assets');
+  for (const asset of additionalAssets) {
+    if (!asset || typeof asset.filename !== 'string' || !/^[\w.-]{1,100}$/.test(asset.filename) || ['.', '..'].includes(asset.filename) || reserved.has(asset.filename) || !path.isAbsolute(asset.source) || !digestPattern.test(asset.sha256) || typeof asset.executable !== 'boolean') throw new Error('Invalid additional recovery asset');
+    reserved.add(asset.filename); disjoint(destination, asset.source);
+    if (sha(await stableRead(asset.source)) !== asset.sha256) throw new Error('Additional recovery asset digest mismatch');
+  }
   if (!runtimeExecutable) {
     if (process.versions.electron) throw new Error('A pinned standalone Node runtime is required; copying Electron alone is unsafe');
     runtimeExecutable = process.execPath; runtimeSha256 = sha(await stableRead(runtimeExecutable));
@@ -298,6 +306,7 @@ export async function stageRecoveryAssets({ destination, installDirectory, insta
   }
   for (const [platform, source] of selected) await copyAsset(source, ORIGINAL_INSTALLERS[platform].filename, platform === 'appimage', ORIGINAL_INSTALLERS[platform].sha256);
   await copyAsset(path.join(scriptDirectory, 'core.mjs'), 'core.mjs'); await copyAsset(path.join(scriptDirectory, 'recover.mjs'), 'recover.mjs');
+  for (const asset of additionalAssets) await copyAsset(asset.source, asset.filename, asset.executable, asset.sha256);
   const runtimeName = process.platform === 'win32' ? 'recovery-node.exe' : 'recovery-node'; await copyAsset(runtimeExecutable, runtimeName, true);
   await verifyStandaloneNodeRuntime(path.join(destination, runtimeName), runtimeSha256);
   await promisify(execFile)(path.join(destination, runtimeName), [path.join(destination, 'recover.mjs'), 'runtime-smoke'], { windowsHide: true, timeout: 15_000 });
@@ -376,7 +385,7 @@ export async function coordinateRollback(options) {
   await adapter.gracefulStop(); await adapter.assertNoInstances();
   hosts = await adapter.observeHosts(); assertRollbackHosts({ hosts, expectedHostIds: options.expectedHostIds });
   const assets = await verifyRecoveryAssets(options.assetsDirectory, options.platform);
-  await prepareRollback({ ...options, hosts, assertStopped: () => adapter.assertNoInstances() });
+  await prepareRollback({ ...options, hosts, observeHosts: () => adapter.observeHosts(), assertStopped: () => adapter.assertNoInstances() });
   await verifyPreparedRollback(options.destination);
   const conflicts = [];
   for (const journal of options.sharedConfigJournals ?? []) {
@@ -402,7 +411,10 @@ export async function installOriginalV1({ assetsDirectory, platform, installDire
     // NSIS requires /D to be last and unquoted in its own argv entry. No shell interpolation.
     command = installer; args = ['/S', `/D=${installDirectory}`];
   } else if (platform === 'deb' && process.platform === 'linux') {
-    command = '/usr/bin/dpkg'; args = ['--install', installer];
+    // Keep the recovery controller and data restoration under the user's UID.
+    // Only the original system package installer requests elevation.
+    command = process.getuid?.() === 0 ? '/usr/bin/dpkg' : '/usr/bin/pkexec';
+    args = [...(command.endsWith('/pkexec') ? ['/usr/bin/dpkg'] : []), '--install', installer];
   } else if (platform === 'appimage' && process.platform === 'linux') {
     await noLinks(path.dirname(installDirectory), true); await mkdir(path.dirname(installDirectory), { recursive: true, mode: 0o700 });
     const staged = `${installDirectory}.mcw-original-${randomUUID()}`; await writeExclusive(staged, await stableRead(installer), 0o700);

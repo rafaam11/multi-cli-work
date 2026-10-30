@@ -24,6 +24,7 @@ export interface V2IpcOptions {
   state?(): V2HostState;
   refresh?(): Promise<void>;
   repositoryProjectId?(directory:string): Promise<string|null>;
+  recovery?:import('../recovery/desktop-recovery').DesktopRecovery;
 }
 export function registerV2Ipc(options: V2IpcOptions): () => void {
   type Viewer = {socket?:HostTerminalSocket;references:Set<string>;ready:boolean;epoch:number;retry?:ReturnType<typeof setTimeout>;observedAt:number|null};
@@ -125,6 +126,9 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
     if (!viewer.ready) {if(command.type==="snapshot")return;throw new Error("호스트 연결이 복구되면 제어권을 다시 요청하세요.");}
     viewer.socket!.send(command);
   });
-  handle("recovery-status", (): Awaited<ReturnType<McwV2Api["recoveryStatus"]>> => ({ available: false, backupDirectory: options.backupDirectory, reason: "독립 복구본을 보존했습니다. 설치 왕복 검증 후 앱에서 복귀를 활성화합니다." }));
+  handle("recovery-status", () => options.recovery?.status()??({available:false,backupDirectory:options.backupDirectory,reason:'복구 실행기 연결을 확인하세요.'} satisfies Awaited<ReturnType<McwV2Api['recoveryStatus']>>));
+  handle("recovery-start",()=>{if(!options.recovery)throw new Error('복구 실행기가 없습니다.');return options.recovery.start();});
+  handle("recovery-cancel",()=>{if(!options.recovery)throw new Error('복구 실행기가 없습니다.');return options.recovery.cancel();});
+  handle("recovery-open",()=>{if(!options.recovery)throw new Error('복구 실행기가 없습니다.');return options.recovery.open();});
   return () => { for (const viewer of viewers.values()) closeViewer(viewer); viewers.clear(); for (const channel of channels) options.ipc.removeHandler(channel); };
 }

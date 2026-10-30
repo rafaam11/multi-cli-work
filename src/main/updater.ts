@@ -16,6 +16,16 @@ const REPOSITORY_URL = "https://github.com/rafaam11/multi-cli-work";
 let currentStatus: UpdaterStatus = { state: "idle" };
 let getWindow: () => MainWindowLike | null = () => null;
 let logger: UpdaterLogger | null = null;
+let recoveryPending = false;
+export function assertUpdaterAvailable():void {if(recoveryPending)throw new Error('v1 복귀 준비 중에는 업데이트를 설치할 수 없습니다.');}
+/** Recovery owns the next process exit. A previously downloaded v2 installer
+ * must never run from electron-updater's ordinary quit handler. */
+export function suspendUpdaterForRecovery(): () => void {
+  recoveryPending = true;
+  const previous = { autoDownload: autoUpdater.autoDownload, autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit };
+  autoUpdater.autoDownload = false; autoUpdater.autoInstallOnAppQuit = false;
+  return () => { recoveryPending = false; Object.assign(autoUpdater, previous); };
+}
 
 function logsPath(name: string): string {
   return path.join(app.getPath("userData"), "logs", name);
@@ -43,6 +53,7 @@ export function initUpdater(options: { autoCheck?: boolean; getWindow?: () => Ma
   logger = createUpdaterLogger(logsPath("updater.log"));
   autoUpdater.logger = logger;
   configureAutoUpdater(autoUpdater);
+  if (recoveryPending) { autoUpdater.autoDownload = false; autoUpdater.autoInstallOnAppQuit = false; }
   const failed = takeInstallAttempt(logsPath("update-attempt.json"), app.getVersion());
   autoUpdater.on("checking-for-update", () => publish({ state: "checking" }));
   autoUpdater.on("update-available", (info: UpdateInfo) => publish({ state: "available", version: info.version }));
@@ -59,10 +70,11 @@ export function initUpdater(options: { autoCheck?: boolean; getWindow?: () => Ma
     publish({ state: "installFailed", version: failed.to });
     return;
   }
-  if (options.autoCheck !== false) void autoUpdater.checkForUpdatesAndNotify();
+  if (options.autoCheck !== false && !recoveryPending) void autoUpdater.checkForUpdatesAndNotify();
 }
 
 export async function checkForUpdates(): Promise<void> {
+  if (recoveryPending) throw new Error("v1 복귀 준비 중에는 업데이트를 시작할 수 없습니다.");
   if (!app.isPackaged || process.env.MCW_RUNTIME === "v2-preview" || app.getVersion().includes("-preview")) {
     publish({ state: "idle" });
     return;
@@ -75,6 +87,7 @@ export async function checkForUpdates(): Promise<void> {
 }
 
 export function quitAndInstall(): void {
+  if (recoveryPending) throw new Error("v1 복귀 준비 중에는 업데이트를 설치할 수 없습니다.");
   if (!app.isPackaged) return;
   // isSilent=true runs the NSIS installer with /S. It also makes quitAndInstall read isForceRunAfter
   // instead of autoRunAppAfterInstall, so both flags must be true for the app to come back up.

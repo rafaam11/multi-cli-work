@@ -12,7 +12,7 @@ export function verifyPreparedRollback(directory: string): Promise<PreparedRollb
 export function activatePreparedRollback(options: { directory: string; targets: V1RecoverySources; assertStopped(): Promise<void> }): Promise<RecoveryActivation>;
 export function journalSharedConfig(options: { configPath: string; journalDirectory: string; nextBytes: Uint8Array }): Promise<ConfigJournal>;
 export function restoreSharedConfig(journalDirectory: string): Promise<{ restored: boolean; conflict: boolean }>;
-export function stageRecoveryAssets(options: { destination: string; installDirectory: string; installers: Partial<Record<RecoveryInstallerPlatform, string>>; runtimeExecutable?: string; runtimeSha256?: string; scriptDirectory?: string }): Promise<RecoveryAssetsManifest>;
+export function stageRecoveryAssets(options: { destination: string; installDirectory: string; installers: Partial<Record<RecoveryInstallerPlatform, string>>; runtimeExecutable?: string; runtimeSha256?: string; scriptDirectory?: string; additionalAssets?:{source:string;filename:string;sha256:string;executable:boolean}[] }): Promise<RecoveryAssetsManifest>;
 export function verifyRecoveryAssets(directory: string, platform: RecoveryInstallerPlatform): Promise<{ manifest: RecoveryAssetsManifest; installer: string }>;
 export function coordinateRollback(options: CoordinateRollbackOptions): Promise<{ version: '1.55.1'; activation: RecoveryActivation }>;
 export function installOriginalV1(options: { assetsDirectory: string; platform: RecoveryInstallerPlatform; installDirectory: string }): Promise<void>;
