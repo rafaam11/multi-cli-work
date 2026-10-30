@@ -8,6 +8,7 @@ import { trayIconDataUrl } from "./tray-icon";
 import { checkForUpdates, initUpdater, quitAndInstall, suspendUpdaterForRecovery, assertUpdaterAvailable } from "./updater";
 import {createDesktopRecovery,preserveRecoveryInstallation,assertRecoveryStartupAllowed} from './recovery/desktop-recovery';
 import {originalInstallTarget} from './recovery/install-target';
+import {captureV1ProviderEnvironment} from './recovery/v1-launch';
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
 import { taskbarBadgeSpec, trayTooltip } from "./window-badge";
 import type { AttentionSnapshot } from "./attention-policy";
@@ -269,7 +270,7 @@ if (!hasSingleInstanceLock) {
         const {hostId}=await ensureDesktopHostIdentity(prepared.userData);
         const appImage=process.platform==='linux'?process.env.APPIMAGE:undefined;
         const cacheRoot=process.platform==='win32'?(process.env.LOCALAPPDATA??path.join(os.homedir(),'AppData/Local')):(process.env.XDG_CACHE_HOME??path.join(os.homedir(),'.cache'));
-        const recoveryOptions={hostId,backupDirectory:prepared.backupDirectory,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
+        const recoveryOptions={hostId,v1ProviderEnvironment:captureV1ProviderEnvironment(process.env),backupDirectory:prepared.backupDirectory,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
         // Keep the independent launchers usable even if daemon initialization fails.
         await preserveRecoveryInstallation(recoveryOptions);
         v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory,bridgeDirectory,entryPath:path.join(resourcesDirectory,"host/mcw-host.js")}),backupDirectory:prepared.backupDirectory};

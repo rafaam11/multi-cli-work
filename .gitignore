@@ -3,6 +3,7 @@ out/
 dist/
 /release/
 /release-v2-preview/
+/release-v2-recovery/
 /build/mobile/
 /build/v2/
 /build/herdr-bridge/

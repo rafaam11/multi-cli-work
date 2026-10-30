@@ -6,16 +6,18 @@ import type {CoordinateRollbackOptions,RecoveryHostObservation,RecoveryPhase} fr
 import {observeProcessTree,type ProcessIdentity} from '../herdr/process-observation';
 import {findRecoveryProcesses} from './residual-processes';
 import type {RecoveryScope} from './work-session';
+import {validateV1ProviderEnvironment} from './v1-launch';
 
 export type {RecoveryPhase};
 export interface RecoveryOperationState {
   schemaVersion:1;operationId:string;phase:RecoveryPhase;updatedAt:number;
-  scopes:RecoveryScope[];observations:RecoveryHostObservation[];controllerProcess?:ProcessIdentity;error?:string;failedAtPhase?:RecoveryPhase;
+  scopes:RecoveryScope[];observations:RecoveryHostObservation[];controllerProcess?:ProcessIdentity;launchedV1?:ProcessIdentity;error?:string;failedAtPhase?:RecoveryPhase;
 }
 export interface RecoveryRequest extends Omit<CoordinateRollbackOptions,'adapter'> {
   schemaVersion:1;operationId:string;operationDirectory:string;localHostId:string;hostDirectory:string;
   bridgePath:string;guiProcess:ProcessIdentity|null;runtimePaths:string[];
   installDirectory:string;executablePath:string;updaterCaches:{cacheRoot:string;cacheName:string}[];
+  v1ProviderEnvironment?:Record<string,string>;
 }
 export interface RecoveryInstallation extends Omit<RecoveryRequest,'operationId'|'operationDirectory'|'destination'|'expectedHostIds'|'guiProcess'> {recoveryRoot:string;packaged:true}
 export async function acquireRecoveryStart(root:string):Promise<()=>Promise<void>>{
@@ -62,6 +64,7 @@ export async function requirePlainPath(filename:string,missing=false):Promise<vo
 }
 export function validateRecoveryRequest(value:unknown):asserts value is RecoveryRequest{
   const request=value as RecoveryRequest;
+  if(request?.v1ProviderEnvironment!==undefined)validateV1ProviderEnvironment(request.v1ProviderEnvironment);
   if(!request||request.schemaVersion!==1||!/^[-\w]{1,128}$/.test(request.operationId)||!/^[-\w]{1,128}$/.test(request.localHostId)||!['win32','deb','appimage'].includes(request.platform)||!Array.isArray(request.expectedHostIds)||!request.expectedHostIds.includes(request.localHostId)||!Array.isArray(request.runtimePaths)||!request.runtimePaths.length||!Array.isArray(request.updaterCaches))throw new Error('Invalid recovery request');
   const files=[request.operationDirectory,request.backupDirectory,request.destination,request.assetsDirectory,request.installDirectory,request.executablePath,request.hostDirectory,request.bridgePath,request.targets?.userData,request.targets?.registry,request.preserveV2Sources?.userData,request.preserveV2Sources?.registry,...request.runtimePaths,...request.updaterCaches.map(cache=>cache.cacheRoot),...(request.sharedConfigJournals??[])];
   if(files.some(file=>typeof file!=='string'||!path.isAbsolute(file)||/[\x00-\x1f]/.test(file))||path.basename(request.operationDirectory)!==request.operationId||path.resolve(request.destination)!==path.join(request.operationDirectory,'prepared')||path.resolve(request.hostDirectory)!==path.join(request.preserveV2Sources.userData,'host')||path.resolve(request.bridgePath)!==path.join(request.assetsDirectory,process.platform==='win32'?'recovery-process-bridge.exe':'recovery-process-bridge'))throw new Error('Recovery request paths differ');

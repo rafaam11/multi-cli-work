@@ -21,7 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1 openssh-server && sudo mkdir -p /run/sshd
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libnotify4 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1 libsecret-1-0 libfuse2 policykit-1 openssh-server && sudo mkdir -p /run/sshd
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
       - name: Acquire digest-pinned resources
@@ -78,6 +78,21 @@ jobs:
           node scripts/v2/check-packaged-main.mjs release-v2-preview/linux-unpacked/resources/app.asar
           MCW_V2_E2E=1 MCW_V2_E2E_EXECUTABLE="$PWD/release-v2-preview/linux-unpacked/multi-cli-work" xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts --output=test-results/packaged
       - run: node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release-v2-preview
+      - name: Build isolated original-identity upgrade candidate
+        run: npx electron-builder --config electron-builder.v2-recovery.cjs --publish never
+      - name: Original Windows installer offline roundtrip
+        if: runner.os == 'Windows'
+        env:
+          MCW_RECOVERY_ROUNDTRIP: win32
+        run: npx playwright test e2e/recovery-roundtrip.spec.ts --output=test-results/roundtrip-win32
+      - name: Original deb and AppImage offline roundtrips
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          node_binary="$(command -v node)"
+          for flavor in deb appimage; do
+            MCW_RECOVERY_ROUNDTRIP="$flavor" xvfb-run -a sudo -E unshare --net bash scripts/recovery/offline-linux.sh "$node_binary" node_modules/@playwright/test/cli.js test e2e/recovery-roundtrip.spec.ts --output="test-results/roundtrip-$flavor"
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:

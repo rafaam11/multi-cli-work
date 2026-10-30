@@ -13,6 +13,7 @@ import {RecoveryWorkHolds} from './work-holds';
 import {RecoveryWorkSession} from './work-session';
 import {openLocalRecoveryAuthority} from './local-authority';
 import {proveLocalProcessesStopped} from './local-process-proof';
+import {v1LaunchEnvironment,observeV1Launch} from './v1-launch';
 import {quarantineUpdaterCache} from './updater-cache';
 import {assertRollbackHosts,coordinateRollback,verifyRecoveryAssets,verifyV1Backup,installOriginalV1,ORIGINAL_INSTALLERS,getV2DataLayout} from './index';
 import {readRecoveryState,writeRecoveryState,requirePlainPath,validateRecoveryRequest,type RecoveryRequest,type RecoveryOperationState,type RecoveryPhase} from './controller-state';
@@ -116,11 +117,11 @@ export async function createAdapter(request:RecoveryRequest,forCancellation=fals
       // Released receipts stay in the preserved v2 tree; replaying any task is
       // still an explicit action. The immutable pre-release copy stays intact.
       await release();await update('launching');
-      const environment={...process.env};for(const key of Object.keys(environment))if(key.startsWith('MCW_')||key.startsWith('MULTI_CLI_WORK_')||key==='ELECTRON_RUN_AS_NODE')delete environment[key];
-      environment.MULTI_CLI_WORK_USER_DATA=request.targets.userData;
-      for(const [key,file] of Object.entries({MULTI_CLI_WORK_REGISTRY_PATH:'projects.json',MULTI_CLI_WORK_WORK_PROJECTS_PATH:'work-projects.json',MULTI_CLI_WORK_WORKSPACE_PATH:'workspace.json',MULTI_CLI_WORK_PROJECT_TAGS_PATH:'project-tags.json',MULTI_CLI_WORK_AGENTS_PATH:'agents.json',MULTI_CLI_WORK_WORKTREES_PATH:'worktrees.json',MULTI_CLI_WORK_SESSION_PRESETS_PATH:'session-presets.json',MULTI_CLI_WORK_PR_REVIEWS_PATH:'pr-reviews.json',MULTI_CLI_WORK_WORKTREE_SCRIPTS_PATH:'worktree-scripts.json'}))environment[key]=path.join(request.targets.registry,file);
+      const environment=v1LaunchEnvironment(process.env,request.targets,request.v1ProviderEnvironment);
       const child=spawn(request.executablePath,[],{cwd:path.dirname(request.executablePath),detached:true,windowsHide:true,stdio:'ignore',env:environment});
-      await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref();await update('complete');
+      await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref();
+      const launchedV1=await observeV1Launch(child,()=>readProcessInventory(request.bridgePath));
+      await update('complete',{launchedV1});
     },
   };
 }
