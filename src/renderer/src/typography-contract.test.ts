@@ -7,7 +7,8 @@ const stylesheet = readFileSync(resolve("src/renderer/src/index.css"), "utf8");
 function ruleBody(selector: string): string {
   const normalizedTarget = selector.replace(/\s+/g, " ").trim();
   let matchedBody: string | null = null;
-  for (const [, rawSelectors, body] of stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/gs)) {
+  // Semicolon-terminated at-rules (for example @import) are not selectors.
+  for (const [, rawSelectors, body] of stylesheet.matchAll(/([^{};]+)\{([^{}]*)\}/gs)) {
     const selectors = rawSelectors
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .split(",")
