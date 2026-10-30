@@ -46,8 +46,17 @@ export async function requirePlainPath(filename:string,missing=false):Promise<vo
   if(!path.isAbsolute(filename)||/[\x00-\x1f]/.test(filename))throw new Error('Absolute recovery path required');
   const same=(a:string,b:string)=>process.platform==='win32'?a.toLowerCase()===b.toLowerCase():a===b;
   for(let current=path.resolve(filename);;current=path.dirname(current)){
-    const info=await lstat(current).catch(error=>{if(missing&&(error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
-    if(info&&(info.isSymbolicLink()||!same(await realpath(current),current)))throw new Error('Recovery path contains a link');
+    const info=await lstat(current,{bigint:true}).catch(error=>{if(missing&&(error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
+    if(info){
+      if(info.isSymbolicLink())throw new Error('Recovery path contains a link');
+      const resolved=await realpath(current);
+      if(!same(resolved,current)){
+        // NTFS 8.3 aliases change spelling without redirecting the file. Check
+        // kernel file identity and still inspect every lexical ancestor below.
+        const target=await lstat(resolved,{bigint:true});
+        if(process.platform!=='win32'||info.ino===0n||info.dev!==target.dev||info.ino!==target.ino||target.isSymbolicLink())throw new Error('Recovery path contains a link');
+      }
+    }
     if(path.dirname(current)===current)break;
   }
 }

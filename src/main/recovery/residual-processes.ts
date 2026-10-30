@@ -41,7 +41,7 @@ export function findRecoveryProcesses(inventory:RecoveryProcess[],targets:Recove
   validate(inventory);
   if(!["win32","linux"].includes(platform)||!Array.isArray(targets.applicationNames)||!Array.isArray(targets.runtimePaths)||!Array.isArray(targets.trackedPids)||targets.applicationNames.some(name=>typeof name!=="string"||!name)||targets.runtimePaths.some(file=>typeof file!=="string"||!(platform==="win32"?path.win32:path.posix).isAbsolute(file))||targets.trackedPids.some(pid=>!Number.isSafeInteger(pid)||pid<=0))throw new Error("Invalid recovery process targets");
   const systemPath=platform==="win32"?path.win32:path.posix;
-  const normalize=(file:string)=>platform==="win32"?path.win32.normalize(file).toLowerCase():file;
+  const normalize=(file:string)=>platform==="win32"?path.win32.normalize(file).toLowerCase():file.replace(/ \(deleted\)$/,'');
   const processName=(file:string)=>platform==="win32"?path.win32.basename(file).replace(/\.exe$/i,"").toLowerCase():path.posix.basename(file);
   const names=new Set(targets.applicationNames.map(processName)),runtimes=new Set(targets.runtimePaths.map(normalize)),runtimeNames=new Set(targets.runtimePaths.map(file=>processName(systemPath.basename(file))));
   return inventory.filter(item=>names.has(processName(item.name))||targets.trackedPids.includes(item.pid)||(item.executable!==null?runtimes.has(normalize(item.executable)):runtimeNames.has(processName(item.name))));

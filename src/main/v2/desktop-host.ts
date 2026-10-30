@@ -27,6 +27,16 @@ export async function preserveRecoveryRuntime(resourcesDirectory: string, recove
   return remember();
 }
 
+export async function ensureDesktopHostIdentity(userData:string){
+  const directory = path.join(userData, "host"); await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  const identityPath = path.join(directory, "identity.json");
+  let hostId: string;
+  try { hostId = JSON.parse(await fs.readFile(identityPath, "utf8")).hostId; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; hostId = randomUUID(); await fs.writeFile(identityPath, JSON.stringify({ hostId }), { mode: 0o600, flag: "wx" }); }
+  if (typeof hostId !== "string" || !/^[\w-]{1,128}$/.test(hostId)) throw new Error("호스트 식별 정보를 확인해야 합니다.");
+  return {directory,hostId};
+}
+
 export interface DesktopHostOptions { userData: string; registryRoot:string; resourcesDirectory: string; bridgeDirectory: string; entryPath: string }
 /** Resolve only digest-pinned packaged runtimes. Never use a user's PATH Herdr installation. */
 export async function startDesktopHost(options: DesktopHostOptions) {
@@ -37,12 +47,7 @@ export async function startDesktopHost(options: DesktopHostOptions) {
   const bridge = JSON.parse(await fs.readFile(path.join(options.bridgeDirectory, "bridge.json"), "utf8"));
   const digest = createHash("sha256").update(await fs.readFile(bridgePath)).digest("hex");
   if (bridge.sha256 !== digest || bridge.herdrVersion !== "0.9.5") throw new Error("터미널 브리지 검증에 실패했습니다.");
-  const directory = path.join(options.userData, "host"); await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-  const identityPath = path.join(directory, "identity.json");
-  let hostId: string;
-  try { hostId = JSON.parse(await fs.readFile(identityPath, "utf8")).hostId; }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; hostId = randomUUID(); await fs.writeFile(identityPath, JSON.stringify({ hostId }), { mode: 0o600, flag: "wx" }); }
-  if (typeof hostId !== "string" || !/^[\w-]{1,128}$/.test(hostId)) throw new Error("호스트 식별 정보를 확인해야 합니다.");
+  const {directory,hostId}=await ensureDesktopHostIdentity(options.userData);
   const node = manifest.nodeRuntimes.find((entry: {platform: string}) => entry.platform === process.platform);
   const runtime = node?.members.find((entry: {output: string}) => entry.output === (process.platform === "win32" ? "node.exe" : "node"));
   if (!runtime) throw new Error("독립 호스트 런타임을 찾을 수 없습니다.");

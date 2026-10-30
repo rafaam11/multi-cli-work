@@ -4,15 +4,15 @@ import {setTimeout as delay} from 'node:timers/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {extractFile} from '@electron/asar';
-import {HostClient} from '../host/host-client';
-import {readHostDescriptor} from '../host/host-process';
 import {connectSshHost,validateSshHostConfiguration} from '../host/ssh-host';
 import type {HostRegistration} from '../../shared/host-connection-types';
 import type {RollbackLifecycleAdapter,RecoveryHostObservation} from '../../shared/recovery-types';
-import {readProcessInventory,observeProcessTree,parseProcessInventory,type ProcessIdentity} from '../herdr/process-observation';
+import {readProcessInventory,observeProcessTree} from '../herdr/process-observation';
 import {findRecoveryProcesses} from './residual-processes';
 import {RecoveryWorkHolds} from './work-holds';
 import {RecoveryWorkSession} from './work-session';
+import {openLocalRecoveryAuthority} from './local-authority';
+import {proveLocalProcessesStopped} from './local-process-proof';
 import {quarantineUpdaterCache} from './updater-cache';
 import {assertRollbackHosts,coordinateRollback,verifyRecoveryAssets,verifyV1Backup,installOriginalV1,ORIGINAL_INSTALLERS,getV2DataLayout} from './index';
 import {readRecoveryState,writeRecoveryState,requirePlainPath,validateRecoveryRequest,type RecoveryRequest,type RecoveryOperationState,type RecoveryPhase} from './controller-state';
@@ -42,15 +42,12 @@ export async function createAdapter(request:RecoveryRequest,forCancellation=fals
   const update=async(phase:RecoveryPhase,patch:Partial<RecoveryOperationState>={})=>{state={...state,...patch,phase,updatedAt:Date.now()};await writeRecoveryState(stateFile,state);};
   await update(state.phase);
   const connections=new Map<string,Awaited<ReturnType<typeof connectSshHost>>>();
-  let local:HostClient|undefined,hostProcess:ProcessIdentity|undefined,stopped=false;
-  const descriptor=await readHostDescriptor(request.hostDirectory);
-  if(descriptor){
-    if(descriptor.hostId!==request.localHostId)throw new Error('Local host identity differs');
-    local=new HostClient(descriptor);hostProcess=inventory.find(item=>item.pid===descriptor.pid);
-    if(!forCancellation&&!hostProcess?.startId)throw new Error('Local host process cannot be identified');
-  }else if(!forCancellation)throw new Error('Local host is unavailable; recovery is blocked until its work can be observed');
+  const proofOptions={directory:request.hostDirectory,hostId:request.localHostId,bridgePath:request.bridgePath,runtimePaths:request.runtimePaths};
+  let authority=await openLocalRecoveryAuthority(proofOptions);
+  const local=authority.client;
+  let stopped=false;
   const connect=async(hostId:string)=>{
-    if(hostId===request.localHostId){if(!local)throw new Error('Local host unavailable');return local;}
+    if(hostId===request.localHostId)return local;
     const existing=connections.get(hostId);if(existing)return existing.client;
     const registry=await optionalJson(path.join(request.hostDirectory,'host-connections.json'));
     if(registry?.version!==2||!Array.isArray(registry.hosts))throw new Error('Remote host registrations unavailable');
@@ -59,32 +56,19 @@ export async function createAdapter(request:RecoveryRequest,forCancellation=fals
     validateSshHostConfiguration(registration.ssh);
     const connection=await connectSshHost(registration.ssh);connections.set(hostId,connection);return connection.client;
   };
-  const work=new RecoveryWorkSession({operationId:request.operationId,localHostId:request.localHostId,expectedHostIds:request.expectedHostIds,scopes:state.scopes,client:connect,save:async scopes=>update('holding',{scopes}),checkCancelled:()=>checkCancel()});
-  const assertNoInstances=async()=>{
-    const processes=await readProcessInventory(request.bridgePath);
-    for(const identity of [request.guiProcess,hostProcess])if(identity&&observeProcessTree([identity],processes).status!=='exited')throw new Error('MCW GUI or host is still running or unobserved');
-    const residual=findRecoveryProcesses(processes,{applicationNames:['Multi CLI Work.exe','Multi CLI Work Preview.exe','multi-cli-work','multi-cli-work-preview'],runtimePaths:request.runtimePaths,trackedPids:[]},process.platform).filter(item=>item.pid!==process.pid);
-    if(residual.length)throw new Error(`Other MCW instances remain (${residual.map(item=>item.pid).join(', ')}); no process was terminated`);
-    const runtime=await optionalJson(path.join(request.hostDirectory,'herdr/runtime-processes.json'));
-    if(runtime!==null){const identities=parseProcessInventory(runtime);if(identities.length&&observeProcessTree(identities,processes).status!=='exited')throw new Error('Herdr process exit is not confirmed');}
-    const terminals=await optionalJson(path.join(request.hostDirectory,'terminal-sessions.json'));
-    if(terminals!==null){
-      if(terminals.version!==2||!Array.isArray(terminals.sessions))throw new Error('Terminal process inventory unavailable');
-      for(const terminal of terminals.sessions){
-        if(terminal.processes?.length){if(observeProcessTree(parseProcessInventory(terminal.processes),processes).status!=='exited')throw new Error('A terminal process remains or is unobserved');}
-        else if(terminal.delivery!=='rejected'&&terminal.delivery!=='none')throw new Error('A terminal process identity is missing');
-      }
-    }
-  };
+  let work:RecoveryWorkSession;
+  try{work=new RecoveryWorkSession({operationId:request.operationId,localHostId:request.localHostId,expectedHostIds:request.expectedHostIds,scopes:state.scopes,client:connect,save:async scopes=>update('holding',{scopes}),checkCancelled:()=>checkCancel()});}
+  catch(error){await authority.close();throw error;}
+  const assertNoInstances=async()=>{if(authority.offline)await authority.client.request('/health');await proveLocalProcessesStopped({...proofOptions,includeGui:true,guiProcess:request.guiProcess,hostProcess:authority.process});};
   const release=async()=>{
-    let offline=false;try{await local?.health();offline=!local;}catch{offline=true;}
-    await work.release(offline?async()=>{await assertNoInstances();const holds=new RecoveryWorkHolds(request.hostDirectory);if(await holds.get(request.operationId))await holds.release(request.operationId,request.localHostId);}:undefined);
+    let unavailable=false;try{await local.request('/health','GET',undefined,1000);}catch{unavailable=true;}
+    await work.release(unavailable?async()=>{await assertNoInstances();const holds=new RecoveryWorkHolds(request.hostDirectory);if(await holds.get(request.operationId))await holds.release(request.operationId,request.localHostId);}:undefined);
   };
   const checkCancel=async()=>{if(await lstat(path.join(request.operationDirectory,'cancel.json')).catch(error=>{if(missing(error))return null;throw error;}))throw new RecoveryCancelled('Recovery cancelled by the user');};
   const observeHosts=()=>work.observeHosts(stopped?assertNoInstances:undefined);
   return {
     state:()=>structuredClone(state),
-    close:async()=>{await Promise.all([...connections.values()].map(connection=>connection.close()));},
+    close:async()=>{try{await Promise.all([...connections.values()].map(connection=>connection.close()));}finally{await authority.close();}},
     cancel:async()=>{await release();await update('cancelled');},
     stopNewWork:async()=>{
       await checkCancel();await work.stopNewWork();
@@ -105,9 +89,17 @@ export async function createAdapter(request:RecoveryRequest,forCancellation=fals
       // Recheck remote work after the user-facing GUI has closed.
       assertRollbackHosts({hosts:await observeHosts(),expectedHostIds:request.expectedHostIds});
       await checkCancel();await update('stopping-host');
-      try{await local!.shutdown();}catch{/* Unknown reply is settled only through kernel observation below. */}
+      if(!authority.offline)try{await local.request('/shutdown','POST');}catch{/* Unknown reply is settled only through kernel observation below. */}
       const deadline=Date.now()+30000;let lastError:unknown;
-      do{try{await assertNoInstances();stopped=true;await update('preserving');return;}catch(error){lastError=error;await delay(250);}}while(Date.now()<deadline);
+      do{try{
+        await assertNoInstances();
+        if(!authority.offline){
+          const next=await openLocalRecoveryAuthority(proofOptions);
+          if(!next.offline){await next.close();throw new Error('Host restarted during recovery; shutdown was not retried');}
+          authority=next;
+        }
+        await assertNoInstances();stopped=true;await update('preserving');return;
+      }catch(error){lastError=error;await delay(250);}}while(Date.now()<deadline);
       throw new Error('Host shutdown could not be confirmed; it was not retried',{cause:lastError});
     },
     assertNoInstances,

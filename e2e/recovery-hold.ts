@@ -14,9 +14,13 @@ export async function exerciseRecoveryHold(options:{directory:string;recovery:st
   const operationId='recovery-gui-fixture',operationDirectory=path.join(directory,'recovery/operations',operationId);
   await fs.mkdir(operationDirectory,{recursive:true});
   const bridgePath=path.join(recovery,process.platform==='win32'?'recovery-process-bridge.exe':'recovery-process-bridge');
-  const guiProcess=(await readProcessInventory(bridgePath)).find(item=>item.pid===app.process().pid)!;
+  const guiPid=await app.evaluate(()=>process.pid);
+  const guiProcess=(await readProcessInventory(bridgePath)).find(item=>item.pid===guiPid)!;
+  const executable=process.env.MCW_V2_E2E_EXECUTABLE;
+  const resources=executable?path.join(path.dirname(executable),'resources/v2'):path.resolve('build/v2');
+  const runtimePaths=[path.join(resources,process.platform==='win32'?'node/windows/node.exe':'node/linux/node'),path.join(resources,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64')];
   const hostId=(await client.health()).hostId;
-  const request:RecoveryRequest={schemaVersion:1,operationId,operationDirectory,localHostId:hostId,hostDirectory:path.join(`${userData}-v2`,'host'),bridgePath,guiProcess,runtimePaths:[app.process().spawnfile],installDirectory:path.join(directory,'unused-install'),executablePath:path.join(directory,'unused-install/unused-executable'),updaterCaches:[],backupDirectory:path.join(directory,'recovery/v1-before-v2'),destination:path.join(operationDirectory,'prepared'),preserveV2Sources:{userData:`${userData}-v2`,registry:`${registry}-v2`},targets:{userData,registry},assetsDirectory:recovery,platform:process.platform==='win32'?'win32':'deb',expectedHostIds:[hostId]};
+  const request:RecoveryRequest={schemaVersion:1,operationId,operationDirectory,localHostId:hostId,hostDirectory:path.join(`${userData}-v2`,'host'),bridgePath,guiProcess,runtimePaths,installDirectory:path.join(directory,'unused-install'),executablePath:path.join(directory,'unused-install/unused-executable'),updaterCaches:[],backupDirectory:path.join(directory,'recovery/v1-before-v2'),destination:path.join(operationDirectory,'prepared'),preserveV2Sources:{userData:`${userData}-v2`,registry:`${registry}-v2`},targets:{userData,registry},assetsDirectory:recovery,platform:process.platform==='win32'?'win32':'deb',expectedHostIds:[hostId]};
   const requestFile=path.join(operationDirectory,'request.json');await fs.writeFile(requestFile,JSON.stringify(request));
   await fs.writeFile(path.join(directory,'recovery/active-operation.json'),JSON.stringify({operationId}));
   const script=path.join(operationDirectory,'hold-fixture.cjs');

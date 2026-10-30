@@ -10,11 +10,22 @@ async function writableTree(directory:string):Promise<void>{for(const entry of a
 export async function prepareV2Data(options:V2BootstrapOptions){
  const layout=getV2DataLayout(options),backupDirectory=path.join(layout.recoveryRoot,"v1-before-v2");
  await options.assertStopped();
+ const samePath=(a:string,b:string)=>process.platform==='win32'?path.resolve(a).toLowerCase()===path.resolve(b).toLowerCase():path.resolve(a)===path.resolve(b);
+ const marker=path.join(layout.userData,"v2-initialized.json"),initialized=await exists(marker);
+ if(initialized){
+  if((await fs.lstat(marker)).isSymbolicLink())throw new Error('원본 복구 기록이 링크로 바뀌었습니다.');
+  const prior=JSON.parse(await fs.readFile(marker,'utf8'));
+  if(prior.schemaVersion!==2||typeof prior.backupDirectory!=='string'||!path.isAbsolute(prior.backupDirectory)||!samePath(prior.backupDirectory,backupDirectory))throw new Error('v2가 참조하는 원본 복구 위치가 다릅니다. 기존 고정 복구본을 사용하세요.');
+ }
+ const backedUp=await exists(backupDirectory);
+ if(!backedUp&&(initialized||await exists(layout.userData)||await exists(layout.registry)))throw new Error('기존 v2의 원본 복구본이 없습니다. 현재 v1 데이터를 새 원본으로 저장하지 않습니다.');
  await fs.mkdir(layout.recoveryRoot,{recursive:true,mode:0o700});
  const sources={userData:options.v1UserData,registry:options.v1Registry};
- if(await exists(backupDirectory)) await verifyV1Backup(backupDirectory);
+ if(backedUp){
+  const backup=await verifyV1Backup(backupDirectory);
+  if(!samePath(backup.sources.userData,options.v1UserData)||!samePath(backup.sources.registry,options.v1Registry))throw new Error('원본 v1 데이터 경로가 고정 복구본과 다릅니다.');
+ }
  else {await fs.mkdir(options.v1UserData,{recursive:true});await fs.mkdir(options.v1Registry,{recursive:true});await createV1Backup({destination:backupDirectory,sources,assertStopped:options.assertStopped});}
- const marker=path.join(layout.userData,"v2-initialized.json");
  const modBackupDirectory=options.v1ClaudeConfig?path.join(layout.recoveryRoot,"v1-mods-before-v2"):null;
  if(modBackupDirectory&&options.v1ClaudeConfig) {
   const modSources=await discoverV1ModSources(options.v1ClaudeConfig);

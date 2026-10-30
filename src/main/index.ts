@@ -3,11 +3,11 @@ import path from "node:path";
 import type { DesktopRuntime, DesktopWindowHost } from "./runtime";
 import os from "node:os";
 import { prepareV2Data, v2RegistryEnvironment } from "./v2/bootstrap";
-import { startDesktopHost, preserveRecoveryRuntime } from "./v2/desktop-host";
+import { startDesktopHost, preserveRecoveryRuntime,ensureDesktopHostIdentity } from "./v2/desktop-host";
 import { trayIconDataUrl } from "./tray-icon";
 import { checkForUpdates, initUpdater, quitAndInstall, suspendUpdaterForRecovery, assertUpdaterAvailable } from "./updater";
-import {createDesktopRecovery,assertRecoveryStartupAllowed} from './recovery/desktop-recovery';
-import {resolveHerdrResource} from './v2/herdr-resource';
+import {createDesktopRecovery,preserveRecoveryInstallation,assertRecoveryStartupAllowed} from './recovery/desktop-recovery';
+import {originalInstallTarget} from './recovery/install-target';
 import { APP_WINDOW_TITLE, applyWindowAttention } from "./window-attention";
 import { taskbarBadgeSpec, trayTooltip } from "./window-badge";
 import type { AttentionSnapshot } from "./attention-policy";
@@ -266,11 +266,14 @@ if (!hasSingleInstanceLock) {
         const resourcesDirectory = app.isPackaged ? path.join(process.resourcesPath,"v2") : path.join(sourceRoot,"build/v2");
         const bridgeDirectory = app.isPackaged ? path.join(process.resourcesPath,"herdr-bridge") : path.join(sourceRoot,`build/herdr-bridge/${process.platform}-${process.arch}`);
         const recoveryAssets=await preserveRecoveryRuntime(resourcesDirectory, prepared.recoveryRoot, path.dirname(process.execPath), app.isPackaged ? path.join(process.resourcesPath,"recovery-scripts") : path.join(sourceRoot,"scripts/recovery"),bridgeDirectory);
-        v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory,bridgeDirectory,entryPath:path.join(resourcesDirectory,"host/mcw-host.js")}),backupDirectory:prepared.backupDirectory};
+        const {hostId}=await ensureDesktopHostIdentity(prepared.userData);
         const appImage=process.platform==='linux'?process.env.APPIMAGE:undefined;
         const cacheRoot=process.platform==='win32'?(process.env.LOCALAPPDATA??path.join(os.homedir(),'AppData/Local')):(process.env.XDG_CACHE_HOME??path.join(os.homedir(),'.cache'));
-        const {binaryPath}=await resolveHerdrResource(resourcesDirectory);
-        v2Host.recovery=await createDesktopRecovery({...v2Host,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,installDirectory:appImage??path.dirname(process.execPath),executablePath:appImage??(process.platform==='win32'?path.join(path.dirname(process.execPath),'Multi CLI Work.exe'):path.join(path.dirname(process.execPath),'multi-cli-work')),runtimePaths:[binaryPath,path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],platform:process.platform==='win32'?'win32':appImage?'appimage':'deb',packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}],suspendUpdater:suspendUpdaterForRecovery,quit:requestQuit,openDirectory:directory=>shell.openPath(directory)});
+        const recoveryOptions={hostId,backupDirectory:prepared.backupDirectory,recoveryRoot:prepared.recoveryRoot,assetsDirectory:recoveryAssets,userData:prepared.userData,registryRoot:prepared.registry,...originalInstallTarget(process.platform,process.execPath,appImage),runtimePaths:[path.join(resourcesDirectory,process.platform==='win32'?'herdr/windows-mcw/herdr.exe':'herdr/herdr-linux-x86_64'),path.join(resourcesDirectory,process.platform==='win32'?'node/windows/node.exe':'node/linux/node')],packaged:app.isPackaged,updaterCaches:[{cacheRoot,cacheName:'multi-cli-work-updater'}]};
+        // Keep the independent launchers usable even if daemon initialization fails.
+        await preserveRecoveryInstallation(recoveryOptions);
+        v2Host = {...await startDesktopHost({userData:prepared.userData,registryRoot:prepared.registry,resourcesDirectory,bridgeDirectory,entryPath:path.join(resourcesDirectory,"host/mcw-host.js")}),backupDirectory:prepared.backupDirectory};
+        v2Host.recovery=await createDesktopRecovery({...recoveryOptions,...v2Host,suspendUpdater:suspendUpdaterForRecovery,quit:requestQuit,openDirectory:directory=>shell.openPath(directory)});
       }
       const {createDesktopRuntime} = await import("./runtime");
       runtime = await createDesktopRuntime(showMainWindow, installUpdateAndQuit, updateWindowAttention, {

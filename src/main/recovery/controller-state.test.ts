@@ -2,6 +2,8 @@
 import {mkdtemp,mkdir,symlink,readFile,readdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {afterEach,expect,it} from 'vitest';
 import {writeRecoveryState,requirePlainPath,recoveryControllerRunning,acquireRecoveryStart} from './controller-state';
 import {assertRecoveryStartupAllowed} from './desktop-recovery';
@@ -34,4 +36,10 @@ it('serializes desktop and independent recovery creation before the active-opera
   const root=await fixture(),release=await acquireRecoveryStart(root);
   try{await expect(acquireRecoveryStart(root)).rejects.toThrow();}finally{await release();}
   await (await acquireRecoveryStart(root))();
+});
+it.skipIf(process.platform!=='win32')('accepts an NTFS short path to the same file while still checking every ancestor',async()=>{
+  const root=await fixture();
+  const result=await promisify(execFile)('cmd.exe',['/d','/c','for %I in ("%MCW_ALIAS_FIXTURE%") do @echo %~sI'],{windowsHide:true,windowsVerbatimArguments:true,env:{...process.env,MCW_ALIAS_FIXTURE:root}});
+  const alias=result.stdout.trim();expect(path.isAbsolute(alias)).toBe(true);
+  await expect(requirePlainPath(alias)).resolves.toBeUndefined();
 });

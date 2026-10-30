@@ -28,14 +28,7 @@ export async function assertRecoveryStartupAllowed(root:string):Promise<void>{
   if(!state||!['cancelled','complete','failed'].includes(state.phase))throw new Error(`v1 복귀가 진행 중입니다. 독립 복구 실행기에서 상태를 확인하거나 취소하세요: ${directory}`);
   if(state.failedAtPhase&&applying.has(state.failedAtPhase))throw new Error(`설치 또는 데이터 복원이 중단되었습니다. 보존된 복구 기록을 확인해야 합니다: ${directory}`);
 }
-/** Renderer receives status and explicit actions only, never executable paths,
- * lifecycle callbacks or tokens supplied as mutation arguments. */
-export async function createDesktopRecovery(options:Options):Promise<DesktopRecovery>{
-  let busy=false,monitor:ReturnType<typeof setInterval>|undefined,resumeUpdater:(()=>void)|undefined;
-  const previousDirectory=await activeRecoveryDirectory(options.recoveryRoot),previousState=previousDirectory?await readRecoveryState(previousDirectory):null;
-  if(previousState&&!['cancelled','complete'].includes(previousState.phase))resumeUpdater=options.suspendUpdater();
-  const runtime=path.join(options.assetsDirectory,process.platform==='win32'?'recovery-node.exe':'recovery-node');
-  const entry=path.join(options.assetsDirectory,'recovery-controller.cjs');
+export async function preserveRecoveryInstallation(options:Omit<Options,'client'|'suspendUpdater'|'quit'|'openDirectory'>):Promise<void>{
   if(options.packaged){
     const backup=await verifyV1Backup(options.backupDirectory);
     const installation:RecoveryInstallation={schemaVersion:1,packaged:true,recoveryRoot:options.recoveryRoot,localHostId:options.hostId,hostDirectory:path.join(options.userData,'host'),bridgePath:path.join(options.assetsDirectory,process.platform==='win32'?'recovery-process-bridge.exe':'recovery-process-bridge'),runtimePaths:options.runtimePaths,installDirectory:options.installDirectory,executablePath:options.executablePath,updaterCaches:options.updaterCaches,backupDirectory:options.backupDirectory,preserveV2Sources:{userData:options.userData,registry:options.registryRoot},targets:{userData:backup.sources.userData,registry:backup.sources.registry},assetsDirectory:options.assetsDirectory,platform:options.platform};
@@ -46,6 +39,15 @@ export async function createDesktopRecovery(options:Options):Promise<DesktopReco
       await fs.writeFile(path.join(options.recoveryRoot,`${name}.${process.platform==='win32'?'cmd':'sh'}`),text,{mode:0o700});
     }
   }
+}
+/** Renderer receives status and explicit actions only, never executable paths,
+ * lifecycle callbacks or tokens supplied as mutation arguments. */
+export async function createDesktopRecovery(options:Options):Promise<DesktopRecovery>{
+  let busy=false,monitor:ReturnType<typeof setInterval>|undefined,resumeUpdater:(()=>void)|undefined;
+  const previousDirectory=await activeRecoveryDirectory(options.recoveryRoot),previousState=previousDirectory?await readRecoveryState(previousDirectory):null;
+  if(previousState&&!['cancelled','complete'].includes(previousState.phase))resumeUpdater=options.suspendUpdater();
+  const runtime=path.join(options.assetsDirectory,process.platform==='win32'?'recovery-node.exe':'recovery-node');
+  const entry=path.join(options.assetsDirectory,'recovery-controller.cjs');
   const status=async():Promise<RecoveryStatus>=>{
     const directory=await activeRecoveryDirectory(options.recoveryRoot),state=directory?await readRecoveryState(directory):null;
     const needsInspection=!!state?.failedAtPhase&&applying.has(state.failedAtPhase);

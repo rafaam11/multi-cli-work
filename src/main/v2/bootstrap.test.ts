@@ -5,6 +5,22 @@ import { tmpdir } from "node:os";
 import { expect,it } from "vitest";
 import { prepareV2Data } from "./bootstrap";
 import { createSettingsService } from "../settings/settings-store";
+it('does not replace the original recovery source when a later launch changes roots',async()=>{
+ const root=await fs.mkdtemp(path.join(tmpdir(),'mcw-bootstrap-origin-'));
+ try{
+  const input={v1UserData:path.join(root,'v1'),v1Registry:path.join(root,'registry'),recoveryRoot:path.join(root,'recovery'),assertStopped:async()=>{}};
+  const first=await prepareV2Data(input);await fs.writeFile(path.join(input.v1UserData,'after-rollback'),'later v1 change');
+  const replacement=path.join(root,'different-recovery');
+  await expect(prepareV2Data({...input,recoveryRoot:replacement})).rejects.toThrow(/원본|original/i);
+  await expect(fs.access(replacement)).rejects.toThrow();
+  await expect(prepareV2Data({...input,v1Registry:path.join(root,'different-registry')})).rejects.toThrow(/원본|original/i);
+  expect(JSON.parse(await fs.readFile(path.join(first.userData,'v2-initialized.json'),'utf8')).backupDirectory).toBe(first.backupDirectory);
+  expect(path.dirname(first.backupDirectory)).toBe(input.recoveryRoot);
+  await fs.rm(first.backupDirectory,{recursive:true});
+  await expect(prepareV2Data(input)).rejects.toThrow(/원본|original/i);
+  await expect(fs.access(first.backupDirectory)).rejects.toThrow();
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+});
 it.each([true,false])("backs up stopped v1 and disables automatic work even with missing settings (existing=%s)",async(existing)=>{
  const root=await fs.mkdtemp(path.join(tmpdir(),"mcw-bootstrap-"));
  try{

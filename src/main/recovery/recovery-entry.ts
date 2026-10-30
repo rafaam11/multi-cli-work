@@ -4,8 +4,7 @@ import path from 'node:path';
 import {createAdapter,runRecovery} from './controller';
 import {readRecoveryState,writeRecoveryState,requirePlainPath,validateRecoveryRequest,recoveryControllerRunning,acquireRecoveryStart,type RecoveryRequest,type RecoveryInstallation} from './controller-state';
 import {readProcessInventory} from '../herdr/process-observation';
-import {readHostDescriptor} from '../host/host-process';
-import {HostClient} from '../host/host-client';
+import {openLocalRecoveryAuthority} from './local-authority';
 import {verifyRecoveryAssets} from './index';
 export {createAdapter};
 
@@ -25,8 +24,9 @@ async function main(){
       previous=null;try{previous=JSON.parse(await readFile(path.join(installation.recoveryRoot,'active-operation.json'),'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
       if(previous&&!/^[-\w]{1,128}$/.test(previous.operationId))throw new Error('Invalid active recovery operation');
       if(previous){const state=await readRecoveryState(path.join(installation.recoveryRoot,'operations',previous.operationId));if(!state||!['complete','cancelled'].includes(state.phase)||state.failedAtPhase&&['installing','verifying-install','clearing-updater','launching'].includes(state.failedAtPhase))throw new Error('Inspect or cancel the existing recovery before starting another operation');}
-      const descriptor=await readHostDescriptor(installation.hostDirectory);if(!descriptor||descriptor.hostId!==installation.localHostId)throw new Error('The host must be observable before starting recovery');
-      const plan=await new HostClient(descriptor).request<{hostId:string;related:{hostId:string}[]}>('/recovery-plan');if(plan.hostId!==installation.localHostId||!Array.isArray(plan.related))throw new Error('Recovery work inventory unavailable');
+      const authority=await openLocalRecoveryAuthority({directory:installation.hostDirectory,hostId:installation.localHostId,bridgePath:installation.bridgePath,runtimePaths:installation.runtimePaths});
+      let plan:{hostId:string;related:{hostId:string}[]};try{plan=await authority.client.request('/recovery-plan');}finally{await authority.close();}
+      if(plan.hostId!==installation.localHostId||!Array.isArray(plan.related))throw new Error('Recovery work inventory unavailable');
       const operationId=randomUUID(),operationDirectory=path.join(installation.recoveryRoot,'operations',operationId);await requirePlainPath(operationDirectory,true);await mkdir(operationDirectory,{recursive:true,mode:0o700});
       const request:RecoveryRequest={...installation,operationId,operationDirectory,destination:path.join(operationDirectory,'prepared'),expectedHostIds:[installation.localHostId,...plan.related.map(item=>item.hostId)],guiProcess:null};validateRecoveryRequest(request);
       filename=path.join(operationDirectory,'request.json');await writeRecoveryState(filename,request);await writeRecoveryState(path.join(operationDirectory,'state.json'),{schemaVersion:1,operationId,phase:'starting',scopes:[],observations:[],updatedAt:Date.now()});await writeRecoveryState(path.join(installation.recoveryRoot,'active-operation.json'),{operationId});

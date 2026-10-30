@@ -14,6 +14,9 @@ it("matches Linux paths with case sensitivity and rejects malformed inventories"
   expect(findRecoveryProcesses([{pid:1,name:"node",executable:"/MCW/node"},{pid:2,name:"node",executable:"/mcw/node"}],{applicationNames:[],runtimePaths:["/mcw/node"],trackedPids:[]},"linux").map(p=>p.pid)).toEqual([2]);
   expect(()=>findRecoveryProcesses([{pid:-1,name:"app",executable:null}],{applicationNames:[],runtimePaths:[],trackedPids:[]},"linux")).toThrow();
 });
+it('still recognizes a replaced Linux runtime whose executable is marked deleted',()=>{
+  expect(findRecoveryProcesses([{pid:8,name:'node',executable:'/opt/mcw/node (deleted)'}],{applicationNames:[],runtimePaths:['/opt/mcw/node'],trackedPids:[]},'linux').map(p=>p.pid)).toEqual([8]);
+});
 it("reads a real process inventory and finds this fixture process without stopping anything",async()=>{
   const processes=await readRecoveryProcesses();
   expect(findRecoveryProcesses(processes,{applicationNames:[],runtimePaths:[],trackedPids:[process.pid]},process.platform).some(p=>p.pid===process.pid)).toBe(true);

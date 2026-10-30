@@ -13,6 +13,7 @@ import { TaskStore } from "../src/main/host/task-store";
 import { applySurfaceEvent } from "../src/shared/herdr-surface-model";
 import type { PaneSurfaceFrame, HerdrSurfaceEvent } from "../src/shared/herdr-surface-types";
 import {exerciseRecoveryHold} from './recovery-hold';
+import {exerciseOfflineRecovery} from './recovery-offline';
 
 test("v2 Canvas and independent host survive GUI quit and reconnect without launching a duplicate", async ({}, info) => {
   test.skip(process.env.MCW_V2_E2E !== "1", "Requires pinned v2 runtime resources; run after build:v2");
@@ -153,6 +154,11 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
     expect(await fs.readFile(path.join(registry,"projects.json"),"utf8")).toContain("Herdr 검증");
     await expect(fs.access(path.join(recovery,`recover.${process.platform==="win32"?"cmd":"sh"}`))).resolves.toBeUndefined();
     await expect(fs.access(path.join(recovery,'recovery-controller.cjs'))).resolves.toBeUndefined();
+    const finalGui=app.process();await app.evaluate(({app})=>app.quit());await expect.poll(()=>finalGui.exitCode).not.toBe(null);app=undefined;
+    observer?.close();observer=undefined;
+    for(const terminal of await client.terminals() as {id:string}[])await client.stopTerminal(terminal.id);
+    await client.shutdown();client=undefined;
+    await exerciseOfflineRecovery(directory);
     succeeded = true;
   } catch (error) {
     if(app)for(const window of app.windows()) console.error("v2 renderer diagnostic:",await window.evaluate(()=>document.body.innerText).catch(()=>null));

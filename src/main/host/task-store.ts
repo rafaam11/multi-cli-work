@@ -23,7 +23,12 @@ export class TaskStore {
   async snapshot(): Promise<TaskHostSnapshot> { return structuredClone((await readJsonStore(this.spec, this.filePath)).value); }
   async inspect(taskId: string): Promise<Task> { validateTaskId(taskId); return this.task(await this.snapshot(), taskId); }
   async list(): Promise<Task[]> { return (await this.snapshot()).tasks; }
-  async listForRecovery():Promise<Task[]>{const stored=await readJsonStore(this.spec,this.filePath);if(!stored.writable)throw new Error(stored.warning??'Task snapshot requires reconciliation');return structuredClone(stored.value.tasks);}
+  async listForRecovery():Promise<Task[]>{
+    const stored=await readJsonStore(this.spec,this.filePath);
+    if(!stored.writable)throw new Error(stored.warning??'Task snapshot requires reconciliation');
+    if(stored.value.outbox.length)throw new Error('Pending result delivery requires reconciliation before recovery');
+    return structuredClone(stored.value.tasks);
+  }
   private task(state: TaskHostSnapshot, taskId: string): Task { const task = state.tasks.find(item => item.id === taskId); if (!task) throw new Error("Unknown task"); return task; }
   private authorize(task: Task, input: TaskIdentity, leadOnly = false): TaskParticipant {
     validateTaskIdentity(input);

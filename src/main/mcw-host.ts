@@ -10,6 +10,7 @@ import {WorkerReplicas} from "./host/worker-replicas";
 import {WorkerExecutor} from "./host/worker-executor";
 import {RemoteWorkers} from "./host/remote-workers";
 import {parseExecutionCatalog} from "../shared/execution-catalog";
+import {recordHostProcessIdentity} from './host/runtime-identity';
 
 /** Separate Node entrypoint. Importing it never starts a host or touches a user's data. */
 export async function startHost(options: HostGatewayOptions): Promise<HostGateway> {
@@ -49,6 +50,9 @@ export async function runHostProcess(argv: string[] = process.argv.slice(2)): Pr
   const finish = async () => { clearInterval(syncTimer);stopObservation?.(); await hosts.close(); await terminals?.close(true); process.exit(0); };
   try {
     gateway = await startHost({ directory, store, terminals: service, hosts, executionCatalog,workers:{replicas,prepare:async(...args)=>{if(!workerExecutor)throw new Error("Worker execution unavailable");return workerExecutor.prepare(...args);},admit:async(...args)=>{if(!workerExecutor)throw new Error("Worker execution unavailable");return workerExecutor.admit(...args);}}, connectionInfo:()=>({hostId,platform:process.platform as "win32"|"linux",nodeExecutable:process.execPath,hostEntrypoint:path.join(__dirname,"mcw-host.js"),dataRoot:directory}), bindAddress: option("--bind-address", false), allowRemote: argv.includes("--allow-remote"), advertisedHost: option("--advertised-host", false), onShutdown: finish, startTask: (taskId, input) => executor!.start(taskId, input), prepare: async () => {
+      // The gateway already owns the daemon runtime lock. Record the kernel
+      // identity before any terminal or work can be started, and retain it on exit.
+      await recordHostProcessIdentity(directory,hostId,config.bridgePath as string);
       terminals = await createHerdrTerminalService({ root: directory, binaryPath: config.binaryPath as string, binarySha256: config.binarySha256 as string, bridgePath: config.bridgePath as string, modsDirectory:config.modsDirectory as string|undefined });
       await store.recover();
       await replicas.recover();
