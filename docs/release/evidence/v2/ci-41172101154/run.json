@@ -1,0 +1,696 @@
+{
+  "id": 41172101154,
+  "head_sha": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
+  "event": "workflow_dispatch",
+  "status": "completed",
+  "conclusion": "success",
+  "html_url": "https://github.com/rafaam11/multi-cli-work/actions/runs/41172101154",
+  "created_at": "2026-10-31T05:19:04Z",
+  "updated_at": "2026-10-31T05:48:58Z",
+  "jobs": [
+    {
+      "id": 124452065437,
+      "name": "android-package / package",
+      "conclusion": "success",
+      "html_url": "https://github.com/rafaam11/multi-cli-work/actions/runs/41172101154/job/124452065437",
+      "started_at": "2026-10-31T05:19:07Z",
+      "completed_at": "2026-10-31T05:21:57Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-31T05:19:07Z",
+          "completed_at": "2026-10-31T05:19:09Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-31T05:19:09Z",
+          "completed_at": "2026-10-31T05:19:11Z"
+        },
+        {
+          "name": "Run actions/setup-java@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-31T05:19:11Z",
+          "completed_at": "2026-10-31T05:19:11Z"
+        },
+        {
+          "name": "Run gradle/actions/setup-gradle@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-31T05:19:11Z",
+          "completed_at": "2026-10-31T05:19:17Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-31T05:19:17Z",
+          "completed_at": "2026-10-31T05:19:21Z"
+        },
+        {
+          "name": "Decode the shell signing key",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-31T05:19:21Z",
+          "completed_at": "2026-10-31T05:19:21Z"
+        },
+        {
+          "name": "Build signed APK without Android verification",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-31T05:19:21Z",
+          "completed_at": "2026-10-31T05:21:27Z"
+        },
+        {
+          "name": "Require the existing update signing identity",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-31T05:21:27Z",
+          "completed_at": "2026-10-31T05:21:28Z"
+        },
+        {
+          "name": "Run node scripts/prepare-mobile-shell.mjs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-31T05:21:28Z",
+          "completed_at": "2026-10-31T05:21:28Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-31T05:21:28Z",
+          "completed_at": "2026-10-31T05:21:30Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-31T05:21:30Z",
+          "completed_at": "2026-10-31T05:21:31Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-10-31T05:21:31Z",
+          "completed_at": "2026-10-31T05:21:32Z"
+        },
+        {
+          "name": "Post Run gradle/actions/setup-gradle@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-10-31T05:21:32Z",
+          "completed_at": "2026-10-31T05:21:55Z"
+        },
+        {
+          "name": "Post Run actions/setup-java@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-10-31T05:21:55Z",
+          "completed_at": "2026-10-31T05:21:55Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-10-31T05:21:55Z",
+          "completed_at": "2026-10-31T05:21:55Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-10-31T05:21:55Z",
+          "completed_at": "2026-10-31T05:21:55Z"
+        }
+      ]
+    },
+    {
+      "id": 124452661332,
+      "name": "desktop (ubuntu-22.04)",
+      "conclusion": "success",
+      "html_url": "https://github.com/rafaam11/multi-cli-work/actions/runs/41172101154/job/124452661332",
+      "started_at": "2026-10-31T05:21:59Z",
+      "completed_at": "2026-10-31T05:42:25Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-31T05:22:00Z",
+          "completed_at": "2026-10-31T05:22:02Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-31T05:22:02Z",
+          "completed_at": "2026-10-31T05:22:03Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-31T05:22:03Z",
+          "completed_at": "2026-10-31T05:22:10Z"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@stable",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-31T05:22:10Z",
+          "completed_at": "2026-10-31T05:22:11Z"
+        },
+        {
+          "name": "Linux desktop dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-31T05:22:11Z",
+          "completed_at": "2026-10-31T05:22:29Z"
+        },
+        {
+          "name": "Run npm ci --ignore-scripts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-31T05:22:29Z",
+          "completed_at": "2026-10-31T05:22:35Z"
+        },
+        {
+          "name": "Run node node_modules/electron/install.js",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-31T05:22:35Z",
+          "completed_at": "2026-10-31T05:22:37Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-31T05:22:37Z",
+          "completed_at": "2026-10-31T05:22:39Z"
+        },
+        {
+          "name": "Acquire digest-pinned resources",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-31T05:22:39Z",
+          "completed_at": "2026-10-31T05:22:45Z"
+        },
+        {
+          "name": "Run npm run build:v2",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-31T05:22:45Z",
+          "completed_at": "2026-10-31T05:23:21Z"
+        },
+        {
+          "name": "Pre-Electron rescue staging without installer execution",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-31T05:23:21Z",
+          "completed_at": "2026-10-31T05:23:29Z"
+        },
+        {
+          "name": "Provider hooks in a dedicated worker",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-10-31T05:23:29Z",
+          "completed_at": "2026-10-31T05:23:30Z"
+        },
+        {
+          "name": "Run node node_modules/vitest/vitest.mjs run --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-10-31T05:23:30Z",
+          "completed_at": "2026-10-31T05:26:11Z"
+        },
+        {
+          "name": "Isolated OpenSSH host transport",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-10-31T05:26:11Z",
+          "completed_at": "2026-10-31T05:26:16Z"
+        },
+        {
+          "name": "Run cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-10-31T05:26:16Z",
+          "completed_at": "2026-10-31T05:26:23Z"
+        },
+        {
+          "name": "Run cargo build --locked --manifest-path native/herdr-bridge/Cargo.toml --example terminal-probe",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-10-31T05:26:23Z",
+          "completed_at": "2026-10-31T05:26:23Z"
+        },
+        {
+          "name": "Actual Herdr Windows broker tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 17,
+          "started_at": "2026-10-31T05:26:23Z",
+          "completed_at": "2026-10-31T05:26:23Z"
+        },
+        {
+          "name": "Actual Herdr Linux broker tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-10-31T05:26:23Z",
+          "completed_at": "2026-10-31T05:26:30Z"
+        },
+        {
+          "name": "Windows GUI survival and reconnect",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 19,
+          "started_at": "2026-10-31T05:26:30Z",
+          "completed_at": "2026-10-31T05:26:30Z"
+        },
+        {
+          "name": "Linux GUI survival and reconnect",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-10-31T05:26:30Z",
+          "completed_at": "2026-10-31T05:27:36Z"
+        },
+        {
+          "name": "Run npx electron-builder --config electron-builder.v2-preview.cjs --publish never",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-10-31T05:27:36Z",
+          "completed_at": "2026-10-31T05:32:26Z"
+        },
+        {
+          "name": "Verify packaged Windows modules and GUI",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 22,
+          "started_at": "2026-10-31T05:32:26Z",
+          "completed_at": "2026-10-31T05:32:26Z"
+        },
+        {
+          "name": "Verify packaged Linux modules and GUI",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-10-31T05:32:26Z",
+          "completed_at": "2026-10-31T05:33:35Z"
+        },
+        {
+          "name": "Run node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release-v2-preview",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-10-31T05:33:35Z",
+          "completed_at": "2026-10-31T05:33:35Z"
+        },
+        {
+          "name": "Build isolated original-identity upgrade candidate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-10-31T05:33:35Z",
+          "completed_at": "2026-10-31T05:39:06Z"
+        },
+        {
+          "name": "Original Windows installer offline roundtrip",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 26,
+          "started_at": "2026-10-31T05:39:06Z",
+          "completed_at": "2026-10-31T05:39:06Z"
+        },
+        {
+          "name": "Original deb and AppImage offline roundtrips",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-10-31T05:39:06Z",
+          "completed_at": "2026-10-31T05:41:58Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28,
+          "started_at": "2026-10-31T05:41:58Z",
+          "completed_at": "2026-10-31T05:42:22Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 55,
+          "started_at": "2026-10-31T05:42:22Z",
+          "completed_at": "2026-10-31T05:42:22Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 56,
+          "started_at": "2026-10-31T05:42:22Z",
+          "completed_at": "2026-10-31T05:42:22Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 57,
+          "started_at": "2026-10-31T05:42:22Z",
+          "completed_at": "2026-10-31T05:42:23Z"
+        }
+      ]
+    },
+    {
+      "id": 124452661350,
+      "name": "desktop (windows-2022)",
+      "conclusion": "success",
+      "html_url": "https://github.com/rafaam11/multi-cli-work/actions/runs/41172101154/job/124452661350",
+      "started_at": "2026-10-31T05:21:59Z",
+      "completed_at": "2026-10-31T05:48:57Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-31T05:22:00Z",
+          "completed_at": "2026-10-31T05:22:03Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-31T05:22:03Z",
+          "completed_at": "2026-10-31T05:22:08Z"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-31T05:22:08Z",
+          "completed_at": "2026-10-31T05:22:19Z"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@stable",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-31T05:22:19Z",
+          "completed_at": "2026-10-31T05:22:25Z"
+        },
+        {
+          "name": "Linux desktop dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5,
+          "started_at": "2026-10-31T05:22:25Z",
+          "completed_at": "2026-10-31T05:22:25Z"
+        },
+        {
+          "name": "Run npm ci --ignore-scripts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-31T05:22:25Z",
+          "completed_at": "2026-10-31T05:22:42Z"
+        },
+        {
+          "name": "Run node node_modules/electron/install.js",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-31T05:22:42Z",
+          "completed_at": "2026-10-31T05:22:46Z"
+        },
+        {
+          "name": "Run actions/download-artifact@v8",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-31T05:22:46Z",
+          "completed_at": "2026-10-31T05:22:48Z"
+        },
+        {
+          "name": "Acquire digest-pinned resources",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-31T05:22:48Z",
+          "completed_at": "2026-10-31T05:22:53Z"
+        },
+        {
+          "name": "Run npm run build:v2",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-31T05:22:53Z",
+          "completed_at": "2026-10-31T05:32:52Z"
+        },
+        {
+          "name": "Pre-Electron rescue staging without installer execution",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-31T05:32:52Z",
+          "completed_at": "2026-10-31T05:32:56Z"
+        },
+        {
+          "name": "Provider hooks in a dedicated worker",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-10-31T05:32:56Z",
+          "completed_at": "2026-10-31T05:33:09Z"
+        },
+        {
+          "name": "Run node node_modules/vitest/vitest.mjs run --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-10-31T05:33:09Z",
+          "completed_at": "2026-10-31T05:39:04Z"
+        },
+        {
+          "name": "Isolated OpenSSH host transport",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 14,
+          "started_at": "2026-10-31T05:39:04Z",
+          "completed_at": "2026-10-31T05:39:04Z"
+        },
+        {
+          "name": "Run cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-10-31T05:39:04Z",
+          "completed_at": "2026-10-31T05:39:19Z"
+        },
+        {
+          "name": "Run cargo build --locked --manifest-path native/herdr-bridge/Cargo.toml --example terminal-probe",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-10-31T05:39:19Z",
+          "completed_at": "2026-10-31T05:39:20Z"
+        },
+        {
+          "name": "Actual Herdr Windows broker tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17,
+          "started_at": "2026-10-31T05:39:20Z",
+          "completed_at": "2026-10-31T05:39:30Z"
+        },
+        {
+          "name": "Actual Herdr Linux broker tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 18,
+          "started_at": "2026-10-31T05:39:30Z",
+          "completed_at": "2026-10-31T05:39:30Z"
+        },
+        {
+          "name": "Windows GUI survival and reconnect",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-10-31T05:39:30Z",
+          "completed_at": "2026-10-31T05:40:43Z"
+        },
+        {
+          "name": "Linux GUI survival and reconnect",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 20,
+          "started_at": "2026-10-31T05:40:43Z",
+          "completed_at": "2026-10-31T05:40:43Z"
+        },
+        {
+          "name": "Run npx electron-builder --config electron-builder.v2-preview.cjs --publish never",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-10-31T05:40:43Z",
+          "completed_at": "2026-10-31T05:43:04Z"
+        },
+        {
+          "name": "Verify packaged Windows modules and GUI",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-10-31T05:43:04Z",
+          "completed_at": "2026-10-31T05:44:16Z"
+        },
+        {
+          "name": "Verify packaged Linux modules and GUI",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 23,
+          "started_at": "2026-10-31T05:44:16Z",
+          "completed_at": "2026-10-31T05:44:16Z"
+        },
+        {
+          "name": "Run node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release-v2-preview",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-10-31T05:44:16Z",
+          "completed_at": "2026-10-31T05:44:16Z"
+        },
+        {
+          "name": "Build isolated original-identity upgrade candidate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-10-31T05:44:16Z",
+          "completed_at": "2026-10-31T05:46:35Z"
+        },
+        {
+          "name": "Original Windows installer offline roundtrip",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-10-31T05:46:35Z",
+          "completed_at": "2026-10-31T05:48:36Z"
+        },
+        {
+          "name": "Original deb and AppImage offline roundtrips",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 27,
+          "started_at": "2026-10-31T05:48:36Z",
+          "completed_at": "2026-10-31T05:48:36Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28,
+          "started_at": "2026-10-31T05:48:36Z",
+          "completed_at": "2026-10-31T05:48:51Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 55,
+          "started_at": "2026-10-31T05:48:51Z",
+          "completed_at": "2026-10-31T05:48:52Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 56,
+          "started_at": "2026-10-31T05:48:52Z",
+          "completed_at": "2026-10-31T05:48:55Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 57,
+          "started_at": "2026-10-31T05:48:55Z",
+          "completed_at": "2026-10-31T05:48:55Z"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13032217164,
+      "name": "v2-preview-Linux",
+      "size_in_bytes": 932625185,
+      "digest": "sha256:bfbf91b3028f990a6cbec9b4c79456606d75f9894210f7863b1445c6a7c449d0",
+      "created_at": "2026-10-31T05:42:22Z"
+    },
+    {
+      "id": 13032212906,
+      "name": "v2-preview-Windows",
+      "size_in_bytes": 450868986,
+      "digest": "sha256:3ad4b15500160ede6c8c9bc123d1d233499bcafa49ec9b788216a9653bae3d75",
+      "created_at": "2026-10-31T05:48:51Z"
+    },
+    {
+      "id": 13031765610,
+      "name": "release-mobile",
+      "size_in_bytes": 9521161,
+      "digest": "sha256:d93c8993492ee1bd18669ba238bbb5a1de4f344be70d16069054f8e7f0b9cb4d",
+      "created_at": "2026-10-31T05:21:31Z"
+    },
+    {
+      "id": 13031526041,
+      "name": "mobile-shell",
+      "size_in_bytes": 9521336,
+      "digest": "sha256:d5e0721d392575aafb7ee8eb8435eb8e31362aeac0a5c2d38db0bbf1bbdbb717",
+      "created_at": "2026-10-31T05:21:29Z"
+    }
+  ]
+}

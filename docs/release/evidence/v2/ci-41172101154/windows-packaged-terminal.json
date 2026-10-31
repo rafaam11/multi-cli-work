@@ -1,0 +1,19 @@
+{
+  "platform": "win32",
+  "ime": "Chromium CDP composition and commit, not physical OS IME",
+  "paste": true,
+  "selection": true,
+  "selectAllScrollback": true,
+  "clear": true,
+  "scrollback": true,
+  "search": true,
+  "refreshCompletion": true,
+  "mouse": "SGR press and release",
+  "graphics": "Kitty RGB pixels rendered",
+  "sessions": 15,
+  "concurrentVisible": 6,
+  "creationMs": 5960,
+  "restoreMs": 389,
+  "hiddenOutputSessions": 14,
+  "hiddenQuestionUnread": true
+}

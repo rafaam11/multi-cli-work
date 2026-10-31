@@ -1,0 +1,9 @@
+{
+  "platform": "win32",
+  "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
+  "electronNeverStarted": true,
+  "independentLauncher": true,
+  "actualDataPreserved": true,
+  "originalVersion": "1.55.1",
+  "network": "Outbound firewall block on recovery Node, original installer, installed application and candidate installer; network probe failed as required."
+}
