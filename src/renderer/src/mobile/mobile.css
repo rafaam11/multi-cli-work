@@ -1,12 +1,11 @@
-@import "../fonts.css";
 /*
  * 원격 화면. 색은 메인 창과 같은 토큰(theme-colors.css)을 쓴다 — 같은 앱으로 읽히도록. 상태 색도
  * 메인의 .status-dot 규칙과 같은 짝이다. 터치 대상은 폰에서 40px 이상으로 둔다.
  */
 :root {
   color-scheme: dark;
-  --m-font: "Segoe UI Variable", "Segoe UI", "MCW Noto Sans KR", system-ui, -apple-system, sans-serif;
-  --m-mono: "Cascadia Code", Consolas, "MCW Noto Sans KR", ui-monospace, monospace;
+  --m-font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --m-mono: "Cascadia Code", Consolas, ui-monospace, monospace;
   --m-radius: 6px;
   /* 메인 창 index.css의 같은 이름 글자 토큰 — 넓은 화면과, 메인에서 가져온 LayoutPicker가 쓴다. */
   --font-family-ui: var(--m-font);

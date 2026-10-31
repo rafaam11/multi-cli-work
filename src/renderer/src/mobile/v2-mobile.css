@@ -1,8 +1,0 @@
-.m-v2-app{height:100%;display:flex;flex-direction:column;min-height:0;--text-primary:var(--text);--text-secondary:var(--muted);--bg-primary:var(--bg);--bg-secondary:var(--surface);--border:var(--line);--accent:var(--teal)}
-.m-v2-app>.m-bar{flex-shrink:0;flex-wrap:wrap}.m-v2-app .m-bar h1{flex:1;min-width:70px}
-.m-v2-canvas{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}.m-v2-font{display:flex;gap:6px;padding:4px 8px;background:var(--surface)}
-.m-v2-canvas>.herdr-terminal{flex:1;height:auto}.m-v2-canvas .herdr-terminal button{min-height:40px}
-.m-v2-tasks{overflow:auto;flex:1;padding:12px}.m-v2-owner{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.m-v2-owner select{min-height:40px;max-width:100%}
-.m-v2-tasks .herdr-task-panel{max-width:1100px;margin:0 auto}.m-v2-tasks input,.m-v2-tasks textarea,.m-v2-tasks select{max-width:100%;min-height:40px}
-.m-v2-tasks .herdr-task-question{background:color-mix(in srgb,var(--amber) 12%,var(--surface));border-color:var(--amber)}.m-v2-tasks .herdr-task-header button{flex-shrink:0}
-@media(max-width:600px){.m-v2-tasks .herdr-task-agents{grid-template-columns:1fr}.m-v2-app .m-bar{gap:4px}.m-v2-app .m-bar button{padding:8px}.m-v2-tasks{padding:8px}}

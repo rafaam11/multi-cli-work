@@ -40,7 +40,6 @@ const STATUS_RANK: Record<TerminalStatus, number> = {
   "awaiting-input": 1,
   working: 2,
   starting: 2,
-  unknown: 3,
   idle: 3,
   exited: 3,
   error: 3,
@@ -82,15 +81,14 @@ export function buildSessionPanelItems(input: {
   const sessions = input.sessions
     .map<SessionPanelSessionItem>((session) => {
       const peers = sessionsByProjectId.get(session.projectId) ?? [session];
-      const notice = session.taskNotice;
-      const attention = notice?.unread ? notice.kind==="approval" ? "approval" : "input" : input.unread[session.id] ?? null;
+      const attention = input.unread[session.id] ?? null;
       const worktree = session.worktreeId ? worktreeById.get(session.worktreeId) : undefined;
       return {
         kind: "session",
         id: session.id,
         session,
         label: sessionLabel(session, peers, input.agents),
-        place: session.remote ? `${session.remote.name} · ${session.cwd}${session.remote.connected?"":" · 연결 끊김"}` : placeOf(session.projectId),
+        place: placeOf(session.projectId),
         branch: worktree?.branch ?? null,
         projectId: session.projectId,
         worktreeId: session.worktreeId ?? null,
@@ -98,7 +96,7 @@ export function buildSessionPanelItems(input: {
         agent: session.kind,
         tool: session.tool !== null,
         attention,
-        rank: Math.min(sessionRank(session.status, attention),notice ? notice.kind==="approval" ? 0 : 1 : Number.POSITIVE_INFINITY),
+        rank: sessionRank(session.status, attention),
       };
     })
     .sort(

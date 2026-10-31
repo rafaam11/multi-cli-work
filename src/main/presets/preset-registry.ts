@@ -19,7 +19,7 @@ import { type JsonStoreSpec, readJsonStore, updateJsonStore } from "../storage/j
  * A missing file reads as the one built-in example, so a first run has something to try; once the
  * file exists, what is in it is the whole list — deleting the example keeps it deleted.
  */
-export const SESSION_PRESETS_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "session-presets.json");
+export const SESSION_PRESETS_PATH = path.join(os.homedir(), ".multi-cli-work", "session-presets.json");
 
 export class PresetRegistryError extends Error {
   constructor(message: string, options?: ErrorOptions) {

@@ -40,19 +40,12 @@ function document(overrides: Partial<DocumentPane>): DocumentPane {
 const build = (input: Partial<Parameters<typeof buildSessionPanelItems>[0]>) =>
   buildSessionPanelItems({ sessions: [], documentPanes: [], projects: [atlas, dashboard], worktrees: [worktree], agents, unread: {}, ...input });
 
-it("shows remote PC and path in the global waiting list even when its transport is offline",()=>{
-  const remote=session({id:"remote-view",projectId:null,cwd:"/lab/repo",status:"error",remote:{hostId:"lab",name:"Lab",sessionId:"same",projectId:atlas.id,connected:false,observedAt:12},taskNotice:{taskId:"task",kind:"question",questionIds:["q"],resultIds:[],unread:true}});
-  const items=build({sessions:[session({id:"local"}),remote]});
-  expect(items[0]).toMatchObject({id:"remote-view",place:"Lab · /lab/repo · 연결 끊김",projectId:null});expect(sessionPanelWaitCount(items)).toBe(1);
-});
-
 describe("sessionRank", () => {
   it("승인 대기 → 입력 대기 → 작업 중/시작 중 → 나머지 순서다", () => {
     expect(sessionRank("awaiting-approval", null)).toBe(0);
     expect(sessionRank("awaiting-input", null)).toBe(1);
     expect(sessionRank("working", null)).toBe(2);
     expect(sessionRank("starting", null)).toBe(2);
-    expect(sessionRank("unknown", null)).toBe(3);
     expect(sessionRank("idle", null)).toBe(3);
     expect(sessionRank("exited", null)).toBe(3);
     expect(sessionRank("error", null)).toBe(3);
@@ -67,9 +60,6 @@ describe("sessionRank", () => {
 });
 
 describe("buildSessionPanelItems", () => {
-  it("keeps unobserved execution visible without manufacturing a waiting request",()=>{
-    expect(sessionPanelWaitCount(build({sessions:[session({id:"unobserved",status:"unknown"})]}))).toBe(0);
-  });
   it("승인 대기가 맨 위, 같은 등급은 updatedAt 내림차순, 동률은 id 오름차순이다", () => {
     const items = build({
       sessions: [

@@ -15,7 +15,7 @@ import {
  * 프로토콜을 쓴다 — 잠금·원자적 쓰기·`.bak`은 `json-store`가, exact-keys 파싱과 canonical ISO는
  * 여기가 맡는다 (docs/superpowers/specs/registry-contract.md §3~§6).
  */
-export const PROJECT_TAGS_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "project-tags.json");
+export const PROJECT_TAGS_PATH = path.join(os.homedir(), ".multi-cli-work", "project-tags.json");
 
 const REGISTRY_KEYS = ["schemaVersion", "updatedAt", "tags"] as const;
 

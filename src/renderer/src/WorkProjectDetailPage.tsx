@@ -24,8 +24,6 @@ import { projectName, relativeTime, sessionLabel, statusLabels } from "./session
 import { TagEditor } from "./TagEditor";
 import { categoryAccentClass } from "./work-project-accent";
 import { errorMessage } from "./ipc-error";
-import { ProjectTasks } from "./herdr/ProjectTasks";
-import { HostTerminalPane } from "./herdr/HostTerminalPane";
 
 const STATUS_OPTIONS: Array<ProjectStatus | ""> = ["", "진행중", "보류", "완료", "보관"];
 
@@ -135,7 +133,6 @@ export function WorkProjectDetailPage({
   onTagsChanged,
 }: WorkProjectDetailPageProps) {
   const [name, setName] = useState(workProject.name);
-  const [taskTerminal, setTaskTerminal] = useState<string | null>(null);
   const [category, setCategory] = useState(workProject.category);
   const [notionLinks, setNotionLinks] = useState<WorkProjectNotionLink[]>(workProject.notionLinks);
   const [localFolders, setLocalFolders] = useState<WorkProjectLocalFolder[]>(workProject.localFolders);
@@ -441,10 +438,6 @@ export function WorkProjectDetailPage({
           {saveError}
         </p>
       ) : null}
-      {window.mcwV2?.version === 2 && <>
-        <ProjectTasks project={workProject} defaultCwd={members[0]?.project.rootPath ?? ""} onOpenTerminal={setTaskTerminal} onLinksChange={async(hostProjects)=>onRegistryChanged(await window.multiCliWork.workProjects.update(workProject.id,{hostProjects}))} />
-        {taskTerminal && <section style={{height:480,position:"relative"}} aria-label="작업 터미널"><button type="button" onClick={() => setTaskTerminal(null)}>터미널 접기</button><HostTerminalPane sessionId={taskTerminal} /></section>}
-      </>}
       <div className="detail-grid work-project-grid">
         <section className="detail-card" aria-label="프로젝트 개요">
           <h2>기본 정보</h2>

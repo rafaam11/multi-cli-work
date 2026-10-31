@@ -1,9 +1,7 @@
-@import "./fonts.css";
-
 :root {
   color-scheme: dark;
-  --font-family-ui: "Segoe UI Variable", "Segoe UI", "MCW Noto Sans KR", sans-serif;
-  --font-family-mono: "Cascadia Code", "Cascadia Mono", Consolas, "MCW Noto Sans KR", monospace;
+  --font-family-ui: "Segoe UI Variable", "Segoe UI", sans-serif;
+  --font-family-mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
   --type-page-title-size: 16px;
   --type-page-title-line-height: 22px;
   --type-panel-title-size: 14px;
@@ -2078,7 +2076,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   display: block;
   margin-top: 2px;
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
   letter-spacing: 0;
   overflow: hidden;
@@ -2408,19 +2406,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 0 0 0 18px;
   list-style: none;
 }
-
-/* Remote host, repository and checkout levels share the sidebar's narrow rail. */
-.remote-project-tree ul {
-  margin: 0;
-  padding-left: 10px;
-  list-style: none;
-}
-.remote-project-tree summary {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.remote-project-tree details, .remote-project-tree li { min-width: 0; }
 
 .work-project-empty {
   margin: 2px 0 2px 10px;
@@ -3067,7 +3052,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .session-status {
   flex: 0 0 auto;
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
 }
 
@@ -3575,7 +3560,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .grid-slot-number {
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-page-title-size);
 }
 
@@ -4343,7 +4328,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .update-badge .app-version {
   flex: 0 0 auto;
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
 }
 
 .update-badge .update-status {
@@ -4392,7 +4377,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 0 14px;
   border-top: 1px solid var(--line);
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
 }
 
@@ -4426,9 +4411,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .workspace-body {
   display: grid;
-  /* Error banners must shrink with this column instead of widening the terminal
-     underneath the file explorer through the implicit auto track. */
-  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
@@ -4525,7 +4507,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   max-width: min(46vw, 620px);
   margin-top: 2px;
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
 }
 
@@ -4549,7 +4531,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   gap: 6px;
   margin-right: 5px;
   color: var(--muted);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
   white-space: nowrap;
 }
@@ -4620,7 +4602,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .provider-unavailable {
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
 }
 
@@ -5131,7 +5113,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .fan-out-prompt {
   min-height: 84px;
   resize: vertical;
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
 }
 
 .fan-out-targets {
@@ -5212,7 +5194,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 8px 10px;
   border-top: 1px solid var(--line);
   overflow-x: auto;
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-ui-size);
   line-height: var(--type-ui-line-height);
 }
@@ -5397,18 +5379,6 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .settings-remote-host-form button { flex: 0 0 auto; white-space: nowrap; }
 .settings-remote-host-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .settings-remote-host-actions label { white-space: nowrap; font: var(--type-secondary); }
-.v2-host-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin: 12px 0; }
-.v2-host-form label { display: grid; gap: 4px; min-width: 0; color: var(--text-muted); font: var(--type-secondary); }
-.v2-host-form input, .v2-host-form textarea { min-width: 0; padding: 6px 8px; color: var(--text); background: var(--surface-raised); border: 1px solid var(--line); border-radius: 5px; font: var(--type-secondary); }
-.v2-host-form textarea { resize: vertical; }
-.v2-host-connection { grid-column: 1 / -1; }
-.v2-remote-tasks { margin: 16px 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
-.v2-remote-tasks > .herdr-task-panel { height: auto; overflow: visible; padding: 12px 0; background: transparent; }
-.v2-remote-tasks .herdr-task-workspace { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.v2-remote-tasks .herdr-task-list { max-height: 180px; overflow: auto; }
-.v2-remote-task-terminal { display: flex; flex-direction: column; height: 440px; gap: 8px; }
-.v2-remote-task-terminal > button { align-self: flex-start; }
-.v2-remote-task-terminal > div { flex: 1; min-height: 0; position: relative; }
 
 .settings-error {
   margin: 10px 0 0;
@@ -5518,7 +5488,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border: 1px solid var(--line);
   border-radius: 4px;
   color: var(--text);
-  font-family: Consolas, "MCW Noto Sans KR", monospace;
+  font-family: Consolas, monospace;
   font-size: 12px;
   text-align: center;
 }
@@ -5663,7 +5633,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: var(--bg);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
 }
 
@@ -5703,7 +5673,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--quiet);
   background: var(--surface);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
   pointer-events: none;
 }
@@ -5732,7 +5702,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .empty-glyph span {
   color: var(--teal);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-page-title-size);
 }
 
@@ -5849,7 +5819,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 6px;
   color: var(--text);
   background: var(--surface);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-ui-size);
   line-height: var(--type-ui-line-height);
   resize: none;
@@ -5858,7 +5828,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .file-viewer-plain {
   margin: 0;
   color: var(--text);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-ui-size);
   line-height: var(--type-ui-line-height);
   white-space: pre-wrap;
@@ -5927,7 +5897,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 2px 5px;
   border-radius: 4px;
   background: var(--surface);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-ui-size);
 }
 
@@ -6139,7 +6109,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .monitor-status {
   flex: 0 0 auto;
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
   white-space: nowrap;
 }
@@ -6353,7 +6323,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .activity-time {
   flex: 0 0 auto;
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
   white-space: nowrap;
 }
@@ -6364,7 +6334,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   gap: 6px;
   margin: 0 0 10px;
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
 }
 
@@ -6400,7 +6370,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   margin: 6px 0 0;
   overflow: hidden;
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6541,7 +6511,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .folder-start-worktree-branch {
   flex: 1 1 auto;
   overflow: hidden;
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-secondary-size);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6684,7 +6654,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-secondary-size);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6798,7 +6768,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .session-card-status,
 .session-card-updated {
   color: var(--quiet);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
 }
 
@@ -6814,7 +6784,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 4px;
   color: var(--text);
   background: var(--surface-raised);
-  font-family: "Cascadia Code", Consolas, "MCW Noto Sans KR", monospace;
+  font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-secondary-size);
 }
 

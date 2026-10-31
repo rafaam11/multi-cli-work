@@ -8,7 +8,7 @@ import { type JsonStoreSpec, readJsonStore, updateJsonStore } from "../storage/j
  * one is removed (teardown). They live in their own file, not in `projects.json`: that registry
  * parses exact keys and an older build would refuse a field it does not know.
  */
-export const WORKTREE_SCRIPTS_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "worktree-scripts.json");
+export const WORKTREE_SCRIPTS_PATH = path.join(os.homedir(), ".multi-cli-work", "worktree-scripts.json");
 export const MAX_SCRIPT_LENGTH = 16_384;
 export const DEFAULT_TEARDOWN_TIMEOUT_SEC = 120;
 const MAX_TEARDOWN_TIMEOUT_SEC = 3_600;

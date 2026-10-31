@@ -21,7 +21,6 @@ import type { SessionIndicatorsUpdate, TerminalEvent, TerminalKind, TerminalStat
 import type { UsageSnapshot } from "./usage-types";
 import type {
   WorkProjectLocalFolder,
-  WorkProjectHostProject,
   WorkProjectNotionLink,
   WorkProjectRegistryV1,
   WorkProjectRole,
@@ -63,7 +62,6 @@ export interface ProjectMetadataPatch {
 }
 
 export interface WorkProjectMetadataPatch {
-  hostProjects?: WorkProjectHostProject[];
   name?: string;
   category?: string;
   status?: ProjectStatus | null;
@@ -241,9 +239,6 @@ export interface TerminalSizeOwner {
 }
 
 export interface TerminalSessionView extends PersistedTerminalSession {
-  hostDelivery?: import('./terminal-types').TerminalSession['hostDelivery'];
-  remote?: import("./terminal-types").RemoteTerminalSource;
-  taskNotice?: import("./task-notices").TaskSessionNotice | null;
   status: TerminalStatus;
   pid: number | null;
   exitCode: number | null;

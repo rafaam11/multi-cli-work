@@ -13,15 +13,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.12.0
-      - name: Require tested v2 candidate and authorized Android deferral
-        run: |
-          node -e "if(require('./package.json').version!==require('./docs/release/v2-validation.json').candidateVersion)throw new Error('Stable v2 packaging requires the validated candidate version')"
-          node scripts/v2/release-gate.mjs --check-release stable
       - name: Require tag and package version to match
         if: github.ref_type == 'tag'
         shell: bash
@@ -34,16 +25,51 @@ jobs:
 
   android:
     needs: verify-version
-    uses: ./.github/workflows/mobile-package.yml
-    secrets: inherit
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+      - name: Decode the shell signing key
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: echo "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/mcw-shell.jks"
+      - name: Test and build the signed shell
+        working-directory: android
+        env:
+          MCW_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/mcw-shell.jks
+          MCW_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MCW_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MCW_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew testDebugUnitTest assembleRelease --stacktrace
+      - name: Refuse an unsigned shell
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          "$APKSIGNER" verify "$APK"
+          # 서명 인증서를 고정한다 — 다른 키로 서명된 셸은 배포하지 않는다.
+          "$APKSIGNER" verify --print-certs "$APK" | grep -qi "f313f9a57702bff47c5e2b6fa10b032e3f434513004ca14ca8834457ffb844e9"
+      - run: node scripts/prepare-mobile-shell.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mobile-shell
+          path: build/mobile/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-mobile
+          path: release/Multi-CLI-Work-Mobile-*.apk
 
   windows:
     needs: [verify-version, android]
     runs-on: windows-2022
-    env:
-      MCW_V2_E2E_SHELL: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -53,40 +79,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - run: npm ci --ignore-scripts
-      - run: node node_modules/electron/install.js
+      - run: npm ci
       - uses: actions/download-artifact@v8
         with:
           name: mobile-shell
           path: build/mobile
-      - name: Acquire digest-pinned resources
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/v2/assets.mjs --download --platform win32
-      - run: npm run build:v2
-      - run: node scripts/recovery/startup-stage-smoke.mjs
-      - run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
-      - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
-      - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
-      - run: cargo build --locked --manifest-path native/herdr-bridge/Cargo.toml --example terminal-probe
-      - name: Source GUI and phone gateway
-        env:
-          MCW_V2_E2E: '1'
-        run: npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts e2e/herdr-v2-resume.spec.ts
-      - run: npx electron-builder --config electron-builder.v2.cjs --win --publish never
-      - name: Verify actual stable package
-        shell: pwsh
-        run: |
-          node scripts/v2/check-packaged-main.mjs release/win-unpacked/resources/app.asar
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # win-unpacked is not what users install: the NSIS extractor can skip files.
-          node scripts/v2/check-nsis-payload.mjs (Get-Item release/Multi-CLI-Work-Setup-*.exe).FullName
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $env:MCW_V2_E2E='1'
-          $env:MCW_V2_E2E_RUNTIME='v2'
-          $env:MCW_V2_E2E_EXECUTABLE=(Resolve-Path 'release/win-unpacked/Multi CLI Work.exe').Path
-          npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts e2e/herdr-v2-resume.spec.ts --output=test-results/stable-packaged
+      - run: npm test
+      - run: npm run test:e2e
+      - run: npx electron-builder --win --publish never
       - uses: actions/upload-artifact@v7
         with:
           name: release-windows
@@ -98,42 +98,24 @@ jobs:
   linux:
     needs: [verify-version, android]
     runs-on: ubuntu-22.04
-    env:
-      MCW_V2_E2E_SHELL: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22.12.0
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libnotify4 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1 libsecret-1-0 libfuse2 policykit-1
-      - run: npm ci --ignore-scripts
-      - run: node node_modules/electron/install.js
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm python3 xvfb libgtk-3-0 libnss3 libasound2 libgbm1
+      - run: npm ci
       - uses: actions/download-artifact@v8
         with:
           name: mobile-shell
           path: build/mobile
-      - name: Acquire digest-pinned resources
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/v2/assets.mjs --download --platform linux
-      - run: npm run build:v2
-      - run: node scripts/recovery/startup-stage-smoke.mjs
-      - run: npx vitest run src/main/providers/claude-integration.test.ts --maxWorkers=1
-      - run: node node_modules/vitest/vitest.mjs run --maxWorkers=2 --exclude src/main/providers/claude-integration.test.ts
-      - run: cargo test --locked --manifest-path native/herdr-bridge/Cargo.toml
-      - run: cargo build --locked --manifest-path native/herdr-bridge/Cargo.toml --example terminal-probe
-      - name: Source GUI and phone gateway
-        env:
-          MCW_V2_E2E: '1'
-        run: xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts e2e/herdr-v2-resume.spec.ts
+      - name: Rebuild node-pty for the native Electron ABI
+        run: npm run rebuild:native
+      - run: npm test
+      - run: xvfb-run -a npm run test:e2e
       - name: Package Linux assets
-        run: npx electron-builder --config electron-builder.v2.cjs --linux deb AppImage --x64 --publish never
-      - name: Verify actual stable package
-        run: |
-          node scripts/v2/check-packaged-main.mjs release/linux-unpacked/resources/app.asar
-          MCW_V2_E2E=1 MCW_V2_E2E_RUNTIME=v2 MCW_V2_E2E_EXECUTABLE="$PWD/release/linux-unpacked/multi-cli-work" xvfb-run -a npx playwright test e2e/herdr-v2.spec.ts e2e/herdr-desktop.spec.ts e2e/herdr-v2-resume.spec.ts --output=test-results/stable-packaged
+        run: npx electron-builder --linux deb AppImage --x64 --publish never
       - uses: actions/upload-artifact@v7
         with:
           name: release-linux-x64
@@ -147,7 +129,6 @@ jobs:
     needs: [android, windows, linux]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -156,5 +137,4 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           draft: true
-          body_path: docs/release/${{ github.ref_name }}.md
           files: release/*

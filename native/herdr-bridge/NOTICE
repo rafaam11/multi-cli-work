@@ -1,5 +1,0 @@
-Selected protocol declarations are derived from Herdr 0.9.5
-https://github.com/herdrdev/herdr/tree/2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01
-Copyright Herdr contributors, licensed Apache-2.0.
-Original files: src/protocol/wire.rs and src/input/model.rs.
-Modifications: standalone model, native bincode Encode/Decode derives and bounded validation.

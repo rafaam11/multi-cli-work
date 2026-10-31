@@ -1,7 +1,6 @@
 import type { AgentId, AgentView } from "@shared/agent-types";
 import type { SessionPreset } from "@shared/preset-types";
 import { AgentIcon } from "./brand-icons";
-import {presetV2Issues} from "@shared/v2-presets";
 
 export interface NewSessionMenuItemsProps {
   /** Every agent the registry knows, in its order — `agents.json` may add its own. */
@@ -45,19 +44,18 @@ export function NewSessionMenuItems({ agents, disabledReason, onStart, presets =
           <div className="context-menu-label">프리셋으로 시작</div>
           {presets.map((preset) => {
             const missing = preset.members.find((member) => !byId.get(member.agentId)?.available);
-            const migration=window.mcwV2?.version===2?presetV2Issues(preset).join(" "):"";
             return (
               <button
                 key={preset.id}
                 type="button"
                 role="menuitem"
                 className="preset-menu-item"
-                disabled={disabledReason !== null || missing !== undefined || !!migration}
+                disabled={disabledReason !== null || missing !== undefined}
                 title={
-                  disabledReason ?? (migration ||
+                  disabledReason ??
                   (missing
                     ? `${byId.get(missing.agentId)?.label ?? missing.agentId} 실행 파일을 찾을 수 없습니다`
-                    : preset.members.map((member) => member.name).join(", ")))
+                    : preset.members.map((member) => member.name).join(", "))
                 }
                 onClick={() => onStartPreset(preset.id)}
               >

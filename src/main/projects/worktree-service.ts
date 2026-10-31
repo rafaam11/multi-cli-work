@@ -1,4 +1,3 @@
-import {PendingWorktreeRemovals} from "./pending-worktree-removals";
 import type { SharedProject } from "../../shared/project-types";
 import { runReadOnlyGit } from "./read-only-git";
 import { isWorkingBranch } from "../../shared/working-branches";
@@ -30,12 +29,8 @@ import {
   type WorktreeRegistryOptions,
 } from "./worktree-registry";
 
-export type WorktreeRemovalLease=(()=>Promise<void>)&{removeGit?:(repo:string,cwd:string,force:boolean)=>Promise<void>};
 export interface WorktreeServiceOptions {
   registryPath?: string;
-  /** Host admission barrier held across stop, teardown, Git removal and record cleanup. */
-  holdWorktreeRemoval?(cwd:string,operationId:string):Promise<WorktreeRemovalLease>;
-  settleWorktreeRemoval?(operationId:string):Promise<void>;
   getProject(projectId: string): Promise<SharedProject | null>;
   /** Stops processes whose cwd would prevent Git from deleting the worktree. */
   stopWorktreeSessions(worktreeId: string): Promise<void>;
@@ -59,22 +54,19 @@ export class WorktreeService {
   private syncPromise: Promise<WorktreeWorkspaceSnapshot> | null = null;
   private pendingSync: Promise<WorktreeWorkspaceSnapshot> | null = null;
   private lastProjects: SharedProject[] = [];
-  private readonly removals:PendingWorktreeRemovals;
-  private readonly removing=new Set<string>();
 
   constructor(private readonly options: WorktreeServiceOptions) {
     this.registryOptions = options.registryPath ? { registryPath: options.registryPath } : {};
-    this.removals=new PendingWorktreeRemovals(options.registryPath);
   }
 
   async list(): Promise<SharedWorktree[]> {
     const registry = await readWorktreeRegistry(this.registryOptions);
-    return Object.values({...registry.worktrees,...Object.fromEntries(Object.entries(await this.removals.list()).map(([id,op])=>[id,op.worktree]))}).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return Object.values(registry.worktrees).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 
   async get(worktreeId: string): Promise<SharedWorktree | null> {
     const registry = await readWorktreeRegistry(this.registryOptions);
-    return registry.worktrees[worktreeId] ?? (await this.removals.list())[worktreeId]?.worktree ?? null;
+    return registry.worktrees[worktreeId] ?? null;
   }
 
   sync(projects: SharedProject[]): Promise<WorktreeWorkspaceSnapshot> {
@@ -100,11 +92,10 @@ export class WorktreeService {
 
   private async performSync(projects: SharedProject[]): Promise<WorktreeWorkspaceSnapshot> {
     const registry = await readWorktreeRegistry(this.registryOptions);
-    const pending=await this.removals.list();
-    const entries = { ...registry.worktrees,...Object.fromEntries(Object.entries(pending).map(([id,op])=>[id,op.worktree])) };
+    const entries = { ...registry.worktrees };
     const workspaces: GitWorkspaceView[] = [];
     const warnings: Record<string, string> = {};
-    const added: SharedWorktree[] = Object.values(pending).filter(op=>!registry.worktrees[op.worktree.id]).map(op=>op.worktree);
+    const added: SharedWorktree[] = [];
     const updated: SharedWorktree[] = [];
     const removedIds: string[] = [];
 
@@ -197,7 +188,7 @@ export class WorktreeService {
         }
         for (const entry of Object.values(entries)) {
           if (entry.projectId !== project.id || seen.has(normalizeWorkspacePath(entry.path))) continue;
-          if (!(await this.removals.list())[entry.id]&&!(await this.options.hasWorktreeSessions?.(entry.id))) {
+          if (!(await this.options.hasWorktreeSessions?.(entry.id))) {
             delete entries[entry.id];
             removedIds.push(entry.id);
             continue;
@@ -350,10 +341,9 @@ export class WorktreeService {
     const activePaths = new Set(listed.map((item) => normalizeWorkspacePath(item.path)));
     const registry = await readWorktreeRegistry(this.registryOptions);
     const removedIds: string[] = [];
-    const pending=await this.removals.list();
     for (const entry of Object.values(registry.worktrees)) {
       if (entry.projectId !== projectId || activePaths.has(normalizeWorkspacePath(entry.path))) continue;
-      if (pending[entry.id]||await this.options.hasWorktreeSessions?.(entry.id)) continue;
+      if (await this.options.hasWorktreeSessions?.(entry.id)) continue;
       removedIds.push(entry.id);
     }
     if (removedIds.length > 0) {
@@ -372,19 +362,6 @@ export class WorktreeService {
     force: boolean,
     options: { skipTeardown?: boolean } = {},
   ): Promise<WorktreeRemovalResult> {
-    if(this.removing.has(worktreeId))throw new Error("Worktree removal is already running");
-    this.removing.add(worktreeId);
-    try{return await this.removeHeld(worktreeId,force,options);}finally{this.removing.delete(worktreeId);}
-  }
-  private async removeHeld(worktreeId:string,force:boolean,options:{skipTeardown?:boolean}):Promise<WorktreeRemovalResult>{
-    const previous=(await this.removals.list())[worktreeId];
-    if(previous?.phase==='release'){
-      if(!this.options.settleWorktreeRemoval)throw new Error("Pending worktree removal requires host reconciliation");
-      await this.options.settleWorktreeRemoval(previous.id);
-      if(previous.removed){await removeWorktreeEntry(worktreeId,this.options.now(),this.registryOptions);await this.removals.finish(worktreeId);return {removed:true};}
-      await addWorktreeEntry(previous.worktree,this.registryOptions);
-      await this.removals.finish(worktreeId);
-    }
     const worktree = await this.get(worktreeId);
     if (!worktree) throw new Error(`Unknown worktree: ${worktreeId}`);
     const project = await this.options.getProject(worktree.projectId);
@@ -403,37 +380,19 @@ export class WorktreeService {
           message: `${worktree.branch}에 커밋되지 않은 변경 ${changedFileCount}개가 있습니다.`,
         };
       }
-    }
-    const operation=this.options.holdWorktreeRemoval?await this.removals.begin(worktree):undefined;
-    const release=await this.options.holdWorktreeRemoval?.(worktree.path,operation!.id);
-    let removed=false;
-    try {
-      if (state) {
-        // Sessions must stop before git tries to delete the directory: on Windows a live process
-        // whose cwd is inside the worktree keeps the directory undeletable.
-        await this.options.stopWorktreeSessions(worktreeId);
-        if (this.options.runTeardown && !options.skipTeardown) {
-          const teardown = await this.options.runTeardown(worktree, project);
-          if (!teardown.ok) return { removed: false, reason: "teardown-failed", message: teardown.message, output: teardown.output };
-          // Teardown can take time or start processes itself. Require another live host
-          // observation before deleting the checkout; an unavailable host blocks removal.
-          await this.options.stopWorktreeSessions(worktreeId);
-        }
-        await (release?.removeGit??removeGitWorktree)(project.rootPath, worktree.path, force);
+      // Sessions must stop before git tries to delete the directory: on Windows a live process
+      // whose cwd is inside the worktree keeps the directory undeletable.
+      await this.options.stopWorktreeSessions(worktreeId);
+      if (this.options.runTeardown && !options.skipTeardown) {
+        const teardown = await this.options.runTeardown(worktree, project);
+        if (!teardown.ok) return { removed: false, reason: "teardown-failed", message: teardown.message, output: teardown.output };
       }
-      // If Git no longer lists the path, a prior attempt already crossed the irreversible boundary
-      // (or the worktree disappeared externally). Finish the retryable records/log cleanup directly.
-      await this.options.removeWorktreeSessions(worktreeId);
-      removed=true;
-    } finally {
-      if(operation)await this.removals.releasing(worktreeId,removed);
-      await release?.();
-      if(operation&&!removed)await this.removals.finish(worktreeId);
+      await removeGitWorktree(project.rootPath, worktree.path, force);
     }
-    // Keep the registry entry retryable until the host acknowledges releasing its hold.
-    // A lost release response must not leave an invisible, permanently held checkout.
+    // If Git no longer lists the path, a prior attempt already crossed the irreversible boundary
+    // (or the worktree disappeared externally). Finish the retryable records/log cleanup directly.
+    await this.options.removeWorktreeSessions(worktreeId);
     await removeWorktreeEntry(worktreeId, this.options.now(), this.registryOptions);
-    if(operation)await this.removals.finish(worktreeId);
     if (this.lastProjects.length > 0) await this.sync(this.lastProjects);
     return { removed: true };
   }

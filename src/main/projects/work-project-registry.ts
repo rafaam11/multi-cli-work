@@ -3,7 +3,6 @@ import path from "node:path";
 import type { ProjectStatus } from "../../shared/project-types";
 import type {
   WorkProject,
-  WorkProjectHostProject,
   WorkProjectLocalFolder,
   WorkProjectMember,
   WorkProjectNotionLink,
@@ -17,7 +16,7 @@ import {
   updateJsonStore,
 } from "../storage/json-store";
 
-export const WORK_PROJECT_REGISTRY_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "work-projects.json");
+export const WORK_PROJECT_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "work-projects.json");
 
 const STATUSES: readonly ProjectStatus[] = ["진행중", "보류", "완료", "보관"];
 const ROLES: readonly WorkProjectRole[] = ["repo", "docs"];
@@ -33,7 +32,6 @@ const WORK_PROJECT_KEYS = [
   "notionLinks",
   "localFolders",
   "members",
-  "hostProjects",
   "order",
   "createdAt",
   "updatedAt",
@@ -143,18 +141,6 @@ function parseMembers(value: unknown, key: string): WorkProjectMember[] {
   return members;
 }
 
-function parseHostProjects(value:unknown):WorkProjectHostProject[]{
-  if(!Array.isArray(value)||value.length>32)throw new WorkProjectRegistryError('Invalid hostProjects');
-  const links=value.map(link=>{
-    if(!isRecord(link))throw new WorkProjectRegistryError('Invalid host project');
-    assertExactKeys(link,['hostId','projectId','projectName'],'host project');
-    if(typeof link.hostId!=='string'||!/^[-\w]{1,128}$/.test(link.hostId)||typeof link.projectName!=='string'||!link.projectName.trim()||link.projectName.length>512||/[\x00-\x1f]/.test(link.projectName))throw new WorkProjectRegistryError('Invalid host project identity');
-    return {hostId:link.hostId,projectId:uuidString(link.projectId,'host project ID'),projectName:link.projectName};
-  });
-  if(new Set(links.map(link=>link.hostId)).size!==links.length)throw new WorkProjectRegistryError('Duplicate host project association');
-  return links;
-}
-
 function parseWorkProject(value: unknown, key: string): WorkProject {
   if (!isRecord(value)) throw new WorkProjectRegistryError(`work project ${key} must be an object`);
   assertExactKeys(value, WORK_PROJECT_KEYS, `work project ${key}`);
@@ -175,7 +161,6 @@ function parseWorkProject(value: unknown, key: string): WorkProject {
     notionLinks: parseNotionLinks(value.notionLinks, value.notionUrl, key),
     localFolders: parseLocalFolders(value.localFolders, key),
     members: parseMembers(value.members, key),
-    ...(value.hostProjects===undefined?{}:{hostProjects:parseHostProjects(value.hostProjects)}),
     order: value.order as number | null,
     createdAt: isoString(value.createdAt, `work project ${key}.createdAt`),
     updatedAt: isoString(value.updatedAt, `work project ${key}.updatedAt`),
@@ -201,13 +186,7 @@ export function parseWorkProjectRegistry(value: unknown): WorkProjectRegistryV1 
   // A folder belongs to at most one work project — membership is the single source of truth here,
   // so cross-project duplicates would make the sidebar grouping ambiguous.
   const owners = new Map<string, string>();
-  const hostOwners = new Map<string,string>();
   for (const workProject of Object.values(workProjects)) {
-    for(const link of workProject.hostProjects??[]){
-      const key=JSON.stringify([link.hostId,link.projectId]),owner=hostOwners.get(key);
-      if(owner&&owner!==workProject.id)throw new WorkProjectRegistryError(`Work projects ${owner} and ${workProject.id} both claim remote project ${link.projectId}`);
-      hostOwners.set(key,workProject.id);
-    }
     for (const member of workProject.members) {
       const owner = owners.get(member.projectId);
       if (owner && owner !== workProject.id) {

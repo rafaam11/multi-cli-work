@@ -5,7 +5,6 @@ import type { RemoteAccessStatus, RemoteDeviceInfo, RemotePairingCode } from "@s
 import QRCode from "qrcode";
 import { errorMessage } from "./ipc-error";
 import { RemoteHostsSettings } from "./RemoteHostsSettings";
-import { HostsSettings } from "./herdr/HostsSettings";
 
 const STATE_LABEL: Record<RemoteAccessStatus["state"], string> = {
   off: "꺼짐",
@@ -169,7 +168,7 @@ export function RemoteSettings({ settings }: { settings: AppSettings }) {
         </div>
       ))}
       {error ? <p className="settings-error">{error}</p> : null}
-      {window.mcwV2?.version===2?<HostsSettings/>:<RemoteHostsSettings />}
+      <RemoteHostsSettings />
     </>
   );
 }

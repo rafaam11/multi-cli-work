@@ -5,15 +5,6 @@ const progress = (body: string) => `\u001b]9;4;${body}\u0007`;
 const data = (sessionId: string, text: string) => ({ type: "data" as const, sessionId, data: text, sequence: 1 });
 
 describe("SessionIndicatorTracker", () => {
-  it("atomically replaces host metadata and keeps it separate from execution state", () => {
-    const tracker=new SessionIndicatorTracker(),listener=vi.fn();tracker.onChange(listener);
-    const snapshot={chips:[{key:"test",text:"테스트 완료",color:"green" as const}],progress:{state:"normal" as const,value:100}};
-    tracker.replace("remote",snapshot);tracker.replace("remote",snapshot);
-    expect(listener).toHaveBeenCalledTimes(1);
-    tracker.handle({type:"status",sessionId:"remote",status:"idle"});
-    expect(tracker.get("remote")).toEqual(snapshot);
-    tracker.replace("remote",{chips:[],progress:null});expect(tracker.snapshot()).toEqual([]);
-  });
   it("publishes a session's progress as its output reports it, once per change", () => {
     const tracker = new SessionIndicatorTracker();
     const listener = vi.fn();

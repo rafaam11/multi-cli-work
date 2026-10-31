@@ -77,10 +77,8 @@ describe("startRepoSync", () => {
 
   it("실패와 건너뜀은 쿨다운 없이 다음에 다시 시도한다", async () => {
     const missing = path.join(root, "not-there");
-    // Two sequential invocations can share the same millisecond on a fast disk.
-    const now=()=>new Date('2026-10-30T00:00:00.000Z');
-    await syncRepos({ paths: [missing], stateDir, cloudRoots: [], now });
-    const again = await syncRepos({ paths: [missing], stateDir, cloudRoots: [], now });
+    await syncRepos({ paths: [missing], stateDir, cloudRoots: [] });
+    const again = await syncRepos({ paths: [missing], stateDir, cloudRoots: [] });
     expect(again.results[0]).toMatchObject({ status: "skipped", reason: "missing", cached: false });
   });
 

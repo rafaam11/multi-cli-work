@@ -4,7 +4,7 @@ import type { SharedWorktree, WorktreeRegistryV1 } from "../../shared/worktree-t
 import { readJsonStore, updateJsonStore, type JsonStoreSpec } from "../storage/json-store";
 import { normalizeWorkspacePath } from "./git-worktree";
 
-export const WORKTREE_REGISTRY_PATH = path.join(process.env.MCW_REGISTRY_ROOT ?? path.join(os.homedir(), ".multi-cli-work"), "worktrees.json");
+export const WORKTREE_REGISTRY_PATH = path.join(os.homedir(), ".multi-cli-work", "worktrees.json");
 
 const WORKTREE_KEYS = ["id", "projectId", "path", "branch", "createdAt", "updatedAt"] as const;
 

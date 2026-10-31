@@ -38,9 +38,6 @@ export interface WorkProjectLocalFolder {
   path: string;
 }
 
-/** Explicit PC/project association; remote IDs are never local registry IDs. */
-export interface WorkProjectHostProject {hostId:string;projectId:string;projectName:string}
-
 export interface WorkProject {
   id: string;
   name: string;
@@ -51,8 +48,6 @@ export interface WorkProject {
   localFolders: WorkProjectLocalFolder[];
   /** Single source of truth for membership. A folder belongs to at most one work project. */
   members: WorkProjectMember[];
-  /** v2 data root only. Viewing a project never creates these associations. */
-  hostProjects?: WorkProjectHostProject[];
   order: number | null;
   createdAt: string;
   updatedAt: string;

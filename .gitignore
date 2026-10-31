@@ -2,14 +2,7 @@ node_modules/
 out/
 dist/
 /release/
-/release-v2-preview/
-/release-v2-recovery/
-/release-v2-distribution/
 /build/mobile/
-/build/v2/
-/build/v2-preinstall/
-/build/herdr-bridge/
-/native/herdr-bridge/target/
 coverage/
 test-results/
 playwright-report/

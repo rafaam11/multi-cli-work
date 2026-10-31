@@ -209,14 +209,6 @@ export function createSessionActions(context: SessionContext) {
         ...DEFAULT_TERMINAL_SIZE,
       });
       setSessions((current) => replaceSession(current, resumed));
-      if (resumed.id !== target.id) {
-        // Older independent hosts retain the original attempt and continue in
-        // a successor. Keep the pane where the user pressed Resume.
-        placePaneOnCurrentView(resumed.id, (view) => view.slots.includes(target.id)
-          ? { ...view, slots: view.slots.map(id => id === target.id ? resumed.id : id === resumed.id ? null : id) }
-          : appendSession(view, resumed.id));
-        focusPane(resumed.id);
-      }
       persistSelection(resumed.projectId, resumed.id);
     });
   };

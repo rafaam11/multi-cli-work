@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import {normalizeWorkspacePath} from '../projects/git-worktree';
 import type { AgentDefinition, AgentId } from "../../shared/agent-types";
 import {
   MAX_VISIBLE_SESSIONS,
@@ -31,7 +30,7 @@ import type {
 import { buildAgentLaunch } from "../agents/agent-launch";
 import { parseCodexExitConversationId } from "../providers/codex-resume";
 import { agentExecutable, buildToolLaunch, type ProviderExecutables } from "../providers/provider-launch";
-import { cleanupProviderStatusFiles, deleteProviderStatusFile, readProviderStatusFile } from "../providers/provider-status";
+import { cleanupProviderStatusFiles, deleteProviderStatusFile } from "../providers/provider-status";
 import type { ProviderStatusEvent } from "../providers/provider-status";
 import {
   appendSessionLog,
@@ -89,10 +88,6 @@ export function resumeSeparatorText(nowIso: string): string {
 }
 
 export interface TerminalWorkerGateway {
-  resumeTarget?(id:string):Promise<{sessionId:string;restartGeneration?:string;redirectSessionId?:string}>;
-  holdCheckoutRemoval?(cwd:string,id:string):Promise<import("../projects/worktree-service").WorktreeRemovalLease>;
-  settleCheckoutRemoval?(id:string):Promise<void>;
-  listExisting?(): Promise<(TerminalSession & {generation:string})[]>;
   create(spec: TerminalLaunchSpec): Promise<TerminalSession>;
   attach(sessionId: string): Promise<TerminalAttachment>;
   write(sessionId: string, data: string): Promise<void>;
@@ -230,8 +225,6 @@ export class TerminalCoordinator {
   private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" }>>();
   private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
-  private hostReconciliation: Promise<void> = Promise.resolve();
-  private readonly resuming = new Map<string,Promise<TerminalSessionView>>();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
   /** Sessions on the renderer's 숨김 shelf, as of its last save. The remote list shows them apart. */
   private hiddenIds = new Set<string>();
@@ -253,7 +246,6 @@ export class TerminalCoordinator {
     );
     const snapshot = await readAppState({ statePath: this.options.statePath });
     for (const session of Object.values(snapshot.state.sessions)) this.views.set(session.id, exitedView(session));
-    await this.reconcileHostSessions();
     this.hiddenIds = this.knownSessionIds(snapshot.state.hiddenPanes?.slots ?? []);
     if (this.options.statusDir) {
       await cleanupProviderStatusFiles(this.options.statusDir, new Set(this.views.keys())).catch((error) =>
@@ -264,47 +256,6 @@ export class TerminalCoordinator {
 
   list(): TerminalSessionView[] {
     return [...this.views.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }
-  reconcileHostSessions(observed?: (TerminalSession & {generation: string})[]): Promise<void> {
-    const next = this.hostReconciliation.then(async () => {
-    const sessions=observed ?? await this.options.worker.listExisting?.() ?? [];
-    const ids=new Set(sessions.map(session=>session.id));
-    for(const view of this.views.values())if(view.remote&&!ids.has(view.id)){
-      view.remote={...view.remote,connected:false};view.status="error";
-      this.publish({type:"workspace",sessionId:view.id,session:{...view}});
-    }
-    for (const session of sessions) {
-      if (this.removedSessionIds.has(session.id)) continue;
-      const previous = this.views.get(session.id);
-      const view: TerminalSessionView = { ...previous, ...session, providerConversationId:previous?.providerConversationId ?? session.providerConversationId ?? null, title: previous?.title ?? null, name: previous?.name ?? null, interruptedByShutdown: false };
-      if(!view.providerConversationId&&session.pid===0&&!session.remote&&this.options.statusDir&&/^[a-zA-Z0-9-]+$/.test(session.id)){
-        const receipt=await readProviderStatusFile(this.options.statusDir,session.id);
-        if(receipt?.sessionId===session.id&&receipt.provider===session.kind&&receipt.generation===session.generation&&receipt.providerConversationId)view.providerConversationId=receipt.providerConversationId;
-      }
-      if(session.pid===0&&!session.remote&&session.projectId&&this.options.resolveWorkspace&&(!previous||previous.pid!==0||previous.cwd!==session.cwd||previous.projectId!==session.projectId)){
-        const workspace=await this.options.resolveWorkspace(session.projectId,session.cwd);
-        if(workspace?.worktreeId)view.worktreeId=workspace.worktreeId;
-        else delete view.worktreeId;
-      }
-      if (previous && JSON.stringify(previous) === JSON.stringify(view)) continue;
-      this.views.set(session.id, view);
-      this.generations.set(session.id, session.generation);
-      await this.persistView(view);
-      if (!previous) this.publish({type:"created",sessionId:session.id,session:view});
-      else {
-        if (previous.status !== view.status) this.publish({type:"status",sessionId:session.id,status:view.status,generation:session.generation});
-        this.publish({type:"workspace",sessionId:session.id,session:view});
-      }
-    }
-    });
-    this.hostReconciliation = next.catch(() => undefined);
-    return next;
-  }
-  /** Close GUI observers while the independent host retains all processes. */
-  async detach(): Promise<void> {
-    this.stopTitlePolling();
-    await this.hostReconciliation;
-    await this.flush(false);
   }
   ownsActivity(event: import("../../shared/activity-types").ProviderActivity): boolean {
     return !this.removedSessionIds.has(event.sessionId) && this.generations.get(event.sessionId) === event.generation &&
@@ -375,38 +326,12 @@ export class TerminalCoordinator {
       resumeConversationId: null, forkConversationId: source.providerConversationId, name: input.name });
   }
 
-  resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
-    const pending=this.resuming.get(input.sessionId);if(pending)return pending;
-    const operation=this.resumeOnce(input,options).finally(()=>{if(this.resuming.get(input.sessionId)===operation)this.resuming.delete(input.sessionId);});
-    this.resuming.set(input.sessionId,operation);return operation;
-  }
-  private async resumeOnce(input: ResumeTerminalInput, options: LaunchOptions): Promise<TerminalSessionView> {
-    if(input.sessionId.startsWith("mcwr-"))throw new Error("원격 세션 재개는 해당 PC에서 실행하세요.");
+  async resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
-    const target=await this.options.worker.resumeTarget?.(saved.id);
-    if(target?.redirectSessionId){
-      await this.reconcileHostSessions();const continued=this.views.get(target.redirectSessionId);
-      if(!continued)throw new Error('이어진 세션 정보를 불러오지 못했습니다.');
-      if(['error','exited'].includes(continued.status))return this.resume({...input,sessionId:continued.id},options);
-      return {...continued};
-    }
     const agent = this.requireAgent(saved.kind);
-    // v2.0.0/1 could erase the GUI's conversation ID while a rejected restart
-    // left the preceding provider receipt intact. Only an explicit resume may
-    // recover an older generation, and only after finding that exact transcript.
-    if(!saved.providerConversationId&&saved.pid===0&&['error','exited'].includes(saved.status)&&agent.id==='claude'&&this.options.statusDir&&this.options.hasProviderConversation){
-      const receipt=await readProviderStatusFile(this.options.statusDir,saved.id);
-      if(receipt?.sessionId===saved.id&&receipt.provider==='claude'&&receipt.providerConversationId&&await this.options.hasProviderConversation(saved,agent,receipt.providerConversationId)){
-        saved.providerConversationId=receipt.providerConversationId;await this.persistView(saved);
-      }
-    }
     const isCodex = agent.builtin && agent.id === "codex" && agent.conversationId === "provider-assigned";
-    // A rejected first launch never created a Claude transcript. Its original
-    // app-generated ID is the only candidate; the existence check below chooses
-    // resume versus a fresh launch, without guessing a different conversation.
-    if(!saved.providerConversationId&&saved.pid===0&&saved.hostDelivery==='rejected'&&agent.conversationId==='app-generated'&&this.options.hasProviderConversation)saved.providerConversationId=saved.id;
     if (isCodex && !saved.providerConversationId) {
       await this.flushSessionLog(saved.id);
       await this.recoverCodexConversation(saved);
@@ -443,16 +368,8 @@ export class TerminalCoordinator {
       if (resumeConversationId !== saved.id && await hasConversation(saved, agent, saved.id)) newConversationId = randomUUID();
       resumeConversationId = null;
     }
-    if(target&&target.sessionId!==saved.id){
-      // Persist before dispatch: old hosts do not retain provider IDs when a
-      // successor launch is rejected or its response is lost.
-      const successor:TerminalSessionView={...saved,id:target.sessionId,cwd,status:'unknown',pid:0,hostDelivery:undefined,interruptedByShutdown:false,
-        providerConversationId:resumeConversationId??newConversationId??(agent.conversationId==='app-generated'?target.sessionId:null)};
-      this.views.set(successor.id,successor);await this.persistView(successor);
-    }
     return this.launch({
-      sessionId: target?.sessionId??saved.id,
-      restartGeneration:target?.restartGeneration,
+      sessionId: saved.id,
       projectId: saved.projectId,
       tool: saved.tool,
       title: saved.title,
@@ -626,9 +543,6 @@ export class TerminalCoordinator {
   async remove(sessionId: string): Promise<void> {
     const view = this.views.get(sessionId);
     if (!view) return;
-    // Host-owned work must remain visible if stop delivery or its remote state is unknown.
-    const hostStop=view.pid===0&&view.status!=="exited";
-    if(hostStop)await this.options.worker.stop(sessionId);
     this.removedSessionIds.add(sessionId);
     this.pendingProviderStarts.delete(sessionId);
     this.pendingCodexStatuses.delete(sessionId);
@@ -636,7 +550,7 @@ export class TerminalCoordinator {
     // Drain lifecycle writes that began before removal claimed the session. Events from stop() and
     // later are rejected by removedSessionIds, so durable deletion remains the final state write.
     await this.eventChain;
-    if (!hostStop && view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
+    if (view.pid !== null && view.status !== "exited") await this.options.worker.stop(sessionId).catch(() => undefined);
     await this.logWrites.get(sessionId)?.catch(() => undefined);
     await deleteSessionLog(this.options.logDir, sessionId);
     if (this.options.statusDir) {
@@ -684,31 +598,11 @@ export class TerminalCoordinator {
     await this.removeSessions(this.list().filter((session) => session.worktreeId === worktreeId));
   }
 
-  async holdWorktreeRemoval(cwd:string,id:string):Promise<import("../projects/worktree-service").WorktreeRemovalLease> {
-    return this.options.worker.holdCheckoutRemoval?.(cwd,id)??(async()=>{});
-  }
-
-  async settleWorktreeRemoval(id:string):Promise<void>{await this.options.worker.settleCheckoutRemoval?.(id);}
-
   async stopWorktreeSessions(worktreeId: string): Promise<void> {
-    // A host can have started a worker since the GUI's last observation. A failed
-    // fresh read must block directory removal, not certify the cached list empty.
-    if(this.options.worker.listExisting)await this.reconcileHostSessions();
-    const worktree=await this.options.getWorktree?.(worktreeId);
-    if(this.options.worker.listExisting&&!worktree)throw new Error('작업 폴더의 현재 경로를 확인할 수 없어 삭제를 보류합니다.');
-    const root=worktree?normalizeWorkspacePath(worktree.path):null;
-    const sessions = this.list().filter(session=>{
-      if(session.remote)return false;
-      if(session.worktreeId===worktreeId)return true;
-      if(!root)return false;
-      const relative=path.relative(root,normalizeWorkspacePath(session.cwd));
-      return relative===''||!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith(`..${path.sep}`);
-    });
+    const sessions = this.list().filter((session) => session.worktreeId === worktreeId);
     const failures: unknown[] = [];
     for (const session of sessions) {
-      if(worktree&&session.worktreeId!==worktreeId){session.worktreeId=worktreeId;session.projectId=worktree.projectId;await this.persistView(session);}
-      // Host-managed error means observation lost; only the host can prove exit.
-      if (session.pid === null || session.status === "exited" || session.status === "error"&&session.pid!==0) continue;
+      if (session.pid === null || session.status === "exited" || session.status === "error") continue;
       try {
         await this.options.worker.stop(session.id);
       } catch (error) {
@@ -920,7 +814,6 @@ export class TerminalCoordinator {
   }
 
   private async launch(input: {
-    restartGeneration?:string;
     launchProfile?: import("../../shared/launch-profile").LaunchProfile | null;
     forkConversationId?: string;
     sessionId: string;
@@ -987,7 +880,6 @@ export class TerminalCoordinator {
       session = await this.options.worker.create({
         sessionId: input.sessionId,
         generation,
-        restartGeneration:input.restartGeneration,
         projectId: input.projectId,
         tool: input.tool,
         kind: input.kind,
@@ -1020,7 +912,6 @@ export class TerminalCoordinator {
       this.pendingProviderStarts.delete(input.sessionId);
       this.pendingCodexStatuses.delete(input.sessionId);
       this.pendingWorkerEvents.delete(input.sessionId);
-      if(this.options.worker.listExisting)await this.reconcileHostSessions().catch(reconcileError=>this.reportAsyncError('Failed launch reconciliation failed',reconcileError));
       throw error;
     }
     const view: TerminalSessionView = {
@@ -1181,7 +1072,6 @@ export class TerminalCoordinator {
   /** Only an agent that writes a transcript we can parse has a title to poll for. */
   private titleCandidates(): Array<{ session: TerminalSessionView; agent: AgentDefinition }> {
     return this.list().flatMap((session) => {
-      if(session.id.startsWith("mcwr-"))return [];
       const agent = this.options.getAgent(session.kind);
       if (!agent || agent.titleSource === "none") return [];
       if (agent.titleSource === "codex-transcript" && session.title !== null) return [];
@@ -1197,7 +1087,6 @@ export class TerminalCoordinator {
    */
   private editCandidates(): Array<{ session: TerminalSessionView; agent: AgentDefinition }> {
     return this.list().flatMap((session) => {
-      if(session.id.startsWith("mcwr-"))return [];
       const agent = this.options.getAgent(session.kind);
       if (!agent || agent.titleSource === "none") return [];
       if (session.pid === null || session.status === "exited" || session.status === "error") return [];

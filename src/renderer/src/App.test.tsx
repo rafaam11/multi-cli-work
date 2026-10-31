@@ -2928,19 +2928,6 @@ describe("세션 패널", () => {
     expect(document.querySelector(".tools-group")).toBeNull();
   });
 
-  it("v2 전체와 대기는 숨긴 세션의 미확인 결과를 포함하고 화면 진입으로 확인하지 않는다", async () => {
-    const hidden = {...powershellSession,id:"hidden-v2",status:"idle" as const,taskNotice:{taskId:"task",kind:"result" as const,questionIds:[],resultIds:["result"],unread:true}};
-    const harness=createApi({sessions:[powershellSession,hidden],savedViews:{workspace:{layoutId:"auto",slots:[powershellSession.id]},hiddenPanes:{layoutId:"auto",slots:[hidden.id]}}});
-    window.multiCliWork=harness.api;
-    window.mcwV2={version:2} as import("@shared/v2-api").McwV2Api;
-    try{
-      render(<App/>);await screen.findByRole("region",{name:"세션 패널"});
-      await waitFor(()=>expect(rows()).toHaveLength(2));
-      fireEvent.click(within(panel()).getByRole("button",{name:"대기"}));
-      expect(rows()).toHaveLength(1);expect(within(panel()).getByText("결과 확인")).toBeInTheDocument();
-      expect(hidden.taskNotice.unread).toBe(true);
-    }finally{cleanup();delete window.mcwV2;}
-  });
   it("예전 '여기' 설정을 무시하고 전체·대기를 전환하며 폴더를 바꿔도 세션을 유지한다", async () => {
     localStorage.setItem("multi-cli-work.sidebar.v1", JSON.stringify({ sessionScope: "here" }));
     const dashboardSession: TerminalSessionView = {
@@ -4775,91 +4762,4 @@ describe("keymap dispatcher", () => {
     fireEvent.keyDown(window, { key: ",", ctrlKey: true });
     expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
   });
-});
-
-describe("initial workspace hydration",()=>{
-  it.each([{snapshot:[] as TerminalSessionView[]},{snapshot:[powershellSession]}])("preserves an explicitly opened live session when the older startup snapshot arrives ($snapshot.length)",async({snapshot})=>{
-    const harness=createApi({sessions:snapshot});
-    const priorState=await harness.api.terminals.state();
-    vi.mocked(harness.api.terminals.state).mockResolvedValue({...priorState,state:{...priorState.state,selectedProjectId:null,selectedSessionId:null}});
-    let finish!:(value:{vscode:boolean})=>void;
-    vi.mocked(harness.api.providers.availability).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
-    window.multiCliWork=harness.api;render(<App/>);
-    await waitFor(()=>expect(harness.api.terminals.onEvent).toHaveBeenCalled());
-    act(()=>harness.emit({type:'created',sessionId:powershellSession.id,session:powershellSession}));
-    const row=await screen.findByRole('button',{name:/powershell 패인 열기/i});fireEvent.click(row);
-    await act(async()=>finish({vscode:true}));
-    await waitFor(()=>expect(screen.getByRole('button',{name:/PowerShell 패인 열기/i})).toBeInTheDocument());
-    await xtermFor(powershellSession.id);
-  });
-});
-describe("terminal events during hydration",()=>{
-  it("does not resurrect a removed session from the startup snapshot",async()=>{
-    const harness=createApi({sessions:[powershellSession,claudeSession]});let finish!:(value:{vscode:boolean})=>void;
-    vi.mocked(harness.api.providers.availability).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
-    window.multiCliWork=harness.api;render(<App/>);
-    await waitFor(()=>expect(harness.api.terminals.onEvent).toHaveBeenCalled());
-    act(()=>harness.emit({type:'removed',sessionId:powershellSession.id}));
-    await act(async()=>finish({vscode:true}));
-    await screen.findByRole('button',{name:/Claude Code 패인 열기/});
-    expect(screen.queryByRole('button',{name:/PowerShell 패인 열기/})).not.toBeInTheDocument();
-  });
-});
-it('retains untouched saved shelves and other folder layout when navigating during initial loading',async()=>{
-  const hidden={...claudeSession,id:'hidden'};const other={...powershellSession,id:'other',projectId:dashboard.id,cwd:dashboard.rootPath};
-  const harness=createApi({projects:[atlas,dashboard],sessions:[hidden,other],savedViews:{workspace:{layoutId:'cols:1-1',slots:[other.id]},hiddenPanes:{layoutId:'auto',slots:[hidden.id]},folderViews:{[dashboard.id]:{layoutId:'cols:1-1-1',slots:[other.id]}}}});
-  let finish!:(value:{vscode:boolean})=>void;vi.mocked(harness.api.providers.availability).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
-  window.multiCliWork=harness.api;render(<App/>);await waitFor(()=>expect(harness.api.terminals.onEvent).toHaveBeenCalled());
-  act(()=>harness.emit({type:'created',sessionId:powershellSession.id,session:powershellSession}));
-  fireEvent.click(await screen.findByRole('button',{name:/powershell 패인 열기/i}));
-  await act(async()=>finish({vscode:true}));
-  await waitFor(()=>expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(expect.objectContaining({
-    folderViews:expect.objectContaining({[dashboard.id]:{layoutId:'cols:1-1-1',slots:[other.id]}}),
-    workspace:expect.objectContaining({layoutId:'cols:1-1',slots:expect.arrayContaining([other.id,powershellSession.id])}),
-    hiddenPanes:expect.objectContaining({slots:[hidden.id]})
-  })));
-  const saved=vi.mocked(harness.api.terminals.setSlotViews).mock.lastCall![0];expect(saved.workspace.slots).not.toContain(hidden.id);
-  await xtermFor(powershellSession.id);
-});
-it('preserves a saved layout in the same folder when a fresh session is opened during hydration',async()=>{
-  const prior={...claudeSession,id:'prior'};
-  const harness=createApi({sessions:[prior],savedViews:{folderViews:{[atlas.id]:{layoutId:'cols:1-1-1',slots:[prior.id]}},workspace:{layoutId:'auto',slots:[prior.id]},hiddenPanes:{layoutId:'auto',slots:[]}}});
-  let finish!:(value:{vscode:boolean})=>void;vi.mocked(harness.api.providers.availability).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
-  window.multiCliWork=harness.api;render(<App/>);await waitFor(()=>expect(harness.api.terminals.onEvent).toHaveBeenCalled());
-  act(()=>harness.emit({type:'created',sessionId:powershellSession.id,session:powershellSession}));
-  await screen.findByRole('button',{name:/powershell 패인 열기/i});act(()=>harness.requestSession(powershellSession.id));
-  await act(async()=>finish({vscode:true}));
-  await waitFor(()=>expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(expect.objectContaining({folderViews:expect.objectContaining({[atlas.id]:{layoutId:'cols:1-1-1',slots:[prior.id,powershellSession.id]}})})));
-  await xtermFor(powershellSession.id);
-});
-it('replays an explicit hide during initial hydration without dropping the saved hidden shelf',async()=>{
- const hidden={...claudeSession,id:'hidden'};const harness=createApi({sessions:[hidden],savedViews:{workspace:{layoutId:'auto',slots:[]},hiddenPanes:{layoutId:'auto',slots:[hidden.id]}}});
- let finish!:(value:{vscode:boolean})=>void;vi.mocked(harness.api.providers.availability).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
- window.multiCliWork=harness.api;render(<App/>);await waitFor(()=>expect(harness.api.terminals.onEvent).toHaveBeenCalled());
- act(()=>harness.emit({type:'created',sessionId:powershellSession.id,session:powershellSession}));
- fireEvent.contextMenu(await screen.findByRole('button',{name:/powershell 패인 열기/i}));
- fireEvent.click(await screen.findByRole('menuitem',{name:'작업공간에서 숨기기'}));
- await act(async()=>finish({vscode:true}));
- await waitFor(()=>expect(harness.api.terminals.setSlotViews).toHaveBeenLastCalledWith(expect.objectContaining({hiddenPanes:expect.objectContaining({slots:expect.arrayContaining([hidden.id,powershellSession.id])})})));
-});
-it('keeps the newly opened pane visible when hydration moves it to a later saved layout page',async()=>{
- const first={...claudeSession,id:'saved-one'},second={...claudeSession,id:'saved-two'};
- const harness=createApi({sessions:[first,second],savedViews:{workspace:{layoutId:'cols:1-1',slots:[first.id,second.id]},hiddenPanes:{layoutId:'auto',slots:[]}}});
- let finish!:(value:{vscode:boolean})=>void;vi.mocked(harness.api.providers.availability).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
- window.multiCliWork=harness.api;render(<App/>);await waitFor(()=>expect(harness.api.terminals.onEvent).toHaveBeenCalled());
- act(()=>harness.emit({type:'created',sessionId:powershellSession.id,session:powershellSession}));
- fireEvent.click(await screen.findByRole('button',{name:/powershell 패인 열기/i}));
- await act(async()=>finish({vscode:true}));
- await xtermFor(powershellSession.id);
- expect(await screen.findByRole('region',{name:'powershell 터미널'})).toBeInTheDocument();
-});
-it('keeps a fresh folder pane visible when its saved folder layout fills the first page',async()=>{
- const first={...claudeSession,id:'saved-one'},second={...claudeSession,id:'saved-two'};
- const harness=createApi({sessions:[first,second],savedViews:{folderViews:{[atlas.id]:{layoutId:'cols:1-1',slots:[first.id,second.id]}},workspace:{layoutId:'auto',slots:[]},hiddenPanes:{layoutId:'auto',slots:[]}}});
- let finish!:(value:{vscode:boolean})=>void;vi.mocked(harness.api.providers.availability).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
- window.multiCliWork=harness.api;render(<App/>);await waitFor(()=>expect(harness.api.terminals.onEvent).toHaveBeenCalled());
- act(()=>harness.emit({type:'created',sessionId:powershellSession.id,session:powershellSession}));
- await screen.findByRole('button',{name:/powershell 패인 열기/i});act(()=>harness.requestSession(powershellSession.id));
- await act(async()=>finish({vscode:true}));
- await xtermFor(powershellSession.id);expect(await screen.findByRole('region',{name:'powershell 터미널'})).toBeInTheDocument();
 });

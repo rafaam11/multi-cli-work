@@ -383,32 +383,3 @@ const api: MultiCliWorkApi = {
 };
 
 contextBridge.exposeInMainWorld("multiCliWork", api);
-let nextV2Reference = 0;
-if (process.argv.includes("--mcw-v2")) {
-  const v2: import("../shared/v2-api").McwV2Api = {
-    version: 2, enabled: () => ipcRenderer.invoke("v2:enabled"), configuration: () => ipcRenderer.invoke("v2:configuration"),
-    listTasks: hostId => ipcRenderer.invoke("v2:tasks",hostId), createTask: (input,hostId) => ipcRenderer.invoke("v2:task-create", input,hostId), inspectTask: (id,hostId) => ipcRenderer.invoke("v2:task-inspect", id,hostId),
-    executionCatalog:hostId=>ipcRenderer.invoke("v2:execution-catalog",hostId),inspectHostRepository:(id,hostId)=>ipcRenderer.invoke("v2:host-repository",id,hostId),
-    startRegisteredTask:(id,input,hostId)=>ipcRenderer.invoke("v2:task-start-registered",id,input,hostId),
-    executionHosts:ownerHostId=>ipcRenderer.invoke("v2:execution-hosts",ownerHostId),workerCatalog:(workerHostId,ownerHostId)=>ipcRenderer.invoke("v2:worker-catalog",workerHostId,ownerHostId),
-    inspectWorkerRepository:(repositoryId,workerHostId,ownerHostId)=>ipcRenderer.invoke("v2:worker-repository",repositoryId,workerHostId,ownerHostId),
-    taskAction: (id, action, input,hostId) => ipcRenderer.invoke("v2:task-action", id, action, input,hostId),
-    terminalViewId: (sessionId,hostId) => ipcRenderer.invoke("v2:terminal-view-id",sessionId,hostId),
-    onState: callback => {const listener=(_event:Electron.IpcRendererEvent,value:Parameters<typeof callback>[0])=>callback(value);ipcRenderer.on("v2:state",listener);return()=>ipcRenderer.removeListener("v2:state",listener);},
-    hostState: () => ipcRenderer.invoke("v2:host-state"),
-    localConnection:()=>ipcRenderer.invoke("v2:local-connection"),listHosts:()=>ipcRenderer.invoke("v2:hosts"),
-    configureHost:registration=>ipcRenderer.invoke("v2:host-configure",registration),removeHost:id=>ipcRenderer.invoke("v2:host-remove",id),
-    startTask: (id, input) => ipcRenderer.invoke("v2:task-start", id, input), repositoryHead: directory => ipcRenderer.invoke("v2:repository-head", directory),
-    listTerminals: () => ipcRenderer.invoke("v2:terminals"), createTerminal: input => ipcRenderer.invoke("v2:terminal-create", input),
-    subscribeTerminal: (id, callback) => {
-      const reference = String(++nextV2Reference);
-      const listener = (_event: Electron.IpcRendererEvent, sessionId: string, value: unknown) => {if (sessionId === id) callback(value);};
-      ipcRenderer.on("v2:terminal-event", listener);
-      void ipcRenderer.invoke("v2:terminal-subscribe", id, reference).catch(error => callback({type:"error",error:String(error)}));
-      return () => {ipcRenderer.removeListener("v2:terminal-event", listener);void ipcRenderer.invoke("v2:terminal-unsubscribe", id, reference).catch(() => undefined);};
-    },
-    terminalCommand: (id, command) => ipcRenderer.invoke("v2:terminal-command", id, command), recoveryStatus: () => ipcRenderer.invoke("v2:recovery-status"),
-    beginRecovery:()=>ipcRenderer.invoke('v2:recovery-start'),cancelRecovery:()=>ipcRenderer.invoke('v2:recovery-cancel'),openRecovery:()=>ipcRenderer.invoke('v2:recovery-open'),
-  };
-  contextBridge.exposeInMainWorld("mcwV2", v2);
-}

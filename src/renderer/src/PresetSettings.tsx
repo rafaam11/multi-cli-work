@@ -13,14 +13,12 @@ import { AgentIcon } from "./brand-icons";
 import { errorMessage } from "./ipc-error";
 import type { LaunchProfile } from "@shared/launch-profile";
 import { LaunchProfileSelect } from "./LaunchProfileSelect";
-import {presetV2Issues} from "@shared/v2-presets";
 
 /**
  * 설정 › 팀 프리셋. A preset is a list of members — which CLI, the pane's name, and the role prompt
  * it is told once it is up. Editing works on a draft; nothing is written until 저장.
  */
 export function PresetSettings() {
-  const v2=window.mcwV2?.version===2;
   const [presets, setPresets] = useState<SessionPreset[] | null>(null);
   const [agents, setAgents] = useState<AgentView[]>([]);
   const [draft, setDraft] = useState<SessionPreset | null>(null);
@@ -57,8 +55,7 @@ export function PresetSettings() {
       .finally(() => setBusy(false));
   };
 
-  const eligibleAgents=v2?agents.filter(agent=>["claude","codex"].includes(agent.id)):agents;
-  const firstAgent = eligibleAgents.find((agent) => agent.available)?.id ?? eligibleAgents[0]?.id ?? "claude";
+  const firstAgent = agents.find((agent) => agent.available)?.id ?? agents[0]?.id ?? "claude";
   const newPreset = (): SessionPreset => ({
     id: `preset-${Date.now().toString(36)}`,
     name: "새 팀",
@@ -74,7 +71,8 @@ export function PresetSettings() {
     <>
       <h2>팀 프리셋</h2>
       <p className="settings-hint">
-        {v2?"첫 멤버가 대표, 나머지 최대 3명이 작업자가 됩니다. 선택한 프로필로 새 작업을 만들고, 역할 프롬프트를 프로젝트 브리프와 함께 전달합니다. 결과는 사용자가 검토합니다.":"여러 세션을 한 번에 띄우는 묶음입니다. 폴더 우클릭 메뉴, 폴더 시작 화면, 비어 있는 팀 보드에서 시작할 수 있고, 멤버마다 적어 둔 역할 프롬프트는 CLI가 준비되면 자동으로 들어갑니다."}
+        여러 세션을 한 번에 띄우는 묶음입니다. 폴더 우클릭 메뉴, 폴더 시작 화면, 비어 있는 팀 보드에서 시작할 수 있고, 멤버마다
+        적어 둔 역할 프롬프트는 CLI가 준비되면 자동으로 들어갑니다.
       </p>
       {presets === null ? (
         <p className="settings-hint">불러오는 중…</p>
@@ -84,7 +82,6 @@ export function PresetSettings() {
             <li key={preset.id} className="settings-row">
               <span className="settings-list-copy">
                 <strong>{preset.name}</strong>
-                {v2&&presetV2Issues(preset).map(issue=><small className="settings-hint" key={issue}>{issue}</small>)}
                 <span className="preset-settings-members">
                   {preset.members.map((member, index) => (
                     <span key={index}>
@@ -149,7 +146,7 @@ export function PresetSettings() {
                   value={member.agentId}
                   onChange={(event) => updateMember(index, { agentId: event.target.value, launchProfileId: undefined })}
                 >
-                  {agents.filter(agent=>!v2||["claude","codex"].includes(agent.id)||agent.id===member.agentId).map((agent) => (
+                  {agents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
                       {agent.label}
                       {agent.available ? "" : " (미설치)"}
@@ -175,7 +172,7 @@ export function PresetSettings() {
               {["codex", "claude"].includes(member.agentId) ? <label className="preset-member-profile"><span>시작 프로필</span><LaunchProfileSelect agentId={member.agentId} profiles={profiles} value={member.launchProfileId} onChange={value => updateMember(index, { launchProfileId: value })} label={`멤버 ${index + 1} 시작 프로필`} /></label> : null}
               <textarea
                 aria-label={`멤버 ${index + 1} 역할 프롬프트`}
-                placeholder={v2?"역할 프롬프트(선택) — 작업 브리프로 전달됩니다":"역할 프롬프트(선택) — 세션이 준비되면 자동으로 입력됩니다"}
+                placeholder="역할 프롬프트(선택) — 세션이 준비되면 자동으로 입력됩니다"
                 value={member.prompt ?? ""}
                 maxLength={PRESET_PROMPT_MAX}
                 rows={4}
@@ -186,7 +183,7 @@ export function PresetSettings() {
           <div className="preset-editor-actions">
             <button
               type="button"
-              disabled={draft.members.length >= (v2?4:PRESET_MEMBERS_MAX)}
+              disabled={draft.members.length >= PRESET_MEMBERS_MAX}
               onClick={() =>
                 setDraft({ ...draft, members: [...draft.members, { agentId: firstAgent, name: `세션 ${draft.members.length + 1}` }] })
               }

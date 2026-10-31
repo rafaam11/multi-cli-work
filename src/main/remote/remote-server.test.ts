@@ -20,7 +20,6 @@ async function rendererDir(withBundle = true) {
     await mkdir(path.join(dir, "assets"));
     await writeFile(path.join(dir, "mobile.html"), "<!doctype html><title>mobile</title>");
     await writeFile(path.join(dir, "assets", "mobile-abc.js"), "console.log(1)");
-    await writeFile(path.join(dir, "assets", "font-abc.otf"), "font fixture");
   }
   return dir;
 }
@@ -56,8 +55,6 @@ describe("startRemoteServer", () => {
     const asset = await fetch(`${base}/mobile/assets/mobile-abc.js`);
     expect(asset.headers.get("content-type")).toContain("text/javascript");
     expect(asset.headers.get("cache-control")).toContain("immutable");
-    const font=await fetch(`${base}/mobile/assets/font-abc.otf`);
-    expect(font.status).toBe(200);expect(font.headers.get("content-type")).toBe("font/otf");
     const root = await fetch(`${base}/`, { redirect: "manual" });
     expect(root.status).toBe(302);
     expect(root.headers.get("location")).toBe("/mobile/");

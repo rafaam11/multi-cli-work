@@ -11,7 +11,6 @@ import { TerminalSearchBar } from "./TerminalSearchBar";
 import "@xterm/xterm/css/xterm.css";
 import { terminalTheme } from "./terminal-themes";
 import { currentTheme, useResolvedTheme } from "./theme";
-import { HostTerminalPane } from "./herdr/HostTerminalPane";
 
 /**
  * What the title bar's 편집 menu can do to a live terminal. The pane owns the xterm instance, so the
@@ -58,27 +57,7 @@ function isReadOnly(session: TerminalSessionView): boolean {
   return session.status === "exited" || session.status === "error";
 }
 
-export function TerminalPane(props: TerminalPaneProps) {
-  if (window.mcwV2?.version === 2 && props.session.pid === 0) return <V2TerminalPane {...props} />;
-  return <LegacyTerminalPane {...props} />;
-}
-
-function V2TerminalPane(props:TerminalPaneProps) {
-  const resolvedTheme=useResolvedTheme();
-  const palette=terminalTheme(resolvedTheme);
-  const attached=useRef(false);
-  return <HostTerminalPane sessionId={props.session.id} onError={props.onError}
-    onFocus={()=>props.onTerminalFocused?.(props.session.id)} fontSize={props.settings.fontSize} fontFamily={props.settings.fontFamily}
-    terminalProps={{autoFocus:props.autoFocus ?? true,controlOnClick:true,lineHeight:props.settings.lineHeight,cursorStyle:props.settings.cursorStyle,cursorBlink:props.settings.cursorBlink,
-      shiftEnterBytes:props.shiftEnterBytes,refreshRequest:props.refreshRequest,onRefreshComplete:()=>props.onRefreshComplete(props.session.id),
-      onReady:ready=>{if(ready&&!attached.current){attached.current=true;props.onAttached(props.session);}},
-      onRegisterCommands:commands=>props.onRegisterCommands?.(props.session.id,commands),
-      theme:{foreground:palette.foreground!,background:palette.background!,cursor:palette.cursor!,selection:palette.selectionBackground!},
-      resolveFileLink:props.session.projectId && !props.session.remote ? raw=>window.multiCliWork.workspaceFiles.resolveTerminalPath(props.session.id,raw) : undefined,
-      onOpenFileLink:props.onOpenFileLink,onOpenExternal:url=>window.multiCliWork.shell.openExternal(url)}} />;
-}
-
-function LegacyTerminalPane({
+export function TerminalPane({
   session,
   settings,
   shiftEnterBytes,

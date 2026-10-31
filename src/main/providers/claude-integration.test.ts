@@ -27,7 +27,7 @@ describe("Claude app-owned integration", () => {
     const activityDir = path.join(root, "events");
     const child = execFileAsync(process.platform === "win32" ? "powershell.exe" : "python3",
       process.platform === "win32" ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", integration.hookPath] : [integration.hookPath],
-      { timeout: 10000, env: { ...process.env, MULTI_CLI_WORK_SESSION_ID: "parent", MULTI_CLI_WORK_STATUS_DIR: integration.statusDir, MULTI_CLI_WORK_ACTIVITY_DIR: activityDir, MULTI_CLI_WORK_GENERATION: "generation" } });
+      { env: { ...process.env, MULTI_CLI_WORK_SESSION_ID: "parent", MULTI_CLI_WORK_STATUS_DIR: integration.statusDir, MULTI_CLI_WORK_ACTIVITY_DIR: activityDir, MULTI_CLI_WORK_GENERATION: "generation" } });
     child.child.stdin?.end(JSON.stringify({ hook_event_name: "SubagentStop", agent_id: "child", agent_type: "Explore", session_id: "parent-conversation", tool_input: { secret: "never store" } }));
     await child;
     const files = await fs.readdir(activityDir); expect(files).toHaveLength(1);
@@ -35,7 +35,7 @@ describe("Claude app-owned integration", () => {
     expect(JSON.parse(activity)).toMatchObject({ sessionId: "parent", agentId: "child", agentType: "Explore", event: "SubagentStop" });
     expect(activity).not.toContain("never store");
     await expect(fs.stat(path.join(integration.statusDir, "parent.json"))).rejects.toThrow();
-  }, 15000); // Cold PowerShell startup on hosted Windows must fit within the hook's own 10s limit.
+  });
   it("registers state hooks without changing user settings", () => {
     const settings = buildClaudeSettings("C:\\App Data\\hooks\\claude-status.ps1", "win32");
 

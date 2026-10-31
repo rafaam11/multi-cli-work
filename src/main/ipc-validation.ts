@@ -193,7 +193,7 @@ export function validateProjectPatch(value: unknown): ProjectMetadataPatch {
 export function validateWorkProjectPatch(value: unknown): WorkProjectMetadataUpdate {
   const patch = exactObject(
     value,
-    ["name", "category", "status", "memo", "notionLinks", "localFolders", "order", "hostProjects"],
+    ["name", "category", "status", "memo", "notionLinks", "localFolders", "order"],
     "Work project patch",
   );
   return patch as WorkProjectMetadataUpdate;

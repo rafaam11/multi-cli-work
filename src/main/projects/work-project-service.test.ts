@@ -104,18 +104,6 @@ describe("WorkProjectService", () => {
     await expect(workProjectService.updateWorkProjectMetadata(IDS.second, { memo: "x" })).rejects.toThrow(/not found/);
   });
 
-  it('persists remote project associations without accepting duplicate or malformed links',async()=>{
-    const registryPath=await tempRegistryPath('wps-host-links'),projects=service(registryPath);
-    await projects.createWorkProject({name:'Local project'});
-    const links=[{hostId:'remote',projectId:IDS.second,projectName:'Remote project'}];
-    await projects.updateWorkProjectMetadata(IDS.first,{hostProjects:links});
-    expect((await readWorkProjectRegistry({registryPath})).workProjects[IDS.first].hostProjects).toEqual(links);
-    await expect(projects.updateWorkProjectMetadata(IDS.first,{hostProjects:[...links,...links]})).rejects.toThrow(/duplicate/i);
-    expect((await readWorkProjectRegistry({registryPath})).workProjects[IDS.first].hostProjects).toEqual(links);
-    await projects.updateWorkProjectMetadata(IDS.first,{hostProjects:[]});
-    expect((await readWorkProjectRegistry({registryPath})).workProjects[IDS.first].hostProjects).toEqual([]);
-  });
-
   it("normalizes local folder rows, defaulting the label to the folder's own name", async () => {
     const registryPath = await tempRegistryPath("wps-folders");
     const workProjectService = service(registryPath);

@@ -11,7 +11,6 @@ export interface RemoteAccessOptions {
   devices: Pick<RemoteDeviceStore, "hostId" | "list" | "register" | "revoke">;
   pairing: Pick<PairingCodes, "issue" | "consume">;
   rendererDir: string;
-  mobileEntry?: 'mobile.html'|'mobile-v2.html';
   hostName: string;
   /** MULTI_CLI_WORK_REMOTE_BIND — e2e·개발용. 설정 화면에서는 바꿀 수 없다. */
   bindOverride: string | null;
@@ -118,7 +117,6 @@ export class RemoteAccess {
         host,
         port: settings.port,
         rendererDir: this.options.rendererDir,
-        mobileEntry: this.options.mobileEntry,
         hub: this.options.hub,
         shell: this.options.shell ?? null,
         pair: (code, deviceName, clientIp) => this.pair(code, deviceName, clientIp),

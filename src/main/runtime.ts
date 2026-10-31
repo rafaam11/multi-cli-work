@@ -1,9 +1,4 @@
 import { codexIndicatorUpdate } from "./providers/codex-indicators";
-import { indicatorsFromMetadata } from "../shared/herdr-metadata";
-import { observeHost } from "./v2/host-observer";
-import { observedTerminals,observedTaskNotices } from "./v2/observed-terminals";
-import { shouldShowTerminalStatusNotification } from "./notification-policy";
-import { hostSessionView } from "./v2/worker-gateway";
 import {
   app,
   globalShortcut,
@@ -49,10 +44,7 @@ import { ActivityJournal } from "./workbench/activity-journal";
 import { UsageHistoryStore } from "./usage/usage-history";
 import { BoardService } from "./board/board-service";
 import { BoardStore } from "./board/board-store";
-import { BUILTIN_PRESETS, readSessionPresets, removeSessionPreset, saveSessionPreset } from "./presets/preset-registry";
-import { projectV2Presets } from "../shared/v2-presets";
-import { launchV2Preset } from "./v2/preset-launch";
-import { readV2RepositoryHead } from "./v2/ipc";
+import { readSessionPresets, removeSessionPreset, saveSessionPreset } from "./presets/preset-registry";
 import { launchPreset } from "./presets/preset-service";
 import { startControlServer } from "./control/control-server";
 import { registerMainIpc } from "./ipc";
@@ -144,7 +136,6 @@ import {
 import { consumeRecoveryMarker, writeRecoveryMarkerSync } from "./state/recovery-marker";
 import { createSummonShortcut } from "./summon-shortcut";
 import { RemoteAccess } from "./remote/remote-access";
-import {mobileAccessProxy} from './host/mobile-access';
 import { RemoteDeviceStore } from "./remote/device-store";
 import { PairingCodes } from "./remote/pairing-codes";
 import { RemoteSessionHub } from "./remote/remote-session-hub";
@@ -174,9 +165,6 @@ import { readWorktreeScripts, removeWorktreeScripts, setWorktreeScripts } from "
 import { aggregateTaskbarProgress, type TaskbarProgress } from "./window-progress";
 import { PcRootsProvider } from "./settings/pc-roots";
 import { createProfileGateway } from "./profile/profile-gateway";
-import type { HostClient } from "./host/host-client";
-import { HostWorkerGateway } from "./v2/worker-gateway";
-import { registerV2Ipc } from "./v2/ipc";
 
 function stringEnvironment(): Record<string, string> {
   return Object.fromEntries(
@@ -201,7 +189,6 @@ export interface DesktopRuntime {
 
 /** What the custom title bar needs from the app shell, which only `index.ts` owns. */
 export interface DesktopWindowHost {
-  v2?: {client: HostClient; hostId: string; backupDirectory: string; refresh?(): Promise<void>;recovery?:import('./recovery/desktop-recovery').DesktopRecovery};
   /** Lazy, because the runtime is built before the window exists. */
   getMainWindow(): BrowserWindow | null;
   /** 파일▸종료: the confirm-then-tear-down path, not a bare `app.quit()`. */
@@ -239,7 +226,7 @@ export async function createDesktopRuntime(
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData, process.platform);
-  const codexIntegration = host.v2 ? { profileName: "" } : await ensureCodexIntegration({ userData });
+  const codexIntegration = await ensureCodexIntegration({ userData });
   const shellIntegrationPath = process.platform === "win32" ? await ensurePowerShellIntegration(userData) : undefined;
   const sessionWorkspaceReader = new SessionWorkspaceReader();
   const titleReader = new SessionTitleReader();
@@ -253,10 +240,10 @@ export async function createDesktopRuntime(
   // jk-coding-cli: the client lands in userData/bin (joined to every session's PATH below), the
   // token rotates per app run, and the pipe name can be overridden so a dev build next to an
   // installed one gets its own pipe instead of silently losing the CLI.
-  const controlCli = host.v2 ? {binDir:"",mcpScriptPath:null} : await ensureControlCli(userData, process.platform, path.join(__dirname, JK_MCP_SCRIPT));
+  const controlCli = await ensureControlCli(userData, process.platform, path.join(__dirname, JK_MCP_SCRIPT));
   // Per-session MCP configs carry this run's token; last run's are dead weight.
   const jkMcpConfigDir = path.join(userData, "mcp");
-  if (!host.v2) await removeJkMcpConfig(jkMcpConfigDir).catch(() => undefined);
+  await removeJkMcpConfig(jkMcpConfigDir).catch(() => undefined);
   const controlPipeName = resolveControlPipeName(process.env, userData);
   const controlToken = crypto.randomUUID();
   const providerEnvironment = await discoverSessionEnvironment(stringEnvironment());
@@ -352,8 +339,6 @@ export async function createDesktopRuntime(
   const worktrees: WorktreeService = new WorktreeService({
     ...(worktreeRegistryPath ? { registryPath: worktreeRegistryPath } : {}),
     getProject,
-    holdWorktreeRemoval: (cwd,id) => coordinator.holdWorktreeRemoval(cwd,id),
-    settleWorktreeRemoval: (id) => coordinator.settleWorktreeRemoval(id),
     stopWorktreeSessions: (worktreeId) => coordinator.stopWorktreeSessions(worktreeId),
     removeWorktreeSessions: (worktreeId) => coordinator.removeWorktreeSessions(worktreeId),
     hasWorktreeSessions: (worktreeId) => coordinator.list().some((session) => session.worktreeId === worktreeId),
@@ -362,18 +347,13 @@ export async function createDesktopRuntime(
     now: () => new Date().toISOString(),
   });
 
-  const migratedSessionIds=new Set<string>();
-  if(host.v2){
-    const original=await fs.readFile(path.join(host.v2.backupDirectory,'data/userData/state.json'),'utf8').catch(error=>{if(error.code==='ENOENT')return null;throw error;});
-    if(original)for(const [id,session] of Object.entries(JSON.parse(original).sessions??{}))if((session as {id?:string})?.id===id)migratedSessionIds.add(id);
-  }
-  const worker = host.v2 ? new HostWorkerGateway(host.v2.client,migratedSessionIds) : new RestartingTerminalWorker(
+  const worker = new RestartingTerminalWorker(
     () =>
       utilityProcess.fork(path.join(__dirname, "terminal-worker.js"), [], {
         serviceName: "Multi CLI Work PTY",
       }) as RestartableTerminalWorkerTransport,
   );
-  const sessionEnvironment = host.v2 ? { ...providerEnvironment, MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir, MULTI_CLI_WORK_ACTIVITY_DIR: path.join(userData,"activity-events") } : prependPath(
+  const sessionEnvironment = prependPath(
     {
       ...providerEnvironment,
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
@@ -426,7 +406,7 @@ export async function createDesktopRuntime(
       const syncRepos =
         workProject !== undefined &&
         (launch.agentId === "claude" || launch.agentId === "codex") &&
-        !host.v2 && settingsService.current().general.repoSyncOnSessionStart;
+        settingsService.current().general.repoSyncOnSessionStart;
       const repoSyncSection = syncRepos
         ? repoSyncForSession(repoSync, workProject.id).then(({ section, report }) => {
             const notice = report ? sessionNotice(workProject.id, launch.sessionId, report) : null;
@@ -468,13 +448,7 @@ export async function createDesktopRuntime(
         workspaceSection,
       ]);
     },
-    getAgent: (agentId) => {
-      const agent = agentMap.get(agentId);
-      if (!agent) return null;
-      if (!host.v2 || agent.id !== "codex" || !agent.builtin) return agent;
-      const stripProfile = (args: string[]) => args.filter((arg, i) => arg !== "{codexProfile}" && !(arg === "--profile" && args[i + 1] === "{codexProfile}"));
-      return {...agent,newSessionArgs:stripProfile(agent.newSessionArgs),resumeArgs:stripProfile(agent.resumeArgs),args:stripProfile(agent.args)};
-    },
+    getAgent: (agentId) => agentMap.get(agentId) ?? null,
     extraLaunchArgs: async (agent, sessionId) =>
       controlCli.mcpScriptPath && settingsService.current().general.jkMcp
         ? jkMcpLaunchArgs(agent, sessionId, {
@@ -520,7 +494,7 @@ export async function createDesktopRuntime(
     env: sessionEnvironment,
     idFactory: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
-    autoResumeEnabled: () => !host.v2 && settingsService.current().general.autoResumeSessions,
+    autoResumeEnabled: () => settingsService.current().general.autoResumeSessions,
     hasProviderConversation: async (session, agent, conversationId) =>
       agent.titleSource !== "claude-transcript" ||
       (await findClaudeTranscript(
@@ -538,7 +512,7 @@ export async function createDesktopRuntime(
   coordinator.onEvent((event) => {
     if (event.type !== "removed") return;
     humanInput.forget(event.sessionId);
-    if (!host.v2) void removeJkMcpConfig(jkMcpConfigDir, event.sessionId).catch(() => undefined);
+    void removeJkMcpConfig(jkMcpConfigDir, event.sessionId).catch(() => undefined);
   });
   const delivery = new DeliveryQueue({
     sessions: () => coordinator.list(),
@@ -574,7 +548,7 @@ export async function createDesktopRuntime(
     clearChips: (sessionId, key) => indicators.clearChips(sessionId, key),
     setProgress: (sessionId, progress) => indicators.setProgress(sessionId, progress),
   };
-  const controlServer = host.v2 ? null : await startControlServer({
+  const controlServer = await startControlServer({
     pipeName: controlPipeName,
     token: controlToken,
     handle: (request) => handleControlCommand(request, controlContext),
@@ -582,32 +556,6 @@ export async function createDesktopRuntime(
   });
   if (controlServer) sessionEnvironment[CONTROL_ENDPOINT_ENV] = controlServer.endpoint;
   await coordinator.initialize();
-  const v2Configuration = async () => {
-    const state=(await workbench.state()).state;
-    const defaults=["codex","claude"].map(agentId=>({id:`mcw-default-${agentId}`,name:agentId==="codex"?"Codex 기본":"Claude Code 기본",agentId:agentId as "codex"|"claude",model:null,effort:null}));
-    return {launchProfiles:[...defaults,...(state.launchProfiles??[])],defaultLaunchProfiles:{codex:"mcw-default-codex",claude:"mcw-default-claude",...state.defaultLaunchProfiles}};
-  };
-  const viewPresets=(presets:Awaited<ReturnType<typeof readSessionPresets>>)=>host.v2?projectV2Presets(presets,BUILTIN_PRESETS):presets;
-  const disposeV2Ipc = host.v2 ? registerV2Ipc({
-    ipc: ipcMain, authorize: event => isMainWindowSender(host.getMainWindow(), event),
-    send: (channel, ...args) => { const window = host.getMainWindow(); if (window && !window.isDestroyed()) window.webContents.send(channel, ...args); },
-    ...host.v2,
-    configuration:v2Configuration,
-    executable: async provider => (await getExecutables()).agents[provider] ?? null,
-    repositoryProjectId: async directory => Object.values((await readProjectRegistry({registryPath})).registry.projects).find(project=>normalizeForCompare(project.rootPath,process.platform)===normalizeForCompare(directory,process.platform))?.id??null,
-    reconcile: () => coordinator.reconcileHostSessions(),
-    state: () => v2Watcher?.snapshot() ?? {tasks:[],terminals:[],observedAt:null,connected:false},
-  }) : undefined;
-  let onTaskState = () => {};
-  const v2Watcher = host.v2 ? observeHost({ ...host.v2, state: state => {
-    const terminals=observedTerminals(state);
-    void coordinator.reconcileHostSessions(terminals.map(value => ({ ...hostSessionView(value), generation: value.generation }))).catch(error => console.error("Host state reconciliation failed", error));
-    const ids=new Set(terminals.map(terminal=>terminal.id));
-    for(const previous of indicators.snapshot())if(!ids.has(previous.sessionId))indicators.replace(previous.sessionId,{chips:[],progress:null});
-    for(const terminal of terminals)indicators.replace(terminal.id,indicatorsFromMetadata(terminal.tokens??{}));
-    sendToMainWindow(host.getMainWindow(), "v2:state", state);
-    onTaskState();
-  } }) : undefined;
 
   const reviewRegistryPath = process.env.MULTI_CLI_WORK_PR_REVIEWS_PATH;
   const reviewService = new PullRequestReviewService({
@@ -651,16 +599,9 @@ export async function createDesktopRuntime(
 
   // One snapshot feeds every surface: window frame + taskbar (via applyAttention) and the
   // renderer's sidebar badges (via the broadcast).
-  const combinedAttention = (snapshot: AttentionSnapshot):AttentionSnapshot => {
-    const hostState=v2Watcher?.snapshot();
-    const notices=hostState?Object.fromEntries(observedTaskNotices(hostState).filter(({notice})=>notice.unread).map(({sessionId,notice})=>[sessionId,notice.kind==="approval"?"approval" as const:"input" as const])):{};
-    const unread = {...snapshot.unread,...notices};
-    return {unread,window:Object.values(unread).includes("approval")?"approval":Object.keys(unread).length?"input":"none"};
-  };
   const publishAttention = (snapshot: AttentionSnapshot) => {
-    const combined=combinedAttention(snapshot);
-    applyAttention(combined);
-    sendToMainWindow(host.getMainWindow(), "attention:event", combined.unread);
+    applyAttention(snapshot);
+    sendToMainWindow(host.getMainWindow(), "attention:event", snapshot.unread);
   };
   const NOTIFICATION_BODY: Record<NotifiableStatus, string> = {
     "awaiting-input": "입력을 기다리는 중입니다",
@@ -699,26 +640,6 @@ export async function createDesktopRuntime(
     logError: (message, error) => console.error(message, error),
     notificationSettings: () => settingsService.current().notifications,
   });
-  const notifiedTaskEvents = new Set<string>();
-  onTaskState = () => {
-    publishAttention(attention.snapshot());
-    void coordinator.state().then(({state:selection})=>{
-    const state=v2Watcher?.snapshot();if(!state?.connected)return;
-    const settings=settingsService.current().notifications;
-    for(const {task,sessionId,notice,hostId,hostName,connected} of observedTaskNotices(state)){
-      if(!connected)continue;
-      const ids=[...notice.questionIds.filter(id=>task.questions.some(question=>question.id===id&&!question.acknowledged)),...notice.resultIds];
-      const keys=ids.map(id=>JSON.stringify([hostId,task.id,id]));
-      const fresh=keys.some(id=>!notifiedTaskEvents.has(id));keys.forEach(id=>notifiedTaskEvents.add(id));
-      if(!fresh || !settings.desktop || !settings.statuses[notice.kind==="approval"?"awaiting-approval":"awaiting-input"] || notificationsMuted(settings,new Date()) || !Notification.isSupported())continue;
-      const window=mainWindowState(host.getMainWindow());
-      if(!shouldShowTerminalStatusNotification({eventSessionId:sessionId,selectedSessionId:selection.selectedSessionId,visibleSessionIds:selection.visibleSessionIds??[],windowVisible:window.visible,windowFocused:window.focused}))continue;
-      const notification=new Notification({title:notice.kind==="approval"?"작업 승인 대기":notice.kind==="question"?"작업 질문 도착":"작업 결과 제출",body:hostName?`${hostName} · ${task.title}`:task.title});
-      notification.on("click",()=>{showMainWindow();sendToMainWindow(host.getMainWindow(),"navigation:session-requested",{sessionId});});notification.show();
-    }
-    }).catch(error=>console.error('Failed to read task notification visibility',error));
-  };
-  onTaskState();
 
   // 모바일 컴패니언: 폰은 데스크톱 렌더러와 같은 코디네이터를 쓰는 두 번째 클라이언트다.
   // 설치본에 동봉된 셸 APK(resources/mobile). dev에서는 `npm run mobile:prepare`가 채우는 build/mobile.
@@ -778,7 +699,7 @@ export async function createDesktopRuntime(
   };
   let mobileExposedSessions = new Set<string>();
   const remoteHub = new RemoteSessionHub({
-    attention: host.v2 ? undefined : new MobileAttentionStore(path.join(userData, "mobile-attention.json")),
+    attention: new MobileAttentionStore(path.join(userData, "mobile-attention.json")),
     gateway: {
       list: () => coordinator.list(),
       attach: (sessionId) => coordinator.attachForRenderer(sessionId),
@@ -845,7 +766,7 @@ export async function createDesktopRuntime(
     hostName: os.hostname(),
     shellLatest: () => shellArtifact?.release ?? null,
   });
-  const remoteAccess = host.v2 ? mobileAccessProxy(host.v2.client) : new RemoteAccess({
+  const remoteAccess = new RemoteAccess({
     hub: remoteHub,
     devices: remoteDevices,
     pairing: new PairingCodes(),
@@ -1033,34 +954,21 @@ export async function createDesktopRuntime(
       recordDirect: (record) => board.recordDirect(record, undefined, { kind: "user" }),
     },
     presets: {
-      list: async () => viewPresets(await readSessionPresets(presetOptions)),
+      list: () => readSessionPresets(presetOptions),
       // Settings may be its own window: the main window hears of every change to keep its menus current.
       save: async (preset) => {
-        const next = viewPresets(await saveSessionPreset(preset, presetOptions));
+        const next = await saveSessionPreset(preset, presetOptions);
         sendToMainWindow(host.getMainWindow(), "presets:changed", next);
         return next;
       },
       remove: async (presetId) => {
-        const next = viewPresets(await removeSessionPreset(presetId, presetOptions));
+        const next = await removeSessionPreset(presetId, presetOptions);
         sendToMainWindow(host.getMainWindow(), "presets:changed", next);
         return next;
       },
       // Placing the panes is the renderer's job; the sessions start without taking the selection.
-      launch: (request) => host.v2 ? launchV2Preset(request,{
-        presets:async()=>viewPresets(await readSessionPresets(presetOptions)),client:host.v2.client,
-        configuration:async()=>({hostId:host.v2!.hostId,...await v2Configuration()}),
-        executable:async provider=>(await getExecutables()).agents[provider]??null,
-        repository:async input=>{
-          const project=await getProject(input.projectId);if(!project)throw Error("프리셋의 저장소를 찾을 수 없습니다.");
-          const worktree=input.worktreeId?await worktrees.get(input.worktreeId):null;
-          if(input.worktreeId&&(!worktree||worktree.projectId!==input.projectId))throw Error("프리셋의 worktree를 확인하세요.");
-          const directory=worktree?.path??project.rootPath,head=await readV2RepositoryHead(directory);
-          const workProject=Object.values((await readWorkProjectRegistry({...(workProjectRegistryPath?{registryPath:workProjectRegistryPath}:{})})).workProjects).find(item=>item.members.some(member=>member.projectId===input.projectId));
-          const {registry}=await readProjectRegistry({registryPath});
-          const projectBrief=workProject?renderWorkProjectBrief(workProject,workProject.members.map(member=>({project:registry.projects[member.projectId]??null,role:member.role})).filter((member):member is WorkProjectBriefMember=>member.project!==null),tagsOf(await readProjectTags(projectTagsOptions),workProject.id)):project.displayName;
-          return {directory,head,projectBrief:projectBrief??project.rootPath,...(workProject?{workProjectId:workProject.id}:{})};
-        },reconcile:()=>coordinator.reconcileHostSessions(),sessions:()=>coordinator.list(),
-      }):launchPreset(request, {
+      launch: (request) =>
+        launchPreset(request, {
           presets: () => readSessionPresets(presetOptions),
           create: (input) => coordinator.create(input, { updateSelection: false }),
           delivery,
@@ -1197,7 +1105,7 @@ export async function createDesktopRuntime(
         projectActions.openInEditor(await resolveWorkspaceEntryPath(rootPath, relativePath), position),
       resolveTerminalPath: async (sessionId, raw) => {
         const view = coordinator.list().find((session) => session.id === sessionId);
-        if (!view?.projectId || view.remote) return null;
+        if (!view?.projectId) return null;
         const target: FileExplorerTarget = view.worktreeId
           ? { kind: "worktree", id: view.worktreeId }
           : { kind: "project", id: view.projectId };
@@ -1313,7 +1221,7 @@ export async function createDesktopRuntime(
     },
     listAgents,
     editAgents: () => openAgentRegistryForEditing(agentRegistryPath),
-    attentionState: () => combinedAttention(attention.snapshot()).unread,
+    attentionState: () => attention.snapshot().unread,
     onSessionSelected(sessionId) {
       attention.markSeen(sessionId);
       void remoteHub.desktopViewed(sessionId).catch(error => console.error("Mobile seen update failed", error));
@@ -1409,8 +1317,7 @@ export async function createDesktopRuntime(
     () => statusWatcher.close(),
     () => activity.stop(),
     () => usageService.stop(),
-    () => {v2Watcher?.close();disposeV2Ipc?.();},
-    () => host.v2 ? coordinator.detach() : coordinator.shutdown(),
+    () => coordinator.shutdown(),
     () => worker.dispose(),
   ]);
 

@@ -1,9 +1,0 @@
-{
-  "platform": "appimage",
-  "sourceCommit": "e1633d907cc3ba7f94efe640d45eba6d03df670f",
-  "electronNeverStarted": true,
-  "independentLauncher": true,
-  "actualDataPreserved": true,
-  "originalVersion": "1.55.1",
-  "network": "Isolated Linux network namespace with loopback only; network probe failed as required."
-}

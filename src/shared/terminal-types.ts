@@ -43,7 +43,6 @@ export interface SessionIndicatorsUpdate {
 
 export type TerminalStatus =
   | "starting"
-  | "unknown"
   | "working"
   | "awaiting-input"
   | "awaiting-approval"
@@ -52,10 +51,6 @@ export type TerminalStatus =
   | "error";
 
 export interface TerminalSession {
-  /** Host admission evidence, separate from process activity and never inferred from idle. */
-  hostDelivery?: "pending" | "delivered" | "unknown" | "rejected";
-  remote?: RemoteTerminalSource;
-  taskNotice?: import("./task-notices").TaskSessionNotice | null;
   id: string;
   projectId: string | null;
   tool: ToolCommand | null;
@@ -69,14 +64,10 @@ export interface TerminalSession {
   exitCode: number | null;
 }
 
-export interface RemoteTerminalSource {hostId:string;name:string;sessionId:string;projectId:string|null;connected:boolean;observedAt:number|null;repository?:import('./execution-catalog').HostRepository}
-
 export interface TerminalLaunchSpec {
   sessionId: string;
   /** Ephemeral launch identity; never persisted to the app-state schema. */
   generation?: string;
-  /** Explicit, compare-and-swap restart of a confirmed stopped host attempt. */
-  restartGeneration?: string;
   projectId: string | null;
   tool: ToolCommand | null;
   kind: TerminalKind;

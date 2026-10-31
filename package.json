@@ -1,6 +1,6 @@
 {
   "name": "multi-cli-work",
-  "version": "2.0.2",
+  "version": "1.55.1",
   "description": "Project-oriented Windows and Linux workspace for Codex, Claude Code, PowerShell, and Bash sessions",
   "main": "out/main/index.js",
   "private": true,
@@ -18,8 +18,6 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "build": "npm run typecheck && electron-vite build",
-    "build:v2": "node scripts/v2/prepare-build.mjs && npm run build",
-    "dist:v2:preview": "npm run build:v2 && electron-builder --config electron-builder.v2-preview.cjs --publish never && node scripts/v2/release-gate.mjs --check-release preview --artifact-dir release-v2-preview",
     "start": "electron-vite preview",
     "rebuild:native": "electron-rebuild -f -w node-pty",
     "test:e2e": "npm run build && playwright test",
@@ -48,12 +46,10 @@
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
-    "string-width": "4.2.3",
     "unified": "11.0.5",
     "ws": "8.21.0"
   },
   "devDependencies": {
-    "@electron/asar": "3.4.1",
     "@electron/rebuild": "4.2.0",
     "@playwright/test": "1.61.1",
     "@testing-library/jest-dom": "6.6.3",
@@ -68,7 +64,6 @@
     "electron": "43.2.0",
     "electron-builder": "26.15.3",
     "electron-vite": "3.1.0",
-    "esbuild": "0.25.12",
     "jsdom": "26.0.0",
     "material-icon-theme": "5.37.0",
     "typescript": "5.7.3",

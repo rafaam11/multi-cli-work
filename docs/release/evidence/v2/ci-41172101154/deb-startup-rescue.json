@@ -1,9 +1,0 @@
-{
-  "platform": "deb",
-  "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-  "electronNeverStarted": true,
-  "independentLauncher": true,
-  "actualDataPreserved": true,
-  "originalVersion": "1.55.1",
-  "network": "Isolated Linux network namespace with loopback only; network probe failed as required."
-}

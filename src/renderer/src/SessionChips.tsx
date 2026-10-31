@@ -1,7 +1,7 @@
 import type { StatusChip } from "@shared/terminal-types";
 
 /**
- * Short display metadata from the session's host. Each chip is keyed by its content, so a
+ * The chips a script or agent pinned with `jk status set`. Each one is keyed by its content, so a
  * changed chip mounts fresh and plays its short pulse — a glance across the grid catches what moved.
  */
 export function SessionChips({ chips }: { chips: readonly StatusChip[] }) {

@@ -130,11 +130,6 @@ async function readStatusFile(filePath: string): Promise<ProviderStatusEvent | n
   }
 }
 
-/** Recover identity metadata only; a stored receipt is never a fresh execution status. */
-export function readProviderStatusFile(statusDir:string,sessionId:string):Promise<ProviderStatusEvent|null> {
-  return readStatusFile(safeStatusFilePath(statusDir,sessionId));
-}
-
 export async function startProviderStatusWatcher(
   statusDir: string,
   onStatus: (event: ProviderStatusEvent) => void,

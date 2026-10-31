@@ -39,16 +39,6 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SettingsDialog", () => {
-  it("v2 hides retired jk and automatic session/repository actions without writing settings",()=>{
-    window.mcwV2={version:2} as import("@shared/v2-api").McwV2Api;
-    try{
-      render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={()=>{}}/>);
-      expect(screen.queryByLabelText(/jk 도구/)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText("시작 시 이전 세션 자동 재개")).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/시작할 때 레포 최신화/)).not.toBeInTheDocument();expect(update).not.toHaveBeenCalled();
-      fireEvent.change(screen.getByRole("searchbox",{name:"설정 검색어"}),{target:{value:"jk"}});expect(screen.getByText("검색 결과 0개")).toBeVisible();
-    }finally{cleanup();delete window.mcwV2;}
-  });
   it("일반 탭에서 트레이·자동 재개·업데이트 확인이 부분 패치로 저장된다", async () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
     fireEvent.click(screen.getByLabelText("창을 닫으면 트레이에 남기기"));

@@ -1,7 +1,0 @@
-.recovery-settings{line-height:1.65}
-.recovery-settings p{margin:12px 0;overflow-wrap:anywhere}
-.recovery-settings button{font:var(--type-secondary);color:var(--text);background:var(--surface-raised,var(--surface));border:1px solid var(--line);border-radius:6px;padding:7px 11px;margin:6px 8px 0 0;cursor:pointer}
-.recovery-settings button:hover:not(:disabled){border-color:var(--teal);background:var(--surface-hover)}
-.recovery-settings button:disabled{opacity:.5;cursor:default}
-.recovery-settings button:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-.recovery-settings [role=group]{border-top:1px solid var(--line);margin-top:16px;padding-top:4px}

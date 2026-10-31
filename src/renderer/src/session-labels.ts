@@ -38,7 +38,6 @@ export const toolDetails: Record<ToolCommand, { label: string; menuLabel: string
 
 export const statusLabels: Record<TerminalStatus, string> = {
   starting: "시작 중",
-  unknown: "상태 미확인",
   working: "작업 중",
   "awaiting-input": "입력 대기",
   "awaiting-approval": "승인 대기",

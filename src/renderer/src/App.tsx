@@ -7,7 +7,6 @@ import type { ActivePullRequestReview } from "@shared/github-types";
 import type { SharedProject } from "@shared/project-types";
 import type { SessionPreset } from "@shared/preset-types";
 import type { RemoteViewAction } from "@shared/remote-types";
-import type { TerminalEvent } from "@shared/terminal-types";
 import type { WorkProjectRegistryV1, WorkProjectRole } from "@shared/work-project-types";
 import { knownTags, tagsByWorkProject, type ProjectTagsV1 } from "@shared/project-tags-types";
 import type { WorkspaceShellInfo, WorkspaceSnapshot } from "@shared/workspace-types";
@@ -93,7 +92,6 @@ import {
   MIN_RIGHT_SIDEBAR_WIDTH,
   RIGHT_SIDEBAR_RAIL_WIDTH,
   replaceSession,
-  applyEvent,
   mergeAttachedSession,
   type ActiveView,
   type OpenDocument,
@@ -148,12 +146,7 @@ export function App() {
   const agentsRef = useRef<AgentView[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [activeView, setRestoredActiveView] = useState<ActiveView>("home");
-  const navigationRevision = useRef(0);
-  const setActiveView = useCallback<React.Dispatch<React.SetStateAction<ActiveView>>>((next) => {
-    navigationRevision.current++;
-    setRestoredActiveView(next);
-  }, []);
+  const [activeView, setActiveView] = useState<ActiveView>("home");
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const sessionsRef = useRef<TerminalSessionView[]>([]);
   const [workProjectRegistry, setWorkProjectRegistry] = useState<WorkProjectRegistryV1 | null>(null);
@@ -253,11 +246,6 @@ export function App() {
   const workingSince = useRef(new Map<string, number>());
   /** Set once the first load has published its arrangements, so an empty grid is never saved over. */
   const slotViewsRestored = useRef(false);
-  const revealAfterHydration = useRef(false);
-  const pendingShelfEdits = useRef<Array<React.SetStateAction<Shelves>>>([]);
-  const pendingFolderEdits = useRef<Array<React.SetStateAction<Record<string, SlotViewState>>>>([]);
-  const editShelves:typeof setShelves = (edit) => {if(!slotViewsRestored.current)pendingShelfEdits.current.push(edit);setShelves(edit);};
-  const editFolderViews:typeof setFolderViews = (edit) => {if(!slotViewsRestored.current)pendingFolderEdits.current.push(edit);setFolderViews(edit);};
   const publishedSessionIds = useRef<string | null>(null);
   /** Which terminal the 편집 menu acts on — a grid has several, and only focus tells them apart. */
   const [lastFocusedTerminalId, setLastFocusedTerminalId] = useState<string | null>(null);
@@ -489,13 +477,6 @@ export function App() {
     setPage((current) => clampPage(current, resolvedView.pages));
   }, [resolvedView.pages]);
 
-  // A saved arrangement may place the pane opened during loading on a later page.
-  useEffect(() => {
-    if(loading||!revealAfterHydration.current)return;
-    revealAfterHydration.current=false;
-    if(focusedPaneId){const target=pageOfSession(currentView.slots,viewPageSize(currentView),focusedPaneId);if(target!==null)setPage(target);}
-  },[loading,currentView,focusedPaneId]);
-
   /**
    * The panes this page is drawing. The sidebar dims every row that is not in here, so a session
    * paginated off the current page reads as still open but out of sight.
@@ -525,9 +506,7 @@ export function App() {
     async (preservedSelection?: { projectId: string | null; sessionId: string | null; view?: ActiveView }) => {
       setLoading(true);
       setLoadError(null);
-      const navigationAtStart=navigationRevision.current;
-      const terminalEvents:TerminalEvent[]=[];
-      const unsubscribe=window.multiCliWork.terminals.onEvent(event=>{if(event.type!=='data'&&event.type!=='agent-edits')terminalEvents.push(event);});
+      const forceHome = preservedSelection?.view === "home";
       try {
         const [registrySnapshot, terminalSessions, providers, agentsSnapshot, appState, worktreeList, reviewList, workProjectList, projectTagList, workspaceSnapshot] =
           await Promise.all([
@@ -548,12 +527,7 @@ export function App() {
         setWorkProjectRegistry(workProjectList);
         setProjectTags(projectTagList);
         setWorkspace(workspaceSnapshot);
-        const currentSessions=terminalEvents.reduce((current,event)=>{
-          if(event.type==='created'||event.type==='renamed'||event.type==='workspace')return replaceSession(current,event.session);
-          if(event.type==='removed')return current.filter(session=>session.id!==event.sessionId);
-          return current.map(session=>session.id===event.sessionId?applyEvent(session,event):session);
-        },terminalSessions);
-        setSessions(currentSessions);
+        setSessions(terminalSessions);
         setAvailability(providers);
         setLoading(false);
         setWorkspaceViews(Object.values(registrySnapshot.registry.projects).map((project) => ({
@@ -584,50 +558,27 @@ export function App() {
         try { savedWorkspaceKey = localStorage.getItem(LAST_WORKSPACE_KEY); } catch { /* unavailable storage */ }
         const plan = planRestore({
           projects: registrySnapshot.registry.projects,
-          sessions: currentSessions,
+          sessions: terminalSessions,
           worktrees: worktreeList,
           state: appState.state,
           preservedSelection,
           savedWorkspaceKey,
           collapsedProjectIds,
         });
-        const navigated=navigationRevision.current!==navigationAtStart;
-        if(navigated)revealAfterHydration.current=true;
-        const folderEdits=pendingFolderEdits.current.splice(0),shelfEdits=pendingShelfEdits.current.splice(0);
-        if(!navigated){
-          setExpandedProjects(plan.expandedProjects);
-          setSelectedProjectId(plan.selectedProjectId);
-          setSelectedSessionId(plan.selectedSessionId);
-          setSelectedWorktreeId(plan.selectedWorktreeId);
-          setFocusedPaneId(plan.focusedPaneId);
-          setShelfKind(null);
-          setPage(0);
-          setRestoredActiveView(plan.activeView);
-        }
-        setFolderViews(current=>{
-          let merged={...plan.folderViews};
-          if(navigated)for(const [key,view] of Object.entries(current)){
-            const saved=merged[key];
-            merged[key]=saved?view.slots.reduce<SlotViewState>((next,id)=>id&&!next.slots.includes(id)?appendSession(next,id):next,saved):view;
-          }
-          for(const edit of folderEdits)merged=typeof edit==='function'?edit(merged):edit;
-          return merged;
-        });
-        setShelves(current=>{
-          let merged=plan.shelves;
-          for(const edit of shelfEdits)merged=typeof edit==='function'?edit(merged):edit;
-          if(navigated){
-            const hidden=new Set(merged.hidden.slots);
-            const active=current.active.slots.reduce<SlotViewState>((view,id)=>id&&!hidden.has(id)&&!view.slots.includes(id)?appendSession(view,id):view,merged.active);
-            merged={...merged,active};
-          }
-          return merged;
-        });
+        setExpandedProjects(plan.expandedProjects);
+        setSelectedProjectId(plan.selectedProjectId);
+        setSelectedSessionId(plan.selectedSessionId);
+        setSelectedWorktreeId(plan.selectedWorktreeId);
+        setFocusedPaneId(plan.focusedPaneId);
+        setFolderViews(plan.folderViews);
+        setShelves(plan.shelves);
+        setShelfKind(null);
+        setPage(0);
         slotViewsRestored.current = true;
+        setActiveView(plan.activeView);
       } catch (error) {
         setLoadError(errorMessage(error));
       } finally {
-        unsubscribe();
         setLoading(false);
       }
     },
@@ -856,9 +807,7 @@ export function App() {
   );
 
   const updateFolderView = useCallback((key: string, mutate: (view: SlotViewState) => SlotViewState) => {
-    const edit=(current:Record<string,SlotViewState>)=>({ ...current, [key]: mutate(current[key] ?? EMPTY_VIEW) });
-    if(!slotViewsRestored.current)pendingFolderEdits.current.push(edit);
-    setFolderViews(edit);
+    setFolderViews((current) => ({ ...current, [key]: mutate(current[key] ?? EMPTY_VIEW) }));
   }, []);
 
   /**
@@ -1023,8 +972,8 @@ export function App() {
     currentView,
     resolvedView,
     focusedPaneId,
-    setFolderViews:editFolderViews,
-    setShelves:editShelves,
+    setFolderViews,
+    setShelves,
     setShelfKind,
     setPage,
     setFocusedPaneId,

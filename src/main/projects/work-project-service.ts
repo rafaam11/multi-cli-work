@@ -5,7 +5,6 @@ import type { ProjectStatus, SharedProject } from "../../shared/project-types";
 import { DEFAULT_SETTINGS } from "../../shared/settings-types";
 import type {
   WorkProject,
-  WorkProjectHostProject,
   WorkProjectLocalFolder,
   WorkProjectMember,
   WorkProjectNotionLink,
@@ -23,12 +22,11 @@ import { readProjectTags, updateProjectTags, type ProjectTagsOptions } from "./p
 import { updateWorkProjectRegistry } from "./work-project-registry";
 import { setWorkspaceShellLinks, type WorkspaceRegistryOptions } from "./workspace-registry";
 
-const METADATA_KEYS = ["name", "category", "status", "memo", "notionLinks", "localFolders", "order", "hostProjects"] as const;
+const METADATA_KEYS = ["name", "category", "status", "memo", "notionLinks", "localFolders", "order"] as const;
 
 type RegistryUpdater = typeof updateWorkProjectRegistry;
 
 export interface WorkProjectMetadataUpdate {
-  hostProjects?: WorkProjectHostProject[];
   name?: string;
   category?: string;
   status?: ProjectStatus | null;

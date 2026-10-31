@@ -8,9 +8,8 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
 import { readGitDiff } from "./git-diff";
-import { defaultWorktreePath, normalizeWorkspacePath, removeGitWorktree } from "./git-worktree";
+import { defaultWorktreePath, normalizeWorkspacePath } from "./git-worktree";
 import { parseWorktreeRegistry, readWorktreeRegistry } from "./worktree-registry";
-import {CheckoutAdmission} from "../herdr/checkout-admission";
 import { WorktreeService, type WorktreeServiceOptions } from "./worktree-service";
 
 const execFileAsync = promisify(execFile);
@@ -50,8 +49,6 @@ function service(
   hasWorktreeSessions?: (id: string) => boolean | Promise<boolean>,
   stopWorktreeSessions = vi.fn(async () => undefined),
   runTeardown?: WorktreeServiceOptions["runTeardown"],
-  holdWorktreeRemoval?: WorktreeServiceOptions["holdWorktreeRemoval"],
-  settleWorktreeRemoval?: WorktreeServiceOptions["settleWorktreeRemoval"],
 ) {
   let nextId = 0;
   return {
@@ -59,8 +56,6 @@ function service(
     stopWorktreeSessions,
     service: new WorktreeService({
       registryPath,
-      holdWorktreeRemoval,
-      settleWorktreeRemoval,
       getProject: async (projectId) => (projectId === "project-1" ? project() : null),
       removeWorktreeSessions,
       stopWorktreeSessions,
@@ -264,15 +259,6 @@ describe("worktree service against a real repo", { timeout: 30_000 }, () => {
     expect(await worktrees.remove(created.id, false, { skipTeardown: true })).toEqual({ removed: true });
     expect(runTeardown).toHaveBeenCalledOnce();
   });
-  it('checks sessions again after teardown and preserves the checkout if fresh observation fails',async()=>{
-    const stop=vi.fn(async()=>undefined).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Host unavailable after teardown'));
-    const teardown=vi.fn(async()=>({ok:true as const}));
-    const {service:worktrees,removeWorktreeSessions}=service(undefined,undefined,stop,teardown);
-    const created=await worktrees.create('project-1','late-observation');
-    await expect(worktrees.remove(created.id,false)).rejects.toThrow('Host unavailable after teardown');
-    expect(teardown).toHaveBeenCalledOnce();expect(removeWorktreeSessions).not.toHaveBeenCalled();
-    await expect(fs.stat(created.path)).resolves.toBeDefined();expect(await worktrees.get(created.id)).not.toBeNull();
-  });
 
   it("keeps sessions and the registry when git removal fails after processes stop", async () => {
     const removeWorktreeSessions = vi.fn(async () => undefined);
@@ -469,91 +455,4 @@ describe("worktree registry parsing", () => {
     expect(() => parseWorktreeRegistry({ ...base, worktrees: { other: worktree } })).toThrow(/does not match/);
     expect(parseWorktreeRegistry({ ...base, worktrees: { w1: worktree } }).worktrees.w1).toEqual(worktree);
   });
-});
-
-it("holds host admission across delayed stop and real Git deletion, releasing after cleanup",async()=>{
- const guard=new CheckoutAdmission(tempRoot,async()=>[{pid:10,parentPid:1,startId:"boot:10",name:"gui",executable:"/gui"}]);
- let stopped!:()=>void,finishStop!:()=>void,cleaning!:()=>void,finishCleanup!:()=>void;
- const stopReached=new Promise<void>(r=>stopped=r),stopGate=new Promise<void>(r=>finishStop=r);
- const cleanupReached=new Promise<void>(r=>cleaning=r),cleanupGate=new Promise<void>(r=>finishCleanup=r);
- const stop=vi.fn(async()=>{stopped();await stopGate;});
- const cleanup=vi.fn(async()=>{cleaning();await cleanupGate;});
- const {service:worktrees}=service(cleanup,undefined,stop,undefined,async cwd=>{await guard.acquire(cwd,"deleting",10);return ()=>guard.release("deleting");});
- const created=await worktrees.create("project-1","race");
- const removal=worktrees.remove(created.id,true);await stopReached;
- await expect(guard.launch(created.path,async()=>{})).rejects.toThrow(/removal/);
- finishStop();await cleanupReached;
- await expect(fs.access(created.path)).rejects.toThrow();
- await expect(guard.launch(created.path,async()=>{})).rejects.toThrow(/removal/);
- finishCleanup();await expect(removal).resolves.toEqual({removed:true});
- await expect(guard.launch(created.path,async()=>"open")).resolves.toBe("open");
-});
-it("releases host admission when session stop fails and preserves the checkout",async()=>{
- const guard=new CheckoutAdmission(tempRoot,async()=>[{pid:10,parentPid:1,startId:"boot:10",name:"gui",executable:"/gui"}]);
- const {service:worktrees}=service(undefined,undefined,vi.fn(async()=>{throw new Error("stop uncertain");}),undefined,async cwd=>{await guard.acquire(cwd,"deleting",10);return ()=>guard.release("deleting");});
- const created=await worktrees.create("project-1","failed-stop");
- await expect(worktrees.remove(created.id,true)).rejects.toThrow("stop uncertain");
- await fs.access(created.path);await expect(guard.launch(created.path,async()=>true)).resolves.toBe(true);
-});
-
-it("keeps the worktree record retryable if hold release fails after Git removal",async()=>{
- const release=vi.fn().mockRejectedValueOnce(new Error("host disconnected during release")).mockResolvedValue(undefined);
- const {service:worktrees}=service(undefined,undefined,undefined,undefined,async()=>release,async()=>release());
- const created=await worktrees.create("project-1","release-retry");
- await expect(worktrees.remove(created.id,true)).rejects.toThrow("release");
- await expect(fs.access(created.path)).rejects.toThrow();expect(await worktrees.get(created.id)).not.toBeNull();
- await expect(worktrees.remove(created.id,true)).resolves.toEqual({removed:true});expect(await worktrees.get(created.id)).toBeNull();
-});
-
-for(const applied of [false,true])it(`retains durable removal across sync and restart when release response fails ${applied?'after':'before'} applying`,async()=>{
- let guard=new CheckoutAdmission(tempRoot,async()=>[{pid:10,parentPid:1,startId:"boot:10",name:"gui",executable:"/gui"}],async()=>"boot-one");
- let fail=true;const ids:string[]=[];
- const hold=async(cwd:string,id:string)=>{ids.push(id);await guard.acquire(cwd,id,10);const release=async()=>{if(fail){fail=false;if(applied)await guard.release(id);throw new Error("release transport lost");}await guard.release(id);};release.removeGit=(repo:string,cwd:string,force:boolean)=>guard.remove(id,repo,cwd,force);return release;};
- const make=()=>service(undefined,undefined,undefined,undefined,hold,id=>guard.release(id)).service;
- const first=make(),created=await first.create("project-1",`durable-${applied}`);
- await expect(first.remove(created.id,true)).rejects.toThrow("release transport lost");
- await expect(fs.access(created.path)).rejects.toThrow();
- await first.sync([project()]);await first.cleanupStale("project-1");expect(await first.get(created.id)).not.toBeNull();
- // Even if a stale GUI erased the old registry row, the independent operation restores it.
- const registry=await readWorktreeRegistry({registryPath});delete registry.worktrees[created.id];await fs.writeFile(registryPath,JSON.stringify(registry));
- guard=new CheckoutAdmission(tempRoot,async()=>[{pid:10,parentPid:1,startId:"boot:10",name:"gui",executable:"/gui"}],async()=>"boot-one");
- const restarted=make();expect((await restarted.list()).map(w=>w.id)).toContain(created.id);
- await restarted.sync([project()]);await restarted.cleanupStale("project-1");expect(await restarted.get(created.id)).not.toBeNull();
- await expect(restarted.remove(created.id,true)).resolves.toEqual({removed:true});
- expect(ids).toHaveLength(1);expect(await restarted.get(created.id)).toBeNull();
- await expect(guard.launch(created.path,async()=>true)).resolves.toBe(true);
-});
-it("reuses the durable operation after an acquire acknowledgement is lost in the same GUI",async()=>{
- const guard=new CheckoutAdmission(tempRoot,async()=>[{pid:10,parentPid:1,startId:"boot:10",name:"gui",executable:"/gui"}],async()=>"boot-one");let first=true;const ids:string[]=[];
- const {service:worktrees}=service(undefined,undefined,undefined,undefined,async(cwd,id)=>{ids.push(id);await guard.acquire(cwd,id,10);if(first){first=false;throw new Error("acquire reply lost");}const release=()=>guard.release(id);release.removeGit=(repo:string,cwd:string,force:boolean)=>guard.remove(id,repo,cwd,force);return release;},id=>guard.release(id));
- const created=await worktrees.create("project-1","acquire-retry");await expect(worktrees.remove(created.id,true)).rejects.toThrow("acquire reply lost");
- await worktrees.sync([project()]);await expect(worktrees.remove(created.id,true)).resolves.toEqual({removed:true});expect(ids[0]).toBe(ids[1]);
-});
-
-it("host-owned Git finishes after the GUI exits and refuses takeover or release while its child is running",async()=>{
- const {service:worktrees}=service(),created=await worktrees.create("project-1","host-owned");
- let ready!:()=>void,finish!:()=>void;const started=new Promise<void>(r=>ready=r),gate=new Promise<void>(r=>finish=r);
- const inventory=vi.fn(async()=>[{pid:10,parentPid:1,startId:"boot:10",name:"gui",executable:"/gui"}]);
- const remove=vi.fn(async(repo:string,cwd:string,force:boolean)=>{ready();await gate;await removeGitWorktree(repo,cwd,force);});
- const guard=new CheckoutAdmission(tempRoot,inventory,async()=>"same-boot",remove);
- await guard.acquire(created.path,"owned",10);const deleting=guard.remove("owned",repoRoot,created.path,false);await started;
- inventory.mockResolvedValue([{pid:20,parentPid:1,startId:"boot:20",name:"new-gui",executable:"/gui"}]);
- expect(await guard.busy()).toBe(true);
- await expect(guard.acquire(created.path,"owned",20)).rejects.toThrow(/still running/);
- await expect(guard.release("owned")).rejects.toThrow(/still running/);
- await expect(guard.launch(created.path,async()=>{})).rejects.toThrow(/removal/);
- finish();await deleting;expect(remove).toHaveBeenCalledWith(repoRoot,created.path,false);
- await guard.acquire(created.path,"owned",20);await guard.release("owned");expect(await guard.busy()).toBe(false);
- await expect(fs.access(created.path)).rejects.toThrow();
-});
-it("host removal rejects mismatched repository membership and a main checkout",async()=>{
- const {service:worktrees}=service(),created=await worktrees.create("project-1","membership");
- const guard=new CheckoutAdmission(tempRoot,async()=>[{pid:10,parentPid:1,startId:"boot:10",name:"gui",executable:"/gui"}],async()=>"boot");
- await guard.acquire(created.path,"child",10);
- await expect(guard.remove("child",repoRoot,repoRoot,true)).rejects.toThrow(/lease/);
- const unrelated=path.join(tempRoot,"unrelated");await fs.mkdir(unrelated);await git(unrelated,"init","-b","main");await fs.writeFile(path.join(unrelated,"a"),"a");await git(unrelated,"add",".");await git(unrelated,"commit","-m","initial");
- await expect(guard.remove("child",unrelated,created.path,true)).rejects.toThrow(/repository/);
- await guard.release("child");await guard.acquire(repoRoot,"main",10);
- await expect(guard.remove("main",repoRoot,repoRoot,true)).rejects.toThrow(/repository/);
- await fs.access(created.path);await fs.access(repoRoot);await guard.release("main");
 });

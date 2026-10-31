@@ -144,102 +144,6 @@ async function coordinator(
 }
 
 describe("TerminalCoordinator", () => {
-  it('retains the original conversation when a legacy successor launch fails and the GUI is reopened',async()=>{
-    const root=await tempRoot();
-    const original={id:'original',kind:'claude',projectId:null,tool:null,cwd:'C:\\Work',providerConversationId:'conversation-X',pid:0,status:'exited' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:0,generation:'old'};
-    const observed=[original];
-    const worker=Object.assign(new FakeWorker(),{resumeTarget:vi.fn(async(id:string)=>id==='original'&&observed.length>1?{sessionId:'successor',redirectSessionId:'successor'}:{sessionId:id==='original'?'successor':'retry'}),listExisting:vi.fn(async()=>observed)});
-    const first=await coordinator(root,worker);
-    worker.create.mockImplementationOnce(async spec=>{observed.push({...original,id:spec.sessionId,providerConversationId:null,status:'error',hostDelivery:'rejected',generation:spec.generation} as any);throw new Error('launch rejected');});
-    await expect(first.instance.resume({sessionId:'original',cols:80,rows:24})).rejects.toThrow('launch rejected');
-    expect(first.instance.list().find(s=>s.id==='successor')?.providerConversationId).toBe('conversation-X');await first.instance.detach();
-    const second=await coordinator(root,worker);
-    expect(worker.create).toHaveBeenCalledOnce();
-    await second.instance.resume({sessionId:'original',cols:80,rows:24});
-    expect(worker.create.mock.calls[1][0]).toMatchObject({sessionId:'retry',args:expect.arrayContaining(['--resume','conversation-X']),providerConversationId:'conversation-X'});
-    await second.instance.detach();
-  });
-  it('coalesces explicit legacy resumes and preserves the conversation under the successor execution identity',async()=>{
-    const worker=Object.assign(new FakeWorker(),{resumeTarget:vi.fn(async()=>({sessionId:'successor'}))});
-    const {instance}=await coordinator(await tempRoot(),worker);
-    const original={id:'original',kind:'claude',projectId:null,tool:null,cwd:'C:\\Work',providerConversationId:'known-conversation',pid:0,status:'exited' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:0,generation:'old'};
-    await instance.reconcileHostSessions([original]);
-    const [a,b]=await Promise.all([instance.resume({sessionId:original.id,cols:80,rows:24}),instance.resume({sessionId:original.id,cols:80,rows:24})]);
-    expect(a.id).toBe('successor');expect(b.id).toBe(a.id);expect(worker.create).toHaveBeenCalledOnce();
-    expect(worker.create.mock.calls[0][0]).toMatchObject({sessionId:'successor',providerConversationId:'known-conversation',args:expect.arrayContaining(['--resume','known-conversation'])});
-    expect(instance.list().find(s=>s.id==='original')?.providerConversationId).toBe('known-conversation');
-    await instance.detach();
-  });
-  it('retries an old rejected first Claude launch without requiring a transcript that never existed',async()=>{
-    const root=await tempRoot(),hasConversation=vi.fn(async()=>false);
-    const {instance,worker}=await coordinator(root,new FakeWorker(),undefined,undefined,undefined,hasConversation);
-    const session={id:'failed-first-session',kind:'claude',projectId:null,tool:null,cwd:root,providerConversationId:null,pid:0,status:'error' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:null,generation:'failed',hostDelivery:'rejected' as const};
-    await instance.reconcileHostSessions([session]);expect(worker.create).not.toHaveBeenCalled();
-    await instance.resume({sessionId:session.id,cols:80,rows:24});
-    expect(worker.create.mock.calls[0][0].args).not.toContain('--resume');
-    expect(worker.create.mock.calls[0][0].providerConversationId).toBe(session.id);await instance.detach();
-  });
-  it("uses a verified historical Claude receipt only when the user explicitly resumes a failed host session",async()=>{
-    const root=await tempRoot(),statusDir=path.join(root,'provider-status'),hasConversation=vi.fn(async()=>false);
-    const {instance,worker}=await coordinator(root,new FakeWorker(),undefined,undefined,statusDir,hasConversation);
-    await fs.mkdir(statusDir,{recursive:true});
-    const session={id:'host-session',kind:'claude',projectId:null,tool:null,cwd:root,providerConversationId:null,pid:0,status:'error' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:null,generation:'failed-new-generation'};
-    await fs.writeFile(path.join(statusDir,session.id+'.json'),JSON.stringify({sessionId:session.id,status:'exited',event:'SessionEnd',at:session.updatedAt,provider:'claude',generation:'earlier-generation',providerConversationId:'recorded-conversation'}));
-    await instance.reconcileHostSessions([session]);expect(instance.list()[0].providerConversationId).toBeNull();expect(worker.create).not.toHaveBeenCalled();
-    await expect(instance.resume({sessionId:session.id,cols:80,rows:24})).rejects.toThrow(/conversation/);
-    hasConversation.mockResolvedValue(true);
-    await instance.resume({sessionId:session.id,cols:80,rows:24});
-    expect(worker.create).toHaveBeenCalledOnce();expect(worker.create.mock.calls[0][0].args).toContain('--resume');
-    expect(worker.create.mock.calls[0][0].providerConversationId).toBe('recorded-conversation');await instance.detach();
-  });
-  it("recovers a conversation erased by v2.0.1 from that launch's provider receipt",async()=>{
-    const root=await tempRoot(),statusDir=path.join(root,"provider-status");
-    const {instance}=await coordinator(root,new FakeWorker(),undefined,undefined,statusDir);
-    await fs.mkdir(statusDir,{recursive:true});
-    const session={id:"host-session",kind:"claude",projectId:null,tool:null,cwd:root,providerConversationId:null,pid:0,status:"idle" as const,createdAt:"2026-10-30T00:00:00Z",updatedAt:"2026-10-30T00:01:00Z",exitCode:null,generation:"g"};
-    const receipt={sessionId:session.id,status:"idle",event:"SessionStart",at:session.updatedAt,provider:"claude",generation:"old",providerConversationId:"actual-conversation"};
-    await fs.writeFile(path.join(statusDir,session.id+".json"),JSON.stringify(receipt));
-    await instance.reconcileHostSessions([session]);expect(instance.list()[0].providerConversationId).toBeNull();
-    await fs.writeFile(path.join(statusDir,session.id+".json"),JSON.stringify({...receipt,generation:"g"}));
-    await instance.reconcileHostSessions([session]);expect(instance.list()[0].providerConversationId).toBe("actual-conversation");
-    await instance.detach();
-  });
-  it("preserves the known provider conversation when a host observation has no conversation metadata",async()=>{
-    const {instance}=await coordinator(await tempRoot());
-    const created=await instance.create({projectId:project.id,kind:"claude",cols:80,rows:24});
-    expect(created.providerConversationId).toBeTruthy();
-    await instance.reconcileHostSessions([{...created,pid:0,generation:"host-generation",status:"idle",providerConversationId:null}]);
-    expect(instance.list()[0].providerConversationId).toBe(created.providerConversationId);
-    await instance.reconcileHostSessions([{...created,pid:0,generation:"host-generation",status:"idle",providerConversationId:"older-launch-id"}]);
-    expect(instance.list()[0].providerConversationId).toBe(created.providerConversationId);
-    await instance.detach();
-  });
-  it("retains disconnected remote work and never resumes it in a local checkout",async()=>{
-    const {instance,worker}=await coordinator(await tempRoot());
-    const id="mcwr-"+"a".repeat(64),base={id,projectId:null,tool:null,kind:"codex",cwd:"/remote/repo",providerConversationId:null,status:"idle" as const,pid:0,createdAt:"2026-10-30T00:00:00.000Z",updatedAt:"2026-10-30T00:01:00.000Z",exitCode:null,generation:"g",remote:{hostId:"lab",name:"Lab",sessionId:"actual",projectId:"remote-project",connected:true,observedAt:12}};
-    await instance.reconcileHostSessions([base]);await instance.reconcileHostSessions([]);
-    expect(instance.list()[0]).toMatchObject({status:"error",updatedAt:base.updatedAt,remote:{connected:false}});
-    await expect(instance.resume({sessionId:id,cols:80,rows:24})).rejects.toThrow(/원격/);expect(worker.create).not.toHaveBeenCalled();
-    worker.stop.mockRejectedValueOnce(new Error("delivery unknown"));await expect(instance.remove(id)).rejects.toThrow(/unknown/);
-    expect(instance.list()).toHaveLength(1);
-    await instance.reconcileHostSessions([base]);expect(instance.list()[0].status).toBe("idle");
-  });
-  it("serializes host observations and publishes last-seen timestamps on disconnect", async () => {
-    const { instance } = await coordinator(await tempRoot());
-    const events: TerminalEvent[] = []; instance.onEvent(event => events.push(event));
-    const base = { id: "host-session", projectId: project.id, tool: null, kind: "codex", cwd: project.rootPath, providerConversationId: null, status: "idle" as const, pid: 0, createdAt: "2026-10-30T00:00:00.000Z", updatedAt: "2026-10-30T00:01:00.000Z", exitCode: null, generation: "g" };
-    await Promise.all([instance.reconcileHostSessions([base]), instance.reconcileHostSessions([{ ...base, status: "error" }])]);
-    expect(instance.list()[0]).toMatchObject({ status: "error", updatedAt: base.updatedAt });
-    expect(events.at(-1)).toMatchObject({ type: "workspace", session: { status: "error", updatedAt: base.updatedAt } });
-  });
-  it("reattaches surviving host sessions and can detach without stopping them", async () => {
-    const worker = Object.assign(new FakeWorker(), { listExisting: async () => [{ id:"host-session",projectId:project.id,tool:null,kind:"codex",cwd:project.rootPath,providerConversationId:null,status:"idle" as const,pid:0,createdAt:"2026-10-30T00:00:00.000Z",updatedAt:"2026-10-30T00:00:00.000Z",exitCode:null,generation:"host-generation" }] });
-    const {instance}=await coordinator(await tempRoot(),worker);
-    expect(instance.list()).toMatchObject([{id:"host-session",status:"idle",pid:0}]);
-    await instance.detach();
-    expect(worker.stop).not.toHaveBeenCalled();
-    expect(worker.create).not.toHaveBeenCalled();
-  });
   it("resolves a new-session profile once and does not override the saved conversation when resuming", async () => {
     const getProfile = vi.fn(async () => ({ id: "p", name: "Profile", agentId: "claude" as const, model: "sonnet", effort: "medium" }));
     const { instance, worker } = await coordinator(await tempRoot(), new FakeWorker(), undefined, undefined, undefined, undefined, getProfile);
@@ -1868,30 +1772,6 @@ describe("worktree sessions", () => {
     expect(session.worktreeId).toBe(worktree.id);
     const stored = await readAppState({ statePath: path.join(root, "state.json") });
     expect(stored.state.sessions[session.id].worktreeId).toBe(worktree.id);
-  });
-  it('resolves host-owned worker worktrees on observation even when the cwd has not changed',async()=>{
-    const root=await tempRoot(),{instance}=worktreeCoordinator(root);await instance.initialize();
-    const observed={id:'host-worker',projectId:project.id,tool:null,kind:'codex',cwd:worktree.path,providerConversationId:null,status:'idle' as const,pid:0,createdAt:'2026-10-30T00:00:00.000Z',updatedAt:'2026-10-30T00:01:00.000Z',exitCode:null,generation:'host-generation'};
-    await instance.reconcileHostSessions([observed]);await instance.reconcileHostSessions([observed]);
-    expect(instance.list()[0]).toMatchObject({worktreeId:worktree.id,cwd:worktree.path});
-    expect((await readAppState({statePath:path.join(root,'state.json')})).state.sessions[observed.id].worktreeId).toBe(worktree.id);
-  });
-  it('refreshes host inventory and stops an unclassified local worker by cwd, including disconnected state',async()=>{
-    const {instance,worker}=worktreeCoordinator(await tempRoot());await instance.initialize();
-    const observed={id:'unclassified',projectId:null,tool:null,kind:'codex',cwd:worktree.path,providerConversationId:null,status:'error' as const,pid:0,createdAt:'2026-10-30T00:00:00.000Z',updatedAt:'2026-10-30T00:01:00.000Z',exitCode:null,generation:'host-generation'};
-    const listExisting=vi.fn(async()=>[observed,{...observed,id:'remote-same-path',remote:{hostId:'elsewhere',name:'Other PC',sessionId:'actual',projectId:null,connected:false,observedAt:12}}]);
-    Object.assign(worker,{listExisting});
-    worker.stop.mockRejectedValueOnce(new Error('Host cannot prove the worker stopped'));
-    await expect(instance.stopWorktreeSessions(worktree.id)).rejects.toThrow('Failed to stop');
-    expect(listExisting).toHaveBeenCalled();expect(worker.stop).toHaveBeenCalledExactlyOnceWith('unclassified');
-    expect(instance.list().find(view=>view.id==='unclassified')?.worktreeId).toBe(worktree.id);
-    await instance.stopWorktreeSessions(worktree.id);expect(worker.stop).toHaveBeenCalledTimes(2);
-  });
-  it('refuses worktree deletion when the independent host cannot provide a fresh inventory',async()=>{
-    const {instance,worker}=worktreeCoordinator(await tempRoot());await instance.initialize();
-    Object.assign(worker,{listExisting:vi.fn(async()=>{throw new Error('Host unavailable');})});
-    await expect(instance.stopWorktreeSessions(worktree.id)).rejects.toThrow('Host unavailable');
-    expect(worker.stop).not.toHaveBeenCalled();
   });
 
   it("moves a PowerShell session with its owned CLI and persists the workspace without replacing the terminal", async () => {
