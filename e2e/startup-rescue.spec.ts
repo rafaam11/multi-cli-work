@@ -57,7 +57,16 @@ test('independent rescue restores original v1 offline when the first v2 Electron
    expect(await fs.readFile(path.join(fixture.userData,'Local Storage/first-start-fixture'),'utf8')).toBe('actual-v1-before-electron');
    const settings=JSON.parse(await fs.readFile(path.join(fixture.userData,'settings.json'),'utf8'));
    expect(settings.general).toMatchObject({autoCheckUpdates:false,autoResumeSessions:false,repoSyncOnSessionStart:false});
-  }finally{const process=installed.process();await installed.evaluate(({app})=>app.quit());await expect.poll(()=>process.exitCode,{timeout:20000}).not.toBe(null);}
+  }finally{
+   const process=installed.process();
+   try{await installed.evaluate(({app})=>app.quit());}
+   catch(error){
+    // A successful quit can close the debugging transport before its evaluate
+    // response arrives. Still require a clean OS process exit below.
+    if(!String(error).includes('Target page, context or browser has been closed'))throw error;
+   }
+   await expect.poll(()=>process.exitCode,{timeout:20000}).toBe(0);
+  }
   await fixture.assertGitPreserved();
   await fs.writeFile(info.outputPath('startup-rescue.json'),JSON.stringify({platform,sourceCommit:process.env.GITHUB_SHA,electronNeverStarted:true,independentLauncher:true,actualDataPreserved:true,originalVersion:'1.55.1',network:network.evidence},null,2));
  }finally{
