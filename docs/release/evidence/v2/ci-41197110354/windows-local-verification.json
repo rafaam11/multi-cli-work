@@ -1,0 +1,23 @@
+{
+  "candidateVersion": "2.0.2",
+  "sourceCommit": "aac697be9c3bc39747a80998ad731041d76966ce",
+  "releaseCandidateCommit": "e1633d907cc3ba7f94efe640d45eba6d03df670f",
+  "candidateDifference": "Only scripts/v2/check-packaged-main.test.mjs and e2e/startup-rescue.spec.ts changed to await completed fixture writes and clean application exit; application sources and installed package are unchanged",
+  "platform": "win32",
+  "completedAt": "2026-10-31T11:15:02Z",
+  "sourceResumeScenarios": {"newHost": "passed", "original201Host": "passed"},
+  "packagedScenarios": {"resumeAndHostSurvival": 5, "nativeCanvasInput": 1, "allPassed": true},
+  "nativeSsh": {"tests": 1, "passed": true, "systemServiceChanged": false, "rerunCommit": "e1633d907cc3ba7f94efe640d45eba6d03df670f", "rerunCompletedAt": "2026-10-31T11:30:38Z"},
+  "installer": {"version": "2.0.2", "exitCode": 0, "nsisEntries": 160, "requiredHerdrFiles": 7},
+  "installedApplication": {
+    "version": "2.0.2.0",
+    "sameIndependentHost": true,
+    "existingExecutionsCompared": 15,
+    "existingGenerationsOrPaneIdsChanged": 0,
+    "previouslyRejectedPowerShellResumed": true,
+    "explicitCanvasClickClaimedControl": true,
+    "inputOutputMarker": "MCW_2_0_2_INPUT_OK",
+    "providerWorkStopped": false
+  },
+  "androidFunctionalVerification": "deferred by user"
+}

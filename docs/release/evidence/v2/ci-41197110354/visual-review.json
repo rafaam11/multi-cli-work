@@ -1,0 +1,63 @@
+{
+  "sourceCommit": "e1633d907cc3ba7f94efe640d45eba6d03df670f",
+  "reviewedAt": "2026-10-31T11:58:32.934Z",
+  "reviewer": "Codex image inspection",
+  "scope": "Ten packaged Electron screenshots from successful candidate CI run 41197110354, inspected individually.",
+  "limitations": [
+    "Chromium composition does not certify physical OS keyboard or IME behavior.",
+    "Android functional/device verification remains deferred.",
+    "Screenshots supplement native event and input/output assertions; they do not certify all visual layouts."
+  ],
+  "images": [
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/windows-korean-composition.png",
+      "sha256": "4ef87c7b37f681536b67586baae28a35f2b993249f97b2c3bb0f2147e4761f3b",
+      "observation": "Korean terminal heading and active composition are visible and readable."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/windows-scrollback-search.png",
+      "sha256": "5c3a79a74e12648ed959ea789ea31ab30e9f6d523df004bf0637b4bed110f4de",
+      "observation": "Korean search query, result count and scrollback controls are visible."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/windows-six-visible-of-fifteen.png",
+      "sha256": "a5e61438bc4dd4abcf69fefd82973e6f94e20274c1f49dc78e273162d1764a6e",
+      "observation": "Six panes render and the sidebar reports fifteen sessions with one waiting item. Narrow panes wrap controls and clip terminal columns; this is not a claim of wide-pane readability."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/windows-remote-sidebar-offline.png",
+      "sha256": "4972dbbad8c971021db3f40523eb43f00d46602407d9e42b9ef6bea35283d094",
+      "observation": "Remote project/worktree hierarchy and disconnected/error labels are visible."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/windows-resumed-terminal.png",
+      "sha256": "958737a5c8294afd3e06a43805d8a7d5c5ea64151584efa653a086d48d70dc32",
+      "observation": "The resumed shell shows the typed echo command and the resulting MCW_RESUMED_INPUT_OK output line."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/linux-korean-composition.png",
+      "sha256": "60138543ed1087746f5565fe519805210e945f9d4b4214ce64576c2cfdb938fb",
+      "observation": "Korean terminal heading and active composition are visible and readable."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/linux-scrollback-search.png",
+      "sha256": "7cb6f6f0417a8aeaeb1f958350639d4042292726b1e25c6256ecfec19fdf092a",
+      "observation": "Korean search query, result count and scrollback controls are visible."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/linux-six-visible-of-fifteen.png",
+      "sha256": "bd42d25bb2900c728a88d36bec325a21c83a1a8b43318fb284ba5c480074819a",
+      "observation": "Six panes render and the sidebar reports fifteen sessions with one waiting item. Narrow panes wrap controls and clip terminal columns; this is not a claim of wide-pane readability."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/linux-remote-sidebar-offline.png",
+      "sha256": "5cb76712184f849e6c4990d9058a018c86bf148a2549d4423842f3976a13af6a",
+      "observation": "Remote project/worktree hierarchy and disconnected/error labels are visible."
+    },
+    {
+      "path": "docs/release/evidence/v2/ci-41197110354/linux-resumed-terminal.png",
+      "sha256": "b8f5273117691ab82e20b05d6da7cbbd97080bb72ea213eb07190900e5a91c5f",
+      "observation": "The resumed shell shows the typed echo command and the resulting MCW_RESUMED_INPUT_OK output line."
+    }
+  ]
+}

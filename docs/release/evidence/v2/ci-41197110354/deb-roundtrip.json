@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "e1633d907cc3ba7f94efe640d45eba6d03df670f",
+  "platform": "deb",
+  "versions": [
+    "1.55.1",
+    "2.0.0-preview.0",
+    "1.55.1",
+    "2.0.0-preview.0"
+  ],
+  "network": "Isolated Linux network namespace with loopback only; network probe failed as required.",
+  "immutableBackupSha256": "f71c5e06f3ef6c9e5f76d9fea7b0fc22f2b1def817b0822e8b14b42eff77360a",
+  "settingsSuppressed": true,
+  "notesFavoritesPreserved": true,
+  "v2StatePreserved": true,
+  "v1ChangesNotMerged": true,
+  "gitWorktreePreserved": true,
+  "completedAt": "2026-10-31T11:42:41.631Z"
+}

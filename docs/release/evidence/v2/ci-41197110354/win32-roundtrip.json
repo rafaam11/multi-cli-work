@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "e1633d907cc3ba7f94efe640d45eba6d03df670f",
+  "platform": "win32",
+  "versions": [
+    "1.55.1",
+    "2.0.0-preview.0",
+    "1.55.1",
+    "2.0.0-preview.0"
+  ],
+  "network": "Outbound firewall block on recovery Node, original installer, installed application and candidate installer; network probe failed as required.",
+  "immutableBackupSha256": "3eac05a6e9cf06c2873ab82250d7e4ef4d4b1571896935f880d7af812b876647",
+  "settingsSuppressed": true,
+  "notesFavoritesPreserved": true,
+  "v2StatePreserved": true,
+  "v1ChangesNotMerged": true,
+  "gitWorktreePreserved": true,
+  "completedAt": "2026-10-31T11:51:40.256Z"
+}
