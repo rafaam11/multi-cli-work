@@ -1,12 +1,14 @@
 // A read-only release decision. This script cannot publish, write updater metadata, or pass a manual test.
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// Evidence binds to one candidate: the version being packaged.
+const packageVersion = JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')).version;
 const terminalChecks = ['ime', 'mouse', 'images', 'reconnect', 'size-owner'];
 const cooperationChecks = ['gui-survival', 'ssh', 'disconnect-delivery', 'event-loss', 'no-duplicate-rerun'];
 export const requiredChecks = [
@@ -49,10 +51,10 @@ async function verifyEvidence(evidence, root) {
   for await (const chunk of createReadStream(candidate)) hash.update(chunk);
   if (hash.digest('hex') !== evidence.sha256) throw new Error(`Changed evidence: ${evidence.path}`);
 }
-export async function checkRelease(channel, manifest, { root = repositoryRoot, expectedCommit, artifactDir } = {}) {
+export async function checkRelease(channel, manifest, { root = repositoryRoot, expectedCommit, artifactDir, candidateVersion = packageVersion } = {}) {
   if (!['preview', 'stable'].includes(channel)) throw new Error('Release channel must be stable or preview');
   fields(manifest, ['schemaVersion', 'candidateVersion', 'sourceCommit', 'checks'], 'validation manifest');
-  if (manifest.schemaVersion !== 1 || manifest.candidateVersion !== '2.0.0' || !(manifest.sourceCommit === null || commitPattern.test(manifest.sourceCommit))) throw new Error('Invalid validation manifest schema or candidate');
+  if (manifest.schemaVersion !== 1 || manifest.candidateVersion !== candidateVersion || !(manifest.sourceCommit === null || commitPattern.test(manifest.sourceCommit))) throw new Error('Invalid validation manifest schema or candidate');
   if (!Array.isArray(manifest.checks) || manifest.checks.length !== requiredChecks.length || new Set(manifest.checks.map(c => c.id)).size !== requiredChecks.length || requiredChecks.some(id => !manifest.checks.some(c => c.id === id))) throw new Error('Missing, duplicated or unexpected validation checks');
   const timestamps = new Map();
   for (const check of manifest.checks) {

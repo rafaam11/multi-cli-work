@@ -16,6 +16,7 @@ import type { LocalHostConnection, HostRegistration } from "../../shared/host-co
 import type { HostConnections } from "./host-connections";
 import type { HostTerminalSocket } from "./host-client";
 import { resolveRemoteSession } from "../v2/observed-terminals";
+import { HerdrUnavailableError } from "../herdr/api-client";
 import { validateTaskSnapshot,validateTaskIdentity } from "./task-validation";
 import type {HostExecutionCatalog} from "./execution-catalog";
 import {parseExecutionCatalog,parseExecutionHosts} from "../../shared/execution-catalog";
@@ -64,6 +65,10 @@ export interface HostGatewayOptions {
   ready?:()=>boolean;
 }
 class HttpError extends Error { constructor(readonly status: number, message: string) { super(message); } }
+// Other internal errors stay masked; a stopped Herdr server is the one users must act on.
+const herdrStopped = "Herdr 터미널 서버가 멈췄습니다. 앱을 완전히 종료한 뒤 다시 여세요. 원인은 호스트 폴더의 herdr/herdr-server.log에 남아 있습니다.";
+const publicError = (error: unknown) => error instanceof HttpError ? { status: error.status, message: error.message }
+  : error instanceof HerdrUnavailableError ? { status: 503, message: herdrStopped } : { status: 400, message: "Operation rejected" };
 const secret = () => randomBytes(32).toString("base64url");
 const equal = (left: string, right: string) => { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); };
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
@@ -458,7 +463,7 @@ export class HostGateway {
         reply(response, 200, {}); return;
       }
       throw new HttpError(404, "Unknown endpoint");
-    } catch (error) { if (!response.headersSent) reply(response, error instanceof HttpError ? error.status : 400, { error: error instanceof HttpError ? error.message : "Operation rejected" }); else response.end(); }
+    } catch (error) { if (!response.headersSent) { const failure = publicError(error); reply(response, failure.status, { error: failure.message }); } else response.end(); }
   }
   private connect(socket: WebSocket, headerToken?: string): void {
     const viewerId = randomUUID(); let authenticated = false; let sessionId: string | undefined; let unsubscribe: (() => void) | undefined;
@@ -560,7 +565,7 @@ export class HostGateway {
         if (message.type === "resize") { await this.options.terminals.resize(sessionId, viewerId, integer(message.cols, 1, 1000), integer(message.rows, 1, 1000), integer(message.cellWidthPx ?? 8, 1, 256), integer(message.cellHeightPx ?? 16, 1, 256)); return; }
         if (message.type === "scroll") { await this.options.terminals.scroll(sessionId, viewerId, integer(message.delta, -100000, 100000)); return; }
         throw new HttpError(400, "Unknown terminal command");
-      }).catch(error => { if (!authenticated) socket.close(1008, "Authentication required"); else send({ type: "error", error: error instanceof HttpError ? error.message : "Operation rejected" }); });
+      }).catch(error => { if (!authenticated) socket.close(1008, "Authentication required"); else send({ type: "error", error: publicError(error).message }); });
     });
     socket.on("error", () => undefined);
     socket.once("close", () => {

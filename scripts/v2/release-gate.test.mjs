@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,7 +13,7 @@ async function fixture() {
   await writeFile(path.join(root, 'evidence.txt'), 'recorded human evidence');
   const evidence = [{ path: 'evidence.txt', sha256: createHash('sha256').update('recorded human evidence').digest('hex') }];
   const commit = 'a'.repeat(40);
-  const manifest = { schemaVersion: 1, candidateVersion: '2.0.0', sourceCommit: commit, checks: requiredChecks.map((id, i) => ({ id, status: 'passed', sourceCommit: commit, completedAt: new Date(Date.UTC(2025, 9, 30, 0, i)).toISOString(), tester: 'human tester', evidence })) };
+  const manifest = { schemaVersion: 1, candidateVersion: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version, sourceCommit: commit, checks: requiredChecks.map((id, i) => ({ id, status: 'passed', sourceCommit: commit, completedAt: new Date(Date.UTC(2025, 9, 30, 0, i)).toISOString(), tester: 'human tester', evidence })) };
   return { root, manifest, commit };
 }
 describe('v2 release gate', () => {

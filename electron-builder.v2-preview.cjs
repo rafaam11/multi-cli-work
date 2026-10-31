@@ -1,5 +1,10 @@
 const base = require('./package.json').build;
 const windows = process.platform === 'win32';
+// electron-builder's 7-Zip picks the ARM64 filter for arm64 executables. The NSIS
+// extractor predates that filter and silently skips such files, so v2.0.0 installed
+// without conpty/arm64/OpenConsole.exe and Herdr refused every terminal. BCJ2 is the
+// filter x64 executables already used and the installer decodes it.
+if (windows) process.env.ELECTRON_BUILDER_7Z_FILTER = 'BCJ2';
 module.exports = {
   ...base,
   appId: 'com.rafaam11.multicliwork.preview',

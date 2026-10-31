@@ -59,7 +59,7 @@ test("v2 Canvas and independent host survive GUI quit and reconnect without laun
   };
   try {
     app=await launch(); let page=await app.firstWindow();
-    if(process.env.MCW_V2_E2E_RUNTIME==='v2')expect(await app.evaluate(({app})=>app.getVersion())).toBe('2.0.0');
+    if(process.env.MCW_V2_E2E_RUNTIME==='v2')expect(await app.evaluate(({app})=>app.getVersion())).toBe(JSON.parse(await fs.readFile(path.resolve("package.json"),"utf8")).version);
     page.on("pageerror",error=>errors.push(`renderer: ${error.message}`));
     await expect.poll(()=>page.evaluate(()=>window.mcwV2?.version)).toBe(2);
     const descriptor=JSON.parse(await fs.readFile(path.join(`${userData}-v2`,"host/mcw-host.json"),"utf8")); client=new HostClient(descriptor);

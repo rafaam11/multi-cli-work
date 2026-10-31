@@ -427,3 +427,13 @@ it("refuses host shutdown while a checkout Git deletion is running or unknown",a
  const busy=vi.fn(async()=>true),{gateway}=await setup({terminals:{...terminalService(),checkoutRemovalBusy:busy}});
  expect(await gateway.canShutdown()).toBe(false);busy.mockResolvedValue(false);expect(await gateway.canShutdown()).toBe(true);
 });
+it("tells the user that a stopped Herdr server needs an app restart instead of masking it as a rejected operation",async()=>{
+  const {terminals,fetchRoute}=await setup();
+  const {HerdrUnavailableError}=await import("../herdr/api-client");
+  terminals.create.mockRejectedValueOnce(new HerdrUnavailableError("ENOENT"));
+  const stopped=await fetchRoute("/terminals",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+  expect(stopped.status).toBe(503);expect((await stopped.json()).error).toMatch(/Herdr 터미널 서버가 멈췄습니다.*다시 여세요/);
+  terminals.create.mockRejectedValueOnce(new Error("C:/private/path internal detail"));
+  const masked=await fetchRoute("/terminals",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+  expect(masked.status).toBe(400);expect(await masked.json()).toEqual({error:"Operation rejected"});
+});

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { HerdrApiClient, HerdrCommandError, HerdrDeliveryUnknownError } from "./api-client";
+import { HerdrApiClient, HerdrCommandError, HerdrDeliveryUnknownError, HerdrUnavailableError } from "./api-client";
 
 const cleanup: (() => void)[] = [];
 afterEach(() => { for (const close of cleanup.splice(0)) close(); });
@@ -71,4 +71,12 @@ describe("Herdr API transport", () => {
     const silent = await server(() => {});
     await expect(new HerdrApiClient(silent, {timeoutMs:20}).request("tab.create", {})).rejects.toBeInstanceOf(HerdrDeliveryUnknownError);
   });
+});
+it("reports a Herdr endpoint with no listener as a stopped server, keeping the socket error code", async () => {
+  const endpoint = process.platform === "win32" ? `\\\\.\\pipe\\mcw-absent-${randomUUID()}` : path.join(tmpdir(), `mcw-absent-${randomUUID()}.sock`);
+  const client = new HerdrApiClient(endpoint);
+  for (const attempt of [client.request("ping", {}), client.subscribe(["pane.output"], () => undefined, () => undefined)]) {
+    const error = await attempt.then(() => null, failure => failure);
+    expect(error).toBeInstanceOf(HerdrUnavailableError);expect(error.code).toBe("ENOENT");
+  }
 });

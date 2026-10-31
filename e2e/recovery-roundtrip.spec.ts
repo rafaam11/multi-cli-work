@@ -26,6 +26,14 @@ test('original installer offline v1 → v2 → v1.55.1 → v2 preserves both dat
     if(v2){expect(await page.evaluate(()=>window.mcwV2?.version)).toBe(2);client=new HostClient(JSON.parse(await fs.readFile(path.join(`${fixture.userData}-v2`,'host/mcw-host.json'),'utf8')));}
     return page;
   };
+  // The NSIS extractor can skip a file while the installer still succeeds (v2.0.0
+  // lost conpty/arm64/OpenConsole.exe and Herdr then refused every terminal).
+  const assertHerdrInstalled=async()=>{
+    if(platform!=='win32')return;
+    const manifest=JSON.parse(await fs.readFile(path.resolve('scripts/v2/assets.json'),'utf8')) as {windowsMembers:{file:string;sha256:string}[]};
+    const bundle=path.join(path.dirname(fixture.executable),'resources/v2/herdr/windows-mcw');
+    for(const member of manifest.windowsMembers.filter(member=>member.file!=='herdr.exe'))expect(await fixture.digest(path.join(bundle,member.file)).catch(()=>'missing'),member.file).toBe(member.sha256);
+  };
   const close=async()=>{
     if(app){const process=app.process();await app.evaluate(({app})=>app.quit());await expect.poll(()=>process.exitCode,{timeout:20000}).not.toBe(null);app=undefined;}
     if(client){expect(await client.terminals()).toEqual([]);await client.shutdown();client=undefined;}
@@ -40,7 +48,7 @@ test('original installer offline v1 → v2 → v1.55.1 → v2 preserves both dat
     await page.reload();await expect(page.getByText('복귀 검증',{exact:true}).first()).toBeVisible();
     expect(JSON.parse((await page.evaluate(()=>localStorage.getItem('multi-cli-work.sidebar.v1')))!).favoriteProjectIds).toContain(fixture.projectId);
     await close();
-    await fixture.install('v2');page=await launch(true);
+    await fixture.install('v2');await assertHerdrInstalled();page=await launch(true);
     expect(await page.evaluate(()=>localStorage.getItem('mcw.recovery.fixture'))).toBe('original-v1');
     expect(JSON.parse((await page.evaluate(()=>localStorage.getItem('mcw.diffNotes.v1')))!).notes[0].body).toBe(note.body);
     await page.evaluate(()=>localStorage.setItem('mcw.recovery.fixture','preserved-v2'));
@@ -76,7 +84,7 @@ test('original installer offline v1 → v2 → v1.55.1 → v2 preserves both dat
     await page.screenshot({path:info.outputPath('restored-original-v1.png')});await close();
     await fs.writeFile(path.join(fixture.userData,'changed-during-v1.txt'),'keep separate from v2');
     expect(await fixture.digest(path.join(installation.backupDirectory,'manifest.json'))).toBe(fixedHash);await verifyBackup();
-    await fixture.install('v2');page=await launch(true);
+    await fixture.install('v2');await assertHerdrInstalled();page=await launch(true);
     expect(await page.evaluate(()=>localStorage.getItem('mcw.recovery.fixture'))).toBe('preserved-v2');
     expect(await fs.readFile(path.join(`${fixture.userData}-v2`,'v2-output.txt'),'utf8')).toBe('preserved v2 output');
     expect(await fs.stat(path.join(`${fixture.userData}-v2`,'changed-during-v1.txt')).catch(()=>null)).toBeNull();

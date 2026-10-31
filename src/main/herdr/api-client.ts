@@ -10,6 +10,11 @@ export class HerdrCommandError extends Error {
 export class HerdrDeliveryUnknownError extends Error {
   constructor(readonly requestId: string, message: string) { super(`Delivery unknown (${requestId}): ${message}`); }
 }
+/** Nothing listens on the Herdr endpoint, so nothing was sent: the server exited or never started. */
+export class HerdrUnavailableError extends Error {
+  constructor(readonly code: string) { super(`Herdr terminal server is not running (${code})`); }
+}
+const notListening = (error: Error) => ["ENOENT", "ECONNREFUSED"].includes((error as NodeJS.ErrnoException).code ?? "");
 function record(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -31,7 +36,7 @@ export class HerdrApiClient {
         if (error) reject(error); else resolve(value as T);
       };
       const failed = (error: Error) => finish(sent && !(error instanceof HerdrCommandError)
-        ? new HerdrDeliveryUnknownError(id, error.message) : error);
+        ? new HerdrDeliveryUnknownError(id, error.message) : !sent && notListening(error) ? new HerdrUnavailableError((error as NodeJS.ErrnoException).code!) : error);
       const timer = setTimeout(() => failed(new Error("Herdr request timed out")), this.options.timeoutMs ?? 10_000);
       socket.once("connect", () => {
         sent = true;
@@ -59,7 +64,7 @@ export class HerdrApiClient {
       const failed = (error: Error) => {
         if (closed) return;
         close();
-        if (ready) onStale(error); else reject(error);
+        if (ready) onStale(error); else reject(notListening(error) ? new HerdrUnavailableError((error as NodeJS.ErrnoException).code!) : error);
       };
       const timer = setTimeout(() => failed(new Error("Herdr subscription timed out")), this.options.timeoutMs ?? 10_000);
       socket.once("connect", () => socket.write(JSON.stringify({id,method:"events.subscribe",params:{subscriptions:types.map(type => typeof type === "string" ? {type} : type)}})+"\n"));

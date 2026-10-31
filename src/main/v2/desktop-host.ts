@@ -4,7 +4,8 @@ import { randomUUID, createHash } from "node:crypto";
 import { ensureHostProcess, readHostDescriptor } from "../host/host-process";
 import { HostClient } from "../host/host-client";
 import { stageRecoveryAssets, verifyRecoveryAssets, verifyStandaloneNodeRuntime } from "../recovery";
-import {resolveHerdrResource} from "./herdr-resource";
+import {resolveHerdrResource,verifyHerdrConptyBundle} from "./herdr-resource";
+import {replaceHostWithStoppedHerdr} from "./stopped-herdr-host";
 
 export async function preserveRecoveryRuntime(resourcesDirectory: string, recoveryRoot: string, installDirectory: string, scriptDirectory: string, bridgeDirectory:string): Promise<string> {
   const additionalAssets=await Promise.all([
@@ -46,12 +47,14 @@ export async function startDesktopHost(options: DesktopHostOptions) {
   const manifest = JSON.parse(await fs.readFile(path.join(options.resourcesDirectory, "assets.json"), "utf8"));
   if (manifest.herdrVersion !== "0.9.5" || !["win32", "linux"].includes(process.platform)) throw new Error("지원되는 Herdr 런타임이 없습니다.");
   const {binaryPath,binarySha256}=await resolveHerdrResource(options.resourcesDirectory);
+  if (process.platform === "win32") await verifyHerdrConptyBundle(options.resourcesDirectory);
   const bridgePath = path.join(options.bridgeDirectory, process.platform === "win32" ? "mcw-herdr-bridge.exe" : "mcw-herdr-bridge");
   const bridge = JSON.parse(await fs.readFile(path.join(options.bridgeDirectory, "bridge.json"), "utf8"));
   const digest = createHash("sha256").update(await fs.readFile(bridgePath)).digest("hex");
   if (bridge.sha256 !== digest || bridge.herdrVersion !== "0.9.5") throw new Error("터미널 브리지 검증에 실패했습니다.");
   const {directory,hostId}=await ensureDesktopHostIdentity(options.userData);
-  const node = manifest.nodeRuntimes.find((entry: {platform: string}) => entry.platform === process.platform);
+  if (await replaceHostWithStoppedHerdr({directory,hostId,bridgePath}) === "replaced") console.warn("Replaced a host whose Herdr server had stopped; no session process was running.");
+  const node =manifest.nodeRuntimes.find((entry: {platform: string}) => entry.platform === process.platform);
   const runtime = node?.members.find((entry: {output: string}) => entry.output === (process.platform === "win32" ? "node.exe" : "node"));
   if (!runtime) throw new Error("독립 호스트 런타임을 찾을 수 없습니다.");
   const executablePath = path.join(options.resourcesDirectory,node.directory,runtime.output);

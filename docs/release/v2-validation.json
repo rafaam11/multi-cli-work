@@ -1,554 +1,191 @@
 {
   "schemaVersion": 1,
-  "candidateVersion": "2.0.0",
-  "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
+  "candidateVersion": "2.0.1",
+  "sourceCommit": null,
   "checks": [
     {
       "id": "windows.terminal.ime",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-source-terminal.json",
-          "sha256": "066c16909cecec12ce0ab268093722b2cd80af1a17bef7a9d2df5a89ad25c55e"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-packaged-terminal.json",
-          "sha256": "ebcd05d1d74d92b8f106cc4f8acefe2915956241f17cc4c01c09ffd006d2da3a"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.terminal.mouse",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-source-terminal.json",
-          "sha256": "066c16909cecec12ce0ab268093722b2cd80af1a17bef7a9d2df5a89ad25c55e"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-packaged-terminal.json",
-          "sha256": "ebcd05d1d74d92b8f106cc4f8acefe2915956241f17cc4c01c09ffd006d2da3a"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.terminal.images",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-source-terminal.json",
-          "sha256": "066c16909cecec12ce0ab268093722b2cd80af1a17bef7a9d2df5a89ad25c55e"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-packaged-terminal.json",
-          "sha256": "ebcd05d1d74d92b8f106cc4f8acefe2915956241f17cc4c01c09ffd006d2da3a"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.terminal.reconnect",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-source-terminal.json",
-          "sha256": "066c16909cecec12ce0ab268093722b2cd80af1a17bef7a9d2df5a89ad25c55e"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-packaged-terminal.json",
-          "sha256": "ebcd05d1d74d92b8f106cc4f8acefe2915956241f17cc4c01c09ffd006d2da3a"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.terminal.size-owner",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-source-terminal.json",
-          "sha256": "066c16909cecec12ce0ab268093722b2cd80af1a17bef7a9d2df5a89ad25c55e"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/windows-packaged-terminal.json",
-          "sha256": "ebcd05d1d74d92b8f106cc4f8acefe2915956241f17cc4c01c09ffd006d2da3a"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.cooperation.gui-survival",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.cooperation.ssh",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/2026-10-30-windows-native-ssh.md",
-          "sha256": "61daa8ec80057fc40aed3d53620276c02033aef4c91e2b5df95bc9225d7951fb"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.cooperation.disconnect-delivery",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/2026-10-30-windows-native-ssh.md",
-          "sha256": "61daa8ec80057fc40aed3d53620276c02033aef4c91e2b5df95bc9225d7951fb"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.cooperation.event-loss",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "windows.cooperation.no-duplicate-rerun",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:23Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/2026-10-30-windows-native-ssh.md",
-          "sha256": "61daa8ec80057fc40aed3d53620276c02033aef4c91e2b5df95bc9225d7951fb"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.terminal.ime",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-source-terminal.json",
-          "sha256": "c46c951dec6e7ffd964cf2cf5a667f2586fbee66878aa6a3b1622438ff9faf83"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-packaged-terminal.json",
-          "sha256": "2f014f11704074e396ae8a8947c0c5ae9d04b1e61c0317b7c14cf68effbf5f61"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.terminal.mouse",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-source-terminal.json",
-          "sha256": "c46c951dec6e7ffd964cf2cf5a667f2586fbee66878aa6a3b1622438ff9faf83"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-packaged-terminal.json",
-          "sha256": "2f014f11704074e396ae8a8947c0c5ae9d04b1e61c0317b7c14cf68effbf5f61"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.terminal.images",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-source-terminal.json",
-          "sha256": "c46c951dec6e7ffd964cf2cf5a667f2586fbee66878aa6a3b1622438ff9faf83"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-packaged-terminal.json",
-          "sha256": "2f014f11704074e396ae8a8947c0c5ae9d04b1e61c0317b7c14cf68effbf5f61"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.terminal.reconnect",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-source-terminal.json",
-          "sha256": "c46c951dec6e7ffd964cf2cf5a667f2586fbee66878aa6a3b1622438ff9faf83"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-packaged-terminal.json",
-          "sha256": "2f014f11704074e396ae8a8947c0c5ae9d04b1e61c0317b7c14cf68effbf5f61"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.terminal.size-owner",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-source-terminal.json",
-          "sha256": "c46c951dec6e7ffd964cf2cf5a667f2586fbee66878aa6a3b1622438ff9faf83"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/linux-packaged-terminal.json",
-          "sha256": "2f014f11704074e396ae8a8947c0c5ae9d04b1e61c0317b7c14cf68effbf5f61"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/visual-review.json",
-          "sha256": "0bbf5a941737002ffc8303f9d953dfabfd82d697dc17db82a0ff3dbe750706ae"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.cooperation.gui-survival",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.cooperation.ssh",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.cooperation.disconnect-delivery",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.cooperation.event-loss",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "linux.cooperation.no-duplicate-rerun",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:44:19Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "recovery.windows.offline-v1-v2-v1-v2",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:43:26.232Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/win32-roundtrip.json",
-          "sha256": "88d24d11a83e39e9109dd752ad9cc03df9670a8da30b6b396d13bd038a581055"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/win32-startup-rescue.json",
-          "sha256": "0c46ac810477c390906d269f01b79f127287e5e2e56406c7a60aaee890256d29"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "recovery.deb.offline-v1-v2-v1-v2",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:42:09.439Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/deb-roundtrip.json",
-          "sha256": "845b66a0302a38dc08175b10021e84665c30e46e5c528698389be57ea9833786"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/deb-startup-rescue.json",
-          "sha256": "f6e873c01e4cb7b08fec6b39782408dc4f081296644b570b1c9c4d77a39e6a35"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "recovery.appimage.offline-v1-v2-v1-v2",
-      "status": "passed",
-      "sourceCommit": "9476108b698e0f9791f8def8adbe3387bbffba62",
-      "completedAt": "2026-10-30T08:43:27.573Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Codex evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/run.json",
-          "sha256": "4e506903442601b38ec6d2755394e941ec46b0bf24fc6e00786473e97a9c93da"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/verification.md",
-          "sha256": "e4dcddebe835cb648a0674bef4cce67fda43d8d7b08f9f3dc1a17da579dada63"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/appimage-roundtrip.json",
-          "sha256": "91f74027e692d285f136a2b288a4919f24264b224ac34293e595c2bcb44c7bca"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41026158888/appimage-startup-rescue.json",
-          "sha256": "f18696a1be6a88b771d9dc6e56b4136fa1bdff73f28d1307f46f2b77dc29856a"
-        }
-      ]
+      "status": "pending",
+      "sourceCommit": null,
+      "completedAt": null,
+      "tester": null,
+      "evidence": []
     },
     {
       "id": "android.physical.terminal.ime",

@@ -20,7 +20,7 @@ jobs:
           node-version: 22.12.0
       - name: Require tested v2 candidate and authorized Android deferral
         run: |
-          node -e "if(require('./package.json').version!=='2.0.0')throw new Error('Stable v2 packaging requires version 2.0.0')"
+          node -e "if(require('./package.json').version!==require('./docs/release/v2-validation.json').candidateVersion)throw new Error('Stable v2 packaging requires the validated candidate version')"
           node scripts/v2/release-gate.mjs --check-release stable
       - name: Require tag and package version to match
         if: github.ref_type == 'tag'
@@ -79,6 +79,9 @@ jobs:
         shell: pwsh
         run: |
           node scripts/v2/check-packaged-main.mjs release/win-unpacked/resources/app.asar
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # win-unpacked is not what users install: the NSIS extractor can skip files.
+          node scripts/v2/check-nsis-payload.mjs (Get-Item release/Multi-CLI-Work-Setup-*.exe).FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:MCW_V2_E2E='1'
           $env:MCW_V2_E2E_RUNTIME='v2'
