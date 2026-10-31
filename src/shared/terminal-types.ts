@@ -52,6 +52,8 @@ export type TerminalStatus =
   | "error";
 
 export interface TerminalSession {
+  /** Host admission evidence, separate from process activity and never inferred from idle. */
+  hostDelivery?: "pending" | "delivered" | "unknown" | "rejected";
   remote?: RemoteTerminalSource;
   taskNotice?: import("./task-notices").TaskSessionNotice | null;
   id: string;
@@ -73,6 +75,8 @@ export interface TerminalLaunchSpec {
   sessionId: string;
   /** Ephemeral launch identity; never persisted to the app-state schema. */
   generation?: string;
+  /** Explicit, compare-and-swap restart of a confirmed stopped host attempt. */
+  restartGeneration?: string;
   projectId: string | null;
   tool: ToolCommand | null;
   kind: TerminalKind;

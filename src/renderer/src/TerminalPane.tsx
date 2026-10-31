@@ -69,7 +69,7 @@ function V2TerminalPane(props:TerminalPaneProps) {
   const attached=useRef(false);
   return <HostTerminalPane sessionId={props.session.id} onError={props.onError}
     onFocus={()=>props.onTerminalFocused?.(props.session.id)} fontSize={props.settings.fontSize} fontFamily={props.settings.fontFamily}
-    terminalProps={{autoFocus:props.autoFocus ?? true,lineHeight:props.settings.lineHeight,cursorStyle:props.settings.cursorStyle,cursorBlink:props.settings.cursorBlink,
+    terminalProps={{autoFocus:props.autoFocus ?? true,controlOnClick:true,lineHeight:props.settings.lineHeight,cursorStyle:props.settings.cursorStyle,cursorBlink:props.settings.cursorBlink,
       shiftEnterBytes:props.shiftEnterBytes,refreshRequest:props.refreshRequest,onRefreshComplete:()=>props.onRefreshComplete(props.session.id),
       onReady:ready=>{if(ready&&!attached.current){attached.current=true;props.onAttached(props.session);}},
       onRegisterCommands:commands=>props.onRegisterCommands?.(props.session.id,commands),

@@ -4,7 +4,7 @@ import type { HostRegistration, RemoteHostObservation, LocalHostConnection } fro
 import type {ExecutionCatalog,RepositoryInspection,RegisteredTaskStart,ExecutionHost} from "./execution-catalog";
 import type {RemoteWorkerSelection} from "./remote-task-types";
 
-export interface V2TerminalSummary {id:string;kind:string;cwd:string;projectId:string|null;status:string;connected:boolean;observedAt:number|null;tabId:string|null;paneId:string|null;generation:string;createdAt:string;tokens?:Record<string,string>}
+export interface V2TerminalSummary {id:string;kind:string;cwd:string;projectId:string|null;status:string;connected:boolean;observedAt:number|null;tabId:string|null;paneId:string|null;generation:string;createdAt:string;providerConversationId?:string|null;delivery?:"pending"|"delivered"|"unknown"|"rejected";tokens?:Record<string,string>}
 export interface V2HostState {tasks:Task[];terminals:V2TerminalSummary[];hosts?:RemoteHostObservation[];observedAt:number|null;connected:boolean}
 export interface McwV2Api {
   readonly version: 1 | 2;

@@ -356,7 +356,7 @@ export class HostGateway {
         if(!this.accepting)throw new HttpError(409,"Host is draining");if(!this.options.hosts)throw new HttpError(503,"Host connections unavailable");
         await this.options.hosts.remove(text(decodeURIComponent(hostRoute[1])));reply(response,200,{});return;
       }
-      if (url.pathname === "/health" && method === "GET") { if(this.options.ready&&!this.options.ready())throw new HttpError(503,'Host is initializing');reply(response, 200, { schemaVersion: 2, hostId: this.descriptor.hostId, instanceId: this.descriptor.instanceId, accepting: this.accepting }); return; }
+      if (url.pathname === "/health" && method === "GET") { if(this.options.ready&&!this.options.ready())throw new HttpError(503,'Host is initializing');reply(response, 200, { schemaVersion: 2, hostId: this.descriptor.hostId, instanceId: this.descriptor.instanceId, accepting: this.accepting, capabilities:{terminalRestart:true} }); return; }
       if(url.pathname==="/recovery-readiness"&&method==="GET"){reply(response,200,{hostId:this.descriptor.hostId,instanceId:this.descriptor.instanceId,accepting:this.accepting,canShutdown:await this.canShutdown(),checkedAt:Date.now()});return;}
       if(url.pathname==="/recovery-plan"&&method==="GET"){
         const canShutdown=await this.canShutdown();
@@ -529,7 +529,18 @@ export class HostGateway {
           }
           try {
             // Register first: a frame can arrive while the snapshot promise resolves.
-            unsubscribe = this.options.terminals.subscribeFrames(sessionId, frame => { if (socket.readyState === WebSocket.OPEN) { if (socket.bufferedAmount > 4 * 1024 * 1024) socket.close(1013, "Viewer too slow"); else if (frame instanceof Uint8Array) socket.send(frame, { binary: true }); else send({ type: "frame", sessionId, frame }); } });
+            unsubscribe = this.options.terminals.subscribeFrames(sessionId, frame => {
+              const lifecycle=frame as {type?:string;ownerId?:string|null};
+              if(lifecycle?.type==='ownership'){
+                if(typeof lifecycle.ownerId==='string')this.owners.set(nextId,lifecycle.ownerId);
+                else this.owners.delete(nextId);
+              }
+              if (socket.readyState !== WebSocket.OPEN)return;
+              if (socket.bufferedAmount > 4 * 1024 * 1024) socket.close(1013, "Viewer too slow");
+              else if (frame instanceof Uint8Array) socket.send(frame, { binary: true });
+              else if(lifecycle?.type==='ownership'||lifecycle?.type==='disconnected')send({...lifecycle,sessionId:nextId});
+              else send({ type: "frame", sessionId:nextId, frame });
+            });
             const snapshot = await this.options.terminals.snapshot(nextId);
             send({ type: "snapshot", sessionId, snapshot, viewerId, ownerId: this.owners.get(sessionId) ?? null });
           } catch { socket.close(1013,"Terminal surface unavailable; reconnect observation"); }

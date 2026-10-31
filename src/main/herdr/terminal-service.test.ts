@@ -67,6 +67,10 @@ describe.skipIf(!process.env.MCW_HERDR_TEST_BINARY || !process.env.MCW_BRIDGE_TE
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       await service.stop("session-1");
+      const resumed=await service.create({...spec,generation:"explicit-resume",restartGeneration:session.generation});
+      expect(resumed.paneId).not.toBe(session.paneId);
+      expect(resumed.generation).toBe("explicit-resume");
+      await service.stop("session-1");
       const next=await service.create({...spec,sessionId:"session-2"});
       expect(next.delivery).toBe("delivered");
       await service.stop("session-2");

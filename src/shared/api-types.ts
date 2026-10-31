@@ -241,6 +241,7 @@ export interface TerminalSizeOwner {
 }
 
 export interface TerminalSessionView extends PersistedTerminalSession {
+  hostDelivery?: import('./terminal-types').TerminalSession['hostDelivery'];
   remote?: import("./terminal-types").RemoteTerminalSource;
   taskNotice?: import("./task-notices").TaskSessionNotice | null;
   status: TerminalStatus;

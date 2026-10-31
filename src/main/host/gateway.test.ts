@@ -308,6 +308,17 @@ it("keeps terminal/task execution alive across GUI disconnect, enforces viewer o
   expect((await client.health()).accepting).toBe(false);
 });
 
+it("invalidates cached ownership and forwards lifecycle events when the terminal generation changes",async()=>{
+  const {descriptor,terminals}=await setup();terminals.sessions.set('s',{id:'s'});
+  const owner=await viewer(descriptor.url,descriptor.token);owner.send({type:'subscribe',sessionId:'s'});await owner.next('snapshot');
+  owner.send({type:'takeOwnership'});await owner.next('ownership');
+  terminals.frames.emit('s',{type:'ownership',ownerId:null,sizeOwnerId:null});
+  expect(await owner.next('ownership')).toMatchObject({ownerId:null});
+  owner.send({type:'input',data:{TextCommit:'stale'}});await owner.next('error');expect(terminals.input).not.toHaveBeenCalled();
+  terminals.frames.emit('s',{type:'disconnected',reason:'Terminal generation changed'});
+  expect(await owner.next('disconnected')).toMatchObject({reason:'Terminal generation changed'});
+});
+
 it("rejects unauthenticated/oversized websocket messages and hostile websocket origins", async () => {
   const { descriptor } = await setup();
   const unauthenticated = new WebSocket(`${descriptor.url.replace("http:", "ws:")}/terminal`); sockets.push(unauthenticated);

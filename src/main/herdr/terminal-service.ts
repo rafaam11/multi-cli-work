@@ -1,6 +1,6 @@
 import {CheckoutAdmission} from "./checkout-admission";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -16,9 +16,9 @@ import { configureProviderMods } from "../v2/provider-mods";
 import {captureProcessTree,observeProcessTree,parseProcessInventory,readProcessInventory,readBootIdentity,type ProcessIdentity} from "./process-observation";
 
 type JsonObject = Record<string, unknown>;
-type Launch = {sessionId:string; kind:string; cwd:string; executable:string; args:string[]; env:Record<string,string>; projectId:string|null; createdAt:string; generation?:string};
+type Launch = {sessionId:string; kind:string; cwd:string; executable:string; args:string[]; env:Record<string,string>; projectId:string|null; createdAt:string; generation?:string; restartGeneration?:string; providerConversationId?:string|null};
 interface Geometry {cols:number;rows:number;cellWidthPx:number;cellHeightPx:number}
-export interface ManagedSession {id:string; kind:string; cwd:string; projectId:string|null; createdAt:string; generation:string; tabId:string|null; paneId:string|null; delivery:"pending"|"delivered"|"unknown"|"rejected"; status:string; observedAt:number|null; connected:boolean;geometry?:Geometry|null;tokens?:Record<string,string>;processes?:ProcessIdentity[]}
+export interface ManagedSession {id:string; kind:string; cwd:string; projectId:string|null; createdAt:string; generation:string; tabId:string|null; paneId:string|null; delivery:"pending"|"delivered"|"unknown"|"rejected"; status:string; observedAt:number|null; connected:boolean;geometry?:Geometry|null;tokens?:Record<string,string>;processes?:ProcessIdentity[];providerConversationId?:string|null}
 interface Registry {version:2; sessions:ManagedSession[]}
 const object = (value: unknown): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 class RegistryContentError extends Error {}
@@ -30,6 +30,7 @@ export function parseHerdrSessionRegistry(value:unknown,platform:NodeJS.Platform
   const paths=platform==="win32"?path.win32:path.posix;
   for(const s of value.sessions) {
     if(!object(s)||!validText(s.id,128)||!/^[\w-]+$/.test(s.id)||ids.has(s.id)||!validText(s.generation,128)||!validText(s.cwd,32768)||!paths.isAbsolute(s.cwd)||!validText(s.kind,128)||!validText(s.createdAt,128)||!Number.isFinite(Date.parse(s.createdAt))||(s.projectId!==null&&!validText(s.projectId))||(s.tabId!==null&&!validText(s.tabId))||(s.paneId!==null&&!validText(s.paneId))||!['pending','delivered','unknown','rejected'].includes(String(s.delivery))||!validText(s.status,128)||typeof s.connected!=="boolean"||(s.observedAt!==null&&(!Number.isSafeInteger(s.observedAt)||Number(s.observedAt)<0))||(s.geometry!==undefined&&s.geometry!==null&&!validGeometry(s.geometry))||(s.delivery==='delivered'&&(!s.tabId||!s.paneId))) throw new RegistryContentError("Invalid Herdr session record");
+    if(s.providerConversationId!==undefined&&s.providerConversationId!==null&&!validText(s.providerConversationId,512))throw new RegistryContentError("Invalid provider conversation ID");
     if(s.tokens!==undefined)try {parseMetadataTokens(s.tokens);}catch {throw new RegistryContentError("Invalid Herdr session metadata tokens");}
     if(s.processes!==undefined)try {const records=parseProcessInventory(s.processes);if(!records.length||records.length>10000||records[0].startId===null)throw new Error();}catch {throw new RegistryContentError("Invalid Herdr process identities");}
     ids.add(s.id);
@@ -51,6 +52,8 @@ export function parseLaunchSpec(value: JsonObject): Launch {
   if(typeof value.kind!=="string"||typeof value.createdAt!=="string"||!Number.isFinite(Date.parse(value.createdAt))) throw new Error("Invalid session metadata");
   if(value.projectId!==null&&typeof value.projectId!=="string") throw new Error("Invalid project id");
   if(value.generation!==undefined&&typeof value.generation!=="string") throw new Error("Invalid generation");
+  if(value.providerConversationId!==undefined&&value.providerConversationId!==null&&!validText(value.providerConversationId,512))throw new Error("Invalid provider conversation ID");
+  if(value.restartGeneration!==undefined&&(!validText(value.restartGeneration,128)||!validText(value.generation,128)||value.restartGeneration===value.generation)) throw new Error("Invalid restart generation");
   if(Buffer.byteLength(JSON.stringify(value))>256*1024) throw new Error("Launch specification too large");
   return value as Launch;
 }
@@ -83,7 +86,7 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
   const admission = new CheckoutAdmission(options.root,()=>readProcessInventory(options.bridgePath),()=>readBootIdentity(options.bridgePath));
   const persist = async () => { await updateJsonStore(sessionSpec,file,()=>({version:2 as const,sessions:[...sessions.values()]})); };
   const session = (id:string) => { const s=sessions.get(id); if(!s) throw new Error("Unknown MCW session"); return s; };
-  const emit = (bridge:Bridge,event:unknown) => { for(const listener of bridge.listeners) {try {listener(event);} catch {bridge.listeners.delete(listener);}} };
+  const emit = (bridge:Pick<Bridge,"listeners">,event:unknown) => { for(const listener of bridge.listeners) {try {listener(event);} catch {bridge.listeners.delete(listener);}} };
   const stale = (error:Error) => {
     if(closed) return;
     for(const s of sessions.values()) s.connected=false;
@@ -122,6 +125,8 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
             s.status=String(pane.agent_status ?? "unknown");
             try {s.tokens=parseMetadataTokens(pane.tokens??{});}catch {s.tokens={};}
           } else if(s.delivery==="delivered") {s.status=processes.status==="running"?"orphaned":processes.status;s.tokens={};}
+          else if(s.delivery==="rejected") s.status="error";
+          else if(s.delivery==="unknown") s.status="unknown";
         }
         if(identitiesChanged)await persist();
       } while(refreshDirty&&!closed);
@@ -287,9 +292,26 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
       const spec=parseLaunchSpec(input);
       if(spec.sessionId.startsWith("mcwr-"))throw new Error("Reserved remote viewer session ID");
       return admission.launch(spec.cwd,async()=>{
-        if(sessions.has(spec.sessionId)) throw new Error("Session id already admitted; inspect its delivery state instead of retrying");
+        const previous=sessions.get(spec.sessionId);
+        if(previous) {
+          if(!spec.restartGeneration)throw new Error("Session id already admitted; inspect its delivery state instead of retrying");
+          if(spec.restartGeneration!==previous.generation)throw new Error("Session generation changed; refresh before resuming");
+          await service.refreshObservation();
+          const rejected=previous.delivery==="rejected"&&!previous.tabId&&!previous.paneId&&!previous.processes?.length;
+          const exited=previous.delivery==="delivered"&&previous.connected&&previous.status==="exited";
+          if(!rejected&&!exited)throw new Error("Session is running or execution is uncertain; a confirmed exit is required before resuming");
+          const archive=path.join(options.root,"terminal-attempts");await fs.mkdir(archive,{recursive:true,mode:0o700});
+          const filename=createHash("sha256").update(JSON.stringify([previous.id,previous.generation])).digest("hex")+".json";
+          // Unique receipts retain every admitted attempt across explicit resumes.
+          try {await fs.writeFile(path.join(archive,filename),JSON.stringify(previous),{flag:"wx",mode:0o600,flush:true});}
+          catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw error;const saved=JSON.parse(await fs.readFile(path.join(archive,filename),"utf8"));if(saved.id!==previous.id||saved.generation!==previous.generation||saved.delivery!==previous.delivery)throw new Error("Previous terminal attempt archive differs");}
+          bridges.get(previous.id)?.fail(new Error("Terminal resumed as a new generation"));owners.delete(previous.id);
+          const observers={listeners:viewers.get(previous.id)??new Set<(event:unknown)=>void>()};
+          emit(observers,{type:'ownership',ownerId:null,sizeOwnerId:null});
+          emit(observers,{type:'disconnected',observedAt:previous.observedAt,reason:'Terminal resumed as a new generation'});
+        }else if(spec.restartGeneration)throw new Error("Previous session generation is unavailable");
         await fs.access(spec.cwd);
-        const s:ManagedSession={id:spec.sessionId,kind:spec.kind,cwd:spec.cwd,projectId:spec.projectId,createdAt:spec.createdAt,generation:spec.generation??randomUUID(),tabId:null,paneId:null,delivery:"pending",status:"starting",observedAt:null,connected:true};
+        const s:ManagedSession={id:spec.sessionId,kind:spec.kind,cwd:spec.cwd,projectId:spec.projectId,createdAt:spec.createdAt,generation:spec.generation??randomUUID(),tabId:null,paneId:null,delivery:"pending",status:"starting",observedAt:null,connected:true,providerConversationId:spec.providerConversationId??null};
         sessions.set(s.id,s);await persist();
         let layoutAttempted=false,layoutConfirmed=false;
         try {
@@ -304,11 +326,12 @@ export async function createHerdrTerminalService(options: HerdrRuntimeOptions & 
           s.tabId=layout.tab_id;s.paneId=layout.root.pane_id;s.delivery="delivered";s.observedAt=Date.now();layoutConfirmed=true;
           s.geometry=tabGeometry(s.tabId)??{cols:80,rows:24,cellWidthPx:8,cellHeightPx:16};
           await persist(); await observe().catch(stale); return {...s};
-        } catch(error) {if(!layoutConfirmed) s.delivery=layoutAttempted&&!(error instanceof HerdrCommandError)?"unknown":"rejected";await persist();throw error;}
+        } catch(error) {if(!layoutConfirmed){s.delivery=layoutAttempted&&!(error instanceof HerdrCommandError)?"unknown":"rejected";s.status=s.delivery==="rejected"?"error":"unknown";}await persist();changed();throw error;}
       });
     },
     async stop(id:string) {
-      const s=session(id);if(!s.tabId) throw new Error("Cannot stop an unconfirmed terminal");
+      const s=session(id);if(s.delivery==="rejected"&&!s.tabId&&!s.paneId&&!s.processes?.length)return;
+      if(!s.tabId) throw new Error("Cannot stop an unconfirmed terminal");
       await service.refreshObservation();
       if(s.status==="exited")return;
       if(!s.processes?.length)throw new Error("Cannot verify the pane process identity; stop was not dispatched");

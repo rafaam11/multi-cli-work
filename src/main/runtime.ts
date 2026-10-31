@@ -362,7 +362,12 @@ export async function createDesktopRuntime(
     now: () => new Date().toISOString(),
   });
 
-  const worker = host.v2 ? new HostWorkerGateway(host.v2.client) : new RestartingTerminalWorker(
+  const migratedSessionIds=new Set<string>();
+  if(host.v2){
+    const original=await fs.readFile(path.join(host.v2.backupDirectory,'data/userData/state.json'),'utf8').catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+    if(original)for(const [id,session] of Object.entries(JSON.parse(original).sessions??{}))if((session as {id?:string})?.id===id)migratedSessionIds.add(id);
+  }
+  const worker = host.v2 ? new HostWorkerGateway(host.v2.client,migratedSessionIds) : new RestartingTerminalWorker(
     () =>
       utilityProcess.fork(path.join(__dirname, "terminal-worker.js"), [], {
         serviceName: "Multi CLI Work PTY",

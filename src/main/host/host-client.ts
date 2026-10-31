@@ -38,8 +38,8 @@ export class HostClient {
       request.on("error",reject);request.end(input===undefined?undefined:JSON.stringify(input));
     });
   }
-  async health(): Promise<{ schemaVersion: 2; hostId: string; instanceId: string; accepting: boolean }> {
-    const value = await this.request<{ schemaVersion: 2; hostId: string; instanceId: string; accepting: boolean }>("/health","GET",undefined,1000);
+  async health(): Promise<{ schemaVersion: 2; hostId: string; instanceId: string; accepting: boolean; capabilities?:{terminalRestart?:boolean} }> {
+    const value = await this.request<{ schemaVersion: 2; hostId: string; instanceId: string; accepting: boolean; capabilities?:{terminalRestart?:boolean} }>("/health","GET",undefined,1000);
     if (this.connection.instanceId && value.instanceId !== this.connection.instanceId) throw new Error("Host instance changed");
     return value;
   }

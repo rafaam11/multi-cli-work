@@ -11,6 +11,7 @@ vi.mock("./runtime", () => ({ startHerdrRuntime: mocks.start }));
 vi.mock("node:child_process", async original => ({...await original<typeof import("node:child_process")>(), spawn: mocks.spawn }));
 vi.mock("./process-observation",async original=>({...await original<typeof import("./process-observation")>(),readProcessInventory:mocks.processes}));
 import { createHerdrTerminalService } from "./terminal-service";
+import {HerdrCommandError} from "./api-client";
 import { hostTerminalAdapter } from "../mcw-host";
 
 class Child extends EventEmitter {
@@ -48,6 +49,46 @@ async function ready(child:Child) {
 }
 
 describe("host bridge lifecycle", () => {
+  it("retains the requested provider conversation even when Herdr rejects launch",async()=>{
+    const {service,root}=await make([]);
+    request.mockImplementation(async(method:string)=>{if(method==='layout.apply')throw new HerdrCommandError('launch_failed','bad executable');return {snapshot};});
+    await expect(service.create({sessionId:'new',kind:'claude',cwd:root,executable:'missing',args:[],env:{},projectId:null,createdAt:stored().createdAt,providerConversationId:'conversation'})).rejects.toThrow('bad executable');
+    expect((await service.list())[0]).toMatchObject({delivery:'rejected',status:'error',providerConversationId:'conversation'});
+  });
+  it("resumes a confirmed exited process with a fresh generation while rejecting duplicate resume delivery",async()=>{
+    const {service,root}=await make();await ready(children[0]);
+    await service.takeOwnership('s','old-viewer');const events:unknown[]=[];service.subscribeFrames('s',event=>events.push(event));
+    snapshot.panes=[];mocks.processes.mockResolvedValue([]);await service.refreshObservation();
+    expect((await service.list())[0].status).toBe("exited");
+    const spec={sessionId:"s",kind:"shell",cwd:root,executable:"shell",args:[],env:{},projectId:null,createdAt:stored().createdAt,generation:"new",restartGeneration:"g"};
+    const results=await Promise.allSettled([service.create(spec),service.create(spec)]);
+    expect(results.map(result=>result.status)).toEqual(["fulfilled","rejected"]);
+    expect((await service.list())[0]).toMatchObject({generation:"new",delivery:"delivered"});
+    expect(request.mock.calls.filter(([method])=>method==="layout.apply")).toHaveLength(1);
+    expect(events).toContainEqual({type:'ownership',ownerId:null,sizeOwnerId:null});
+    expect(events).toContainEqual(expect.objectContaining({type:'disconnected'}));
+  });
+  it("recovers a rejected launch and only admits an explicit new generation, preserving the old attempt",async()=>{
+    snapshot.panes=[];
+    const rejected={...stored(),delivery:"rejected",status:"starting",tabId:null,paneId:null};
+    const {service,root}=await make([rejected as any]);
+    expect((await service.list())[0]).toMatchObject({delivery:"rejected",status:"error"});
+    const spec={sessionId:"s",kind:"shell",cwd:root,executable:"shell",args:[],env:{},projectId:null,createdAt:rejected.createdAt,generation:"next"};
+    await expect(service.create(spec)).rejects.toThrow(/already/i);
+    await expect(service.create({...spec,restartGeneration:"wrong"})).rejects.toThrow(/generation/i);
+    await expect(service.create({...spec,restartGeneration:"g"})).resolves.toMatchObject({generation:"next",delivery:"delivered"});
+    await expect(service.create({...spec,restartGeneration:"g"})).rejects.toThrow(/generation/i);
+    expect(request.mock.calls.filter(([method])=>method==="layout.apply")).toHaveLength(1);
+    const archived=await fs.readdir(path.join(root,"terminal-attempts"));
+    expect(archived).toHaveLength(1);
+    expect(JSON.parse(await fs.readFile(path.join(root,"terminal-attempts",archived[0]),"utf8"))).toMatchObject({id:"s",generation:"g",delivery:"rejected"});
+  });
+  it.each(["unknown","pending","delivered"])("never restarts a %s launch while execution is uncertain or still running",async delivery=>{
+    const record={...stored(),delivery,...(delivery==="delivered"?{}:{paneId:null,tabId:null})};
+    const {service,root}=await make([record as any]);
+    await expect(service.create({sessionId:"s",kind:"shell",cwd:root,executable:"shell",args:[],env:{},projectId:null,createdAt:record.createdAt,generation:"next",restartGeneration:"g"})).rejects.toThrow(/running|uncertain|confirmed/i);
+    expect(request.mock.calls.filter(([method])=>method==="layout.apply")).toHaveLength(0);
+  });
   it("scopes clear and search to the controlled pane and rejects stale search revisions", async () => {
     const {service}=await make();const adapter=hostTerminalAdapter(()=>service);const child=children[0];await ready(child);
     await expect(adapter.clear!("s","other")).rejects.toThrow(/control/i);

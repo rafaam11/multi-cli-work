@@ -31,7 +31,7 @@ import type {
 import { buildAgentLaunch } from "../agents/agent-launch";
 import { parseCodexExitConversationId } from "../providers/codex-resume";
 import { agentExecutable, buildToolLaunch, type ProviderExecutables } from "../providers/provider-launch";
-import { cleanupProviderStatusFiles, deleteProviderStatusFile } from "../providers/provider-status";
+import { cleanupProviderStatusFiles, deleteProviderStatusFile, readProviderStatusFile } from "../providers/provider-status";
 import type { ProviderStatusEvent } from "../providers/provider-status";
 import {
   appendSessionLog,
@@ -89,6 +89,7 @@ export function resumeSeparatorText(nowIso: string): string {
 }
 
 export interface TerminalWorkerGateway {
+  resumeTarget?(id:string):Promise<{sessionId:string;restartGeneration?:string;redirectSessionId?:string}>;
   holdCheckoutRemoval?(cwd:string,id:string):Promise<import("../projects/worktree-service").WorktreeRemovalLease>;
   settleCheckoutRemoval?(id:string):Promise<void>;
   listExisting?(): Promise<(TerminalSession & {generation:string})[]>;
@@ -230,6 +231,7 @@ export class TerminalCoordinator {
   private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
   private hostReconciliation: Promise<void> = Promise.resolve();
+  private readonly resuming = new Map<string,Promise<TerminalSessionView>>();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
   /** Sessions on the renderer's 숨김 shelf, as of its last save. The remote list shows them apart. */
   private hiddenIds = new Set<string>();
@@ -274,7 +276,11 @@ export class TerminalCoordinator {
     for (const session of sessions) {
       if (this.removedSessionIds.has(session.id)) continue;
       const previous = this.views.get(session.id);
-      const view: TerminalSessionView = { ...previous, ...session, title: previous?.title ?? null, name: previous?.name ?? null, interruptedByShutdown: false };
+      const view: TerminalSessionView = { ...previous, ...session, providerConversationId:previous?.providerConversationId ?? session.providerConversationId ?? null, title: previous?.title ?? null, name: previous?.name ?? null, interruptedByShutdown: false };
+      if(!view.providerConversationId&&session.pid===0&&!session.remote&&this.options.statusDir&&/^[a-zA-Z0-9-]+$/.test(session.id)){
+        const receipt=await readProviderStatusFile(this.options.statusDir,session.id);
+        if(receipt?.sessionId===session.id&&receipt.provider===session.kind&&receipt.generation===session.generation&&receipt.providerConversationId)view.providerConversationId=receipt.providerConversationId;
+      }
       if(session.pid===0&&!session.remote&&session.projectId&&this.options.resolveWorkspace&&(!previous||previous.pid!==0||previous.cwd!==session.cwd||previous.projectId!==session.projectId)){
         const workspace=await this.options.resolveWorkspace(session.projectId,session.cwd);
         if(workspace?.worktreeId)view.worktreeId=workspace.worktreeId;
@@ -369,13 +375,38 @@ export class TerminalCoordinator {
       resumeConversationId: null, forkConversationId: source.providerConversationId, name: input.name });
   }
 
-  async resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
+  resume(input: ResumeTerminalInput, options: LaunchOptions = {}): Promise<TerminalSessionView> {
+    const pending=this.resuming.get(input.sessionId);if(pending)return pending;
+    const operation=this.resumeOnce(input,options).finally(()=>{if(this.resuming.get(input.sessionId)===operation)this.resuming.delete(input.sessionId);});
+    this.resuming.set(input.sessionId,operation);return operation;
+  }
+  private async resumeOnce(input: ResumeTerminalInput, options: LaunchOptions): Promise<TerminalSessionView> {
     if(input.sessionId.startsWith("mcwr-"))throw new Error("원격 세션 재개는 해당 PC에서 실행하세요.");
     this.validateDimensions(input.cols, input.rows);
     const saved = this.views.get(input.sessionId);
     if (!saved) throw new Error(`Unknown terminal session: ${input.sessionId}`);
+    const target=await this.options.worker.resumeTarget?.(saved.id);
+    if(target?.redirectSessionId){
+      await this.reconcileHostSessions();const continued=this.views.get(target.redirectSessionId);
+      if(!continued)throw new Error('이어진 세션 정보를 불러오지 못했습니다.');
+      if(['error','exited'].includes(continued.status))return this.resume({...input,sessionId:continued.id},options);
+      return {...continued};
+    }
     const agent = this.requireAgent(saved.kind);
+    // v2.0.0/1 could erase the GUI's conversation ID while a rejected restart
+    // left the preceding provider receipt intact. Only an explicit resume may
+    // recover an older generation, and only after finding that exact transcript.
+    if(!saved.providerConversationId&&saved.pid===0&&['error','exited'].includes(saved.status)&&agent.id==='claude'&&this.options.statusDir&&this.options.hasProviderConversation){
+      const receipt=await readProviderStatusFile(this.options.statusDir,saved.id);
+      if(receipt?.sessionId===saved.id&&receipt.provider==='claude'&&receipt.providerConversationId&&await this.options.hasProviderConversation(saved,agent,receipt.providerConversationId)){
+        saved.providerConversationId=receipt.providerConversationId;await this.persistView(saved);
+      }
+    }
     const isCodex = agent.builtin && agent.id === "codex" && agent.conversationId === "provider-assigned";
+    // A rejected first launch never created a Claude transcript. Its original
+    // app-generated ID is the only candidate; the existence check below chooses
+    // resume versus a fresh launch, without guessing a different conversation.
+    if(!saved.providerConversationId&&saved.pid===0&&saved.hostDelivery==='rejected'&&agent.conversationId==='app-generated'&&this.options.hasProviderConversation)saved.providerConversationId=saved.id;
     if (isCodex && !saved.providerConversationId) {
       await this.flushSessionLog(saved.id);
       await this.recoverCodexConversation(saved);
@@ -412,8 +443,16 @@ export class TerminalCoordinator {
       if (resumeConversationId !== saved.id && await hasConversation(saved, agent, saved.id)) newConversationId = randomUUID();
       resumeConversationId = null;
     }
+    if(target&&target.sessionId!==saved.id){
+      // Persist before dispatch: old hosts do not retain provider IDs when a
+      // successor launch is rejected or its response is lost.
+      const successor:TerminalSessionView={...saved,id:target.sessionId,cwd,status:'unknown',pid:0,hostDelivery:undefined,interruptedByShutdown:false,
+        providerConversationId:resumeConversationId??newConversationId??(agent.conversationId==='app-generated'?target.sessionId:null)};
+      this.views.set(successor.id,successor);await this.persistView(successor);
+    }
     return this.launch({
-      sessionId: saved.id,
+      sessionId: target?.sessionId??saved.id,
+      restartGeneration:target?.restartGeneration,
       projectId: saved.projectId,
       tool: saved.tool,
       title: saved.title,
@@ -881,6 +920,7 @@ export class TerminalCoordinator {
   }
 
   private async launch(input: {
+    restartGeneration?:string;
     launchProfile?: import("../../shared/launch-profile").LaunchProfile | null;
     forkConversationId?: string;
     sessionId: string;
@@ -947,6 +987,7 @@ export class TerminalCoordinator {
       session = await this.options.worker.create({
         sessionId: input.sessionId,
         generation,
+        restartGeneration:input.restartGeneration,
         projectId: input.projectId,
         tool: input.tool,
         kind: input.kind,
@@ -979,6 +1020,7 @@ export class TerminalCoordinator {
       this.pendingProviderStarts.delete(input.sessionId);
       this.pendingCodexStatuses.delete(input.sessionId);
       this.pendingWorkerEvents.delete(input.sessionId);
+      if(this.options.worker.listExisting)await this.reconcileHostSessions().catch(reconcileError=>this.reportAsyncError('Failed launch reconciliation failed',reconcileError));
       throw error;
     }
     const view: TerminalSessionView = {

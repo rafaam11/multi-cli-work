@@ -4,17 +4,48 @@ import type { HerdrTerminalEvent, HerdrTerminalTransport, PaneSurfaceFrame } fro
 import { HerdrTerminal } from "./HerdrTerminal";
 
 let receive: (event: HerdrTerminalEvent) => void;
+let transportError: (error:string) => void;
 let resizeCallback: ResizeObserverCallback;
 const surface = (): PaneSurfaceFrame => ({ boot_id: "boot", projection_revision: 1, surface_revision: 1,
   frame: { width: 2, height: 1, cells: [{ symbol: "한", fg: 0, bg: 0, modifier: 0, skip: false, hyperlink: null }, { symbol: "", fg: 0, bg: 0, modifier: 0, skip: true, hyperlink: null }], cursor: null, hyperlinks: [], graphics: [] },
   panes: [], splits: [], popup: null, graphics: { assets: [], placements: [], retained_assets: [] } });
-const transport = (): HerdrTerminalTransport => ({ subscribe: vi.fn((_id, listener) => { receive = listener; return vi.fn(); }), sendInput: vi.fn(), resize: vi.fn(), scroll: vi.fn(), requestControl: vi.fn(), releaseControl: vi.fn(), requestSnapshot: vi.fn() });
+const transport = (): HerdrTerminalTransport => ({ subscribe: vi.fn((_id, listener,onError) => { receive = listener; transportError=onError!; return vi.fn(); }), sendInput: vi.fn(), resize: vi.fn(), scroll: vi.fn(), requestControl: vi.fn(), releaseControl: vi.fn(), requestSnapshot: vi.fn() });
 beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ measureText: () => ({ width: 9 }), setTransform() {}, save() {}, restore() {}, fillRect() {}, fillText() {}, beginPath() {}, rect() {}, clip() {}, moveTo() {}, lineTo() {}, stroke() {} } as unknown as CanvasRenderingContext2D);
   vi.stubGlobal("ResizeObserver", class { constructor(callback: ResizeObserverCallback) { resizeCallback = callback; } observe() {} disconnect() {} });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("shared Herdr terminal ownership and input", () => {
+  it('allows a new click after the host rejects a racing ownership request',()=>{
+    vi.stubGlobal('PointerEvent',MouseEvent);
+    const t=transport();render(<HerdrTerminal sessionId='s' viewerId='desktop' ownerId={null} transport={t} controlOnClick/>);
+    act(()=>receive({type:'surface',surface:surface()}));fireEvent.pointerDown(screen.getByLabelText('터미널 화면'),{button:0});
+    act(()=>transportError('Terminal is owned by another viewer'));
+    fireEvent.pointerDown(screen.getByLabelText('터미널 화면'),{button:0});expect(t.requestControl).toHaveBeenCalledTimes(2);
+  });
+  it("claims an unowned desktop terminal only on an explicit click, then focuses input after acknowledgement",async()=>{
+    vi.stubGlobal("PointerEvent",MouseEvent);
+    const t=transport();render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId={null} transport={t} controlOnClick/>);
+    act(()=>receive({type:"surface",surface:surface()}));
+    expect(t.requestControl).not.toHaveBeenCalled();expect(t.resize).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getByLabelText("터미널 화면"),{button:0});
+    expect(t.requestControl).toHaveBeenCalledExactlyOnceWith("s","desktop");
+    expect(screen.getByLabelText("터미널 입력")).toHaveAttribute("readonly");
+    act(()=>receive({type:"ownership",ownerId:"desktop",sizeOwnerId:"desktop"}));
+    expect(screen.getByLabelText("터미널 입력")).not.toHaveAttribute("readonly");
+    expect(screen.getByLabelText("터미널 입력")).toHaveFocus();
+    fireEvent.keyDown(screen.getByLabelText("터미널 입력"),{key:"Enter"});
+    expect(t.sendInput).toHaveBeenCalledOnce();
+  });
+  it("does not claim another viewer's terminal or a passive mobile view on click",()=>{
+    vi.stubGlobal("PointerEvent",MouseEvent);
+    const t=transport();const view=render(<HerdrTerminal sessionId="s" viewerId="desktop" ownerId="phone" transport={t} controlOnClick/>);
+    act(()=>receive({type:"surface",surface:surface()}));
+    fireEvent.pointerDown(screen.getByLabelText("터미널 화면"),{button:0});
+    expect(t.requestControl).not.toHaveBeenCalled();
+    view.rerender(<HerdrTerminal sessionId="s" viewerId="phone" ownerId={null} transport={t}/>);
+    fireEvent.pointerDown(screen.getByLabelText("터미널 화면"),{button:0});expect(t.requestControl).not.toHaveBeenCalled();
+  });
   it("remeasures and redraws the terminal after the bundled font finishes loading",async()=>{
     let finish!:(faces:unknown[])=>void;
     Object.defineProperty(document,"fonts",{configurable:true,value:{load:vi.fn(()=>new Promise(resolve=>{finish=resolve;}))}});

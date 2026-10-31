@@ -144,6 +144,76 @@ async function coordinator(
 }
 
 describe("TerminalCoordinator", () => {
+  it('retains the original conversation when a legacy successor launch fails and the GUI is reopened',async()=>{
+    const root=await tempRoot();
+    const original={id:'original',kind:'claude',projectId:null,tool:null,cwd:'C:\\Work',providerConversationId:'conversation-X',pid:0,status:'exited' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:0,generation:'old'};
+    const observed=[original];
+    const worker=Object.assign(new FakeWorker(),{resumeTarget:vi.fn(async(id:string)=>id==='original'&&observed.length>1?{sessionId:'successor',redirectSessionId:'successor'}:{sessionId:id==='original'?'successor':'retry'}),listExisting:vi.fn(async()=>observed)});
+    const first=await coordinator(root,worker);
+    worker.create.mockImplementationOnce(async spec=>{observed.push({...original,id:spec.sessionId,providerConversationId:null,status:'error',hostDelivery:'rejected',generation:spec.generation} as any);throw new Error('launch rejected');});
+    await expect(first.instance.resume({sessionId:'original',cols:80,rows:24})).rejects.toThrow('launch rejected');
+    expect(first.instance.list().find(s=>s.id==='successor')?.providerConversationId).toBe('conversation-X');await first.instance.detach();
+    const second=await coordinator(root,worker);
+    expect(worker.create).toHaveBeenCalledOnce();
+    await second.instance.resume({sessionId:'original',cols:80,rows:24});
+    expect(worker.create.mock.calls[1][0]).toMatchObject({sessionId:'retry',args:expect.arrayContaining(['--resume','conversation-X']),providerConversationId:'conversation-X'});
+    await second.instance.detach();
+  });
+  it('coalesces explicit legacy resumes and preserves the conversation under the successor execution identity',async()=>{
+    const worker=Object.assign(new FakeWorker(),{resumeTarget:vi.fn(async()=>({sessionId:'successor'}))});
+    const {instance}=await coordinator(await tempRoot(),worker);
+    const original={id:'original',kind:'claude',projectId:null,tool:null,cwd:'C:\\Work',providerConversationId:'known-conversation',pid:0,status:'exited' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:0,generation:'old'};
+    await instance.reconcileHostSessions([original]);
+    const [a,b]=await Promise.all([instance.resume({sessionId:original.id,cols:80,rows:24}),instance.resume({sessionId:original.id,cols:80,rows:24})]);
+    expect(a.id).toBe('successor');expect(b.id).toBe(a.id);expect(worker.create).toHaveBeenCalledOnce();
+    expect(worker.create.mock.calls[0][0]).toMatchObject({sessionId:'successor',providerConversationId:'known-conversation',args:expect.arrayContaining(['--resume','known-conversation'])});
+    expect(instance.list().find(s=>s.id==='original')?.providerConversationId).toBe('known-conversation');
+    await instance.detach();
+  });
+  it('retries an old rejected first Claude launch without requiring a transcript that never existed',async()=>{
+    const root=await tempRoot(),hasConversation=vi.fn(async()=>false);
+    const {instance,worker}=await coordinator(root,new FakeWorker(),undefined,undefined,undefined,hasConversation);
+    const session={id:'failed-first-session',kind:'claude',projectId:null,tool:null,cwd:root,providerConversationId:null,pid:0,status:'error' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:null,generation:'failed',hostDelivery:'rejected' as const};
+    await instance.reconcileHostSessions([session]);expect(worker.create).not.toHaveBeenCalled();
+    await instance.resume({sessionId:session.id,cols:80,rows:24});
+    expect(worker.create.mock.calls[0][0].args).not.toContain('--resume');
+    expect(worker.create.mock.calls[0][0].providerConversationId).toBe(session.id);await instance.detach();
+  });
+  it("uses a verified historical Claude receipt only when the user explicitly resumes a failed host session",async()=>{
+    const root=await tempRoot(),statusDir=path.join(root,'provider-status'),hasConversation=vi.fn(async()=>false);
+    const {instance,worker}=await coordinator(root,new FakeWorker(),undefined,undefined,statusDir,hasConversation);
+    await fs.mkdir(statusDir,{recursive:true});
+    const session={id:'host-session',kind:'claude',projectId:null,tool:null,cwd:root,providerConversationId:null,pid:0,status:'error' as const,createdAt:'2026-10-30T00:00:00Z',updatedAt:'2026-10-30T00:01:00Z',exitCode:null,generation:'failed-new-generation'};
+    await fs.writeFile(path.join(statusDir,session.id+'.json'),JSON.stringify({sessionId:session.id,status:'exited',event:'SessionEnd',at:session.updatedAt,provider:'claude',generation:'earlier-generation',providerConversationId:'recorded-conversation'}));
+    await instance.reconcileHostSessions([session]);expect(instance.list()[0].providerConversationId).toBeNull();expect(worker.create).not.toHaveBeenCalled();
+    await expect(instance.resume({sessionId:session.id,cols:80,rows:24})).rejects.toThrow(/conversation/);
+    hasConversation.mockResolvedValue(true);
+    await instance.resume({sessionId:session.id,cols:80,rows:24});
+    expect(worker.create).toHaveBeenCalledOnce();expect(worker.create.mock.calls[0][0].args).toContain('--resume');
+    expect(worker.create.mock.calls[0][0].providerConversationId).toBe('recorded-conversation');await instance.detach();
+  });
+  it("recovers a conversation erased by v2.0.1 from that launch's provider receipt",async()=>{
+    const root=await tempRoot(),statusDir=path.join(root,"provider-status");
+    const {instance}=await coordinator(root,new FakeWorker(),undefined,undefined,statusDir);
+    await fs.mkdir(statusDir,{recursive:true});
+    const session={id:"host-session",kind:"claude",projectId:null,tool:null,cwd:root,providerConversationId:null,pid:0,status:"idle" as const,createdAt:"2026-10-30T00:00:00Z",updatedAt:"2026-10-30T00:01:00Z",exitCode:null,generation:"g"};
+    const receipt={sessionId:session.id,status:"idle",event:"SessionStart",at:session.updatedAt,provider:"claude",generation:"old",providerConversationId:"actual-conversation"};
+    await fs.writeFile(path.join(statusDir,session.id+".json"),JSON.stringify(receipt));
+    await instance.reconcileHostSessions([session]);expect(instance.list()[0].providerConversationId).toBeNull();
+    await fs.writeFile(path.join(statusDir,session.id+".json"),JSON.stringify({...receipt,generation:"g"}));
+    await instance.reconcileHostSessions([session]);expect(instance.list()[0].providerConversationId).toBe("actual-conversation");
+    await instance.detach();
+  });
+  it("preserves the known provider conversation when a host observation has no conversation metadata",async()=>{
+    const {instance}=await coordinator(await tempRoot());
+    const created=await instance.create({projectId:project.id,kind:"claude",cols:80,rows:24});
+    expect(created.providerConversationId).toBeTruthy();
+    await instance.reconcileHostSessions([{...created,pid:0,generation:"host-generation",status:"idle",providerConversationId:null}]);
+    expect(instance.list()[0].providerConversationId).toBe(created.providerConversationId);
+    await instance.reconcileHostSessions([{...created,pid:0,generation:"host-generation",status:"idle",providerConversationId:"older-launch-id"}]);
+    expect(instance.list()[0].providerConversationId).toBe(created.providerConversationId);
+    await instance.detach();
+  });
   it("retains disconnected remote work and never resumes it in a local checkout",async()=>{
     const {instance,worker}=await coordinator(await tempRoot());
     const id="mcwr-"+"a".repeat(64),base={id,projectId:null,tool:null,kind:"codex",cwd:"/remote/repo",providerConversationId:null,status:"idle" as const,pid:0,createdAt:"2026-10-30T00:00:00.000Z",updatedAt:"2026-10-30T00:01:00.000Z",exitCode:null,generation:"g",remote:{hostId:"lab",name:"Lab",sessionId:"actual",projectId:"remote-project",connected:true,observedAt:12}};

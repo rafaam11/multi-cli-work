@@ -27,6 +27,8 @@ export interface HerdrTerminalProps {
   refreshRequest?:number;
   onRefreshComplete?():void;
   autoFocus?:boolean;
+  /** Desktop interaction may claim an unowned terminal; passive views never do. */
+  controlOnClick?:boolean;
   lineHeight?:number;
   cursorStyle?:"block" | "underline" | "bar";
   cursorBlink?:boolean;
@@ -41,12 +43,13 @@ const mouseButton = (button: number): ClientMouseButton => button === 1 ? "Middl
 /** The same DOM/Canvas component runs in Electron and the Android host gateway. */
 export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwnerId = ownerId,
   fontSize = 14, fontFamily: preferredFontFamily = '"Cascadia Code", "D2Coding", "Noto Sans Mono CJK KR", monospace',
-  theme = DEFAULT_CANVAS_THEME, onError, onFocus,onReady, onRegisterCommands, refreshRequest=0, onRefreshComplete, autoFocus=false, lineHeight=1.4, cursorStyle, cursorBlink, shiftEnterBytes, resolveFileLink, onOpenFileLink, onOpenExternal }: HerdrTerminalProps) {
+  theme = DEFAULT_CANVAS_THEME, onError, onFocus,onReady, onRegisterCommands, refreshRequest=0, onRefreshComplete, autoFocus=false, controlOnClick=false, lineHeight=1.4, cursorStyle, cursorBlink, shiftEnterBytes, resolveFileLink, onOpenFileLink, onOpenExternal }: HerdrTerminalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null), viewportRef = useRef<HTMLDivElement>(null), inputRef = useRef<HTMLTextAreaElement>(null);
   const surfaceRef = useRef<PaneSurfaceFrame | null>(null), graphicsRef = useRef<GraphicsCache | null>(null);
   if (!graphicsRef.current) graphicsRef.current = new GraphicsCache();
   const ownershipRef = useRef({ ownerId, sizeOwnerId });
   const viewerRef=useRef(viewerId);viewerRef.current=viewerId;
+  const focusAfterControlRef=useRef(false);
   const disconnectedRef = useRef(false), pendingSnapshotRef = useRef(true), aliveRef = useRef(true);
   const imeRef = useRef(new CompositionInput()), selectionRef = useRef<Selection | null>(null);
   const fullSelectionRef=useRef<string|null>(null), selectionGenerationRef=useRef(0);
@@ -80,6 +83,7 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
   };
 
   const reportError = useCallback((cause: unknown) => {
+    focusAfterControlRef.current=false;
     const message = cause instanceof Error ? cause.message : String(cause);
     if (aliveRef.current) { setError(message); errorRef.current?.(message); }
   }, []);
@@ -111,10 +115,13 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
       if (!aliveRef.current) return;
       if (event.type === "ownership") {
         ownershipRef.current = { ownerId: event.ownerId, sizeOwnerId: event.sizeOwnerId };
-        if(event.ownerId!==viewerRef.current){invalidateSearch();setComposing(false);imeRef.current=new CompositionInput();if(inputRef.current)inputRef.current.value='';}
-        setOwnership(ownershipRef.current); return;
+        if(event.ownerId!==viewerRef.current){focusAfterControlRef.current=false;invalidateSearch();setComposing(false);imeRef.current=new CompositionInput();if(inputRef.current)inputRef.current.value='';}
+        setOwnership(ownershipRef.current);
+        if(focusAfterControlRef.current&&event.ownerId===viewerRef.current){focusAfterControlRef.current=false;inputRef.current?.focus({preventScroll:true});}
+        return;
       }
       if (event.type === "disconnected") {
+        focusAfterControlRef.current=false;
         invalidateSearch();
         readyRef.current?.(false);
         if(refreshPendingRef.current){refreshPendingRef.current=false;refreshCompleteRef.current?.();}
@@ -346,6 +353,10 @@ export function HerdrTerminal({ sessionId, transport, viewerId, ownerId, sizeOwn
             if(target?.type==="url"&&onOpenExternal){run(()=>onOpenExternal(target.url));return;}
             if(target?.type==="blocked")return;
             if(target?.type==="path"&&resolveFileLink&&onOpenFileLink){const candidate=target.candidate;void resolveFileLink(candidate.path).then(link=>{if(link)onOpenFileLink(link,candidate.line?{line:candidate.line,column:candidate.column??1}:null);}).catch(reportError);return;}
+          }
+          if(controlOnClick&&event.button===0&&!event.shiftKey&&!ownershipRef.current.ownerId&&!disconnectedRef.current&&!pendingSnapshotRef.current&&!focusAfterControlRef.current){
+            focusAfterControlRef.current=true;
+            run(async()=>{try{await transport.requestControl(sessionId,viewerId);}catch(error){focusAfterControlRef.current=false;throw error;}});
           }
           const p = point(event), reporting = canWrite() && !!paneAt(p)?.mouse_reporting && !event.shiftKey;
           pointerRef.current = { id: event.pointerId, reporting, button: mouseButton(event.button) };

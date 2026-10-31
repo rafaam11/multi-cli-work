@@ -120,7 +120,10 @@ export function registerV2Ipc(options: V2IpcOptions): () => void {
   });
   handle("repository-head",readV2RepositoryHead);
   handle("terminals", () => options.client.terminals());
-  handle("terminal-create", async input => { const result = await options.client.createTerminal(input); await options.reconcile(); return result; });
+  handle("terminal-create", async input => {
+    try { return await options.client.createTerminal(input); }
+    finally { await options.reconcile(); }
+  });
   handle("terminal-subscribe", (id: string, reference: string) => {
     if (typeof id !== "string" || !/^[\w-]{1,128}$/.test(id) || typeof reference !== "string" || reference.length > 128) throw new Error("Invalid viewer");
     let viewer = viewers.get(id);
