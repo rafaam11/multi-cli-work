@@ -1,658 +1,341 @@
 {
-  "schemaVersion": 1,
-  "candidateVersion": "2.0.1",
-  "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-  "checks": [
-    {
-      "id": "windows.terminal.ime",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-source-terminal.json",
-          "sha256": "3c5fb0f17c2088b2fc754681de38232d8d657228387df20858cd67a6d73a5483"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-packaged-terminal.json",
-          "sha256": "d46ab2afa8123b2d59c384e6f009279cfbc6955809f311de5efae787b8733aa1"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "windows.terminal.mouse",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-source-terminal.json",
-          "sha256": "3c5fb0f17c2088b2fc754681de38232d8d657228387df20858cd67a6d73a5483"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-packaged-terminal.json",
-          "sha256": "d46ab2afa8123b2d59c384e6f009279cfbc6955809f311de5efae787b8733aa1"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "windows.terminal.images",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-source-terminal.json",
-          "sha256": "3c5fb0f17c2088b2fc754681de38232d8d657228387df20858cd67a6d73a5483"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-packaged-terminal.json",
-          "sha256": "d46ab2afa8123b2d59c384e6f009279cfbc6955809f311de5efae787b8733aa1"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "windows.terminal.reconnect",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-source-terminal.json",
-          "sha256": "3c5fb0f17c2088b2fc754681de38232d8d657228387df20858cd67a6d73a5483"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-packaged-terminal.json",
-          "sha256": "d46ab2afa8123b2d59c384e6f009279cfbc6955809f311de5efae787b8733aa1"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "windows.terminal.size-owner",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-source-terminal.json",
-          "sha256": "3c5fb0f17c2088b2fc754681de38232d8d657228387df20858cd67a6d73a5483"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/windows-packaged-terminal.json",
-          "sha256": "d46ab2afa8123b2d59c384e6f009279cfbc6955809f311de5efae787b8733aa1"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "windows.cooperation.gui-survival",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        }
-      ]
-    },
-    {
-      "id": "windows.cooperation.ssh",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/2026-10-30-windows-native-ssh.md",
-          "sha256": "43223f0bd13be1192f875dfcb75353ef15a1df1567c1c3fc58b7a91165c08e3d"
-        }
-      ]
-    },
-    {
-      "id": "windows.cooperation.disconnect-delivery",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/2026-10-30-windows-native-ssh.md",
-          "sha256": "43223f0bd13be1192f875dfcb75353ef15a1df1567c1c3fc58b7a91165c08e3d"
-        }
-      ]
-    },
-    {
-      "id": "windows.cooperation.event-loss",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        }
-      ]
-    },
-    {
-      "id": "windows.cooperation.no-duplicate-rerun",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:48:57Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/2026-10-30-windows-native-ssh.md",
-          "sha256": "43223f0bd13be1192f875dfcb75353ef15a1df1567c1c3fc58b7a91165c08e3d"
-        }
-      ]
-    },
-    {
-      "id": "linux.terminal.ime",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-source-terminal.json",
-          "sha256": "46b67a90683c1443fc15d21c5dd1d4cace28252571b655f580ad3142ab8165d4"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-packaged-terminal.json",
-          "sha256": "4fe097fb74bb718fcfe1a40e6125a96ffe162f0ab89960e236abce18f075ffba"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "linux.terminal.mouse",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-source-terminal.json",
-          "sha256": "46b67a90683c1443fc15d21c5dd1d4cace28252571b655f580ad3142ab8165d4"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-packaged-terminal.json",
-          "sha256": "4fe097fb74bb718fcfe1a40e6125a96ffe162f0ab89960e236abce18f075ffba"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "linux.terminal.images",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-source-terminal.json",
-          "sha256": "46b67a90683c1443fc15d21c5dd1d4cace28252571b655f580ad3142ab8165d4"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-packaged-terminal.json",
-          "sha256": "4fe097fb74bb718fcfe1a40e6125a96ffe162f0ab89960e236abce18f075ffba"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "linux.terminal.reconnect",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-source-terminal.json",
-          "sha256": "46b67a90683c1443fc15d21c5dd1d4cace28252571b655f580ad3142ab8165d4"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-packaged-terminal.json",
-          "sha256": "4fe097fb74bb718fcfe1a40e6125a96ffe162f0ab89960e236abce18f075ffba"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "linux.terminal.size-owner",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-source-terminal.json",
-          "sha256": "46b67a90683c1443fc15d21c5dd1d4cace28252571b655f580ad3142ab8165d4"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/linux-packaged-terminal.json",
-          "sha256": "4fe097fb74bb718fcfe1a40e6125a96ffe162f0ab89960e236abce18f075ffba"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/visual-review.json",
-          "sha256": "34a6ddb59e134fa29f0778d487111964062a1d8059e808229d02afa010cef710"
-        }
-      ]
-    },
-    {
-      "id": "linux.cooperation.gui-survival",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        }
-      ]
-    },
-    {
-      "id": "linux.cooperation.ssh",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        }
-      ]
-    },
-    {
-      "id": "linux.cooperation.disconnect-delivery",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        }
-      ]
-    },
-    {
-      "id": "linux.cooperation.event-loss",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        }
-      ]
-    },
-    {
-      "id": "linux.cooperation.no-duplicate-rerun",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:42:25Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        }
-      ]
-    },
-    {
-      "id": "recovery.windows.offline-v1-v2-v1-v2",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:47:49.167Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/win32-roundtrip.json",
-          "sha256": "79c18e79878f6212ccc88e3212961ed59b5fcfaff1d7320c345e5573b216d497"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/win32-startup-rescue.json",
-          "sha256": "b9dbe62f9b0a6a07606d03f0cceff609c1d48236a8b1b9d9332a3c305b020d66"
-        }
-      ]
-    },
-    {
-      "id": "recovery.deb.offline-v1-v2-v1-v2",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:40:19.383Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/deb-roundtrip.json",
-          "sha256": "2141780641bd51d65b70a71c66013753a74ae9e337e570109c929ce253631603"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/deb-startup-rescue.json",
-          "sha256": "dc46a297970b68efdf4d079872d49925c7c76179b4d3f554193c210a240033e0"
-        }
-      ]
-    },
-    {
-      "id": "recovery.appimage.offline-v1-v2-v1-v2",
-      "status": "passed",
-      "sourceCommit": "a7d57f86cfe466f87c7dc0d0570c81e83452fc15",
-      "completedAt": "2026-10-31T05:41:40.782Z",
-      "tester": "Automated Windows/Linux native, Electron, SSH and isolated installer verification; Claude evidence review",
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/run.json",
-          "sha256": "12f4cb3699d2f2f66520e4c40cbdaeb90cf9efec50edd878583850ca7a28b212"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/verification.md",
-          "sha256": "d10198234d8e07a51223377ac9dab7746e04de57256b0138c463193e14195ee7"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/appimage-roundtrip.json",
-          "sha256": "7eb0de354f3b9342155b8c932477a5ca91e7ab32bb04138995ca7ae732272725"
-        },
-        {
-          "path": "docs/release/evidence/v2/ci-41172101154/appimage-startup-rescue.json",
-          "sha256": "2073dc9115369c3f5ce5ba73e0616343bedba6a1a9896252966e11c96740c40b"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.terminal.ime",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.terminal.mouse",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.terminal.images",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.terminal.reconnect",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.terminal.size-owner",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.cooperation",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.dual-host",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    },
-    {
-      "id": "android.physical.newest-version-pairing",
-      "status": "deferred",
-      "sourceCommit": null,
-      "completedAt": null,
-      "tester": null,
-      "evidence": [
-        {
-          "path": "docs/release/evidence/v2/android-validation-deferral.md",
-          "sha256": "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
-        }
-      ]
-    }
-  ]
+    "schemaVersion":  1,
+    "candidateVersion":  "2.0.2",
+    "sourceCommit":  null,
+    "checks":  [
+                   {
+                       "id":  "windows.terminal.ime",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.terminal.mouse",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.terminal.images",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.terminal.reconnect",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.terminal.size-owner",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.cooperation.gui-survival",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.cooperation.ssh",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.cooperation.disconnect-delivery",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.cooperation.event-loss",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "windows.cooperation.no-duplicate-rerun",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.terminal.ime",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.terminal.mouse",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.terminal.images",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.terminal.reconnect",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.terminal.size-owner",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.cooperation.gui-survival",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.cooperation.ssh",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.cooperation.disconnect-delivery",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.cooperation.event-loss",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "linux.cooperation.no-duplicate-rerun",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "recovery.windows.offline-v1-v2-v1-v2",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "recovery.deb.offline-v1-v2-v1-v2",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "recovery.appimage.offline-v1-v2-v1-v2",
+                       "status":  "pending",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.terminal.ime",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.terminal.mouse",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.terminal.images",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.terminal.reconnect",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.terminal.size-owner",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.cooperation",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.dual-host",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   },
+                   {
+                       "id":  "android.physical.newest-version-pairing",
+                       "status":  "deferred",
+                       "sourceCommit":  null,
+                       "completedAt":  null,
+                       "tester":  null,
+                       "evidence":  [
+                                        {
+                                            "path":  "docs/release/evidence/v2/android-validation-deferral.md",
+                                            "sha256":  "43fdb65f547db50178e3c6fb11572c181f476244ea3658e53061f6ba697727e5"
+                                        }
+                                    ]
+                   }
+               ]
 }
