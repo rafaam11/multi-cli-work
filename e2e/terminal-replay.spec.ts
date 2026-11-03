@@ -56,6 +56,25 @@ async function screenshot(name: string): Promise<void> {
   await page.screenshot({ path: test.info().outputPath(`${name}.png`) });
 }
 
+const PASTE_TEXT = "PASTE_FIRST\rPASTE_SECOND";
+const BRACKETED_PASTE = `\x1b[200~${PASTE_TEXT}\x1b[201~`;
+
+// Checks each hop on its own and logs them as JSON, because a failure message strips escape
+// sequences and cannot show which hop lost the markers. ConPTY sits between what the app sends
+// and what the program reads, so only other platforms must carry the markers all the way.
+async function assertPaste(sessionId: string): Promise<void> {
+  const sent = () => app.evaluate(() => (globalThis as unknown as { replayCalls: Array<{ channel: string; args: unknown[] }> }).replayCalls
+    .filter(call => call.channel === "terminals:write").map(call => call.args[1]).join(""));
+  const received = () => fs.readFile(path.join(root, "input.txt"), "utf8").catch(() => "");
+  await expect.poll(received).toContain(PASTE_TEXT);
+  const log = await fs.readFile(path.join(root, "user-data", "session-logs", `${sessionId}.log`), "utf8");
+  const modeReachedApp = log.includes("\x1b[?2004h");
+  const hops = JSON.stringify({ modeReachedApp, sent: await sent(), received: await received() });
+  console.log(`Bracketed paste hops: ${hops}`);
+  expect(await sent(), hops).toContain(modeReachedApp ? BRACKETED_PASTE : PASTE_TEXT);
+  if (process.platform !== "win32") await expect.poll(received, { message: hops }).toContain(BRACKETED_PASTE);
+}
+
 test.beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "mcw-replay-e2e-"));
   port = await freePort();
@@ -185,7 +204,8 @@ test("keeps a live TUI intact through resizing, zoom, reattach, paste and phone-
   const assertFrame = async () => {
     await expect.poll(async () => {
       const screen = (await lines("Live")).map(line => line.replace(/\u00a0/g, " "));
-      return screen.slice(0, 5).every((line, i) => line.startsWith(`ROW_0${i + 1}`) && line.endsWith("EDGE "));
+      // The fixture leaves the last column blank, and only some paths make the renderer draw it.
+      return screen.slice(0, 5).every((line, i) => line.startsWith(`ROW_0${i + 1}`) && line.trimEnd().endsWith("EDGE"));
     }).toBe(true);
   };
   await assertFrame();
@@ -210,8 +230,7 @@ test("keeps a live TUI intact through resizing, zoom, reattach, paste and phone-
   await app.evaluate(({ clipboard }) => { clipboard.readText = () => "PASTE_FIRST\nPASTE_SECOND"; });
   await pane("Live").locator(".xterm-helper-textarea").focus();
   await page.keyboard.press("Control+Shift+V");
-  await expect.poll(() => fs.readFile(path.join(root, "input.txt"), "utf8").catch(() => ""))
-    .toContain("\x1b[200~PASTE_FIRST\rPASTE_SECOND\x1b[201~");
+  await assertPaste(live.id);
 
   // Showing the hidden harness can change the client area. Let that layout settle before the
   // phone claims its size, so the later check measures focus alone.
