@@ -23,17 +23,23 @@ import type { DropPosition } from "./project-order";
  * The array is longer than one page whenever sessions spill over: slot index `n` sits on page
  * `floor(n / pageSize)`.
  *
- * Panes close up behind a departure. Removing a session, emptying a slot or losing a document
- * splices the entry out, so everything after it moves one slot forward and the grid never shows a
- * gap nobody asked for. A drop is the mirror image: the pane is spliced *in* at the slot it landed
- * on and whoever stood there moves back, rather than the two trading places.
+ * Slot numbers do not know about columns, so taking one entry out of the array moves every pane
+ * after it across a column boundary. A view with a split column therefore never does that when a
+ * pane leaves: the slot just goes empty. A view with no split has nothing to break, so its panes
+ * close up behind a departure as they always did.
  *
- * The one hole that survives comes from dropping past the end — the padding in front of that slot
- * is a position the user picked on purpose, so it is kept and only trailing holes are trimmed.
+ * A drop touches the slots it names and nothing else. An empty slot is filled, an occupied one is
+ * traded for the slot the pane came from, and a pane arriving from outside the view sends whoever
+ * stood there to the first open slot.
  *
- * A 자동 view holds no holes at all. Its layout follows the session count, so an empty slot would
- * only ever be a slot the layout was about to stop drawing.
+ * Trailing holes are always trimmed. A 자동 view holds no holes at all: its layout follows the
+ * session count, so an empty slot would only ever be a slot the layout was about to stop drawing.
  */
+
+/** Auto and a layout id from another version draw no split, so they count as having none. */
+function hasSplit(layoutId: string): boolean {
+  return layoutById(layoutId)?.columnRows.some((rows) => rows > 1) ?? false;
+}
 
 function trimTrailingHoles(slots: (string | null)[]): (string | null)[] {
   const next = [...slots];
@@ -41,7 +47,7 @@ function trimTrailingHoles(slots: (string | null)[]): (string | null)[] {
   return next;
 }
 
-/** A hole is a slot a drop reached past in a fixed layout, and meaningless in 자동. */
+/** A hole is an empty slot in a fixed layout, and meaningless in 자동. */
 function tidySlots(layoutId: string, slots: (string | null)[]): (string | null)[] {
   if (isAutoLayout(layoutId)) return slots.filter((id): id is string => id !== null);
   return trimTrailingHoles(slots);
@@ -51,11 +57,19 @@ function firstHole(slots: readonly (string | null)[], except: number): number {
   return slots.findIndex((slot, index) => slot === null && index !== except);
 }
 
+/** A pane leaving the slot: see the rule at the top of this file. */
+function vacate(view: SlotViewState, index: number): SlotViewState {
+  const slots = [...view.slots];
+  if (hasSplit(view.layoutId)) slots[index] = null;
+  else slots.splice(index, 1);
+  return { ...view, slots: tidySlots(view.layoutId, slots) };
+}
+
 /**
- * Closes up behind slots whose session is gone and repeats of a session already placed, leaving
- * the holes a drop put there alone. With `autoAppend`,
- * sessions the view does not list yet take the first open slot, then the end — that is how a
- * folder's grid fills itself. Callers turn it on at the moments a folder view should catch up
+ * Drops repeats of a session already placed and handles slots whose session is gone the way any
+ * other departure is handled, leaving existing holes alone. With `autoAppend`, sessions the view
+ * does not list yet take the first open slot, then the end — that is how a folder's grid fills
+ * itself. Callers turn it on at the moments a folder view should catch up
  * (opening it, a session being born) rather than on every render, so emptying a slot by hand is
  * not undone on the next paint.
  *
@@ -73,12 +87,14 @@ export function normalizeSlots(
 ): SlotViewState {
   const layoutId = view?.layoutId ?? DEFAULT_LAYOUT_ID;
   const known = new Set([...sessionIds, ...(options.keep ?? [])]);
+  const keepGoneSlots = hasSplit(layoutId);
   const placed = new Set<string>();
   const kept: (string | null)[] = [];
   for (const id of view?.slots ?? []) {
-    // A hole stays where it is; a pane that is gone takes its slot with it.
     if (id === null) kept.push(null);
-    else if (known.has(id) && !placed.has(id)) {
+    else if (!known.has(id)) {
+      if (keepGoneSlots) kept.push(null);
+    } else if (!placed.has(id)) {
       placed.add(id);
       kept.push(id);
     }
@@ -97,20 +113,28 @@ export function normalizeSlots(
 }
 
 /**
- * Moves a session into a slot by inserting it there: whoever held that slot, and everyone after
- * them, moves back one. A pane already in this view leaves its old slot first, so the panes
- * between the two ends shift by one rather than the two swapping. Nothing leaves the view unasked.
+ * Puts a session in a slot, moving only the panes that have to. A pane already in this view trades
+ * places with whatever the slot held, an empty slot included, so its old slot goes empty. A pane
+ * from outside the view has no slot to trade, so the one it lands on takes the first open slot, or
+ * a new one at the end. Nothing leaves the view unasked.
  *
  * Dropping past the last pane pads with holes and lands on the slot the user aimed at.
  */
 export function placeInSlot(view: SlotViewState, index: number, sessionId: string): SlotViewState {
   if (index < 0) return view;
-  const slots: (string | null)[] = [...view.slots];
-  const from = slots.indexOf(sessionId);
+  const from = view.slots.indexOf(sessionId);
   if (from === index) return view;
-  if (from >= 0) slots.splice(from, 1);
-  while (slots.length < index) slots.push(null);
-  slots.splice(index, 0, sessionId);
+  const slots: (string | null)[] = [...view.slots];
+  while (slots.length <= index) slots.push(null);
+  const occupant = slots[index];
+  slots[index] = sessionId;
+  if (from >= 0) {
+    slots[from] = occupant;
+  } else if (occupant !== null) {
+    const hole = firstHole(slots, -1);
+    if (hole >= 0) slots[hole] = occupant;
+    else slots.push(occupant);
+  }
   return { ...view, slots: tidySlots(view.layoutId, slots) };
 }
 
@@ -160,18 +184,16 @@ export function placePaneRelative(
   return { ...view, slots };
 }
 
-/** Takes a pane off the grid without touching the session behind it; the rest move forward. */
+/** Takes a pane off the grid without touching the session behind it. */
 export function clearSlot(view: SlotViewState, index: number): SlotViewState {
   if (index < 0 || index >= view.slots.length) return view;
-  const slots = [...view.slots];
-  slots.splice(index, 1);
-  return { ...view, slots: tidySlots(view.layoutId, slots) };
+  return vacate(view, index);
 }
 
 /**
  * Adds a session to the first open slot, or to the end — a drop onto the 작업공간 row, and how the
- * workspace picks up a pane the app has just started holding. A hole a drop reached past counts as
- * free, so a shelf fills the gaps in front of it before it grows another page.
+ * workspace picks up a pane the app has just started holding. An empty slot counts as free, so a
+ * shelf fills the gaps in front of it before it grows another page.
  */
 export function appendSession(view: SlotViewState, sessionId: string): SlotViewState {
   if (view.slots.includes(sessionId)) return view;
@@ -182,16 +204,10 @@ export function appendSession(view: SlotViewState, sessionId: string): SlotViewS
   return { ...view, slots: tidySlots(view.layoutId, slots) };
 }
 
-/** Closes the grid up behind the session: the panes after it each move one slot forward. */
+/** Takes a session out of this view, wherever it stands. */
 export function removeSession(view: SlotViewState, sessionId: string): SlotViewState {
-  if (!view.slots.includes(sessionId)) return view;
-  return {
-    ...view,
-    slots: tidySlots(
-      view.layoutId,
-      view.slots.filter((id) => id !== sessionId),
-    ),
-  };
+  const index = view.slots.indexOf(sessionId);
+  return index < 0 ? view : vacate(view, index);
 }
 
 /**
@@ -203,9 +219,14 @@ export function renamePaneId(view: SlotViewState, oldId: string, newId: string):
   return { ...view, slots: view.slots.map((id) => (id === oldId ? newId : id)) };
 }
 
-/** Switching to or from 자동 changes what a hole means, so the slots are tidied to the new rule. */
+/**
+ * Switching to or from 자동 changes what a hole means, so the slots are tidied to the new rule. A
+ * layout that ends every split takes the holes those splits left with it; one that keeps a split
+ * keeps them, because they are what holds the panes in their columns.
+ */
 export function setLayout(view: SlotViewState, layoutId: string): SlotViewState {
-  return { layoutId, slots: tidySlots(layoutId, [...view.slots]) };
+  const slots = hasSplit(view.layoutId) && !hasSplit(layoutId) ? view.slots.filter((id) => id !== null) : view.slots;
+  return { layoutId, slots: tidySlots(layoutId, [...slots]) };
 }
 
 /**
@@ -229,7 +250,7 @@ function absoluteSlotOf(view: SlotViewState, page: number, slotIndex: number): n
 /**
  * Gives this slot's column a second row, leaving every other column at full height. The new row
  * opens empty directly below the pane that asked for it, and the panes after it each move back one
- * slot — the same rule a drop follows.
+ * slot, which keeps them in the columns they were in.
  */
 export function splitColumnAt(
   view: SlotViewState,
@@ -250,11 +271,12 @@ export function splitColumnAt(
 }
 
 /**
- * Puts this slot's column back to one full-height pane. The column's top pane is the one that
- * stays, whichever of the two the user pressed the button on. The lower pane leaves the grid the
- * way `clearSlot` takes one off — the entry is spliced out and the panes behind it move forward —
- * so it is off the arrangement but not closed: its session keeps running and its tab is still there
- * to drag back in.
+ * Ends this slot's split, whichever of the two panes pressed the button, and no pane leaves the view.
+ *
+ * When both rows hold a pane, the lower one becomes the next column. The slots do not change, only
+ * the layout, and the page size stays the same, so nobody crosses a page. With six columns already
+ * there is no next column, so the lower pane goes to the end of the view instead. When a row is
+ * empty, the empty row is what goes away and the pane left in the column fills it.
  */
 export function mergeColumnAt(
   view: SlotViewState,
@@ -264,12 +286,25 @@ export function mergeColumnAt(
 ): SlotViewState {
   const found = columnOfSlot(layout.columnRows, slotIndex);
   if (!found || found.rows <= 1) return view;
+  const upperAt = absoluteSlotOf(view, page, found.start);
+  const lowerAt = upperAt + 1;
+  const upper = view.slots[upperAt] ?? null;
+  const lower = view.slots[lowerAt] ?? null;
   const columnRows = [...layout.columnRows];
-  columnRows[found.column] = 1;
-  const next = buildLayout(columnRows);
-  const at = absoluteSlotOf(view, page, found.start + 1);
   const slots = [...view.slots];
-  if (at < slots.length) slots.splice(at, found.rows - 1);
+  if (upper !== null && lower !== null) {
+    if (columnRows.length < MAX_COLUMNS) {
+      columnRows.splice(found.column, 1, 1, 1);
+    } else {
+      columnRows[found.column] = 1;
+      slots.splice(lowerAt, 1);
+      slots.push(lower);
+    }
+  } else {
+    columnRows[found.column] = 1;
+    slots.splice(lower === null ? lowerAt : upperAt, 1);
+  }
+  const next = buildLayout(columnRows);
   return { layoutId: next.id, slots: tidySlots(next.id, slots) };
 }
 

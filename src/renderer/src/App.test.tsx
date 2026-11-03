@@ -2853,6 +2853,34 @@ describe("notification navigation", () => {
     expect(vi.mocked(harness.api.remote.publishMirror).mock.calls.length).toBe(before);
   });
 
+  it("keeps every pane in place when a remote screen splits, merges, moves and closes", async () => {
+    const harness = createApi({ sessions: [powershellSession, claudeSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "PowerShell" });
+    const lastView = () => vi.mocked(harness.api.remote.publishMirror).mock.lastCall?.[0].view;
+    const claude = { kind: "session", id: claudeSession.id };
+    const powershell = { kind: "session", id: powershellSession.id };
+
+    act(() => harness.requestView({ action: "layout", layoutId: "cols:2" }));
+    await waitFor(() => expect(lastView()).toMatchObject({ layoutId: "cols:2", slots: [claude, powershell] }));
+
+    // Merging a full column gives the lower pane the next column instead of taking it off the grid.
+    act(() => harness.requestView({ action: "merge", slot: 1 }));
+    await waitFor(() => expect(lastView()).toMatchObject({ layoutId: "cols:1-1", slots: [claude, powershell] }));
+
+    act(() => harness.requestView({ action: "split", slot: 0 }));
+    await waitFor(() => expect(lastView()).toMatchObject({ layoutId: "cols:2-1", slots: [claude, null, powershell] }));
+
+    // Moving into the empty row leaves the slot it came from empty.
+    act(() => harness.requestView({ action: "move", paneId: powershellSession.id, slot: 1 }));
+    await waitFor(() => expect(lastView()).toMatchObject({ layoutId: "cols:2-1", slots: [claude, powershell, null] }));
+
+    // Closing in a layout with a split moves nobody up.
+    act(() => harness.requestView({ action: "close", slot: 0, paneId: claudeSession.id }));
+    await waitFor(() => expect(lastView()).toMatchObject({ layoutId: "cols:2-1", slots: [null, powershell, null] }));
+  });
+
   it("jumps to the waiting session with Ctrl+Shift+U and with the title bar mark", async () => {
     const harness = createApi({ sessions: [powershellSession, { ...claudeSession, status: "working", pid: 4200 }] });
     window.multiCliWork = harness.api;

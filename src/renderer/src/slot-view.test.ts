@@ -36,11 +36,23 @@ describe("normalizeSlots", () => {
     expect(normalizeSlots(view, ["a", "b", "c"], { autoAppend: true }).layoutId).toBe("cols:1-1");
   });
 
-  it("closes the grid up behind a session that is gone", () => {
+  it("leaves the slot of a session that is gone empty when a column is split", () => {
     expect(normalizeSlots({ layoutId: "cols:2-2-2", slots: ["a", "gone", "c"] }, ["a", "c"])).toEqual({
       layoutId: "cols:2-2-2",
+      slots: ["a", null, "c"],
+    });
+  });
+
+  it("closes the grid up behind a session that is gone when no column is split", () => {
+    expect(normalizeSlots({ layoutId: "cols:1-1-1", slots: ["a", "gone", "c"] }, ["a", "c"])).toEqual({
+      layoutId: "cols:1-1-1",
       slots: ["a", "c"],
     });
+  });
+
+  it("closes up behind a session that is gone under a layout id it does not know", () => {
+    expect(normalizeSlots({ layoutId: "layout-from-a-future-version", slots: ["a", "gone", "c"] }, ["a", "c"]).slots)
+      .toEqual(["a", "c"]);
   });
 
   it("closes the gap instead in a 자동 view, which never holds an empty slot", () => {
@@ -91,24 +103,85 @@ describe("normalizeSlots", () => {
 });
 
 describe("placeInSlot", () => {
-  it("slides the panes between the two ends rather than trading places", () => {
-    expect(placeInSlot({ layoutId: "cols:2-2-2", slots: ["a", "b", "c"] }, 0, "c").slots).toEqual(["c", "a", "b"]);
-  });
-
-  it("closes the slot a moved pane left behind", () => {
+  it("trades places with the pane it lands on, moving nobody else", () => {
+    expect(placeInSlot({ layoutId: "cols:2-2-2", slots: ["a", "b", "c"] }, 0, "c").slots).toEqual(["c", "b", "a"]);
     expect(placeInSlot({ layoutId: "cols:2-2-2", slots: ["a", "b", "c", "d"] }, 2, "a").slots).toEqual([
-      "b",
       "c",
+      "b",
       "a",
       "d",
     ]);
   });
 
-  it("pushes the pane it lands on back one slot rather than dropping it", () => {
-    expect(placeInSlot({ layoutId: "cols:2-2-2", slots: ["a", "c"] }, 0, "new").slots).toEqual(["new", "a", "c"]);
+  it("keeps a split column's other pane where it is when the top pane is traded away", () => {
+    expect(placeInSlot({ layoutId: "cols:1-2-1", slots: ["a", "b", "c", "d"] }, 1, "d").slots).toEqual([
+      "a",
+      "d",
+      "c",
+      "b",
+    ]);
   });
 
-  it("pushes the whole tail back when the drop lands mid-grid", () => {
+  it("trades places in an unsplit view and on 자동 as well", () => {
+    expect(placeInSlot({ layoutId: "cols:1-1-1", slots: ["a", "b", "c"] }, 0, "c").slots).toEqual(["c", "b", "a"]);
+    expect(placeInSlot({ layoutId: "auto", slots: ["a", "b", "c"] }, 0, "c").slots).toEqual(["c", "b", "a"]);
+  });
+
+  it("fills an empty slot from outside the view and moves nobody", () => {
+    expect(placeInSlot({ layoutId: "cols:2-1-1", slots: ["a", null, "b", "c"] }, 1, "new").slots).toEqual([
+      "a",
+      "new",
+      "b",
+      "c",
+    ]);
+    expect(placeInSlot({ layoutId: "cols:1-2-1-1", slots: ["a", "b", null, "c", "d"] }, 2, "new").slots).toEqual([
+      "a",
+      "b",
+      "new",
+      "c",
+      "d",
+    ]);
+  });
+
+  it("leaves the slot a moved pane came from empty", () => {
+    expect(placeInSlot({ layoutId: "cols:2-1-1", slots: ["a", null, "b", "c"] }, 1, "b").slots).toEqual([
+      "a",
+      "b",
+      null,
+      "c",
+    ]);
+  });
+
+  it("trims the slot a moved pane came from when it was the last one", () => {
+    expect(placeInSlot({ layoutId: "cols:2-1-1", slots: ["a", null, "b", "c"] }, 1, "c").slots).toEqual([
+      "a",
+      "c",
+      "b",
+    ]);
+  });
+
+  /** A new session is placed on its folder's first open slot before it is moved to the one asked for. */
+  it("moves a pane from an earlier empty row to the later one asked for, moving nobody else", () => {
+    expect(placeInSlot({ layoutId: "cols:2-2-1", slots: ["a", "new", "b", null, "c"] }, 3, "new").slots).toEqual([
+      "a",
+      null,
+      "b",
+      "new",
+      "c",
+    ]);
+  });
+
+  it("gives the pane it lands on the first open slot when the new one came from outside the view", () => {
+    expect(placeInSlot({ layoutId: "cols:2-1-1", slots: ["a", null, "b", "c"] }, 2, "new").slots).toEqual([
+      "a",
+      "b",
+      "new",
+      "c",
+    ]);
+  });
+
+  it("gives the pane it lands on a new slot at the end when none is open", () => {
+    expect(placeInSlot({ layoutId: "cols:2-2-2", slots: ["a", "c"] }, 0, "new").slots).toEqual(["new", "c", "a"]);
     expect(placeInSlot({ layoutId: "cols:1-1", slots: ["a", "b"] }, 1, "new").slots).toEqual(["a", "new", "b"]);
   });
 
@@ -171,8 +244,15 @@ describe("placePaneRelative", () => {
 });
 
 describe("clearSlot", () => {
-  it("pulls the panes behind it forward", () => {
-    expect(clearSlot({ layoutId: "cols:2-2-2", slots: ["a", "b", "c"] }, 1).slots).toEqual(["a", "c"]);
+  it("leaves the slot empty and moves nobody when a column is split", () => {
+    expect(clearSlot({ layoutId: "cols:2-2-2", slots: ["a", "b", "c"] }, 1).slots).toEqual(["a", null, "c"]);
+    expect(clearSlot({ layoutId: "cols:2-1-1", slots: ["a", "b", "c", "d"] }, 0).slots).toEqual([null, "b", "c", "d"]);
+    expect(clearSlot({ layoutId: "cols:2-1-1", slots: ["a", null, "b", "c"] }, 0).slots).toEqual([null, null, "b", "c"]);
+    expect(clearSlot({ layoutId: "cols:1-2-1", slots: ["a", "b", "c", "d"] }, 0).slots).toEqual([null, "b", "c", "d"]);
+  });
+
+  it("pulls the panes behind it forward when no column is split", () => {
+    expect(clearSlot({ layoutId: "cols:1-1-1", slots: ["a", "b", "c"] }, 0).slots).toEqual(["b", "c"]);
   });
 
   it("shortens the view when the last pane leaves", () => {
@@ -206,8 +286,13 @@ describe("appendSession", () => {
 });
 
 describe("removeSession", () => {
-  it("closes the grid up so no gap is left behind", () => {
-    expect(removeSession({ layoutId: "cols:2-2-2", slots: ["a", "b", "c"] }, "b").slots).toEqual(["a", "c"]);
+  it("leaves the slot empty and moves nobody when a column is split", () => {
+    expect(removeSession({ layoutId: "cols:2-2-2", slots: ["a", "b", "c"] }, "b").slots).toEqual(["a", null, "c"]);
+  });
+
+  it("closes the grid up when no column is split", () => {
+    expect(removeSession({ layoutId: "cols:1-1-1", slots: ["a", "b", "c"] }, "b").slots).toEqual(["a", "c"]);
+    expect(removeSession({ layoutId: "auto", slots: ["a", "b", "c"] }, "b").slots).toEqual(["a", "c"]);
   });
 
   it("returns the same view when the session was never here", () => {
@@ -245,6 +330,26 @@ describe("setLayout", () => {
       slots: ["a", "c"],
     });
   });
+
+  it("drops the holes a split left when the new layout has no split", () => {
+    expect(setLayout({ layoutId: "cols:2-1-1", slots: ["a", null, "b", "c"] }, "cols:1-1-1")).toEqual({
+      layoutId: "cols:1-1-1",
+      slots: ["a", "b", "c"],
+    });
+  });
+
+  it("keeps the holes when the new layout is split too, so the columns hold", () => {
+    expect(setLayout({ layoutId: "cols:2-1-1", slots: ["a", null, "b", "c"] }, "cols:2-2").slots).toEqual([
+      "a",
+      null,
+      "b",
+      "c",
+    ]);
+  });
+
+  it("keeps a hole a drop reached past when neither layout has a split", () => {
+    expect(setLayout({ layoutId: "cols:1-1-1", slots: ["a", null, "c"] }, "cols:1-1").slots).toEqual(["a", null, "c"]);
+  });
 });
 
 describe("pageAfterColumnChange", () => {
@@ -259,9 +364,10 @@ describe("pageAfterColumnChange", () => {
 
   it("keeps the column's top pane in sight after a merge shrinks the page", () => {
     const layout = buildLayout([2, 1]);
-    const before = { layoutId: layout.id, slots: ["a", "b", "c", "d", "e", "f"] };
-    // Page 1 shows d, e, f; merging the lower pane (e) leaves d at slot 3 of a two-slot page.
+    const before = { layoutId: layout.id, slots: ["a", "b", "c", "d", null, "f"] };
+    // Page 1 shows d, an empty row and f; merging the empty row leaves d at slot 3 of a two-slot page.
     const after = mergeColumnAt(before, layout, 1, 1);
+    expect(after).toEqual({ layoutId: "cols:1-1", slots: ["a", "b", "c", "d", "f"] });
     const page = pageAfterColumnChange(before, after, layout, 1, 1);
     expect(page).toBe(1);
     expect(resolveView(after, page).slots).toContain("d");
@@ -354,11 +460,43 @@ describe("splitColumnAt", () => {
 });
 
 describe("mergeColumnAt", () => {
-  it("gives the column back to its top pane and closes up behind the lower one", () => {
+  it("gives a full column's lower pane the column right after it, moving nobody", () => {
     const layout = buildLayout([1, 2, 1]);
     expect(mergeColumnAt({ layoutId: layout.id, slots: ["a", "b", "c", "d"] }, layout, 0, 1)).toEqual({
-      layoutId: "cols:1-1-1",
-      slots: ["a", "b", "d"],
+      layoutId: "cols:1-1-1-1",
+      slots: ["a", "b", "c", "d"],
+    });
+  });
+
+  it("keeps both panes of a column that is the whole view", () => {
+    const layout = buildLayout([2]);
+    expect(mergeColumnAt({ layoutId: layout.id, slots: ["h1", "h2"] }, layout, 0, 0)).toEqual({
+      layoutId: "cols:1-1",
+      slots: ["h1", "h2"],
+    });
+  });
+
+  it("drops the empty lower row, pulling the columns behind it forward", () => {
+    const layout = buildLayout([2, 1]);
+    expect(mergeColumnAt({ layoutId: layout.id, slots: ["a", null, "c"] }, layout, 0, 0)).toEqual({
+      layoutId: "cols:1-1",
+      slots: ["a", "c"],
+    });
+  });
+
+  it("keeps the lower pane of a column whose top row is empty", () => {
+    const layout = buildLayout([2, 1]);
+    expect(mergeColumnAt({ layoutId: layout.id, slots: [null, "a", "c"] }, layout, 0, 1)).toEqual({
+      layoutId: "cols:1-1",
+      slots: ["a", "c"],
+    });
+  });
+
+  it("sends the lower pane to the end of the view when there is no room for another column", () => {
+    const layout = buildLayout([2, 1, 1, 1, 1, 1]);
+    expect(mergeColumnAt({ layoutId: layout.id, slots: ["a", "b", "c", "d", "e", "f", "g"] }, layout, 0, 0)).toEqual({
+      layoutId: "cols:1-1-1-1-1-1",
+      slots: ["a", "c", "d", "e", "f", "g", "b"],
     });
   });
 
@@ -378,8 +516,17 @@ describe("mergeColumnAt", () => {
 
   it("counts from the page on screen rather than the first one", () => {
     const layout = buildLayout([1, 2, 1]);
-    const view = { layoutId: layout.id, slots: ["a", "b", "c", "d", "e", "f", "g", "h"] };
+    const view = { layoutId: layout.id, slots: ["a", "b", "c", "d", "e", "f", null, "h"] };
     expect(mergeColumnAt(view, layout, 1, 1).slots).toEqual(["a", "b", "c", "d", "e", "f", "h"]);
+  });
+
+  it("keeps every pane on its page when a full column on a later page is merged", () => {
+    const layout = buildLayout([1, 2, 1]);
+    const view = { layoutId: layout.id, slots: ["a", "b", "c", "d", "e", "f", "g", "h"] };
+    expect(mergeColumnAt(view, layout, 1, 1)).toEqual({
+      layoutId: "cols:1-1-1-1",
+      slots: ["a", "b", "c", "d", "e", "f", "g", "h"],
+    });
   });
 
   it("refuses a column that is already one pane tall, 자동 included", () => {

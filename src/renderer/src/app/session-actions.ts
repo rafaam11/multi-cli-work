@@ -127,8 +127,8 @@ export function createSessionActions(context: SessionContext) {
    * An empty slot's ＋ 새 세션, and the header's. The session is started for another folder than the
    * one on screen, so it is placed twice: `placeInFolderView` gives it its slot in its own folder's
    * grid — it is already there when the user goes to that folder — and the second placement moves it
-   * onto the surface in front of them. When those are the same view the second wins, because both
-   * placements take a pane out of its old slot before inserting it.
+   * onto the surface in front of them. When those are the same view the second wins: it moves the
+   * pane to the slot asked for and empties the one the first placement gave it.
    *
    * A null `slotIndex` is the header's launchers and its 새 세션 button: they aim at a surface, not
    * at a place on it, so the pane joins the end. That is also what `자동` would do with any index,
@@ -265,7 +265,7 @@ export function createSessionActions(context: SessionContext) {
     await whilePending(async () => {
       await window.multiCliWork.terminals.remove(session.id);
       setSessions((current) => current.filter((candidate) => candidate.id !== session.id));
-      // Every arrangement drops the slot on its own once the session is gone; this only decides
+      // Every arrangement lets go of the session on its own once it is gone; this only decides
       // where the focus lands.
       const remaining = visibleSessionIds.filter((paneId) => paneId !== session.id);
       if (focusedPaneId === session.id) setFocusedPaneId(remaining[0] ?? null);

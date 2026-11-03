@@ -142,8 +142,8 @@ export function createGridActions(context: GridContext) {
   const absoluteSlot = (index: number) => resolvedView.page * viewPageSize(currentView) + index;
 
   /**
-   * The ✕ on a pane. On a folder's grid it empties the slot — the session keeps running, the file
-   * stays open, and the panes behind it move forward so the grid is never left with a gap.
+   * The ✕ on a pane. On a folder's grid it empties the slot — the session keeps running and the file
+   * stays open. `clearSlot` decides whether the panes behind it stay or close up.
    *
    * On a shelf it moves the pane to the other one instead. Emptying a slot of 작업공간 would say
    * nothing, since that shelf collects everything the app holds and would take the pane back on the
@@ -196,7 +196,7 @@ export function createGridActions(context: GridContext) {
     focusPane(paneId);
   };
 
-  /** Dropping onto a slot inserts the pane there; whoever held it slides back one place. */
+  /** Dropping onto a slot fills it, or trades places with the pane that holds it. */
   const dropPaneOnSlot = (index: number, paneId: string) => {
     placePaneOnCurrentView(paneId, (view) => placeInSlot(view, absoluteSlot(index), paneId));
     focusPane(paneId);

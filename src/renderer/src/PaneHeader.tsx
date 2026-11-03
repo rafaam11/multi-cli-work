@@ -41,7 +41,7 @@ export interface ColumnSplitControls {
  * the layout picker — with several columns on screen only the pane itself says which column a click
  * means. It is a toggle: a full-height column splits in two, a split one goes back to full height.
  *
- * Both panes of a split column carry the undo, and the top one is what survives it either way.
+ * Both panes of a split column carry the undo, and no pane leaves the view when it is pressed.
  */
 export function ColumnSplitButton({ split, canSplit, onSplit, onMerge }: ColumnSplitControls) {
   if (split) {
@@ -51,7 +51,7 @@ export function ColumnSplitButton({ split, canSplit, onSplit, onMerge }: ColumnS
         type="button"
         onClick={onMerge}
         aria-label="열 분할 해제"
-        title="열 분할 해제 (위쪽 패인이 열을 차지합니다)"
+        title="열 분할 해제 (아래 패인은 옆 열로 나갑니다. 이미 6열이면 맨 뒤로 갑니다)"
       >
         <Square size={13} />
       </button>
