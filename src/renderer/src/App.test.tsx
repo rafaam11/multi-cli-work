@@ -37,7 +37,7 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: class TerminalMock {
     cols = 96;
     rows = 28;
-    write = vi.fn();
+    write = vi.fn((_data: string, callback?: () => void) => callback?.());
     paste = vi.fn();
     selectAll = vi.fn();
     clear = vi.fn();
@@ -87,6 +87,7 @@ vi.mock("@xterm/xterm", () => ({
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class FitAddonMock {
     fit = terminalHarness.fit;
+    proposeDimensions() { return { cols: 96, rows: 28 }; }
     dispose() {}
   },
 }));
@@ -630,6 +631,7 @@ function createApi(options?: {
       }),
       write: vi.fn().mockResolvedValue(undefined),
       resize: vi.fn().mockResolvedValue(undefined),
+      repaint: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
       resume: vi.fn().mockImplementation(async () => {
         resumedSession = { ...claudeSession, status: "starting", pid: 4300, exitCode: null };
@@ -1116,8 +1118,7 @@ describe("folder workspace", () => {
       expect(busy.api.terminals.create).toHaveBeenCalledWith({
         projectId: atlas.id,
         kind: "claude",
-        cols: 80,
-        rows: 24,
+        ...PANE_SIZE,
       }),
     );
   });
@@ -1134,8 +1135,7 @@ describe("folder workspace", () => {
       expect(harness.api.terminals.create).toHaveBeenCalledWith({
         projectId: atlas.id,
         kind: "powershell",
-        cols: 80,
-        rows: 24,
+        ...PANE_SIZE,
       }),
     );
     expect(harness.api.terminals.select).toHaveBeenCalledWith(atlas.id, harness.created.id);
@@ -1359,7 +1359,7 @@ describe("folder workspace", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Claude Code 업데이트" }));
 
     await waitFor(() =>
-      expect(harness.api.terminals.createTool).toHaveBeenCalledWith({ tool: "claude-update", cols: 80, rows: 24 }),
+      expect(harness.api.terminals.createTool).toHaveBeenCalledWith({ tool: "claude-update", ...PANE_SIZE }),
     );
     expect(harness.api.terminals.select).toHaveBeenCalledWith(null, toolSession.id);
     // A tool belongs to no folder, so it takes the grid rather than joining the folder's panes.
@@ -1415,8 +1415,7 @@ describe("folder workspace", () => {
     await waitFor(() =>
       expect(harness.api.terminals.resume).toHaveBeenCalledWith({
         sessionId: claudeSession.id,
-        cols: 80,
-        rows: 24,
+        ...PANE_SIZE,
       }),
     );
     await waitFor(() =>
@@ -1590,7 +1589,7 @@ describe("folder workspace", () => {
     expect(terminal.write).toHaveBeenCalledWith("after attach\r\n");
   });
 
-  it("filters synchronized clear-screen commands from replay and live terminal output", async () => {
+  it("preserves erase commands and arbitrary sequence boundaries for xterm's native parser", async () => {
     const harness = createApi({
       sessions: [codexSession],
       selection: { selectedProjectId: atlas.id, selectedSessionId: codexSession.id },
@@ -1607,7 +1606,8 @@ describe("folder workspace", () => {
 
     await screen.findByRole("region", { name: "codex 터미널" });
     const terminal = terminalHarness.instances.at(-1)!;
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith(`${syncStart}replay frame${syncEnd}`));
+    await waitFor(() => expect(terminal.write).toHaveBeenCalledWith(`${syncStart}\u001b[2Jreplay frame${syncEnd}`));
+    expect(terminal.options).toMatchObject({ scrollOnEraseInDisplay: true });
 
     await act(async () => {
       harness.emit({ type: "data", sessionId: codexSession.id, data: syncStart, sequence: 2 });
@@ -1617,10 +1617,9 @@ describe("folder workspace", () => {
     });
 
     expect(terminal.write).toHaveBeenCalledWith(syncStart);
-    expect(terminal.write).toHaveBeenCalledWith(`live frame${syncEnd}`);
     expect(terminal.write).toHaveBeenCalledWith("\u001b[2J");
-    expect(terminal.write).not.toHaveBeenCalledWith("\u001b[");
-    expect(terminal.write).not.toHaveBeenCalledWith(`2Jlive frame${syncEnd}`);
+    expect(terminal.write).toHaveBeenCalledWith("\u001b[");
+    expect(terminal.write).toHaveBeenCalledWith(`2Jlive frame${syncEnd}`);
   });
 
   it("maps both copy and paste shortcuts to the native clipboard without duplicate terminal input", async () => {

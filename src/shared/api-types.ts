@@ -650,6 +650,8 @@ export interface MultiCliWorkApi {
     refresh(sessionId: string): Promise<TerminalAttachResult>;
     write(sessionId: string, data: string): Promise<void>;
     resize(sessionId: string, cols: number, rows: number): Promise<void>;
+    /** Requests a redraw without reclaiming a remote device's size. */
+    repaint(sessionId: string): Promise<void>;
     stop(sessionId: string): Promise<void>;
     resume(input: ResumeTerminalInput): Promise<TerminalSessionView>;
     remove(sessionId: string): Promise<void>;

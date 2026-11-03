@@ -381,6 +381,18 @@ describe("app state", () => {
     expect(Buffer.byteLength(replay)).toBe(10);
   });
 
+  it("compacts overwritten progress lines before discarding conversation history on disk", async () => {
+    const root = await tempRoot();
+    await appendSessionLog(root, "session-1", "\x1b]7719;40;5\x07KEEP_CONVERSATION\r\n", 1024);
+    for (let i = 0; i < 20; i++) {
+      await appendSessionLog(root, "session-1", "\r\x1b[2Kworking...".repeat(200) + "\r\x1b[2Klast", 1024);
+    }
+    const replay = await readSessionLog(root, "session-1", 1024);
+    expect(replay).toContain("KEEP_CONVERSATION");
+    expect(replay.endsWith("last")).toBe(true);
+    expect((await fs.stat(path.join(root, "session-1.log"))).size).toBeLessThanOrEqual(1024);
+  });
+
   it("appends output without replacing a log that remains below its limit", async () => {
     const root = await tempRoot();
     await appendSessionLog(root, "session-1", "first", 100);
@@ -415,6 +427,29 @@ describe("app state", () => {
     expect(Buffer.byteLength(replay)).toBeLessThanOrEqual(8);
     expect(replay).not.toContain("�");
     expect(replay).toBe("나다");
+  });
+
+  it("keeps the modes of the output a log trim removes", async () => {
+    const root = await tempRoot();
+
+    await appendSessionLog(root, "session-1", "\u001b[?1049hzzabcdefghij", 10);
+
+    expect(await fs.readFile(path.join(root, "session-1.log"), "utf8")).toBe("\u001b[?1049habcdefghij");
+  });
+
+  it("keeps the modes of the output a bounded read leaves out", async () => {
+    const root = await tempRoot();
+    await appendSessionLog(root, "session-1", "\u001b[?1049hzzabcdefghij", 100);
+
+    expect(await readSessionLog(root, "session-1", 10)).toBe("\u001b[?1049habcdefghij");
+  });
+
+  it("keeps those modes through a read of a log that was already trimmed", async () => {
+    const root = await tempRoot();
+    await appendSessionLog(root, "session-1", "\u001b[?1049hzzabcdefghij", 10);
+
+    // The trimmed file is over the read limit by exactly its preamble, which a cut would remove.
+    expect(await readSessionLog(root, "session-1", 10)).toBe("\u001b[?1049habcdefghij");
   });
 });
 

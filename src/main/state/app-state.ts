@@ -15,6 +15,8 @@ import type { ToolCommand } from "../../shared/terminal-types";
  * to `agents.json` would cost the user every session they have.
  */
 import { AGENT_ID_PATTERN } from "../../shared/agent-types";
+import { boundReplay } from "../../shared/terminal-replay";
+import { compactTerminalReplay } from "../../shared/compact-terminal-replay";
 import { tailOnUtf8Boundary } from "../utf8";
 
 const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
@@ -346,6 +348,16 @@ function safeSessionLogPath(logDir: string, sessionId: string): string {
   return path.join(logDir, `${sessionId}.log`);
 }
 
+/** The newest `maxBytes` of a log, plus what the terminal needs to know about the part left out. */
+function boundedLog(data: Buffer, maxBytes: number): Buffer {
+  if (data.length <= maxBytes) return data;
+  data = Buffer.from(compactTerminalReplay(data.toString("utf8")));
+  if (data.length <= maxBytes) return data;
+  const tail = tailOnUtf8Boundary(data, maxBytes);
+  const dropped = data.subarray(0, data.length - tail.length).toString("utf8");
+  return Buffer.from(boundReplay(dropped, tail.toString("utf8")));
+}
+
 export async function appendSessionLog(
   logDir: string,
   sessionId: string,
@@ -358,8 +370,7 @@ export async function appendSessionLog(
   await fs.appendFile(logPath, data);
   const size = (await fs.stat(logPath)).size;
   if (size <= maxBytes + Math.max(0, trimSlackBytes)) return;
-  const current = await fs.readFile(logPath);
-  const bounded = tailOnUtf8Boundary(current, maxBytes);
+  const bounded = boundedLog(await fs.readFile(logPath), maxBytes);
   const tempPath = `${logPath}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(tempPath, bounded);
@@ -371,7 +382,7 @@ export async function appendSessionLog(
 
 export async function readSessionLog(logDir: string, sessionId: string, maxBytes: number): Promise<string> {
   const data = await fs.readFile(safeSessionLogPath(logDir, sessionId)).catch(() => Buffer.alloc(0));
-  return tailOnUtf8Boundary(data, maxBytes).toString("utf8");
+  return boundedLog(data, maxBytes).toString("utf8");
 }
 
 export async function deleteSessionLog(logDir: string, sessionId: string): Promise<void> {

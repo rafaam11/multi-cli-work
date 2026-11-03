@@ -37,7 +37,7 @@ function isWorkerResponse(message: unknown): message is TerminalWorkerResponse {
 function isWorkerEvent(message: unknown): message is TerminalWorkerEvent {
   if (typeof message !== "object" || message === null) return false;
   const type = (message as { type?: unknown }).type;
-  return type === "data" || type === "status" || type === "exit";
+  return type === "data" || type === "status" || type === "exit" || type === "size";
 }
 
 export class TerminalWorkerClient {

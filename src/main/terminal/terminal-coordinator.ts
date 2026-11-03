@@ -40,18 +40,13 @@ import {
   sweepStaleStateTemps,
   updateAppState,
 } from "../state/app-state";
+import { lastReplaySize, sizeMarker } from "../../shared/terminal-replay";
+import { DEFAULT_TERMINAL_SIZE } from "../../shared/terminal-types";
 import { stripTerminalControls } from "../../shared/terminal-text";
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const LOG_TRIM_SLACK_BYTES = 256 * 1024;
 const DEFAULT_LOG_FLUSH_MS = 100;
-/**
- * The fallback size for a lazy auto-resume. An attach from the renderer carries the pane's own size
- * and uses that instead; this is for callers that have no pane to measure, and it is the same
- * default xterm itself starts at.
- */
-const AUTO_RESUME_COLS = 80;
-const AUTO_RESUME_ROWS = 24;
 /**
  * How many interrupted sessions may resume at the same time. A grid attaches up to six panes in one
  * breath, and each interrupted one would otherwise spawn its CLI right then — six `claude --resume`
@@ -156,6 +151,8 @@ export interface LaunchOptions {
   updateSelection?: boolean;
   /** Main-owned history to seed into a replacement worker's bounded replay buffer. */
   initialReplay?: string;
+  /** Durable prefix for a successful replacement, before any output its worker emitted. */
+  logPrefix?: string;
   /** Lazy auto-resume must not open an interactive conversation picker. Manual resume may. */
   allowConversationPicker?: boolean;
 }
@@ -206,6 +203,7 @@ export class TerminalCoordinator {
   private readonly subscribers = new Set<(event: TerminalEvent) => void>();
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly pendingLogChunks = new Map<string, string[]>();
+  private readonly launchingLogChunks = new Map<string, string[]>();
   private readonly logFlushTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly logWrites = new Map<string, Promise<void>>();
   private readonly generations = new Map<string, string>();
@@ -222,7 +220,7 @@ export class TerminalCoordinator {
   private workspacePoll: Promise<void> | null = null;
   private readonly pendingProviderStarts = new Map<string, ProviderStatusEvent>();
   private readonly pendingCodexStatuses = new Map<string, ProviderStatusEvent>();
-  private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" }>>();
+  private readonly pendingWorkerEvents = new Map<string, Exclude<TerminalWorkerEvent, { type: "data" | "size" }>>();
   private readonly launchingSessionIds = new Set<string>();
   private eventChain: Promise<void> = Promise.resolve();
   private titleTimer: ReturnType<typeof setInterval> | null = null;
@@ -233,6 +231,7 @@ export class TerminalCoordinator {
   constructor(private readonly options: TerminalCoordinatorOptions) {
     options.worker.onEvent((event) => {
       if (event.type === "data") this.handleDataEvent(event);
+      else if (event.type === "size") this.handleSizeEvent(event);
       else this.enqueueEvent(() => this.handleWorkerEvent(event));
     });
     options.worker.onExit((code) => {
@@ -385,6 +384,7 @@ export class TerminalCoordinator {
       codexResumePicker,
       updateSelection: options.updateSelection,
       initialReplay: options.initialReplay,
+      logPrefix: options.logPrefix,
     });
   }
 
@@ -443,24 +443,17 @@ export class TerminalCoordinator {
         // Snapshot the old scrollback before the replacement PTY can emit output. The separator is
         // committed only after create() succeeds, so failed retries leave the durable log intact.
         const replay = await readSessionLog(this.options.logDir, sessionId, MAX_LOG_BYTES);
+        const initialSize = size ?? lastReplaySize(replay) ?? DEFAULT_TERMINAL_SIZE;
         const separator = resumeSeparatorText(this.options.now());
         const restored = replay + separator;
         await this.resume(
           {
             sessionId,
-            cols: size?.cols ?? AUTO_RESUME_COLS,
-            rows: size?.rows ?? AUTO_RESUME_ROWS,
+            ...initialSize,
           },
-          { updateSelection: false, initialReplay: restored, allowConversationPicker: false },
+          { updateSelection: false, initialReplay: restored, logPrefix: separator, allowConversationPicker: false },
         );
-        const appendLog = this.options.appendLog ?? appendSessionLog;
-        await appendLog(
-          this.options.logDir,
-          sessionId,
-          separator,
-          MAX_LOG_BYTES,
-          LOG_TRIM_SLACK_BYTES,
-        );
+        await this.flushSessionLog(sessionId);
         return restored;
       } catch (error) {
         // The marking stays, so the next attach — or the manual resume button — can retry.
@@ -832,6 +825,7 @@ export class TerminalCoordinator {
     name?: string | null;
     updateSelection?: boolean;
     initialReplay?: string;
+    logPrefix?: string;
   }): Promise<TerminalSessionView> {
     const agent = this.requireAgent(input.kind);
     const executables = await this.options.getExecutables();
@@ -909,6 +903,7 @@ export class TerminalCoordinator {
       if (previousGeneration) this.generations.set(input.sessionId, previousGeneration);
       else this.generations.delete(input.sessionId);
       this.launchingSessionIds.delete(input.sessionId);
+      this.launchingLogChunks.delete(input.sessionId);
       this.pendingProviderStarts.delete(input.sessionId);
       this.pendingCodexStatuses.delete(input.sessionId);
       this.pendingWorkerEvents.delete(input.sessionId);
@@ -925,6 +920,12 @@ export class TerminalCoordinator {
     this.views.set(view.id, view);
     this.pendingReleases.delete(view.id);
     this.launchingSessionIds.delete(view.id);
+    // Worker output can arrive before create() resolves. Commit only a successful launch and put
+    // its separator before both size records and output, through the same serialized log queue.
+    if (input.logPrefix) this.queueSessionLog(view.id, input.logPrefix);
+    const launchOutput = this.launchingLogChunks.get(view.id);
+    this.launchingLogChunks.delete(view.id);
+    if (launchOutput?.length) this.queueSessionLog(view.id, launchOutput.join(""));
     const pendingWorkerEvent = this.pendingWorkerEvents.get(view.id);
     if (pendingWorkerEvent) {
       this.pendingWorkerEvents.delete(view.id);
@@ -1177,11 +1178,11 @@ export class TerminalCoordinator {
     this.publish({ type: "created", sessionId: view.id, session: { ...view } });
   }
 
-  private async handleWorkerEvent(event: TerminalWorkerEvent): Promise<void> {
+  private async handleWorkerEvent(event: Exclude<TerminalWorkerEvent, { type: "data" | "size" }>): Promise<void> {
     if (this.removedSessionIds.has(event.sessionId)) return;
     if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
     const view = this.views.get(event.sessionId);
-    if ((!view || this.launchingSessionIds.has(event.sessionId)) && event.type !== "data") {
+    if (!view || this.launchingSessionIds.has(event.sessionId)) {
       if (this.launchingSessionIds.has(event.sessionId)) {
         const pending = this.pendingWorkerEvents.get(event.sessionId);
         if (event.type === "exit" || pending?.type !== "exit") this.pendingWorkerEvents.set(event.sessionId, event);
@@ -1233,18 +1234,35 @@ export class TerminalCoordinator {
     if (this.removedSessionIds.has(event.sessionId)) return;
     if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
     this.publish(event);
-    const chunks = this.pendingLogChunks.get(event.sessionId) ?? [];
-    chunks.push(event.data);
-    this.pendingLogChunks.set(event.sessionId, chunks);
-    if (this.logFlushTimers.has(event.sessionId)) return;
+    this.queueSessionLog(event.sessionId, event.data);
+  }
+
+  /** Takes the same way as output and not the event chain, so that the log keeps the two in order. */
+  private handleSizeEvent(event: Extract<TerminalWorkerEvent, { type: "size" }>): void {
+    if (this.removedSessionIds.has(event.sessionId)) return;
+    if (event.generation && event.generation !== this.generations.get(event.sessionId)) return;
+    this.queueSessionLog(event.sessionId, sizeMarker(event.cols, event.rows));
+  }
+
+  private queueSessionLog(sessionId: string, data: string): void {
+    if (this.launchingSessionIds.has(sessionId)) {
+      const chunks = this.launchingLogChunks.get(sessionId) ?? [];
+      chunks.push(data);
+      this.launchingLogChunks.set(sessionId, chunks);
+      return;
+    }
+    const chunks = this.pendingLogChunks.get(sessionId) ?? [];
+    chunks.push(data);
+    this.pendingLogChunks.set(sessionId, chunks);
+    if (this.logFlushTimers.has(sessionId)) return;
     const timer = setTimeout(() => {
-      this.logFlushTimers.delete(event.sessionId);
-      void this.flushSessionLog(event.sessionId)
-        .then(() => this.releasePersistedSession(event.sessionId))
+      this.logFlushTimers.delete(sessionId);
+      void this.flushSessionLog(sessionId)
+        .then(() => this.releasePersistedSession(sessionId))
         .catch((error) => this.reportAsyncError("Terminal log write failed", error));
     }, this.options.logFlushMs ?? DEFAULT_LOG_FLUSH_MS);
     timer.unref?.();
-    this.logFlushTimers.set(event.sessionId, timer);
+    this.logFlushTimers.set(sessionId, timer);
   }
 
   private async flushPendingLogs(): Promise<void> {

@@ -42,6 +42,7 @@ export interface SessionContext {
   selectedSessionId: string | null;
   setSelectedSessionId: Dispatch<SetStateAction<string | null>>;
   setActiveView: Dispatch<SetStateAction<ActiveView>>;
+  terminalSize?(sessionId: string): { cols: number; rows: number } | undefined;
 }
 
 /**
@@ -81,6 +82,8 @@ export function createSessionActions(context: SessionContext) {
   } = context;
 
   const whilePending = pendingRunner(setPendingAction, setActionError);
+  const launchSize = (sessionId = focusedPaneId) =>
+    (sessionId ? context.terminalSize?.(sessionId) : undefined) ?? DEFAULT_TERMINAL_SIZE;
 
   const startSession = async (project: SharedProject, kind: TerminalKind, worktreeId?: string) => {
     if (isProjectMissing(project.id) || !findAgent(agents, kind)?.available) return;
@@ -89,7 +92,7 @@ export function createSessionActions(context: SessionContext) {
         projectId: project.id,
         kind,
         ...(worktreeId !== undefined ? { worktreeId } : {}),
-        ...DEFAULT_TERMINAL_SIZE,
+        ...launchSize(),
       });
       setSessions((current) => replaceSession(current, created));
       // The new pane takes the next free slot of its folder's grid — nothing already on screen is
@@ -148,7 +151,7 @@ export function createSessionActions(context: SessionContext) {
         kind,
         ...(worktreeId !== null ? { worktreeId } : {}),
         ...(launchProfileId !== undefined ? { launchProfileId } : {}),
-        ...DEFAULT_TERMINAL_SIZE,
+        ...launchSize(),
         background: true,
       });
       setSessions((current) => replaceSession(current, created));
@@ -184,7 +187,7 @@ export function createSessionActions(context: SessionContext) {
 
   const startTool = async (tool: ToolCommand) => {
     await whilePending(async () => {
-      const created = await window.multiCliWork.terminals.createTool({ tool, ...DEFAULT_TERMINAL_SIZE });
+      const created = await window.multiCliWork.terminals.createTool({ tool, ...launchSize() });
       setSessions((current) => replaceSession(current, created));
       revealSession(created);
     });
@@ -206,7 +209,7 @@ export function createSessionActions(context: SessionContext) {
     await whilePending(async () => {
       const resumed = await window.multiCliWork.terminals.resume({
         sessionId: target.id,
-        ...DEFAULT_TERMINAL_SIZE,
+        ...launchSize(target.id),
       });
       setSessions((current) => replaceSession(current, resumed));
       persistSelection(resumed.projectId, resumed.id);

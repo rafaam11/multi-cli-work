@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SharedProject } from "../../shared/project-types";
+import { sizeMarker } from "../../shared/terminal-replay";
 import type {
   TerminalAttachment,
   TerminalEvent,
@@ -579,6 +580,55 @@ describe("TerminalCoordinator", () => {
     ]);
     const attachment = await instance.attach("session-1");
     expect(attachment.replay).toContain("hello");
+  });
+
+  it("writes a size to the log in order with the output around it", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    worker.emit({ type: "data", sessionId: "session-1", data: "wide", sequence: 1 });
+    worker.emit({ type: "size", sessionId: "session-1", cols: 120, rows: 40 });
+    worker.emit({ type: "data", sessionId: "session-1", data: "narrow", sequence: 2 });
+    await instance.flush();
+
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe(
+      `wide${sizeMarker(120, 40)}narrow`,
+    );
+  });
+
+  it("gets a size that arrives alone onto the disk", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    worker.emit({ type: "size", sessionId: "session-1", cols: 120, rows: 40 });
+    await instance.flush();
+
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe(sizeMarker(120, 40));
+  });
+
+  it("keeps a size away from its subscribers", async () => {
+    const { instance, worker } = await coordinator(await tempRoot());
+    const received = vi.fn();
+    instance.onEvent(received);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    worker.emit({ type: "size", sessionId: "session-1", cols: 120, rows: 40 });
+    await instance.flush();
+
+    expect(received).not.toHaveBeenCalledWith(expect.objectContaining({ type: "size" }));
+  });
+
+  it("ignores the size of a generation that has been replaced", async () => {
+    const root = await tempRoot();
+    const { instance, worker } = await coordinator(root);
+    await instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+
+    worker.emit({ type: "size", sessionId: "session-1", cols: 120, rows: 40, generation: "replaced" });
+    await instance.flush();
+
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 1024)).toBe("");
   });
 
   it("publishes output immediately and batches adjacent chunks into one log write", async () => {
@@ -1553,6 +1603,47 @@ describe("TerminalCoordinator", () => {
     expect(second.instance.list()[0].interruptedByShutdown).toBe(true);
     expect(consoleError).toHaveBeenCalledWith("Lazy auto-resume failed", expect.any(Error));
     consoleError.mockRestore();
+  });
+
+  it("uses the last logged dimensions when auto-resuming without a visible pane", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    first.worker.emit({ type: "size", sessionId: "session-1", cols: 132, rows: 42 });
+    await first.instance.shutdown();
+    const worker = new FakeWorker();
+    const second = await coordinator(root, worker);
+    await second.instance.attachForRenderer("session-1");
+    expect(worker.create).toHaveBeenCalledWith(expect.objectContaining({ cols: 132, rows: 42 }));
+  });
+
+  it("logs the resume separator before size and output emitted while create is still pending", async () => {
+    const root = await tempRoot();
+    const first = await coordinator(root);
+    await first.instance.create({ projectId: "project-1", kind: "powershell", cols: 80, rows: 24 });
+    first.worker.emit({ type: "data", sessionId: "session-1", data: "OLD\r\n", sequence: 1 });
+    await first.instance.shutdown();
+    const worker = new FakeWorker();
+    const create = worker.create.getMockImplementation()!;
+    const ready = deferred<void>();
+    worker.create.mockImplementation(async spec => {
+      worker.emit({ type: "size", sessionId: spec.sessionId, generation: spec.generation, cols: 120, rows: 40 });
+      worker.emit({ type: "data", sessionId: spec.sessionId, generation: spec.generation, data: "NEW\r\n", sequence: 1 });
+      await ready.promise;
+      return create(spec);
+    });
+    const second = await coordinator(root, worker);
+    const attaching = second.instance.attachForRenderer("session-1", { cols: 120, rows: 40 });
+    await until(() => worker.create.mock.calls.length === 1, "resumed worker");
+    await second.instance.flush(false);
+    expect(await readSessionLog(path.join(root, "logs"), "session-1", 5 * 1024 * 1024)).toBe("OLD\r\n");
+    ready.resolve();
+    await attaching;
+    await second.instance.flush();
+    const log = await readSessionLog(path.join(root, "logs"), "session-1", 5 * 1024 * 1024);
+    expect(log.indexOf("세션 재개됨")).toBeGreaterThan(log.indexOf("OLD"));
+    expect(log.indexOf(sizeMarker(120, 40))).toBeGreaterThan(log.indexOf("세션 재개됨"));
+    expect(log.indexOf("NEW")).toBeGreaterThan(log.indexOf(sizeMarker(120, 40)));
   });
 
   it("does not write resume separators until a lazy resume succeeds", async () => {

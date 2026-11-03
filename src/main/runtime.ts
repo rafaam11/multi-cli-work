@@ -983,6 +983,7 @@ export async function createDesktopRuntime(
     },
     sizes: {
       desktopResize: (sessionId, cols, rows) => sizes.desktopResize(sessionId, cols, rows),
+      desktopRepaint: (sessionId) => sizes.desktopRepaint(sessionId),
       desktopInput: (sessionId) => sizes.desktopInput(sessionId),
       deviceOwners: () =>
         Promise.all(

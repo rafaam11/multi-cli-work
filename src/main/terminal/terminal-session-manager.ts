@@ -6,6 +6,8 @@ import type {
   TerminalStatus,
   TerminalWorkerEvent,
 } from "../../shared/terminal-types";
+import { ReplayModeTracker, sizeMarker } from "../../shared/terminal-replay";
+import { compactTerminalReplay } from "../../shared/compact-terminal-replay";
 import { tailOnUtf8Boundary } from "../utf8";
 import { FirstRunDialogWatcher } from "./first-run-dialog";
 
@@ -32,29 +34,73 @@ export interface ManagedPtyFactory {
   spawn(executable: string, args: string[], options: PtySpawnOptions): ManagedPty;
 }
 
+/**
+ * The unit the ring drops output in. A restored log arrives as one string; held whole, the first
+ * byte over the limit would discard the entire history instead of its oldest part.
+ */
+const RING_CHUNK_CHARS = 64 * 1024;
+
 export class OutputRingBuffer {
   private readonly chunks: string[] = [];
+  private readonly modes = new ReplayModeTracker();
+  /** Of the chunks. The small preamble in front of them is not counted against the limit. */
   private bytes = 0;
+  private bytesSinceCompaction = 0;
 
   constructor(private readonly maxBytes: number) {}
 
   append(data: string): void {
-    let chunk = data;
-    const chunkBytes = Buffer.byteLength(chunk);
-    if (chunkBytes > this.maxBytes) {
-      chunk = tailOnUtf8Boundary(Buffer.from(chunk), this.maxBytes).toString("utf8");
-      this.chunks.length = 0;
-      this.bytes = 0;
-    }
-    this.chunks.push(chunk);
-    this.bytes += Buffer.byteLength(chunk);
-    while (this.bytes > this.maxBytes && this.chunks.length > 1) {
-      this.bytes -= Buffer.byteLength(this.chunks.shift()!);
+    let start = 0;
+    while (start < data.length) {
+      let end = Math.min(start + RING_CHUNK_CHARS, data.length);
+      // Dropping a chunk that ends on half a surrogate pair would leave the other half to start the replay.
+      const lastUnit = data.charCodeAt(end - 1);
+      if (end < data.length && lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 1;
+      this.push(data.slice(start, end));
+      start = end;
     }
   }
 
+  private push(data: string): void {
+    this.chunks.push(data);
+    this.bytes += Buffer.byteLength(data);
+    this.bytesSinceCompaction += Buffer.byteLength(data);
+    if (this.bytes <= this.maxBytes) return;
+    if (this.bytesSinceCompaction >= Math.max(1, Math.min(256 * 1024, this.maxBytes / 4))) {
+      this.bytesSinceCompaction = 0;
+      const original = this.chunks.join("");
+      const compact = this.modes.canCompact() ? compactTerminalReplay(original, this.modes.columns()) : original;
+      if (compact.length < original.length) {
+        this.chunks.length = 0;
+        for (let start = 0; start < compact.length;) {
+          let end = Math.min(start + RING_CHUNK_CHARS, compact.length);
+          const last = compact.charCodeAt(end - 1);
+          if (end < compact.length && last >= 0xd800 && last <= 0xdbff) end--;
+          this.chunks.push(compact.slice(start, end));
+          start = end;
+        }
+        this.bytes = Buffer.byteLength(compact);
+      }
+    }
+    while (this.bytes > this.maxBytes && this.chunks.length > 1) {
+      const dropped = this.chunks.shift()!;
+      this.bytes -= Buffer.byteLength(dropped);
+      this.modes.feed(dropped);
+    }
+    if (this.bytes > this.maxBytes) {
+      const whole = Buffer.from(this.chunks[0]);
+      const tail = tailOnUtf8Boundary(whole, this.maxBytes);
+      this.modes.feed(whole.subarray(0, whole.length - tail.length).toString("utf8"));
+      this.chunks[0] = tail.toString("utf8");
+      this.bytes = tail.length;
+    }
+    const first = this.modes.consumeOpenSequence(this.chunks[0]);
+    this.bytes -= Buffer.byteLength(this.chunks[0]) - Buffer.byteLength(first);
+    this.chunks[0] = first;
+  }
+
   toString(): string {
-    return this.chunks.join("");
+    return this.modes.preamble() + this.chunks.join("");
   }
 }
 
@@ -68,6 +114,9 @@ interface SessionRecord {
   output: OutputRingBuffer;
   controlBuffer: string;
   outputSequence: number;
+  /** The size last recorded in the replay. */
+  cols: number;
+  rows: number;
 }
 
 export class TerminalSessionManager {
@@ -113,9 +162,12 @@ export class TerminalSessionManager {
       output: new OutputRingBuffer(this.maxReplayBytes),
       controlBuffer: "",
       outputSequence: 0,
+      cols: spec.cols,
+      rows: spec.rows,
     };
     if (spec.initialReplay) record.output.append(spec.initialReplay);
     this.sessions.set(session.id, record);
+    this.recordSize(record, spec.cols, spec.rows);
     record.subscriptions.push(pty.onData((data) => {
       if (this.sessions.get(session.id) !== record) return;
       record.outputSequence += 1;
@@ -171,6 +223,7 @@ export class TerminalSessionManager {
       if (error instanceof Error && /already exited/i.test(error.message)) return;
       throw error;
     }
+    if (cols !== record.cols || rows !== record.rows) this.recordSize(record, cols, rows);
   }
 
   stop(sessionId: string): void {
@@ -191,6 +244,17 @@ export class TerminalSessionManager {
     this.dialogs.forget(sessionId);
     for (const subscription of record.subscriptions) subscription.dispose();
     record.subscriptions.length = 0;
+  }
+
+  /**
+   * Recorded here rather than in main, which would race the pipe: output the PTY produced at the old
+   * size can still be on its way there, and would end up behind the record of the new size.
+   */
+  private recordSize(record: SessionRecord, cols: number, rows: number): void {
+    record.cols = cols;
+    record.rows = rows;
+    record.output.append(sizeMarker(cols, rows));
+    this.publishEvent(record, { type: "size", sessionId: record.session.id, cols, rows });
   }
 
   private publishEvent(record: SessionRecord, event: TerminalWorkerEvent): void {

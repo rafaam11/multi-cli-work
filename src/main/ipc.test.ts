@@ -264,6 +264,7 @@ function setup(
   const humanInput = { note: vi.fn() };
   const sizesGateway = {
     desktopResize: vi.fn(async (_id: string, _cols: number, _rows: number) => undefined),
+    desktopRepaint: vi.fn(async (_id: string) => undefined),
     desktopInput: vi.fn(async (_id: string) => undefined),
     deviceOwners: vi.fn(async () => [{ sessionId: "s2", deviceName: "내 폰" }]),
   };
@@ -909,9 +910,27 @@ describe("main IPC boundary", () => {
     const { handlers, sizesGateway, humanInput } = setup();
     await handlers.get("terminals:resize")!({}, "s1", 120, 40);
     expect(sizesGateway.desktopResize).toHaveBeenCalledWith("s1", 120, 40);
+    await handlers.get("terminals:repaint")!({}, "s1");
+    expect(sizesGateway.desktopRepaint).toHaveBeenCalledWith("s1");
+    expect(() => handlers.get("terminals:repaint")!({}, "")).toThrow("Session id");
     await handlers.get("terminals:write")!({}, "s1", "x");
     expect(sizesGateway.desktopInput).toHaveBeenCalledWith("s1");
     expect(humanInput.note).toHaveBeenCalledWith("s1", "x");
+  });
+
+  it.each(["\x1b[I", "\x1b[O", "\x1b[O\x1b[I", ""])("forwards %j without counting focus as human input", async (data) => {
+    const { handlers, sizesGateway, humanInput, coordinator } = setup();
+    await handlers.get("terminals:write")!({}, "s1", data);
+    expect(coordinator.write).toHaveBeenCalledWith("s1", data);
+    expect(sizesGateway.desktopInput).not.toHaveBeenCalled();
+    expect(humanInput.note).not.toHaveBeenCalled();
+  });
+
+  it("counts input mixed with a focus report as human input", async () => {
+    const { handlers, sizesGateway, humanInput } = setup();
+    await handlers.get("terminals:write")!({}, "s1", "\x1b[Ihello");
+    expect(sizesGateway.desktopInput).toHaveBeenCalledWith("s1");
+    expect(humanInput.note).toHaveBeenCalled();
   });
 
   it("tells the desktop which sessions a device sizes and takes one back on request", async () => {

@@ -269,6 +269,7 @@ const api: MultiCliWorkApi = {
     refresh: (sessionId) => ipcRenderer.invoke("terminals:refresh", sessionId),
     write: (sessionId, data) => ipcRenderer.invoke("terminals:write", sessionId, data),
     resize: (sessionId, cols, rows) => ipcRenderer.invoke("terminals:resize", sessionId, cols, rows),
+    repaint: (sessionId) => ipcRenderer.invoke("terminals:repaint", sessionId),
     stop: (sessionId) => ipcRenderer.invoke("terminals:stop", sessionId),
     resume: (input) => ipcRenderer.invoke("terminals:resume", input),
     remove: (sessionId) => ipcRenderer.invoke("terminals:remove", sessionId),

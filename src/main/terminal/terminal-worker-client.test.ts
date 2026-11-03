@@ -44,6 +44,17 @@ const spec: TerminalLaunchSpec = {
 };
 
 describe("TerminalWorkerClient", () => {
+  it("delivers size events to its subscribers", () => {
+    const worker = new FakeWorker();
+    const client = new TerminalWorkerClient(worker);
+    const received = vi.fn();
+    client.onEvent(received);
+
+    worker.emitMessage({ type: "size", sessionId: "session-1", cols: 120, rows: 40 });
+
+    expect(received).toHaveBeenCalledWith({ type: "size", sessionId: "session-1", cols: 120, rows: 40 });
+  });
+
   it("roundtrips a generation-scoped release request", async () => {
     const worker = new FakeWorker();
     const client = new TerminalWorkerClient(worker, { idFactory: () => "release-1" });

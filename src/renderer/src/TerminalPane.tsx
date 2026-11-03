@@ -4,8 +4,8 @@ import { Terminal } from "@xterm/xterm";
 import type { TerminalSessionView } from "@shared/api-types";
 import type { TerminalSettings } from "@shared/settings-types";
 import { useEffect, useRef, useState } from "react";
+import { splitReplay } from "@shared/terminal-replay";
 import { droppedPathsAsPromptText } from "./drop-paths";
-import { createTerminalOutputFilter } from "./terminal-output-filter";
 import { createFileLinkProvider, type FileLinkPosition, type ResolvedFileLink } from "./terminal-link-provider";
 import { TerminalSearchBar } from "./TerminalSearchBar";
 import "@xterm/xterm/css/xterm.css";
@@ -17,6 +17,8 @@ import { currentTheme, useResolvedTheme } from "./theme";
  * menu cannot reach into it directly — it gets these handles instead.
  */
 export interface TerminalCommands {
+  /** The physical pane, including an exited session whose historical grid has another size. */
+  size?(): { cols: number; rows: number } | undefined;
   selectionText?(): string;
   copySelection(): void;
   paste(): void;
@@ -115,9 +117,12 @@ export function TerminalPane({
     let disposed = false;
     let refreshCompleted = false;
     let replayAttached = false;
+    // The replay sets the terminal's size itself, part by part, until the last of it has been parsed.
+    let replaying = false;
     let resizeTimer: number | undefined;
+    let repaintPending = false;
+    let windowBlurred = false;
     const pendingOutput: Array<{ data: string; sequence: number }> = [];
-    const outputFilter = createTerminalOutputFilter();
     const reportError = (error: unknown) => {
       if (!disposed) onErrorRef.current(getErrorMessage(error));
     };
@@ -138,6 +143,9 @@ export function TerminalPane({
         },
       },
       scrollback: settingsRef.current.scrollback,
+      // Honor ED2 instead of dropping bytes inside sync blocks. xterm's native scrolling erase
+      // preserves history and the reader's viewport without leaving stale cells on screen.
+      scrollOnEraseInDisplay: true,
       theme: terminalTheme(currentTheme()),
     });
     terminalInstanceRef.current = terminal;
@@ -159,8 +167,7 @@ export function TerminalPane({
       : null;
 
     const writeOutput = (data: string) => {
-      const filtered = outputFilter.write(data);
-      if (filtered) terminal.write(filtered);
+      if (data) terminal.write(data);
     };
     const finishRefresh = () => {
       if (!refreshing || refreshCompleted) return;
@@ -250,19 +257,26 @@ export function TerminalPane({
       clear: () => terminal.clear(),
       focus: () => terminal.focus(),
       find: openSearch,
+      size: () => {
+        if (host.closest(".grid-pane-parked")) return undefined;
+        const size = fitAddon.proposeDimensions();
+        return size && size.cols >= 2 && size.rows >= 1 ? size : undefined;
+      },
     });
 
-    const resize = () => {
-      if (disposed) return;
+    const resize = (repaint = false) => {
+      if (disposed || replaying) return;
       // A pane parked behind a zoomed one is display:none: fitting it would shrink the PTY to xterm's
       // two-column minimum. It keeps its size, and the ResizeObserver refits it once it is shown.
       if (host.closest(".grid-pane-parked")) return;
       try {
+        const { cols, rows } = terminal;
         fitAddon.fit();
         if (!isReadOnly(sessionRef.current) && terminal.cols > 0 && terminal.rows > 0) {
-          void window.multiCliWork.terminals
-            .resize(session.id, terminal.cols, terminal.rows)
-            .catch(reportError);
+          const request = repaint && terminal.cols === cols && terminal.rows === rows
+            ? window.multiCliWork.terminals.repaint(session.id)
+            : window.multiCliWork.terminals.resize(session.id, terminal.cols, terminal.rows);
+          void request.catch(reportError);
         }
       } catch (error) {
         reportError(error);
@@ -273,11 +287,25 @@ export function TerminalPane({
       resize();
     };
 
-    const scheduleResize = () => {
+    const scheduleResize = (repaint = false) => {
+      // A layout resize already waiting in the debounce must still apply its new dimensions.
+      repaintPending = resizeTimer === undefined ? repaint : repaintPending && repaint;
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(resize, 40);
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = undefined;
+        resize(repaintPending);
+      }, 40);
     };
     scheduleResizeRef.current = scheduleResize;
+
+    const handleWindowBlur = () => { windowBlurred = true; };
+    const handleWindowFocus = () => {
+      if (!windowBlurred) return;
+      windowBlurred = false;
+      if (!isReadOnly(sessionRef.current)) scheduleResize(true);
+    };
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
 
     const inputDisposable = terminal.onData((data) => {
       if (isReadOnly(sessionRef.current)) return;
@@ -313,7 +341,7 @@ export function TerminalPane({
       if (replayAttached) writeOutput(event.data);
       else pendingOutput.push({ data: event.data, sequence: event.sequence });
     });
-    const resizeObserver = new ResizeObserver(scheduleResize);
+    const resizeObserver = new ResizeObserver(() => scheduleResize());
     resizeObserver.observe(frame);
 
     // The replay is the PTY's own output, stored at the width the PTY wrote it. A terminal still on
@@ -332,19 +360,35 @@ export function TerminalPane({
     void attachment
       .then((attachment) => {
         if (disposed) return;
-        writeOutput(attachment.replay);
+        replaying = true;
+        // write() only queues, so a size change has to wait its turn in that queue, too.
+        for (const step of splitReplay(attachment.replay)) {
+          if (step.type === "data") writeOutput(step.data);
+          else {
+            terminal.write("", () => {
+              if (!disposed) terminal.resize(step.cols, step.rows);
+            });
+          }
+        }
         replayAttached = true;
         for (const output of pendingOutput) {
           if (output.sequence > attachment.sequence) writeOutput(output.data);
         }
         pendingOutput.length = 0;
+        terminal.write("", () => {
+          if (disposed) return;
+          replaying = false;
+          setAttaching(false);
+          // Always reaches the PTY, even when the size is the one it already has: ConPTY answers by
+          // redrawing the screen, and that redraw is what repairs a frame the replay left garbled.
+          resize();
+        });
         onAttachedRef.current(attachment.session);
-        setAttaching(false);
-        scheduleResize();
         if (autoFocusRef.current) terminal.focus();
         finishRefresh();
       })
       .catch((error) => {
+        replaying = false;
         if (!disposed) setAttaching(false);
         reportError(error);
         finishRefresh();
@@ -353,6 +397,8 @@ export function TerminalPane({
     return () => {
       disposed = true;
       window.clearTimeout(resizeTimer);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
       resizeObserver.disconnect();
       host.removeEventListener("dragover", handleDragOver);
       host.removeEventListener("drop", handleDrop);

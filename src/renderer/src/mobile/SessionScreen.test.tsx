@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { sizeMarker } from "@shared/terminal-replay";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteClientMessage, RemoteServerMessage, RemoteSessionSummary } from "@shared/remote-types";
 import type { RemoteClient } from "./remote-client";
@@ -7,6 +8,7 @@ import { SessionScreen } from "./SessionScreen";
 // xterm은 jsdom에서 그려지지 않는다 — 화면이 터미널에 무엇을 붙이는지만 본다.
 const keyHandlers: Array<(event: KeyboardEvent) => boolean> = [];
 const focus = vi.fn();
+const replayHarness = vi.hoisted(() => ({ events: [] as string[], callbacks: [] as Array<() => void>, hold: false }));
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -20,8 +22,19 @@ vi.mock("@xterm/xterm", () => ({
       focus();
     }
     reset(): void {}
-    resize(): void {}
-    write(): void {}
+    resize(cols: number, rows: number): void {
+      this.cols = cols;
+      this.rows = rows;
+      replayHarness.events.push(`resize:${cols}x${rows}`);
+    }
+    write(data: string, callback?: () => void): void {
+      const parse = () => {
+        if (data) replayHarness.events.push(`write:${this.cols}x${this.rows}:${data}`);
+        callback?.();
+      };
+      if (replayHarness.hold) replayHarness.callbacks.push(parse);
+      else queueMicrotask(parse);
+    }
     scrollLines(): void {}
     dispose(): void {}
     hasSelection(): boolean {
@@ -74,6 +87,9 @@ function fakeClient() {
 }
 
 beforeEach(() => {
+  replayHarness.events.length = 0;
+  replayHarness.callbacks.length = 0;
+  replayHarness.hold = false;
   keyHandlers.length = 0;
   focus.mockClear();
 });
@@ -81,6 +97,37 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SessionScreen", () => {
+  it("parses historical sizes before restoring the latest live size, including a split CSI", async () => {
+    const { client, deliver } = fakeClient();
+    const ready = vi.fn();
+    render(<SessionScreen client={client} session={SESSION} deviceId="d" onBack={vi.fn()} onReady={ready} />);
+    replayHarness.hold = true;
+    act(() => deliver({ type: "attached", sessionId: "s1", replay: `${sizeMarker(120, 40)}WIDE\x1b[${sizeMarker(60, 20)}2JNARROW`,
+      sequence: 7, cols: 100, rows: 30, sizeOwner: "desktop" }));
+    act(() => deliver({ type: "size", sessionId: "s1", cols: 90, rows: 25, sizeOwner: "desktop" }));
+    act(() => deliver({ type: "data", sessionId: "s1", data: "LIVE", sequence: 8 }));
+    expect(replayHarness.events).toEqual([]);
+    act(() => { for (const parse of replayHarness.callbacks.splice(0)) parse(); });
+    expect(replayHarness.events).toEqual([
+      "resize:120x40", "write:120x40:WIDE\x1b[", "resize:60x20", "write:60x20:2JNARROW",
+      "resize:90x25", "write:90x25:LIVE",
+    ]);
+    await waitFor(() => expect(ready).toHaveBeenLastCalledWith(true));
+  });
+
+  it("never resizes or signals ready from callbacks after the screen closes", async () => {
+    const { client, deliver } = fakeClient();
+    const ready = vi.fn();
+    const { unmount } = render(<SessionScreen client={client} session={SESSION} deviceId="d" onBack={vi.fn()} onReady={ready} />);
+    replayHarness.hold = true;
+    act(() => deliver({ type: "attached", sessionId: "s1", replay: `${sizeMarker(120, 40)}WIDE`,
+      sequence: 7, cols: 100, rows: 30, sizeOwner: "desktop" }));
+    unmount();
+    act(() => { for (const parse of replayHarness.callbacks.splice(0)) parse(); });
+    expect(replayHarness.events.filter(event => event.startsWith("resize:"))).toEqual([]);
+    expect(ready).not.toHaveBeenCalledWith(true);
+  });
+
   it("leaves the phone screen as it was: its own size toggle, tools open, keys untouched", () => {
     render(<SessionScreen client={fakeClient().client} session={SESSION} deviceId="d" onBack={vi.fn()} />);
     expect(screen.getByRole("button", { name: "📱 폰 크기로" })).toBeInTheDocument();

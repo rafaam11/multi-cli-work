@@ -7,6 +7,7 @@ import type {
   TerminalEvent,
   TerminalStatus,
 } from "../../shared/terminal-types";
+import { stripSizeMarkers } from "../../shared/terminal-replay";
 import type { BoardService } from "../board/board-service";
 import type { DeliveryQueue, DeliveryRecord } from "./delivery-queue";
 
@@ -266,7 +267,7 @@ async function read(args: Record<string, unknown>, context: ControlCommandContex
     }
     lines = Math.min(args.lines, MAX_READ_LINES);
   }
-  const replay = await context.readReplay(sessionId);
+  const replay = stripSizeMarkers(await context.readReplay(sessionId));
   const text = replay.split(/\r?\n/).slice(-lines).join("\n");
   return { sessionId, text };
 }

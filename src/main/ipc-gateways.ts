@@ -157,6 +157,7 @@ export interface SessionIndicatorsGateway {
 
 export interface TerminalSizeGateway {
   desktopResize(sessionId: string, cols: number, rows: number): Promise<void>;
+  desktopRepaint(sessionId: string): Promise<void>;
   /** 원격 기기가 크기를 가졌다면 데스크톱의 마지막 크기로 되찾는다. */
   desktopInput(sessionId: string): Promise<void>;
   deviceOwners(): Promise<TerminalSizeOwner[]>;

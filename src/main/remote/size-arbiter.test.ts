@@ -12,6 +12,38 @@ function arbiter() {
 }
 
 describe("TerminalSizeArbiter", () => {
+  it("repaints at the last desktop size without changing state or publishing it", async () => {
+    const { apply, sizes, changes } = arbiter();
+    sizes.hostStarted("s", 120, 40);
+    const before = sizes.current("s");
+    changes.length = 0;
+    await sizes.desktopRepaint("s");
+    expect(apply).toHaveBeenCalledExactlyOnceWith("s", 120, 40);
+    expect(sizes.current("s")).toEqual(before);
+    expect(changes).toEqual([]);
+  });
+
+  it("leaves a device-owned session alone on desktop repaint", async () => {
+    const { apply, sizes, changes } = arbiter();
+    sizes.hostStarted("s", 120, 40);
+    await sizes.deviceResize("phone", "s", 45, 30);
+    apply.mockClear();
+    changes.length = 0;
+    await sizes.desktopRepaint("s");
+    expect(apply).not.toHaveBeenCalled();
+    expect(sizes.current("s")).toEqual({ cols: 45, rows: 30, owner: "phone" });
+    expect(changes).toEqual([]);
+  });
+
+  it("does not repaint a session without a recorded desktop size or after it is forgotten", async () => {
+    const { apply, sizes } = arbiter();
+    await sizes.desktopRepaint("unknown");
+    sizes.hostStarted("s", 120, 40);
+    sizes.forget("s");
+    await sizes.desktopRepaint("s");
+    expect(apply).not.toHaveBeenCalled();
+  });
+
   it("passes desktop resizes straight through while the desktop owns the size", async () => {
     const { apply, sizes } = arbiter();
     await sizes.desktopResize("s", 120, 40);
@@ -55,9 +87,24 @@ describe("TerminalSizeArbiter", () => {
 
   it("a desktop resize reclaims the size from a device", async () => {
     const { sizes } = arbiter();
+    sizes.hostStarted("s", 120, 40);
     await sizes.deviceResize("phone", "s", 45, 30);
     await sizes.desktopResize("s", 100, 30);
     expect(sizes.current("s")).toEqual({ cols: 100, rows: 30, owner: "desktop" });
+  });
+
+  it("does not reclaim a device's size on a same-size refit or first desktop measurement", async () => {
+    const { sizes, apply, changes } = arbiter();
+    await sizes.deviceResize("phone", "s", 45, 30);
+    apply.mockClear();
+    changes.length = 0;
+    await sizes.desktopResize("s", 120, 40);
+    await sizes.desktopResize("s", 120, 40);
+    expect(apply).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+    expect(sizes.current("s")).toEqual({ cols: 45, rows: 30, owner: "phone" });
+    await sizes.desktopResize("s", 100, 40);
+    expect(sizes.current("s")).toEqual({ cols: 100, rows: 40, owner: "desktop" });
   });
 
   it("only the owning device can release, and release restores the desktop size", async () => {

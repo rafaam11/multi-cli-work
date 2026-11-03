@@ -28,7 +28,7 @@ export function encodeComposerInput(text: string): string {
  * replay와 실시간 출력을 이어 붙이는 문. attached 전의 출력은 모아 두었다가 replay 뒤에
  * sequence가 더 큰 것만 쓴다 — 데스크톱 TerminalPane과 같은 규칙.
  */
-export function createReplayGate(write: (data: string) => void) {
+export function createReplayGate(write: (data: string) => void, writeReplay = write) {
   let lastSequence: number | null = null;
   const pending: Array<{ data: string; sequence: number }> = [];
   return {
@@ -37,7 +37,7 @@ export function createReplayGate(write: (data: string) => void) {
       pending.length = 0;
     },
     attached(replay: string, sequence: number) {
-      write(replay);
+      writeReplay(replay);
       lastSequence = sequence;
       for (const output of pending) {
         if (output.sequence > lastSequence) {

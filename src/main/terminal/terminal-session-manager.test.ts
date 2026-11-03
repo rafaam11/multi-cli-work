@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from "vitest";
+import { sizeMarker, stripSizeMarkers } from "../../shared/terminal-replay";
 import type { TerminalLaunchSpec } from "../../shared/terminal-types";
 import {
   OutputRingBuffer,
@@ -107,7 +108,7 @@ describe("TerminalSessionManager", () => {
     first.emitExit(2);
     first.emitData("stale");
     expect(events).not.toHaveBeenCalled();
-    expect(manager.attach("session-1").replay).toBe("");
+    expect(stripSizeMarkers(manager.attach("session-1").replay)).toBe("");
     expect(second.kill).not.toHaveBeenCalled();
     manager.release("session-1", "new");
     expect(manager.attach("session-1").session.status).toBe("starting");
@@ -116,10 +117,10 @@ describe("TerminalSessionManager", () => {
     expect(() => manager.attach("session-1")).toThrow(/Unknown terminal/);
   });
   it("seeds restored output into the bounded replay buffer", () => {
-    const manager = new TerminalSessionManager({ spawn: () => new FakePty() }, () => undefined, 12);
+    const manager = new TerminalSessionManager({ spawn: () => new FakePty() }, () => undefined, 64);
     manager.create({ ...launchSpec(), initialReplay: "old history\n" });
 
-    expect(manager.attach("session-1").replay).toBe("old history\n");
+    expect(stripSizeMarkers(manager.attach("session-1").replay)).toBe("old history\n");
   });
   it("creates a session and publishes output and lifecycle events", () => {
     const pty = new FakePty();
@@ -187,10 +188,89 @@ describe("TerminalSessionManager", () => {
     pty.emitData("7890AB");
 
     const attachment = manager.attach("session-1");
+    const output = stripSizeMarkers(attachment.replay);
 
-    expect(attachment.replay).toBe("7890AB");
+    expect(output).toBe("7890AB");
     expect(attachment.sequence).toBe(2);
-    expect(Buffer.byteLength(attachment.replay)).toBeLessThanOrEqual(10);
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(10);
+  });
+
+  it("records the width output was written at, in order with that output", () => {
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    manager.create({ ...launchSpec(), initialReplay: "history" });
+
+    pty.emitData("wide");
+    manager.resize("session-1", 120, 40);
+    pty.emitData("narrow");
+
+    expect(manager.attach("session-1").replay).toBe(
+      `history${sizeMarker(100, 32)}wide${sizeMarker(120, 40)}narrow`,
+    );
+  });
+
+  it("still reaches the PTY on a same-size resize, but records nothing for it", () => {
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    manager.create(launchSpec());
+
+    // ConPTY repaints on this call, which is what repairs a damaged full-screen frame.
+    manager.resize("session-1", 100, 32);
+
+    expect(pty.resize).toHaveBeenCalledWith(100, 32);
+    expect(manager.attach("session-1").replay).toBe(sizeMarker(100, 32));
+  });
+
+  it("records nothing for a resize the PTY did not take", () => {
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    manager.create(launchSpec());
+
+    pty.resize.mockImplementationOnce(() => { throw new Error("Cannot resize a pty that has already exited"); });
+    manager.resize("session-1", 120, 40);
+    expect(manager.attach("session-1").replay).toBe(sizeMarker(100, 32));
+
+    pty.emitExit(1);
+    manager.resize("session-1", 90, 20);
+    expect(manager.attach("session-1").replay).toBe(sizeMarker(100, 32));
+  });
+
+  it("tells the coordinator about each size, so the log can record it too", () => {
+    const pty = new FakePty();
+    const events = vi.fn();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, events);
+
+    manager.create({ ...launchSpec(), generation: "generation-1" });
+    manager.resize("session-1", 100, 32);
+    manager.resize("session-1", 120, 40);
+
+    const sizes = events.mock.calls.flatMap(([event]) => (event.type === "size" ? [event] : []));
+    expect(sizes).toEqual([
+      { type: "size", sessionId: "session-1", cols: 100, rows: 32, generation: "generation-1" },
+      { type: "size", sessionId: "session-1", cols: 120, rows: 40, generation: "generation-1" },
+    ]);
+  });
+
+  it("does not count a size record as output a renderer could have missed", () => {
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined);
+    manager.create(launchSpec());
+
+    pty.emitData("one");
+    manager.resize("session-1", 120, 40);
+
+    expect(manager.attach("session-1").sequence).toBe(1);
+  });
+
+  it("still knows the last size after the output around it was dropped", () => {
+    const pty = new FakePty();
+    const manager = new TerminalSessionManager({ spawn: () => pty }, () => undefined, 40);
+    manager.create(launchSpec());
+    manager.resize("session-1", 120, 40);
+
+    pty.emitData("x".repeat(40));
+
+    expect(manager.attach("session-1").replay).toBe(`${sizeMarker(120, 40)}${"x".repeat(40)}`);
   });
 
   it("kills a running session and rejects unknown session ids", () => {
@@ -297,5 +377,65 @@ describe("OutputRingBuffer", () => {
     expect(Buffer.byteLength(buffer.toString())).toBeLessThanOrEqual(8);
     expect(buffer.toString()).not.toContain("�");
     expect(buffer.toString()).toBe("나다");
+  });
+
+  it("keeps the newest part of a restored history when later output overflows the limit", () => {
+    const buffer = new OutputRingBuffer(200 * 1024);
+    const recentHistory = "b".repeat(50 * 1024);
+
+    buffer.append(`${"a".repeat(150 * 1024)}${recentHistory}`);
+    buffer.append("new output");
+
+    expect(buffer.toString().endsWith(`${recentHistory}new output`)).toBe(true);
+    expect(Buffer.byteLength(buffer.toString())).toBeLessThanOrEqual(200 * 1024);
+  });
+
+  it("does not leave half a surrogate pair behind when part of a large chunk is dropped", () => {
+    const buffer = new OutputRingBuffer(100 * 1024);
+
+    // The leading x puts the pairs off the even offsets a fixed-size split would land on.
+    buffer.append(`x${"🙂".repeat(40 * 1024)}`);
+
+    const replay = buffer.toString();
+    expect(replay.length).toBeGreaterThan(0);
+    // A lone surrogate does not survive the round trip. Compared as a boolean to keep failures readable.
+    expect(Buffer.from(replay).toString("utf8") === replay).toBe(true);
+  });
+
+  it("still replays into the modes that output it dropped had switched on", () => {
+    const buffer = new OutputRingBuffer(100);
+
+    buffer.append("\u001b[?1049h\u001b[?2004h");
+    buffer.append("a".repeat(60));
+    buffer.append("b".repeat(60));
+
+    expect(buffer.toString()).toBe(`\u001b[?1049h\u001b[?2004h${"b".repeat(60)}`);
+  });
+
+  it("keeps those modes when one chunk alone overflows the limit", () => {
+    const buffer = new OutputRingBuffer(100);
+
+    buffer.append(`\u001b[?1049h${"x".repeat(200)}`);
+
+    expect(buffer.toString()).toBe(`\u001b[?1049h${"x".repeat(100)}`);
+  });
+
+  it("assembles a mode switch split across chunks it dropped one by one", () => {
+    const buffer = new OutputRingBuffer(10);
+
+    buffer.append("\u001b[?10");
+    buffer.append("49h");
+    buffer.append("abcdefgh");
+
+    expect(buffer.toString()).toBe("\u001b[?1049habcdefgh");
+  });
+
+  it("does not start the replay in the middle of a sequence", () => {
+    const buffer = new OutputRingBuffer(20);
+
+    buffer.append(`${"a".repeat(10)}\u001b[3`);
+    buffer.append(`1m${"k".repeat(18)}`);
+
+    expect(buffer.toString()).toBe("k".repeat(18));
   });
 });

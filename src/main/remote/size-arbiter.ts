@@ -41,10 +41,24 @@ export class TerminalSizeArbiter {
   }
 
   async desktopResize(sessionId: string, cols: number, rows: number): Promise<void> {
+    const previous = this.desktop.get(sessionId);
+    const changed = previous !== undefined && (previous.cols !== cols || previous.rows !== rows);
+    if (this.owners.has(sessionId) && !changed) {
+      // An attach/refit only reports the desktop's size. Only a change to that size reclaims it.
+      this.desktop.set(sessionId, { cols, rows });
+      return;
+    }
     await this.resize(sessionId, cols, rows);
     this.desktop.set(sessionId, { cols, rows });
     this.owners.delete(sessionId);
     this.emit(sessionId);
+  }
+
+  /** Redraw at the recorded desktop size without changing ownership or broadcasting a size change. */
+  async desktopRepaint(sessionId: string): Promise<void> {
+    if (this.owners.has(sessionId)) return;
+    const size = this.desktop.get(sessionId);
+    if (size) await this.apply(sessionId, size.cols, size.rows);
   }
 
   /**

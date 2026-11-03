@@ -95,6 +95,8 @@ export type TerminalWorkerEvent = (
   | { type: "data"; sessionId: string; data: string; sequence: number }
   | { type: "status"; sessionId: string; status: TerminalStatus }
   | { type: "exit"; sessionId: string; exitCode: number; signal?: number }
+  // The PTY took this size. Only the session log needs it, to record it in order with the output.
+  | { type: "size"; sessionId: string; cols: number; rows: number }
 ) & { generation?: string };
 
 /**
@@ -103,7 +105,7 @@ export type TerminalWorkerEvent = (
  * itself (a lazy auto-resume in the split pane, a jk-coding-cli spawn) so its list stays complete.
  */
 export type TerminalEvent =
-  | TerminalWorkerEvent
+  | Exclude<TerminalWorkerEvent, { type: "size" }>
   | { type: "title"; sessionId: string; title: string }
   | { type: "created"; sessionId: string; session: TerminalSessionView }
   // The session is gone for good — removed here, from a folder teardown, or by a remote client.

@@ -22,6 +22,9 @@ const factory: ManagedPtyFactory = {
       cols: options.cols,
       rows: options.rows,
       useConpty: process.platform === "win32",
+      // The bundled backend avoids resize-time line loss, but does not repaint on a same-size
+      // resize. Keep the measured recovery behavior by default; allow isolated diagnostic runs.
+      useConptyDll: process.env.MULTI_CLI_WORK_CONPTY === "bundled",
     });
   },
 };

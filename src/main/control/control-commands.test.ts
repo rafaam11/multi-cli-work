@@ -312,6 +312,18 @@ describe("read", () => {
     expect(response).toEqual({ ok: true, result: { sessionId: "session-1", text: "line2\nline3" } });
   });
 
+  it("does not hand the app's size records to the session reading the scrollback", async () => {
+    const { context } = makeContext();
+    context.readReplay = vi.fn(async () => `line1\n\u001b]7719;120;40\u0007line2\nline3\u001b]7719;80;24\u0007`);
+
+    const response = await handleControlCommand(
+      { ...TOKEN, command: "read", args: { sessionId: "session-1", lines: 2 } },
+      context,
+    );
+
+    expect(response).toEqual({ ok: true, result: { sessionId: "session-1", text: "line2\nline3" } });
+  });
+
   it("rejects a non-positive line count", async () => {
     const { context } = makeContext();
     const response = await handleControlCommand(

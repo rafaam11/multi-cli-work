@@ -1302,6 +1302,7 @@ export function App() {
     refreshVisibleSessions,
     removeSessionById,
   } = createSessionActions({
+    terminalSize: (sessionId) => terminalCommands.current.get(sessionId)?.size?.(),
     agents,
     isProjectMissing,
     setPendingAction,

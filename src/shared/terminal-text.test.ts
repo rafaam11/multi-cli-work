@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sizeMarker } from "./terminal-replay";
 import { stripTerminalControls } from "./terminal-text";
 
 describe("stripTerminalControls", () => {
@@ -11,6 +12,10 @@ describe("stripTerminalControls", () => {
   it("drops OSC titles, hyperlinks and notifications whether ended by BEL or ST", () => {
     const hyperlink = "\u001b]8;;https://example.com\u001b\\link\u001b]8;;\u001b\\";
     expect(stripTerminalControls(`\u001b]0;title\u0007${hyperlink}\u001b]9;ping\u0007`)).toBe("link");
+  });
+
+  it("leaves no trace of the size records in a session log, for the text read from one", () => {
+    expect(stripTerminalControls(`one${sizeMarker(120, 40)}two`)).toBe("onetwo");
   });
 
   it("drops private modes, short escapes and stray control bytes, keeping tabs", () => {

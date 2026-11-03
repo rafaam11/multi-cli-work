@@ -5,7 +5,7 @@ import { AArrowDown, AArrowUp, CircleStop, Keyboard, Maximize2, Minimize2, Pin, 
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { REMOTE_SESSION_NAME_MAX, type RemoteSessionSummary } from "@shared/remote-types";
 import { DEFAULT_SETTINGS } from "@shared/settings-types";
-import { createTerminalOutputFilter } from "../terminal-output-filter";
+import { splitReplay } from "@shared/terminal-replay";
 import { createAutoFit, type AutoFit, type AutoFitState } from "./auto-fit";
 import { TERMINAL_FONT_INDEX, TERMINAL_FONT_SIZES, type TerminalSize } from "./initial-size";
 import type { RemoteClient } from "./remote-client";
@@ -136,6 +136,7 @@ export function SessionScreen({
       fontSize: FONT_SIZES[TERMINAL_FONT_INDEX],
       fontFamily: 'ui-monospace, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace',
       scrollback: DEFAULT_SETTINGS.terminal.scrollback,
+      scrollOnEraseInDisplay: true,
       cursorBlink: false,
       theme: terminalTheme(currentTheme()),
     });
@@ -185,10 +186,29 @@ export function SessionScreen({
     setFitState("fitting");
     if (wide && focusedRef.current) terminal.focus();
 
-    let outputFilter = createTerminalOutputFilter();
-    const gate = createReplayGate((data) => {
-      const filtered = outputFilter.write(data);
-      if (filtered) terminal.write(filtered);
+    let replaying = false;
+    let currentSize: { cols: number | null; rows: number | null } = { cols: null, rows: null };
+    const writeOutput = (data: string) => {
+      if (data) terminal.write(data);
+    };
+    const gate = createReplayGate(writeOutput, (replay) => {
+      replaying = true;
+      const revision = attachment;
+      const current = () => live && revision === attachment;
+      for (const step of splitReplay(replay)) {
+        if (step.type === "data") writeOutput(step.data);
+        else terminal.write("", () => {
+          if (current()) terminal.resize(step.cols, step.rows);
+        });
+      }
+      // This barrier precedes gate.pending and subsequent live data. The current PTY dimensions
+      // can have changed while its old frames were parsing, so restore the latest size here.
+      terminal.write("", () => {
+        if (!current()) return;
+        replaying = false;
+        applySize(currentSize.cols, currentSize.rows);
+        requestAnimationFrame(() => { if (current()) onReadyRef.current?.(true); });
+      });
     });
     // 따라 그리는 그리드의 포커스 없는 칸은 호스트 PTY 크기 그대로 그리고, 칸에 들어가게 줄인다 — 넘쳐서
     // 잘리거나 스크롤바가 생기지 않게. 포커스 칸은 크기를 가져와 맞추므로 그대로 둔다.
@@ -251,21 +271,19 @@ export function SessionScreen({
     const offMessage = client.onMessage((message) => {
       if (!("sessionId" in message) || message.sessionId !== session.id) return;
       if (message.type === "attached") {
-        terminal.reset();
-        outputFilter = createTerminalOutputFilter();
+        attachment++;
+        const revision = attachment;
+        terminal.write("", () => { if (live && revision === attachment) terminal.reset(); });
         terminal.options.scrollback = message.scrollback ?? DEFAULT_SETTINGS.terminal.scrollback;
-        applySize(message.cols, message.rows);
+        currentSize = { cols: message.cols, rows: message.rows };
         if (autoFit) autoFit.attached();
         else giveBackToggle(message.sizeOwner);
         gate.attached(message.replay, message.sequence);
-        const revision = attachment;
-        terminal.write("", () => requestAnimationFrame(() => {
-          if (live && revision === attachment) onReadyRef.current?.(true);
-        }));
       } else if (message.type === "data") {
         gate.data(message.data, message.sequence);
       } else if (message.type === "size") {
-        applySize(message.cols, message.rows);
+        currentSize = { cols: message.cols, rows: message.rows };
+        if (!replaying) applySize(message.cols, message.rows);
         if (autoFit) autoFit.owner(message.sizeOwner);
         else giveBackToggle(message.sizeOwner);
       }

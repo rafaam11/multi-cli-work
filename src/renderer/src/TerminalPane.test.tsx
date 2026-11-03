@@ -3,6 +3,7 @@ import type { TerminalSessionView } from "@shared/api-types";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "@shared/settings-types";
+import { sizeMarker } from "@shared/terminal-replay";
 import { TerminalPane } from "./TerminalPane";
 
 /**
@@ -30,6 +31,9 @@ const terminalHarness = vi.hoisted(() => ({
   searches: [] as string[],
   searchResult: true,
   focused: 0,
+  holdWrites: false,
+  drainWrites: [] as Array<() => void>,
+  failWriteOf: null as string | null,
 }));
 
 vi.mock("@xterm/xterm", () => ({
@@ -38,9 +42,28 @@ vi.mock("@xterm/xterm", () => ({
     rows = 24;
     paste = vi.fn();
     dispose = vi.fn();
-    write = vi.fn((data: string) => {
-      terminalHarness.events.push(`write:${this.cols}x${this.rows}:${data}`);
+    private readonly queuedWrites: Array<{ data: string; callback?: () => void }> = [];
+    // Like the real one, write() only queues. Parsing, and so the callback, comes later: a resize
+    // called straight after a write lands before that write, not after it.
+    write = vi.fn((data: string, callback?: () => void) => {
+      if (data === terminalHarness.failWriteOf) throw new Error("write failed");
+      this.queuedWrites.push({ data, callback });
+      if (this.queuedWrites.length > 1) return;
+      const drain = () => {
+        for (const queued of this.queuedWrites.splice(0)) {
+          if (queued.data) terminalHarness.events.push(`write:${this.cols}x${this.rows}:${queued.data}`);
+          queued.callback?.();
+        }
+      };
+      if (terminalHarness.holdWrites) terminalHarness.drainWrites.push(drain);
+      else queueMicrotask(drain);
     });
+
+    resize(cols: number, rows: number) {
+      terminalHarness.events.push(`terminal-resize:${cols}x${rows}`);
+      this.cols = cols;
+      this.rows = rows;
+    }
 
     options: {
       fontSize?: number;
@@ -106,6 +129,7 @@ vi.mock("@xterm/addon-search", () => ({
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class FitAddonMock {
     private terminal: { cols: number; rows: number } | null = null;
+    proposeDimensions() { return { cols: terminalHarness.fittedCols, rows: terminalHarness.fittedRows }; }
 
     activate(terminal: { cols: number; rows: number }) {
       this.terminal = terminal;
@@ -175,6 +199,9 @@ beforeEach(() => {
   terminalHarness.searches.length = 0;
   terminalHarness.searchResult = true;
   terminalHarness.focused = 0;
+  terminalHarness.holdWrites = false;
+  terminalHarness.drainWrites.length = 0;
+  terminalHarness.failWriteOf = null;
   vi.stubGlobal(
     "ResizeObserver",
     class ResizeObserverMock {
@@ -206,6 +233,7 @@ beforeEach(() => {
       resize: vi.fn(async (_id: string, cols: number, rows: number) => {
         terminalHarness.events.push(`resize:${cols}x${rows}`);
       }),
+      repaint: vi.fn().mockResolvedValue(undefined),
       onEvent: vi.fn(() => () => undefined),
     },
   } as unknown as typeof window.multiCliWork;
@@ -320,6 +348,259 @@ describe("TerminalPane replay sizing", () => {
     await waitFor(() => expect(window.multiCliWork.terminals.attach).toHaveBeenCalled());
     expect(window.multiCliWork.terminals.resize).not.toHaveBeenCalled();
     expect(terminalHarness.events).toContain("write:200x50:REPLAY");
+  });
+});
+
+describe("TerminalPane window return", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
+  const returnToWindow = () => {
+    fireEvent.blur(window);
+    fireEvent.focus(window);
+  };
+  const clearRequests = async () => {
+    await settle();
+    vi.mocked(window.multiCliWork.terminals.resize).mockClear();
+    vi.mocked(window.multiCliWork.terminals.repaint).mockClear();
+    terminalHarness.events.length = 0;
+  };
+
+  it("repaints once after returning from another window, but not on initial or repeated focus", async () => {
+    renderPane();
+    await clearRequests();
+    fireEvent.focus(window);
+    await settle();
+    expect(window.multiCliWork.terminals.repaint).not.toHaveBeenCalled();
+    returnToWindow();
+    returnToWindow();
+    await settle();
+    fireEvent.focus(window);
+    await settle();
+    expect(window.multiCliWork.terminals.repaint).toHaveBeenCalledExactlyOnceWith(session.id);
+    expect(window.multiCliWork.terminals.resize).not.toHaveBeenCalled();
+    expect(terminalHarness.events).toEqual(["fit"]);
+  });
+
+  it("resizes if fitting on return finds that the pane has changed size", async () => {
+    renderPane();
+    await clearRequests();
+    terminalHarness.fittedCols = 100;
+    returnToWindow();
+    await settle();
+    expect(window.multiCliWork.terminals.resize).toHaveBeenCalledExactlyOnceWith(session.id, 100, 50);
+    expect(window.multiCliWork.terminals.repaint).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pending layout resize when a focus return joins its debounce", async () => {
+    renderPane();
+    await clearRequests();
+    terminalHarness.resizeObservers.forEach((listener) => listener([], {} as ResizeObserver));
+    returnToWindow();
+    await settle();
+    expect(window.multiCliWork.terminals.resize).toHaveBeenCalledExactlyOnceWith(session.id, 200, 50);
+    expect(window.multiCliWork.terminals.repaint).not.toHaveBeenCalled();
+  });
+
+  it("skips panes parked behind a zoomed pane", async () => {
+    const { container } = renderPane();
+    await clearRequests();
+    container.classList.add("grid-pane-parked");
+    returnToWindow();
+    await settle();
+    expect(terminalHarness.events).toEqual([]);
+    expect(window.multiCliWork.terminals.repaint).not.toHaveBeenCalled();
+    expect(window.multiCliWork.terminals.resize).not.toHaveBeenCalled();
+  });
+
+  it("skips exited sessions", async () => {
+    renderPane({ session: { ...session, status: "exited", exitCode: 0 } });
+    await clearRequests();
+    returnToWindow();
+    await settle();
+    expect(terminalHarness.events).toEqual([]);
+    expect(window.multiCliWork.terminals.repaint).not.toHaveBeenCalled();
+    expect(window.multiCliWork.terminals.resize).not.toHaveBeenCalled();
+  });
+
+  it("removes window handlers and cancels a pending repaint when closed", async () => {
+    const { unmount } = render(<TerminalPane session={session} settings={DEFAULT_SETTINGS.terminal}
+      shiftEnterBytes={null} refreshRequest={0} onAttached={vi.fn()} onRefreshComplete={vi.fn()} onError={vi.fn()} />);
+    await clearRequests();
+    returnToWindow();
+    unmount();
+    returnToWindow();
+    await settle();
+    expect(terminalHarness.events).toEqual([]);
+    expect(window.multiCliWork.terminals.repaint).not.toHaveBeenCalled();
+    expect(window.multiCliWork.terminals.resize).not.toHaveBeenCalled();
+  });
+});
+
+describe("TerminalPane sized replay", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
+  const fireResizeObservers = () =>
+    terminalHarness.resizeObservers.forEach((listener) => listener([], {} as ResizeObserver));
+  const attachesTo = (replay: string, sequence = 0) =>
+    vi.mocked(window.multiCliWork.terminals.attach).mockImplementationOnce(async () => {
+      terminalHarness.events.push("attach");
+      return { session, replay, sequence };
+    });
+  const queuedWrites = async () => {
+    await waitFor(() => expect(terminalHarness.drainWrites.length).toBeGreaterThan(0));
+  };
+  const parseWrites = () =>
+    act(() => {
+      terminalHarness.holdWrites = false;
+      for (const drain of terminalHarness.drainWrites.splice(0)) drain();
+    });
+
+  it("writes each part of the replay at the size it was written at", async () => {
+    attachesTo(`${sizeMarker(120, 40)}WIDE${sizeMarker(60, 20)}NARROW`);
+
+    renderPane();
+
+    await waitFor(() => expect(terminalHarness.events).toContain("write:60x20:NARROW"));
+    const replayed = terminalHarness.events.filter((event) => /^(terminal-resize|write):/.test(event));
+    expect(replayed).toEqual([
+      "terminal-resize:120x40",
+      "write:120x40:WIDE",
+      "terminal-resize:60x20",
+      "write:60x20:NARROW",
+    ]);
+  });
+
+  it("fits the pane after the last part of the replay, not before it", async () => {
+    attachesTo(`${sizeMarker(120, 40)}WIDE`);
+
+    renderPane();
+
+    await waitFor(() => expect(terminalHarness.events.at(-1)).toBe("resize:200x50"));
+    const wide = terminalHarness.events.indexOf("write:120x40:WIDE");
+    expect(wide).toBeGreaterThan(-1);
+    expect(terminalHarness.events.slice(wide + 1)).toEqual(["fit", "resize:200x50"]);
+  });
+
+  it("asks the PTY to redraw after a replay that did not change the size, which is what repairs a garbled screen", async () => {
+    renderPane();
+
+    await waitFor(() => expect(terminalHarness.events).toContain("write:200x50:REPLAY"));
+    await waitFor(() => expect(terminalHarness.events.at(-1)).toBe("resize:200x50"));
+    expect(terminalHarness.events.indexOf("write:200x50:REPLAY")).toBeLessThan(
+      terminalHarness.events.lastIndexOf("resize:200x50"),
+    );
+  });
+
+  it("leaves the terminal at the replay's sizes when the pane changes while it is still being parsed", async () => {
+    terminalHarness.holdWrites = true;
+    attachesTo(`${sizeMarker(120, 40)}WIDE`);
+    renderPane();
+    await queuedWrites();
+    await settle();
+    terminalHarness.events.length = 0;
+
+    fireResizeObservers();
+    await settle();
+    expect(terminalHarness.events).toEqual([]);
+
+    parseWrites();
+    await waitFor(() => expect(terminalHarness.events.at(-1)).toBe("resize:200x50"));
+    expect(terminalHarness.events).toContain("write:120x40:WIDE");
+  });
+
+  it("says it is connecting until the replay has been parsed", async () => {
+    terminalHarness.holdWrites = true;
+    renderPane();
+    await queuedWrites();
+    await settle();
+    expect(screen.getByText("세션 연결 중")).toBeInTheDocument();
+
+    parseWrites();
+
+    await waitFor(() => expect(screen.queryByText("세션 연결 중")).not.toBeInTheDocument());
+  });
+
+  it("keeps output that arrives during the replay behind it", async () => {
+    terminalHarness.holdWrites = true;
+    attachesTo(`${sizeMarker(120, 40)}WIDE`, 7);
+    renderPane();
+    await queuedWrites();
+    await settle();
+    const listener = vi.mocked(window.multiCliWork.terminals.onEvent).mock.calls[0][0];
+
+    listener({ type: "data", sessionId: session.id, data: "LIVE", sequence: 8 });
+    parseWrites();
+
+    // The PTY was already at the pane's size when it produced this, so that is the size to read it at.
+    await waitFor(() => expect(terminalHarness.events).toContain("write:200x50:LIVE"));
+    expect(terminalHarness.events.indexOf("write:120x40:WIDE")).toBeLessThan(
+      terminalHarness.events.indexOf("write:200x50:LIVE"),
+    );
+  });
+
+  it("does nothing to a terminal that was closed before its replay finished", async () => {
+    terminalHarness.holdWrites = true;
+    attachesTo(`${sizeMarker(120, 40)}WIDE`);
+    const { unmount } = render(
+      <TerminalPane
+        session={session}
+        settings={DEFAULT_SETTINGS.terminal}
+        shiftEnterBytes={null}
+        refreshRequest={0}
+        onAttached={vi.fn()}
+        onRefreshComplete={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+    await queuedWrites();
+    await settle();
+    unmount();
+    terminalHarness.events.length = 0;
+
+    // The real xterm still calls these back after dispose().
+    parseWrites();
+    await settle();
+
+    expect(terminalHarness.events.filter((event) => !event.startsWith("write:"))).toEqual([]);
+  });
+
+  it("keeps saying it is connecting when the replay of the terminal it replaced finishes first", async () => {
+    terminalHarness.holdWrites = true;
+    const pane = (refreshRequest: number) => (
+      <TerminalPane
+        session={session}
+        settings={DEFAULT_SETTINGS.terminal}
+        shiftEnterBytes={null}
+        refreshRequest={refreshRequest}
+        onAttached={vi.fn()}
+        onRefreshComplete={vi.fn()}
+        onError={vi.fn()}
+      />
+    );
+    const { rerender } = render(pane(0));
+    await queuedWrites();
+    rerender(pane(1));
+    await waitFor(() => expect(terminalHarness.drainWrites).toHaveLength(2));
+    await settle();
+
+    // The real xterm still calls these back after dispose().
+    const [parseReplacedTerminal] = terminalHarness.drainWrites;
+    act(() => parseReplacedTerminal());
+    await settle();
+
+    expect(screen.getByText("세션 연결 중")).toBeInTheDocument();
+  });
+
+  it("goes on fitting the pane after a replay that could not be written", async () => {
+    terminalHarness.failWriteOf = "WIDE";
+    attachesTo(`${sizeMarker(120, 40)}WIDE`);
+    const { onError } = renderPane();
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("write failed"));
+    await settle();
+    vi.mocked(window.multiCliWork.terminals.resize).mockClear();
+
+    fireResizeObservers();
+    await settle();
+
+    expect(window.multiCliWork.terminals.resize).toHaveBeenCalledWith(session.id, 200, 50);
   });
 });
 
