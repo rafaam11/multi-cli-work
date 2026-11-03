@@ -1,4 +1,4 @@
-import { Download, Eye, EyeOff, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Copy, Download, Eye, EyeOff, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 import { SHELF_TEXT } from "./shelves";
 
@@ -17,6 +17,8 @@ export interface SessionContextMenuProps {
   onRefresh(): void;
   onRename(): void;
   onResetName(): void;
+  /** Copies the session's working folder. */
+  onCopyPath(): void;
   /** Saves the scrollback as plain text. Optional so surfaces without it simply omit the item. */
   onExportLog?(): void;
   onHandoff?(): void;
@@ -35,6 +37,7 @@ export function SessionContextMenu({
   onRefresh,
   onRename,
   onResetName,
+  onCopyPath,
   onExportLog,
   onHandoff,
   onFork,
@@ -82,6 +85,10 @@ export function SessionContextMenu({
       <button type="button" role="menuitem" disabled={!canResetName} onClick={run(onResetName)}>
         <RotateCcw size={15} />
         <span>제공자 제목 사용</span>
+      </button>
+      <button type="button" role="menuitem" onClick={run(onCopyPath)}>
+        <Copy size={15} />
+        <span>경로 복사</span>
       </button>
       {onExportLog ? (
         <button type="button" role="menuitem" onClick={run(onExportLog)}>

@@ -998,6 +998,31 @@ describe("folder workspace", () => {
     await waitFor(() => expect(harness.api.projects.openOnGitHub).toHaveBeenCalledWith(atlas.id));
   });
 
+  it("copies a folder's path from the context menu", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = (await screen.findByRole("button", { name: "Atlas 폴더 선택" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
+
+    await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith(atlas.rootPath));
+  });
+
+  it("surfaces a failed path copy in the error banner", async () => {
+    const harness = createApi();
+    vi.mocked(harness.api.clipboard.writeText).mockRejectedValue(new Error("Clipboard is unavailable"));
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = (await screen.findByRole("button", { name: "Atlas 폴더 선택" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Clipboard is unavailable");
+  });
+
   it("disables the VS Code action when VS Code is not installed", async () => {
     const harness = createApi();
     vi.mocked(harness.api.providers.availability).mockResolvedValue({ vscode: false });
@@ -1448,6 +1473,20 @@ describe("folder workspace", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "스크롤백 저장…" }));
 
     await waitFor(() => expect(harness.api.terminals.exportLog).toHaveBeenCalledWith(powershellSession.id, "PowerShell"));
+  });
+
+  it("copies a session's working folder from its context menu", async () => {
+    // A working folder apart from the project root, so the copy cannot pass by using the root.
+    const cwd = "C:\\work\\atlas\\packages\\api";
+    const harness = createApi({ sessions: [{ ...powershellSession, cwd }] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: /^PowerShell 세션 열기/ });
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "경로 복사" }));
+
+    await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith(cwd));
   });
 
   it("keeps the terminal grid in a dedicated flexible workspace body", async () => {
@@ -3224,6 +3263,21 @@ describe("worktrees", () => {
     // 트리의 worktree 줄도 상세 페이지 카드와 같은 메뉴를 연다.
     fireEvent.contextMenu(within(nav).getByRole("button", { name: "feature-x worktree 선택" }));
     expect(await screen.findByRole("menu", { name: "feature-x worktree 작업" })).toBeInTheDocument();
+  });
+
+  it("copies a worktree's path from its context menu", async () => {
+    const harness = createApi({
+      worktrees: [atlasWorktree],
+      selection: { selectedProjectId: atlas.id, selectedSessionId: null },
+    });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "프로젝트" });
+    fireEvent.contextMenu(await within(nav).findByRole("button", { name: "feature-x worktree 선택" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "경로 복사" }));
+
+    await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith(atlasWorktree.path));
   });
 });
 

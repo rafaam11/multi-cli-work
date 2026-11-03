@@ -1,6 +1,6 @@
 import type { AgentId, AgentView } from "@shared/agent-types";
 import type { SessionPreset } from "@shared/preset-types";
-import { CheckCircle2, FileDiff, FolderOpen, RefreshCw, Trash2, Unlock } from "lucide-react";
+import { CheckCircle2, Copy, FileDiff, FolderOpen, RefreshCw, Trash2, Unlock } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 import { VSCodeIcon } from "./brand-icons";
 import { NewSessionMenuItems } from "./NewSessionMenuItems";
@@ -20,6 +20,7 @@ export interface WorktreeContextMenuProps {
   onStartPreset?(presetId: string): void;
   onReveal(): void;
   onOpenInEditor(): void;
+  onCopyPath(): void;
   onShowDiff(): void;
   locked?: boolean;
   stale?: boolean;
@@ -45,6 +46,7 @@ export function WorktreeContextMenu({
   onStartPreset,
   onReveal,
   onOpenInEditor,
+  onCopyPath,
   onShowDiff,
   locked = false,
   stale = false,
@@ -108,6 +110,10 @@ export function WorktreeContextMenu({
       >
         <VSCodeIcon size={15} className="brand-icon-vscode" />
         <span>VS Code에서 열기</span>
+      </button>
+      <button type="button" role="menuitem" onClick={run(onCopyPath)}>
+        <Copy size={15} />
+        <span>경로 복사</span>
       </button>
       <button type="button" role="menuitem" onClick={run(onShowDiff)}>
         <FileDiff size={15} />

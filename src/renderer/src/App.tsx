@@ -2796,6 +2796,9 @@ export function App() {
           onOpenOnGitHub={() =>
             void runProjectAction(() => window.multiCliWork.projects.openOnGitHub(contextMenu.project.id))
           }
+          onCopyPath={() =>
+            void runProjectAction(() => window.multiCliWork.clipboard.writeText(contextMenu.project.rootPath))
+          }
           onCreateWorktree={() => setWorktreeCreateProject(contextMenu.project)}
           onRename={() => {
             // 편집칸이 폴더 아래에 붙으므로, 접혀 있었다면 먼저 펴야 보인다.
@@ -2837,6 +2840,9 @@ export function App() {
           onOpenInEditor={() =>
             void runProjectAction(() => window.multiCliWork.worktrees.openInEditor(worktreeMenu.worktree.id))
           }
+          onCopyPath={() =>
+            void runProjectAction(() => window.multiCliWork.clipboard.writeText(worktreeMenu.worktree.path))
+          }
           onShowDiff={() => void showDiff({ worktree: worktreeMenu.worktree })}
           locked={Boolean(workspaceViews.find((view) => view.worktreeId === worktreeMenu.worktree.id)?.lockedReason)}
           stale={workspaceViews.find((view) => view.worktreeId === worktreeMenu.worktree.id)?.availability === "missing"}
@@ -2872,6 +2878,9 @@ export function App() {
           onRefresh={() => void refreshSession(sessionMenu.session.id)}
           onRename={() => setRenameTarget({ sessionId: sessionMenu.session.id, surface: sessionMenu.surface })}
           onResetName={() => void renameSession(sessionMenu.session.id, null)}
+          onCopyPath={() =>
+            void runProjectAction(() => window.multiCliWork.clipboard.writeText(sessionMenu.session.cwd))
+          }
           onExportLog={() => {
             const target = sessionMenu;
             void window.multiCliWork.terminals
