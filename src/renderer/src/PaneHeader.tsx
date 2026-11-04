@@ -3,6 +3,8 @@ import type { TerminalSessionView } from "@shared/api-types";
 import type { SessionIndicators, SessionProgress } from "@shared/terminal-types";
 import {
   Briefcase,
+  Check,
+  Copy,
   CircleStop,
   Folder,
   GitBranch,
@@ -18,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { MAX_LAYOUT_SLOTS } from "./grid-layouts";
 import type { PaneContext } from "./pane-context";
@@ -144,6 +147,56 @@ interface PaneHeaderProps {
   onContextMenu(event: ReactMouseEvent): void;
 }
 
+function SessionId({ id }: { id: string }) {
+  const [notice, setNotice] = useState<"copied" | "error" | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const attempt = useRef(0);
+  useEffect(() => () => {
+    clearTimeout(timer.current);
+    attempt.current += 1;
+  }, []);
+
+  async function copy() {
+    const current = ++attempt.current;
+    clearTimeout(timer.current);
+    setNotice(null);
+    try {
+      await window.multiCliWork.clipboard.writeText(id);
+      if (current !== attempt.current) return;
+      setNotice("copied");
+      timer.current = setTimeout(() => setNotice(null), 2000);
+    } catch {
+      if (current === attempt.current) setNotice("error");
+    }
+  }
+
+  return (
+    <div
+      className="pane-session-id"
+      title={`세션 ID: ${id}`}
+      draggable={false}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onDragStart={(event) => { event.preventDefault(); event.stopPropagation(); }}
+    >
+      <span>{id.length > 8 ? `${id.slice(0, 8)}…` : id}</span>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="세션 ID 복사"
+        title={`세션 ID: ${id}`}
+        onClick={(event) => { event.stopPropagation(); void copy(); }}
+      >
+        {notice === "copied" ? <Check size={12} /> : <Copy size={12} />}
+      </button>
+      <span className="pane-session-id-notice" role="status">
+        {notice === "copied" ? "복사됨" : notice === "error" ? "복사하지 못했습니다. 다시 시도하세요." : ""}
+      </span>
+    </div>
+  );
+}
+
 /**
  * Session controls live on the pane, not in the workspace header: with several terminals on screen
  * only the pane itself says which session a button acts on. Refreshing is the one exception — it
@@ -187,7 +240,10 @@ export function PaneHeader({
       onDragStart={(event) => startSessionDrag(event, session.id)}
       onContextMenu={onContextMenu}
     >
-      <PaneContextLine context={context} />
+      <div className="pane-header-context">
+        <PaneContextLine context={context} />
+        <SessionId key={session.id} id={session.id} />
+      </div>
       <div className="pane-header-main">
         <span
           className={`status-dot status-${session.status}`}

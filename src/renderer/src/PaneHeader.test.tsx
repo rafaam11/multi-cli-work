@@ -1,6 +1,6 @@
 import type { TerminalSessionView } from "@shared/api-types";
 import type { SessionIndicators } from "@shared/terminal-types";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PaneHeader } from "./PaneHeader";
 
@@ -49,7 +49,65 @@ function renderHeader(session: TerminalSessionView, indicators?: SessionIndicato
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("PaneHeader session ID", () => {
+  function clipboard() {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, "multiCliWork", {
+      configurable: true,
+      value: { clipboard: { writeText } },
+    });
+    return writeText;
+  }
+
+  it("shows an abbreviated app ID and full tooltip without folder information", () => {
+    renderHeader(makeSession({ id: "abcdefgh-123456", providerConversationId: "provider-id" }));
+    expect(screen.getByText("abcdefgh…").parentElement).toHaveAttribute("title", "세션 ID: abcdefgh-123456");
+    expect(screen.getByRole("button", { name: "세션 ID 복사" })).toHaveAttribute("title", "세션 ID: abcdefgh-123456");
+    expect(screen.queryByText("provider-id")).toBeNull();
+  });
+
+  it("copies exact IDs for separate panes, including short IDs and exited sessions", async () => {
+    const writeText = clipboard();
+    renderHeader(makeSession({ id: "12345678", status: "exited" }));
+    renderHeader(makeSession({ id: "other-session-id" }));
+    expect(screen.getByText("12345678")).toBeVisible();
+    const buttons = screen.getAllByRole("button", { name: "세션 ID 복사" });
+    buttons[0].focus();
+    expect(buttons[0]).toHaveFocus();
+    await act(async () => buttons[0].click());
+    await act(async () => fireEvent.click(buttons[1]));
+    expect(writeText.mock.calls).toEqual([["12345678"], ["other-session-id"]]);
+  });
+
+  it("shows success for two seconds and allows retry after a failure", async () => {
+    vi.useFakeTimers();
+    const writeText = clipboard().mockRejectedValueOnce(new Error("unavailable"));
+    renderHeader(makeSession());
+    const button = screen.getByRole("button", { name: "세션 ID 복사" });
+    await act(async () => fireEvent.click(button));
+    expect(screen.getByRole("status")).toHaveTextContent("복사하지 못했습니다. 다시 시도하세요.");
+    expect(button).toBeEnabled();
+    await act(async () => fireEvent.click(button));
+    expect(screen.getByRole("status")).toHaveTextContent("복사됨");
+    expect(button.querySelector(".lucide-check")).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1999));
+    expect(screen.getByRole("status")).toHaveTextContent("복사됨");
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("prevents ID dragging from reaching the header drag handle", () => {
+    const { container } = renderHeader(makeSession());
+    const id = container.querySelector(".pane-session-id")!;
+    expect(fireEvent.dragStart(id)).toBe(false);
+  });
+});
 
 describe("PaneHeader indicators", () => {
   it("draws a reported progress as a bar filled to its value", () => {

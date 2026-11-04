@@ -3748,6 +3748,46 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   padding: 2px 4px 2px 8px;
 }
 
+.pane-header-context {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.pane-header-context > .pane-context {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.pane-session-id {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-top: 3px;
+  font: var(--type-caption);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.pane-session-id-notice:not(:empty) {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  right: 0;
+  max-width: calc(100vw - 24px);
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  white-space: normal;
+  width: max-content;
+}
+
 .grid-pane.status-working > .pane-header {
   background: color-mix(in srgb, var(--teal) 10%, var(--bg));
 }
