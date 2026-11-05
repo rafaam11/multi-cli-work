@@ -9,7 +9,7 @@ import { droppedPathsAsPromptText } from "./drop-paths";
 import { createFileLinkProvider, type FileLinkPosition, type ResolvedFileLink } from "./terminal-link-provider";
 import { TerminalSearchBar } from "./TerminalSearchBar";
 import "@xterm/xterm/css/xterm.css";
-import { terminalTheme } from "./terminal-themes";
+import { terminalMinimumContrast, terminalTheme } from "./terminal-themes";
 import { currentTheme, useResolvedTheme } from "./theme";
 
 /**
@@ -147,6 +147,7 @@ export function TerminalPane({
       // preserves history and the reader's viewport without leaving stale cells on screen.
       scrollOnEraseInDisplay: true,
       theme: terminalTheme(currentTheme()),
+      minimumContrastRatio: terminalMinimumContrast(currentTheme()),
     });
     terminalInstanceRef.current = terminal;
     const fitAddon = new FitAddon();
@@ -423,7 +424,9 @@ export function TerminalPane({
   // 테마를 바꿔도 터미널을 다시 만들지 않는다 — 팔레트만 갈아 끼워 스크롤백을 그대로 둔다.
   useEffect(() => {
     const terminal = terminalInstanceRef.current;
-    if (terminal) terminal.options.theme = terminalTheme(resolvedTheme);
+    if (!terminal) return;
+    terminal.options.theme = terminalTheme(resolvedTheme);
+    terminal.options.minimumContrastRatio = terminalMinimumContrast(resolvedTheme);
   }, [resolvedTheme]);
 
   // xterm 6은 options를 런타임에 바꿀 수 있다 — 인스턴스를 살려둔 채 반영해야 스크롤백이 산다.

@@ -5681,6 +5681,12 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   height: 100%;
 }
 
+/* xterm's own stylesheet paints the viewport black. Below the last whole row it shows through, which
+   on the light theme is a black band across the foot of every pane. */
+.terminal-host .xterm .xterm-viewport {
+  background-color: var(--bg);
+}
+
 /* Find-in-scrollback sits over the pane's top-right corner, like an editor's find widget. */
 .terminal-search {
   position: absolute;

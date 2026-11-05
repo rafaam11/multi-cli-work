@@ -21,6 +21,8 @@ const terminalHarness = vi.hoisted(() => ({
       cursorBlink?: boolean;
       scrollback?: number;
       cursorStyle?: "bar" | "block" | "underline";
+      theme?: { background?: string };
+      minimumContrastRatio?: number;
     };
   }>,
   events: [] as string[],
@@ -73,6 +75,8 @@ vi.mock("@xterm/xterm", () => ({
       cursorBlink?: boolean;
       scrollback?: number;
       cursorStyle?: "bar" | "block" | "underline";
+      theme?: { background?: string };
+      minimumContrastRatio?: number;
     };
 
     constructor(initialOptions: {
@@ -83,6 +87,8 @@ vi.mock("@xterm/xterm", () => ({
       cursorBlink?: boolean;
       scrollback?: number;
       cursorStyle?: "bar" | "block" | "underline";
+      theme?: { background?: string };
+      minimumContrastRatio?: number;
     }) {
       this.options = initialOptions;
       terminalHarness.instances.push(this);
@@ -662,5 +668,20 @@ describe("TerminalPane settings", () => {
     expect(terminal.options.cursorBlink).toBe(true);
     expect(terminal.options.scrollback).toBe(50_000);
     expect(terminalHarness.instances.length).toBe(1); // 재생성 없음 = 스크롤백·상태 보존
+  });
+
+  it("라이트 테마에서만 글자 대비를 끌어올리고, 바꿔도 터미널을 다시 만들지 않는다", async () => {
+    renderPane();
+    const terminal = terminalHarness.instances.at(-1)!;
+    expect(terminal.options.minimumContrastRatio).toBe(1);
+
+    document.documentElement.dataset.theme = "light";
+    await waitFor(() => expect(terminal.options.minimumContrastRatio).toBe(4.5));
+    expect(terminal.options.theme?.background).toBe("#ffffff");
+
+    document.documentElement.dataset.theme = "dark";
+    await waitFor(() => expect(terminal.options.minimumContrastRatio).toBe(1));
+    expect(terminalHarness.instances.length).toBe(1);
+    delete document.documentElement.dataset.theme;
   });
 });
