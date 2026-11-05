@@ -109,7 +109,7 @@ export interface ProjectTagsGateway {
 }
 
 export interface TerminalCoordinatorGateway {
-  list(): unknown;
+  list(): readonly TerminalSessionView[];
   state(): Promise<unknown>;
   create(input: CreateTerminalInput, options?: { updateSelection?: boolean }): Promise<unknown>;
   createTool(input: CreateToolTerminalInput): Promise<unknown>;

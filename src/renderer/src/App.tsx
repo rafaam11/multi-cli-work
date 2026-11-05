@@ -2883,6 +2883,7 @@ export function App() {
           onRefresh={() => void refreshSession(sessionMenu.session.id)}
           onRename={() => setRenameTarget({ sessionId: sessionMenu.session.id, surface: sessionMenu.surface })}
           onResetName={() => void renameSession(sessionMenu.session.id, null)}
+          onReveal={() => void runProjectAction(() => window.multiCliWork.terminals.reveal(sessionMenu.session.id))}
           onCopyPath={() =>
             void runProjectAction(() => window.multiCliWork.clipboard.writeText(sessionMenu.session.cwd))
           }

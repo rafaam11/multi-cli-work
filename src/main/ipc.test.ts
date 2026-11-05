@@ -1051,6 +1051,17 @@ describe("main IPC boundary", () => {
     expect(saveTextFile).toHaveBeenCalledWith(expect.stringMatching(/^Claude- 리뷰-수정-\d{8}-\d{4}\.txt$/), "log of session-1");
   });
 
+  it("opens a session's own working folder, resolved from its id", async () => {
+    const { handlers, coordinator, projectActions } = setup();
+    coordinator.list.mockReturnValue([{ id: "session-1", cwd: "C:\\Work\\packages\\api" }] as never);
+
+    await handlers.get("terminals:reveal")!({}, "session-1");
+    expect(projectActions.reveal).toHaveBeenCalledWith("C:\\Work\\packages\\api");
+
+    await expect(handlers.get("terminals:reveal")!({}, "session-missing")).rejects.toThrow(/Unknown terminal session/);
+    expect(projectActions.reveal).toHaveBeenCalledTimes(1);
+  });
+
   it("saves the 파일 tab's settings instead of rejecting them as unknown fields", async () => {
     const { handlers, settingsGateway } = setup();
 

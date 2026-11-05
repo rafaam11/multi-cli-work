@@ -1,4 +1,4 @@
-import { Copy, Download, Eye, EyeOff, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Copy, Download, Eye, EyeOff, FolderOpen, Forward, GitFork, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 import { SHELF_TEXT } from "./shelves";
 
@@ -17,6 +17,8 @@ export interface SessionContextMenuProps {
   onRefresh(): void;
   onRename(): void;
   onResetName(): void;
+  /** Opens the session's working folder in the OS file manager. */
+  onReveal(): void;
   /** Copies the session's working folder. */
   onCopyPath(): void;
   /** Saves the scrollback as plain text. Optional so surfaces without it simply omit the item. */
@@ -37,6 +39,7 @@ export function SessionContextMenu({
   onRefresh,
   onRename,
   onResetName,
+  onReveal,
   onCopyPath,
   onExportLog,
   onHandoff,
@@ -86,6 +89,10 @@ export function SessionContextMenu({
         <RotateCcw size={15} />
         <span>제공자 제목 사용</span>
       </button>
+      <button type="button" role="menuitem" onClick={run(onReveal)}>
+        <FolderOpen size={15} />
+        <span>폴더에서 열기</span>
+      </button>
       <button type="button" role="menuitem" onClick={run(onCopyPath)}>
         <Copy size={15} />
         <span>경로 복사</span>
@@ -96,8 +103,20 @@ export function SessionContextMenu({
           <span>스크롤백 저장…</span>
         </button>
       ) : null}
-      {onHandoff ? <button type="button" role="menuitem" onClick={run(onHandoff)}><span>다른 세션에 인계…</span></button> : null}
-      {onFork ? <button type="button" role="menuitem" onClick={run(onFork)}><span>대화 분기…</span></button> : null}
+      {/* Every item needs its icon: the row is a grid whose first column is the 17px icon slot, and a
+          label left without one falls into that slot one character per line. */}
+      {onHandoff ? (
+        <button type="button" role="menuitem" onClick={run(onHandoff)}>
+          <Forward size={15} />
+          <span>다른 세션에 인계…</span>
+        </button>
+      ) : null}
+      {onFork ? (
+        <button type="button" role="menuitem" onClick={run(onFork)}>
+          <GitFork size={15} />
+          <span>대화 분기…</span>
+        </button>
+      ) : null}
       <div className="context-menu-separator" role="separator" />
       <button
         type="button"

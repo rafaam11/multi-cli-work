@@ -843,6 +843,14 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
     const text = await dependencies.coordinator.logText(id);
     return dependencies.saveTextFile(`${exportFileStem(label)}-${exportTimestamp(new Date())}.txt`, text);
   });
+  // The folder comes from the session's own record, never from the renderer, for the same reason
+  // projects:reveal takes a project id rather than a root path.
+  ipc.handle("terminals:reveal", async (_event, sessionId: unknown) => {
+    const id = nonEmptyString(sessionId, "Session id");
+    const session = dependencies.coordinator.list().find((item) => item.id === id);
+    if (!session) throw new Error(`Unknown terminal session: ${id}`);
+    return dependencies.projectActions.reveal(session.cwd);
+  });
   ipc.handle("terminals:rename", async (_event, sessionId: unknown, name: unknown) => {
     if (name !== null && typeof name !== "string") throw new Error("Session name must be a string or null");
     if (typeof name === "string" && name.length > 120) throw new Error("Session name is too long");

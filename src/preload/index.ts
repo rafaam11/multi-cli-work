@@ -277,6 +277,7 @@ const api: MultiCliWorkApi = {
     remove: (sessionId) => ipcRenderer.invoke("terminals:remove", sessionId),
     rename: (sessionId, name) => ipcRenderer.invoke("terminals:rename", sessionId, name),
     exportLog: (sessionId, fileLabel) => ipcRenderer.invoke("terminals:export-log", sessionId, fileLabel),
+    reveal: (sessionId) => ipcRenderer.invoke("terminals:reveal", sessionId),
     select: (projectId, sessionId) => ipcRenderer.invoke("terminals:select", projectId, sessionId),
     setVisibleSessions: (sessionIds) => ipcRenderer.invoke("terminals:set-visible-sessions", sessionIds),
     setExposedSessions: (sessionIds) => ipcRenderer.invoke("terminals:set-exposed-sessions", sessionIds),

@@ -660,6 +660,8 @@ export interface MultiCliWorkApi {
     rename(sessionId: string, name: string | null): Promise<TerminalSessionView>;
     /** Saves the scrollback as plain text where the user picks. Resolves to the path, or null if cancelled. */
     exportLog(sessionId: string, fileLabel: string): Promise<string | null>;
+    /** Opens the session's working folder in the OS file manager. */
+    reveal(sessionId: string): Promise<void>;
     select(projectId: string | null, sessionId: string | null): Promise<AppStateSnapshot>;
     /** Which sessions fill the grid panes on the current page; an empty array collapses the grid. */
     setVisibleSessions(sessionIds: readonly string[]): Promise<AppStateSnapshot>;

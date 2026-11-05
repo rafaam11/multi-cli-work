@@ -641,6 +641,7 @@ function createApi(options?: {
       }),
       remove: vi.fn().mockResolvedValue(undefined),
       exportLog: vi.fn().mockResolvedValue("C:/Users/me/Downloads/session.txt"),
+      reveal: vi.fn().mockResolvedValue(undefined),
       rename: vi.fn().mockImplementation(async (sessionId: string, name: string | null) => ({
         ...[...sessions, created, toolSession].find((session) => session.id === sessionId)!,
         name,
@@ -1489,6 +1490,31 @@ describe("folder workspace", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "경로 복사" }));
 
     await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith(cwd));
+  });
+
+  it("opens a session's working folder from its context menu", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: /^PowerShell 세션 열기/ });
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "폴더에서 열기" }));
+
+    await waitFor(() => expect(harness.api.terminals.reveal).toHaveBeenCalledWith(powershellSession.id));
+  });
+
+  it("surfaces a failed folder open from a session's context menu", async () => {
+    const harness = createApi({ sessions: [powershellSession] });
+    vi.mocked(harness.api.terminals.reveal).mockRejectedValue(new Error("폴더가 없습니다"));
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: /^PowerShell 세션 열기/ });
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "폴더에서 열기" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("폴더가 없습니다");
   });
 
   it("keeps the terminal grid in a dedicated flexible workspace body", async () => {
