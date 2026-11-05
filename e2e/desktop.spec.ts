@@ -1004,8 +1004,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
    * refuses to discard uncommitted work until forced explicitly.
    */
   test("@smoke runs a worktree session, fans out a prompt, and guards worktree removal", async () => {
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
-    await page.getByRole("menu", { name: "Sample Project 작업" }).getByRole("menuitem", { name: "Worktree 만들기" }).click();
+    // The folder's context menu has no worktree item; the 워크트리 card on its detail page does.
+    await openFolder();
+    await page.getByRole("button", { name: "폴더 상세" }).click();
+    await page.getByRole("region", { name: "워크트리" }).getByRole("button", { name: "워크트리 만들기" }).click();
     const createDialog = page.getByRole("dialog", { name: "Worktree 만들기" });
     await createDialog.getByRole("textbox", { name: "브랜치 이름" }).fill("feature/e2e");
     await createDialog.getByRole("button", { name: "만들기" }).click();
@@ -1158,8 +1160,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await scripts.getByRole("button", { name: "스크립트 저장" }).click();
     await expect(scripts.getByText("저장했습니다")).toBeVisible();
 
-    await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click({ button: "right" });
-    await page.getByRole("menu", { name: "Sample Project 작업" }).getByRole("menuitem", { name: "Worktree 만들기" }).click();
+    await page.getByRole("region", { name: "워크트리" }).getByRole("button", { name: "워크트리 만들기" }).click();
     const createDialog = page.getByRole("dialog", { name: "Worktree 만들기" });
     await createDialog.getByRole("textbox", { name: "브랜치 이름" }).fill("feature/scripts");
     await createDialog.getByRole("button", { name: "만들기" }).click();

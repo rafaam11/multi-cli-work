@@ -35,7 +35,7 @@ it("gives every item an icon so its label lands in the label column", () => {
 
   const items = screen.getAllByRole("menuitem");
   expect(items.map((item) => item.textContent)).toEqual(
-    expect.arrayContaining(["다른 세션에 인계…", "대화 분기…", "폴더에서 열기"]),
+    expect.arrayContaining(["다른 세션에 인계…", "대화 분기…", "파일 탐색기에서 열기"]),
   );
   for (const item of items) expect(item.firstElementChild?.tagName.toLowerCase()).toBe("svg");
 });
@@ -43,7 +43,7 @@ it("gives every item an icon so its label lands in the label column", () => {
 it("opens the session's folder and closes the menu", () => {
   const props = renderMenu();
 
-  fireEvent.click(screen.getByRole("menuitem", { name: "폴더에서 열기" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "파일 탐색기에서 열기" }));
 
   expect(props.onReveal).toHaveBeenCalledTimes(1);
   expect(props.onClose).toHaveBeenCalledTimes(1);

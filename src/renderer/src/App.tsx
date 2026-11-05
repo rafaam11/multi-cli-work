@@ -2804,7 +2804,6 @@ export function App() {
           onCopyPath={() =>
             void runProjectAction(() => window.multiCliWork.clipboard.writeText(contextMenu.project.rootPath))
           }
-          onCreateWorktree={() => setWorktreeCreateProject(contextMenu.project)}
           onRename={() => {
             // 편집칸이 폴더 아래에 붙으므로, 접혀 있었다면 먼저 펴야 보인다.
             expandProject(contextMenu.project.id);

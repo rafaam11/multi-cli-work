@@ -1013,6 +1013,18 @@ describe("folder workspace", () => {
     await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith(atlas.rootPath));
   });
 
+  it("keeps worktree creation out of a folder's context menu", async () => {
+    window.multiCliWork = createApi().api;
+    render(<App />);
+
+    const row = (await screen.findByRole("button", { name: "Atlas 폴더 선택" })).closest(".project-row")!;
+    fireEvent.contextMenu(row);
+
+    const menu = screen.getByRole("menu", { name: "Atlas 작업" });
+    expect(within(menu).getByRole("menuitem", { name: "경로 복사" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitem", { name: /worktree/i })).not.toBeInTheDocument();
+  });
+
   it("surfaces a failed path copy in the error banner", async () => {
     const harness = createApi();
     vi.mocked(harness.api.clipboard.writeText).mockRejectedValue(new Error("Clipboard is unavailable"));
@@ -1499,7 +1511,7 @@ describe("folder workspace", () => {
 
     const row = await screen.findByRole("button", { name: /^PowerShell 세션 열기/ });
     fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "폴더에서 열기" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "파일 탐색기에서 열기" }));
 
     await waitFor(() => expect(harness.api.terminals.reveal).toHaveBeenCalledWith(powershellSession.id));
   });
@@ -1512,7 +1524,7 @@ describe("folder workspace", () => {
 
     const row = await screen.findByRole("button", { name: /^PowerShell 세션 열기/ });
     fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "폴더에서 열기" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "파일 탐색기에서 열기" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("폴더가 없습니다");
   });

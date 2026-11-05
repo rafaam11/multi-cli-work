@@ -91,7 +91,7 @@ export function SessionContextMenu({
       </button>
       <button type="button" role="menuitem" onClick={run(onReveal)}>
         <FolderOpen size={15} />
-        <span>폴더에서 열기</span>
+        <span>파일 탐색기에서 열기</span>
       </button>
       <button type="button" role="menuitem" onClick={run(onCopyPath)}>
         <Copy size={15} />

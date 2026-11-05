@@ -1,6 +1,6 @@
 import type { AgentId, AgentView } from "@shared/agent-types";
 import type { SessionPreset } from "@shared/preset-types";
-import { Copy, FolderInput, FolderOpen, GitBranchPlus, Pencil, Trash2 } from "lucide-react";
+import { Copy, FolderInput, FolderOpen, Pencil, Trash2 } from "lucide-react";
 import { GitHubIcon, VSCodeIcon } from "./brand-icons";
 import { NewSessionMenuItems } from "./NewSessionMenuItems";
 import { useClampedMenuPosition } from "./context-menu-position";
@@ -22,7 +22,6 @@ export interface ProjectContextMenuProps {
   onOpenInEditor(): void;
   onOpenOnGitHub(): void;
   onCopyPath(): void;
-  onCreateWorktree(): void;
   onRename(): void;
   /** Points the folder at a new root — the sidebar's way to relink a moved folder. */
   onRelink(): void;
@@ -44,7 +43,6 @@ export function ProjectContextMenu({
   onOpenInEditor,
   onOpenOnGitHub,
   onCopyPath,
-  onCreateWorktree,
   onRename,
   onRelink,
   onRemove,
@@ -110,11 +108,8 @@ export function ProjectContextMenu({
         <Copy size={15} />
         <span>경로 복사</span>
       </button>
-      <div className="context-menu-separator" role="separator" />
-      <button type="button" role="menuitem" onClick={run(onCreateWorktree)}>
-        <GitBranchPlus size={15} />
-        <span>Worktree 만들기</span>
-      </button>
+      {/* No Worktree 만들기 here: worktrees are rare enough that the folder's start and detail pages,
+          where the 워크트리 card lives, are where one is made. */}
       <div className="context-menu-separator" role="separator" />
       <button type="button" role="menuitem" onClick={run(onRename)}>
         <Pencil size={15} />
