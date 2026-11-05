@@ -153,6 +153,8 @@ function setup(
     changedPaths: vi.fn(async () => ({ agentPaths: [], baselineMs: 0 })),
     clearChanges: vi.fn(async () => undefined),
     resolveTerminalPath: vi.fn(async () => null),
+    resolvePrintedPath: vi.fn(async () => null),
+    openPrintedPath: vi.fn(async () => undefined),
   };
   const shellGateway = {
     openExternal: vi.fn(async () => undefined),

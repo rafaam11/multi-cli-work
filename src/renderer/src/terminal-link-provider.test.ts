@@ -31,11 +31,12 @@ function provide(terminal: Terminal, provider: ReturnType<typeof createFileLinkP
 }
 
 const target = { kind: "project" as const, id: "p1" };
+const entry = (raw: string) => ({ raw, kind: "file" as const, workspace: { target, relativePath: raw } });
 
 describe("createFileLinkProvider", () => {
   it("links only the candidates main confirms, and opens them on Ctrl+click at their line", async () => {
     const terminal = fakeTerminal([{ text: "edit src/a.ts:12:3 and e.g. b.md" }]);
-    const resolve = vi.fn(async (raw: string) => (raw === "src/a.ts" ? { target, relativePath: "src/a.ts" } : null));
+    const resolve = vi.fn(async (raw: string) => (raw === "src/a.ts" ? entry(raw) : null));
     const open = vi.fn();
     const links = await provide(terminal, createFileLinkProvider(terminal, { resolve, open }), 1);
 
@@ -45,12 +46,12 @@ describe("createFileLinkProvider", () => {
     links![0].activate(new MouseEvent("click"), links![0].text);
     expect(open).not.toHaveBeenCalled();
     links![0].activate(new MouseEvent("click", { ctrlKey: true }), links![0].text);
-    expect(open).toHaveBeenCalledWith({ target, relativePath: "src/a.ts" }, { line: 12, column: 3 });
+    expect(open).toHaveBeenCalledWith(entry("src/a.ts"), { line: 12, column: 3 });
   });
 
   it("asks main once per path while the answer is fresh", async () => {
     const terminal = fakeTerminal([{ text: "a.ts" }, { text: "a.ts again" }]);
-    const resolve = vi.fn(async () => ({ target, relativePath: "a.ts" }));
+    const resolve = vi.fn(async (raw: string) => entry(raw));
     let time = 0;
     const provider = createFileLinkProvider(terminal, { resolve, open: vi.fn(), now: () => time });
     await provide(terminal, provider, 1);
@@ -63,7 +64,7 @@ describe("createFileLinkProvider", () => {
 
   it("finds a path wrapped across rows from either row, and reports nothing when there is none", async () => {
     const terminal = fakeTerminal([{ text: "open src/ve" }, { text: "ry/long.ts now", wrapped: true }, { text: "plain" }]);
-    const resolve = vi.fn(async () => ({ target, relativePath: "src/very/long.ts" }));
+    const resolve = vi.fn(async (raw: string) => raw === "src/very/long.ts" ? entry(raw) : null);
     const provider = createFileLinkProvider(terminal, { resolve, open: vi.fn() });
     expect((await provide(terminal, provider, 2))?.[0].range).toEqual({ start: { x: 6, y: 1 }, end: { x: 10, y: 2 } });
     expect((await provide(terminal, provider, 1))?.[0].text).toBe("src/very/long.ts");
@@ -72,11 +73,19 @@ describe("createFileLinkProvider", () => {
 
   it("names the gesture on hover", async () => {
     const terminal = fakeTerminal([{ text: "a.ts" }]);
-    const provider = createFileLinkProvider(terminal, { resolve: async () => ({ target, relativePath: "a.ts" }), open: vi.fn() });
+    const provider = createFileLinkProvider(terminal, { resolve: async (raw) => entry(raw), open: vi.fn() });
     const [link] = (await provide(terminal, provider, 1))!;
     link.hover?.(new MouseEvent("mousemove"), link.text);
     expect(terminal.element!.title).toBe("Ctrl+클릭으로 열기");
     link.leave?.(new MouseEvent("mouseleave"), link.text);
     expect(terminal.element!.title).toBe("");
+  });
+
+  it("uses the longest existing path when a printed path contains spaces", async () => {
+    const raw = String.raw`C:\work\my reports\result file.pdf`;
+    const terminal = fakeTerminal([{ text: `saved ${raw} successfully` }]);
+    const resolve = vi.fn(async (candidate: string) => candidate === raw ? entry(candidate) : null);
+    const links = await provide(terminal, createFileLinkProvider(terminal, { resolve, open: vi.fn() }), 1);
+    expect(links?.map((link) => link.text)).toEqual([raw]);
   });
 });

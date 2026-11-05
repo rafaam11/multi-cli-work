@@ -531,6 +531,8 @@ export interface MultiCliWorkApi {
     openInEditor(target: FileExplorerTarget, relativePath: string, position?: { line: number; column: number }): Promise<void>;
     /** A path a session printed, as a file under its own folder or worktree — null when it is not one. */
     resolveTerminalPath(sessionId: string, raw: string): Promise<{ target: FileExplorerTarget; relativePath: string } | null>;
+    resolvePrintedPath(sessionId: string, raw: string): Promise<import("./terminal-path-types").TerminalPathEntry | null>;
+    openPrintedPath(sessionId: string, raw: string): Promise<void>;
     /** Creates an empty file or folder, resolving to the new entry's relative path. */
     create(
       target: FileExplorerTarget,

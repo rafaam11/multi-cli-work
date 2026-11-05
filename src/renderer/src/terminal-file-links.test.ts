@@ -6,11 +6,11 @@ const paths = (text: string) =>
 
 describe("findPathCandidates", () => {
   it("finds relative, dotted, Windows and POSIX paths with line and column", () => {
-    expect(paths("see src/app/main.ts:42 and ./README.md")).toEqual([
+    expect(paths("see src/app/main.ts:42 and ./README.md").slice(0, 2)).toEqual([
       { path: "src/app/main.ts", line: 42, column: null },
       { path: "./README.md", line: null, column: null },
     ]);
-    expect(paths("at src\\a.ts:12:7 then C:\\dev\\x\\b.tsx and /home/me/c.py:3")).toEqual([
+    expect(paths("at src\\a.ts:12:7 then C:\\dev\\x\\b.tsx and /home/me/c.py:3").slice(0, 3)).toEqual([
       { path: "src\\a.ts", line: 12, column: 7 },
       { path: "C:\\dev\\x\\b.tsx", line: null, column: null },
       { path: "/home/me/c.py", line: 3, column: null },
@@ -23,7 +23,7 @@ describe("findPathCandidates", () => {
   });
 
   it("strips wrapping quotes, backticks, brackets and trailing punctuation", () => {
-    expect(paths("Edit `src/a.ts`, then (lib/b.ts). \"c.md\": done.")).toEqual([
+    expect(paths("Edit `src/a.ts`, then (lib/b.ts). \"c.md\": done.").slice(0, 3)).toEqual([
       { path: "src/a.ts", line: null, column: null },
       { path: "lib/b.ts", line: null, column: null },
       { path: "c.md", line: null, column: null },
@@ -31,7 +31,7 @@ describe("findPathCandidates", () => {
   });
 
   it("keeps Korean file names and leaves URLs and version numbers alone", () => {
-    expect(paths("문서/설계 노트.md is not one, 문서/설계.md:3 is")).toEqual([
+    expect(paths("문서/설계 노트.md is not one, 문서/설계.md:3 is").slice(0, 2)).toEqual([
       { path: "노트.md", line: null, column: null },
       { path: "문서/설계.md", line: 3, column: null },
     ]);

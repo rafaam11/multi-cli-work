@@ -555,6 +555,12 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   ipc.handle("workspace-files:resolve-terminal-path", async (_event, sessionId: unknown, raw: unknown) =>
     dependencies.workspaceFiles.resolveTerminalPath(nonEmptyString(sessionId, "Session id"), terminalPathString(raw)),
   );
+  ipc.handle("workspace-files:resolve-printed-path", async (_event, sessionId: unknown, raw: unknown) =>
+    dependencies.workspaceFiles.resolvePrintedPath(nonEmptyString(sessionId, "Session id"), terminalPathString(raw)),
+  );
+  ipc.handle("workspace-files:open-printed-path", async (_event, sessionId: unknown, raw: unknown) =>
+    dependencies.workspaceFiles.openPrintedPath(nonEmptyString(sessionId, "Session id"), terminalPathString(raw)),
+  );
   ipc.handle(
     "workspace-files:create",
     async (_event, target: unknown, parentRelativePath: unknown, name: unknown, kind: unknown) => {

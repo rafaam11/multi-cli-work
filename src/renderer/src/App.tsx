@@ -2505,9 +2505,14 @@ export function App() {
                 remoteSizeOwners={remoteSizeOwners}
                 sessionIndicators={sessionIndicators}
                 zoomedPaneId={zoomedPaneId}
-                onOpenFileLink={(_sessionId, link, position) =>
-                  openFileAt(link.target, fileTargetLabel(link.target), link.relativePath, position)
-                }
+                onOpenFileLink={(sessionId, link, position) => {
+                  if (position && link.workspace) {
+                    openFileAt(link.workspace.target, fileTargetLabel(link.workspace.target), link.workspace.relativePath, position);
+                  } else {
+                    void window.multiCliWork.workspaceFiles.openPrintedPath(sessionId, link.raw)
+                      .catch((error) => setActionError(errorMessage(error)));
+                  }
+                }}
                 onToggleZoom={(paneId) => {
                   focusPane(paneId);
                   toggleZoom(paneId);

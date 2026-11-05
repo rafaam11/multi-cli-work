@@ -529,6 +529,8 @@ function createApi(options?: {
       changedPaths: vi.fn().mockResolvedValue({ agentPaths: [], baselineMs: 0 }),
       clearChanges: vi.fn().mockResolvedValue(undefined),
       resolveTerminalPath: vi.fn().mockResolvedValue(null),
+      resolvePrintedPath: vi.fn().mockResolvedValue(null),
+      openPrintedPath: vi.fn().mockResolvedValue(undefined),
     },
     git: {
       panelData: vi.fn().mockResolvedValue({

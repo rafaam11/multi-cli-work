@@ -157,14 +157,12 @@ export function TerminalPane({
     terminal.open(frame);
     // Paths the session prints become Ctrl+click links — but only ones main confirms are files under
     // this session's own folder or worktree. A session with no folder (a tool run) has nothing to resolve.
-    const fileLinks = session.projectId
-      ? terminal.registerLinkProvider(
+    const fileLinks = terminal.registerLinkProvider(
           createFileLinkProvider(terminal, {
-            resolve: (raw) => window.multiCliWork.workspaceFiles.resolveTerminalPath(session.id, raw),
+            resolve: (raw) => window.multiCliWork.workspaceFiles.resolvePrintedPath(session.id, raw),
             open: (link, position) => onOpenFileLinkRef.current?.(link, position),
           }),
-        )
-      : null;
+        );
 
     const writeOutput = (data: string) => {
       if (data) terminal.write(data);

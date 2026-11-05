@@ -158,6 +158,8 @@ const api: MultiCliWorkApi = {
     openInEditor: (target, relativePath, position) =>
       ipcRenderer.invoke("workspace-files:open-in-editor", target, relativePath, position),
     resolveTerminalPath: (sessionId, raw) => ipcRenderer.invoke("workspace-files:resolve-terminal-path", sessionId, raw),
+    resolvePrintedPath: (sessionId, raw) => ipcRenderer.invoke("workspace-files:resolve-printed-path", sessionId, raw),
+    openPrintedPath: (sessionId, raw) => ipcRenderer.invoke("workspace-files:open-printed-path", sessionId, raw),
     create: (target, parentRelativePath, name, kind) =>
       ipcRenderer.invoke("workspace-files:create", target, parentRelativePath, name, kind),
     rename: (target, relativePath, name) => ipcRenderer.invoke("workspace-files:rename", target, relativePath, name),

@@ -112,6 +112,7 @@ import {
   writeWorkspaceFile,
 } from "./projects/workspace-files";
 import { WorktreeService } from "./projects/worktree-service";
+import { createTerminalPathService } from "./projects/terminal-paths";
 import { ensureClaudeIntegration } from "./providers/claude-integration";
 import { ensureCodexIntegration } from "./providers/codex-integration";
 import { ensurePowerShellIntegration } from "./providers/powershell-integration";
@@ -867,6 +868,22 @@ export async function createDesktopRuntime(
     sendToMainWindow(host.getMainWindow(), "workspace:changed");
   };
 
+  const terminalPaths = createTerminalPathService({
+    context: async (sessionId) => {
+      const view = coordinator.list().find((session) => session.id === sessionId);
+      if (!view) return null;
+      if (!view.projectId) return { cwd: view.cwd };
+      const target: FileExplorerTarget = view.worktreeId
+        ? { kind: "worktree", id: view.worktreeId }
+        : { kind: "project", id: view.projectId };
+      const rootPath = view.worktreeId
+        ? (await worktrees.get(view.worktreeId))?.path
+        : (await getProject(view.projectId))?.rootPath;
+      return { cwd: view.cwd, ...(rootPath ? { workspace: { rootPath, target } } : {}) };
+    },
+    openPath: (target) => shell.openPath(target),
+    reveal: (target) => shell.showItemInFolder(target),
+  });
   registerMainIpc(ipcMain, {
     usageHistory,
     activity: { list: sessionId => { if (activityError) throw new Error(activityError); return activity.list(sessionId); } },
@@ -1117,6 +1134,8 @@ export async function createDesktopRuntime(
         const relativePath = await resolveTerminalPath(rootPath, view.cwd, raw);
         return relativePath ? { target, relativePath } : null;
       },
+      resolvePrintedPath: (sessionId, raw) => terminalPaths.resolve(sessionId, raw),
+      openPrintedPath: (sessionId, raw) => terminalPaths.open(sessionId, raw),
       create: createWorkspaceEntry,
       rename: (rootPath, relativePath, name) => renameWorkspaceEntry(rootPath, relativePath, name),
       duplicate: duplicateWorkspaceEntry,

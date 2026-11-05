@@ -235,6 +235,8 @@ export interface WorkspaceFilesGateway {
   openInEditor(rootPath: string, relativePath: string, position?: EditorPosition): Promise<void>;
   /** A path a session printed, as a file under that session's own folder or worktree; null if not one. */
   resolveTerminalPath(sessionId: string, raw: string): Promise<{ target: FileExplorerTarget; relativePath: string } | null>;
+  resolvePrintedPath(sessionId: string, raw: string): Promise<import("../shared/terminal-path-types").TerminalPathEntry | null>;
+  openPrintedPath(sessionId: string, raw: string): Promise<void>;
   create(rootPath: string, parentRelativePath: string, name: string, kind: "file" | "directory"): Promise<string>;
   rename(rootPath: string, relativePath: string, name: string): Promise<string>;
   duplicate(rootPath: string, relativePath: string): Promise<string>;

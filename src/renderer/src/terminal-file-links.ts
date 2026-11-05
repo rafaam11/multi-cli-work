@@ -41,7 +41,35 @@ export function findPathCandidates(text: string): PathCandidate[] {
       end: match.index + whole.length,
     });
   }
-  return candidates;
+  // Quoted paths and Markdown destinations have explicit boundaries, so spaces and extensionless
+  // names can be kept without guessing where a surrounding sentence ends.
+  const delimited = /[`"'\[]([^`"'\]\r\n]+)[`"'\]]|\]\(([^)\r\n]+)\)/gu;
+  for (const match of text.matchAll(delimited)) {
+    const value = match[1] ?? match[2];
+    if (!value || !/[\\/.]/.test(value)) continue;
+    const start = match.index + match[0].indexOf(value);
+    candidates.push({ path: value, line: null, column: null, start, end: start + value.length });
+  }
+  // A rooted path can contain spaces. Try each word boundary from longest to shortest; main
+  // confirms existence, and the provider keeps only the longest successful overlapping link.
+  const rooted = /(?<![\p{L}\p{N}_/\\:])(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[\\/])(?![\\/])[^\r\n`"'<>|?*]+/gu;
+  for (const match of text.matchAll(rooted)) {
+    const start = match.index;
+    const words = [...match[0].matchAll(/\s+/g)].map((space) => space.index);
+    for (const endAt of [...words, match[0].length].slice(0, 12)) {
+      const value = match[0].slice(0, endAt).replace(/[.,;:!\])}]+$/u, "");
+      if (value) candidates.push({ path: value, line: null, column: null, start, end: start + value.length });
+    }
+  }
+  for (const match of text.matchAll(/(?<![\p{L}\p{N}_./\\:-])(?:[\p{L}\p{N}_.@+-]+[\\/])+[^\r\n`"'<>|?*]+/gu)) {
+    const start = match.index;
+    if (candidates.some((candidate) => candidate.start === start && candidate.path === match[0])) continue;
+    for (const boundary of [...match[0].matchAll(/\s+/g)].map((space) => space.index).concat(match[0].length).slice(0, 12)) {
+      const value = match[0].slice(0, boundary).replace(/[.,;:!\])}]+$/u, "");
+      if (value.includes(" ")) candidates.push({ path: value, line: null, column: null, start, end: start + value.length });
+    }
+  }
+  return candidates.filter((item, index) => candidates.findIndex((other) => other.start === item.start && other.end === item.end) === index);
 }
 
 /** One buffer cell as xterm reports it: a wide character's second cell has width 0 and no chars. */

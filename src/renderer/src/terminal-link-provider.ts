@@ -1,11 +1,8 @@
-import type { FileExplorerTarget } from "@shared/file-explorer-types";
+import type { TerminalPathEntry } from "@shared/terminal-path-types";
 import type { IBufferCell, ILink, ILinkProvider, Terminal } from "@xterm/xterm";
 import { cellRange, findPathCandidates, logicalLineText, type BufferCell } from "./terminal-file-links";
 
-export interface ResolvedFileLink {
-  target: FileExplorerTarget;
-  relativePath: string;
-}
+export type ResolvedFileLink = TerminalPathEntry;
 
 export interface FileLinkPosition {
   line: number;
@@ -13,7 +10,7 @@ export interface FileLinkPosition {
 }
 
 interface FileLinkProviderOptions {
-  /** Main's answer for a printed path: a file under the session's root, or null. */
+  /** Main's answer for a printed path. */
   resolve(raw: string): Promise<ResolvedFileLink | null>;
   open(link: ResolvedFileLink, position: FileLinkPosition | null): void;
   /** Lets tests run without real time. */
@@ -95,7 +92,11 @@ export function createFileLinkProvider(terminal: Terminal, options: FileLinkProv
           };
         }),
       ).then((links) => {
-        const found = links.filter((link): link is ILink => link !== null);
+        const found = links.filter((link): link is ILink => link !== null)
+          .sort((a, b) => (b.range.end.y - b.range.start.y) - (a.range.end.y - a.range.start.y) || b.text.length - a.text.length)
+          .filter((link, index, all) => !all.slice(0, index).some((other) =>
+            other.range.start.y <= link.range.start.y && other.range.start.x <= link.range.start.x &&
+            other.range.end.y >= link.range.end.y && other.range.end.x >= link.range.end.x));
         callback(found.length > 0 ? found : undefined);
       });
     },
