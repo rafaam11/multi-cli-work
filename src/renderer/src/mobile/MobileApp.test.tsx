@@ -9,9 +9,10 @@ vi.mock("./SessionScreen", () => ({
   SessionScreen: ({
     session,
     wide,
+    rail,
     onMeasured,
-    onBack,
-    tabs,
+    onOpenDrawer,
+    awaiting,
     focused = true,
     onClose,
     onFocus,
@@ -21,9 +22,10 @@ vi.mock("./SessionScreen", () => ({
   }: {
     session: RemoteSessionSummary;
     wide?: boolean;
+    rail?: boolean;
     onMeasured?(size: { cols: number; rows: number }): void;
-    onBack(): void;
-    tabs?: ReactNode;
+    onOpenDrawer?(): void;
+    awaiting?: { count: number; onJump(): void } | null;
     focused?: boolean;
     onClose?(): void;
     onFocus?(): void;
@@ -31,8 +33,18 @@ vi.mock("./SessionScreen", () => ({
     onRename?(name: string): void;
     onReady?(ready: boolean): void;
   }) => (
-    <div data-testid="screen" data-wide={String(Boolean(wide))} data-focused={String(focused)}>
+    <div data-testid="screen" data-wide={String(Boolean(wide))} data-rail={String(Boolean(rail))} data-focused={String(focused)}>
       <span data-testid="screen-label">{session.label}</span>
+      {onOpenDrawer ? (
+        <button type="button" onClick={onOpenDrawer}>
+          세션 사이드바 열기
+        </button>
+      ) : null}
+      {awaiting && awaiting.count > 0 ? (
+        <button type="button" onClick={awaiting.onJump}>
+          대기 {awaiting.count}
+        </button>
+      ) : null}
       <button type="button" onClick={() => onReady?.(true)}>{session.label} 렌더 완료</button>
       {onFocus ? (
         <button type="button" onClick={onFocus}>
@@ -50,10 +62,6 @@ vi.mock("./SessionScreen", () => ({
           {session.label} 이름 바꾸기
         </button>
       ) : null}
-      <button type="button" onClick={onBack}>
-        세션 목록으로
-      </button>
-      {tabs}
       {onMeasured ? (
         <button type="button" onClick={() => onMeasured({ cols: 150, rows: 40 })}>
           재기
@@ -86,13 +94,20 @@ const SESSIONS: RemoteSessionSummary[] = [
   { id: "s2", projectId: "p", projectName: "A", kind: "codex", label: "테스트", status: "idle", updatedAt: "1" },
 ];
 
-function useScreen(wide: boolean) {
+/** true: 넓은 화면(마우스) · false: 좁은 폰 · "rail": 폴드를 편 폰처럼 폭만 넓은 터치 화면. */
+function useScreen(mode: boolean | "rail") {
   window.matchMedia = vi.fn((query: string) => ({
-    matches: wide,
+    matches: mode === "rail" ? !query.includes("pointer: fine") : mode,
     media: query,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   })) as unknown as typeof window.matchMedia;
+}
+
+/** 폰 세션 화면에서 ☰ 서랍의 "전체 목록"으로 목록에 돌아간다. */
+function backToListFromDrawer() {
+  fireEvent.click(screen.getByRole("button", { name: "세션 사이드바 열기" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "전체 목록" }));
 }
 
 function connect() {
@@ -178,7 +193,7 @@ describe("MobileApp", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByTestId("screen-label")).toHaveTextContent("테스트");
     expect(window.location.hash).toBe("#session=s2");
-    fireEvent.click(screen.getByRole("button", { name: "세션 목록으로" }));
+    backToListFromDrawer();
     await waitFor(() => expect(screen.queryByTestId("screen")).not.toBeInTheDocument());
   });
 
@@ -189,8 +204,10 @@ describe("MobileApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     const terminal = screen.getByTestId("screen");
     fireEvent.click(screen.getByRole("button", { name: "세션 사이드바 열기" }));
-    expect(screen.getByRole("dialog", { name: "프로젝트와 경로별 세션" })).toBeInTheDocument();
-    expect(screen.getByText("경로 정보 없음", { selector: ".m-drawer-path-label" })).toBeInTheDocument();
+    const drawer = screen.getByRole("dialog", { name: "프로젝트와 경로별 세션" });
+    // 경로가 하나뿐인 프로젝트는 경로 줄 없이 세션을 바로 둔다.
+    expect(within(drawer).getByRole("region", { name: "A" })).toBeInTheDocument();
+    expect(drawer.querySelector(".m-groups-path-label")).toBeNull();
     act(() => window.history.back());
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByTestId("screen")).toBe(terminal);
@@ -218,19 +235,20 @@ describe("MobileApp", () => {
     expect(screen.queryByRole("heading", { name: "회사PC" })).not.toBeInTheDocument();
   });
 
-  it("switches sessions from the tab strip without stacking history, and goes back to the list", async () => {
+  it("jumps to a waiting session from the top bar without stacking history, and goes back to the list", async () => {
     useScreen(false);
     render(<MobileApp />);
     connect();
-    const before = window.history.length;
+    act(() => FakeSocket.last!.receive({ type: "sessions", sessions: [SESSIONS[0], { ...SESSIONS[1], status: "awaiting-input" }] }));
     fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
     expect(window.location.hash).toBe("#session=s1");
-    expect(window.history.length).toBe(before + 1);
-    fireEvent.click(screen.getByRole("button", { name: "테스트, 대기" }));
+    const entry = window.history.state;
+    fireEvent.click(screen.getByRole("button", { name: "대기 1" }));
     expect(screen.getByTestId("screen-label")).toHaveTextContent("테스트");
     expect(window.location.hash).toBe("#session=s2");
-    expect(window.history.length).toBe(before + 1);
-    fireEvent.click(screen.getByRole("button", { name: "세션 목록으로" }));
+    // 세션끼리 옮기면 지금 항목을 바꾼다 — 뒤로가기 한 번이면 목록이다.
+    expect(window.history.state).toEqual(entry);
+    act(() => window.history.back());
     await waitFor(() => expect(screen.queryByTestId("screen")).not.toBeInTheDocument());
     expect(window.location.hash).toBe("");
   });
@@ -250,28 +268,70 @@ describe("MobileApp", () => {
     render(<MobileApp />);
     connect();
     expect(screen.getByTestId("screen-label")).toHaveTextContent("테스트");
-    fireEvent.click(screen.getByRole("button", { name: "세션 목록으로" }));
+    backToListFromDrawer();
     await waitFor(() => expect(screen.getByRole("heading", { name: "회사PC" })).toBeInTheDocument());
     expect(window.location.hash).toBe("");
   });
 
-  it("goes from a tab's + to the new session form on the list", async () => {
+  it("opens the new session sheet from the drawer without leaving the session", async () => {
     useScreen(false);
     render(<MobileApp />);
     connect();
     fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
-    fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
-    await waitFor(() => expect(screen.getByRole("heading", { name: "회사PC" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "세션 사이드바 열기" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "새 세션" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "새 세션" })).toBeInTheDocument());
     expect(screen.getByText("불러오는 중…")).toBeInTheDocument();
     expect(FakeSocket.last!.sent).toContainEqual({ type: "catalog" });
+    expect(screen.getByTestId("screen-label")).toHaveTextContent("리팩터");
   });
 
-  it("has no tab strip beside the list on a wide screen", () => {
-    useScreen(true);
+  it("starts a session from the phone's sheet at the phone's size, closing the sheet first", async () => {
+    useScreen(false);
     render(<MobileApp />);
     connect();
-    fireEvent.click(screen.getByRole("button", { name: "리팩터, 작업 중" }));
-    expect(screen.queryByRole("navigation", { name: "세션 탭" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
+    act(() => {
+      FakeSocket.last!.receive({
+        type: "catalog",
+        projects: [{ id: "p1", name: "multi-cli-work", worktrees: [] }],
+        agents: [{ id: "claude", label: "Claude" }, { id: "codex", label: "Codex" }],
+      });
+    });
+    const sheet = within(screen.getByRole("dialog", { name: "새 세션" }));
+    fireEvent.click(sheet.getByRole("radio", { name: "Codex" }));
+    fireEvent.click(sheet.getByRole("button", { name: "시작" }));
+    // 좁은 폰: 머리줄 하나와 아래 두 줄만 뺀 크기(jsdom 1024×768, 12px 글자).
+    await waitFor(() =>
+      expect(FakeSocket.last!.sent).toContainEqual({ type: "create", projectId: "p1", kind: "codex", cols: 141, rows: 44 }),
+    );
+    expect(screen.queryByRole("dialog", { name: "새 세션" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the sessions in a rail beside the terminal when an unfolded phone is wide enough", () => {
+    useScreen("rail");
+    render(<MobileApp />);
+    connect();
+    expect(screen.getByText("왼쪽에서 세션을 고르세요")).toBeInTheDocument();
+    const rail = within(screen.getByRole("complementary", { name: "세션 레일" }));
+    const entry = window.history.length;
+    fireEvent.click(rail.getByRole("button", { name: "리팩터, 작업 중" }));
+    expect(screen.getByTestId("screen")).toHaveAttribute("data-rail", "true");
+    // 목록이 늘 옆에 있으니 세션을 바꿔도 history를 쌓지 않고, 서랍 단추도 없다.
+    fireEvent.click(rail.getByRole("button", { name: "테스트, 대기" }));
+    expect(screen.getByTestId("screen-label")).toHaveTextContent("테스트");
+    expect(window.history.length).toBe(entry);
+    expect(screen.queryByRole("button", { name: "세션 사이드바 열기" })).not.toBeInTheDocument();
+    expect(rail.getByRole("button", { name: "테스트, 대기" })).toHaveAttribute("aria-current", "true");
+  });
+
+  it("folds the rail to icons and remembers it", () => {
+    useScreen("rail");
+    render(<MobileApp />);
+    connect();
+    fireEvent.click(screen.getByRole("button", { name: "레일 접기" }));
+    expect(screen.getByRole("button", { name: "레일 펼치기" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("mcw.remote.railCollapsed.v1")).toBe("1");
   });
 
   it("opens the session a link points at, and follows a new link", () => {

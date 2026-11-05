@@ -1,0 +1,648 @@
+/*
+ * 폰 배치(좁음·레일)와 시트. mobile.css 뒤에 읽는다 — 넓은 화면(.m-wide)의 규칙은 여기서 건드리지 않는다.
+ *
+ * 원칙: 세로는 터미널 몫이다. 갤럭시 폴드처럼 세로가 짧은 화면이 기준이라, 탐색은 위아래 줄 대신 옆
+ * 레일·서랍·시트로 보내고, 크롬은 좁음 ~130px · 레일 ~48px · 키보드가 열려 낮을 때 더 줄인다.
+ * 터치 대상은 보이는 크기가 작아도 누르는 자리를 44px 안팎으로 둔다.
+ *
+ * 색은 theme-colors.css 토큰이다. --accent는 지금 여기·주 행동, --teal은 작업 중인 세션이다. 옅은 바탕·그림자는
+ * --tint-scale·--shadow를 따라 라이트 테마에서 저절로 옅어진다.
+ */
+:root {
+  --p-bar: 44px;
+  --p-radius: 10px;
+}
+
+/* ── 공용 부품 ─────────────────────────────────────────────── */
+.m-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  min-height: 0;
+  max-height: var(--p-bar);
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  color: var(--muted);
+  background: transparent;
+}
+.m-icon:hover:not(:disabled),
+.m-icon:active:not(:disabled) { color: var(--text); background: var(--surface-hover); }
+.m-icon[aria-pressed="true"] { color: var(--accent); }
+
+.m-await-pill {
+  flex: 0 0 auto;
+  height: 28px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 14px;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) calc(16% * var(--tint-scale)), transparent);
+  font: 700 12px/28px var(--m-font);
+  white-space: nowrap;
+}
+.m-await-pill:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) calc(24% * var(--tint-scale)), transparent); }
+
+.m-conn { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
+.m-conn-open { background: var(--green); }
+.m-conn-unauthorized, .m-conn-incompatible { background: var(--red); }
+
+.m-count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  color: var(--quiet);
+  background: var(--surface);
+  font: 12px/16px var(--m-font);
+  text-align: center;
+}
+
+.m-primary-button {
+  min-height: 0;
+  height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--on-accent);
+  background: var(--accent);
+  font: 700 15px/44px var(--m-font);
+}
+.m-primary-button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+
+/* 머리줄: 좁은 폰의 세션 화면과 목록 화면에 하나씩. 두 줄 제목으로 상태·소속까지 한 줄 높이에 싣는다. */
+.m-topbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: calc(var(--p-bar) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 2px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--header-bg);
+}
+.m-topbar > .m-conn { margin: 0 4px 0 12px; }
+.m-title {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: var(--p-bar);
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+.m-title:hover:not(:disabled) { background: transparent; }
+.m-title-main { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.m-title-text {
+  overflow: hidden;
+  margin: 0;
+  font: 600 15px/19px var(--m-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-title-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font: 12px/15px var(--m-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 세션 화면(폰) ─────────────────────────────────────────── */
+.m-phone-session { position: relative; }
+.m-phone-session .m-dot-awaiting-approval { box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) calc(30% * var(--tint-scale)), transparent); }
+
+/* 레일 옆에서는 머리줄이 없다 — ⋯는 터미널 오른쪽 위에 뜬다. */
+.m-fab-menu {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 8px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+}
+.m-fab-menu:hover:not(:disabled) { color: var(--text); background: var(--surface-raised); }
+
+/* PC가 크기를 되찾은 알림 — 터미널 위에 떠서 줄 높이를 바꾸지 않는다(바뀌면 맞춤이 또 돈다). */
+.m-phone-fit-notice {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 8px;
+  left: 8px;
+  flex: none;
+  min-height: 36px;
+  padding: 3px 3px 3px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--p-radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+.m-rail-session .m-phone-fit-notice { right: 52px; }
+.m-phone-fit-notice > span { overflow: hidden; flex: 1 1 auto; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.m-phone-fit-notice > button {
+  height: 30px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--surface-hover);
+  font: 700 13px/30px var(--m-font);
+}
+
+/* 아래: 키 줄과 입력. 좁은 폰은 두 줄, 레일은 한 줄. */
+.m-bottom {
+  flex: 0 0 auto;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--line);
+  background: var(--header-bg);
+}
+.m-phone-session .m-keys {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 4px 8px 0;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+}
+.m-phone-session .m-keys::-webkit-scrollbar { display: none; }
+.m-key {
+  flex: 0 0 auto;
+  min-width: 38px;
+  height: 32px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font: 13px/32px var(--m-mono);
+}
+.m-key:hover:not(:disabled), .m-key:active { background: var(--surface-hover); }
+/* 승인을 기다릴 때 답하는 키. */
+.m-key-hot {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) calc(22% * var(--tint-scale)), var(--surface));
+  font-weight: 700;
+}
+.m-key-hot:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) calc(30% * var(--tint-scale)), var(--surface)); }
+
+.m-phone-session .m-composer { display: flex; align-items: flex-end; gap: 6px; padding: 4px 8px 6px; }
+.m-phone-session .m-composer textarea {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 36px;
+  max-height: 96px;
+  padding: 8px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  outline: none;
+  color: var(--text);
+  background: var(--surface);
+  font: 15px/18px var(--m-font);
+  resize: none;
+}
+.m-phone-session .m-composer textarea:focus { border-color: var(--accent); }
+.m-phone-session .m-composer textarea::placeholder { color: var(--quiet); }
+.m-send {
+  display: grid;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.m-send:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+/* 키 줄 접기는 높이가 낮을 때만 보인다. */
+.m-phone-session .m-keys-toggle { display: none; width: 36px; height: 36px; }
+
+/* ── 목록(홈, 좁은 폰) ─────────────────────────────────────── */
+.m-list-phone .m-conn-strip {
+  margin: 0;
+  padding: 5px 14px;
+  color: var(--warning-text);
+  background: color-mix(in srgb, var(--amber) calc(12% * var(--tint-scale)), transparent);
+  font: 12px/16px var(--m-font);
+}
+.m-list-phone .m-panel { padding: 4px 6px 8px; }
+.m-list-phone .m-panel-heading { padding: 6px 4px 2px; }
+.m-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--p-radius); background: var(--surface); }
+.m-seg button {
+  height: 30px;
+  min-height: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font: 13px/30px var(--m-font);
+}
+.m-seg button[aria-pressed="true"] { color: var(--text); background: var(--surface-hover); font-weight: 600; }
+.m-rows-label {
+  padding: 12px 10px 4px;
+  color: var(--quiet);
+  font: 600 11px/14px var(--m-font);
+  letter-spacing: 0.04em;
+  list-style: none;
+}
+.m-rows-label-await { color: var(--amber); }
+.m-row-phone { min-height: 56px; border-radius: var(--p-radius); }
+.m-row-phone .m-row-open {
+  gap: 10px;
+  min-height: 56px;
+  padding: 6px 10px;
+  border-radius: var(--p-radius);
+}
+.m-row-text { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; gap: 2px; }
+.m-row-phone .m-row-name { color: var(--text); font: 500 15px/19px var(--m-font); }
+.m-row-sub { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--quiet); font: 12px/16px var(--m-font); }
+.m-row-phone .m-row-place, .m-row-phone .m-row-branch { max-width: none; font: inherit; }
+/* 넓은 화면 행은 칸마다 뒤에 "·"를 붙인다 — 폰은 폴더 뒤에 브랜치가 올 때만. */
+.m-row-phone .m-row-place::after, .m-row-phone .m-row-branch::after { content: none; }
+.m-row-phone .m-row-place:not(:last-child)::after { margin: 0 0 0 6px; content: "·"; }
+.m-row-phone .m-status { font: 12px/1 var(--m-font); }
+.m-list-phone .m-row-action { min-width: 44px; min-height: 44px; }
+.m-list-phone .m-shelf-toggle { min-height: 44px; padding: 0 10px; border-radius: var(--p-radius); }
+.m-list-phone .m-tree .m-row-open, .m-list-phone .m-tree-session { min-height: 44px; }
+.m-list-phone .m-tree-toggle { min-width: 36px; min-height: 44px; }
+
+/* ── 프로젝트·경로 묶음(서랍과 레일) ───────────────────────── */
+.m-groups { display: grid; gap: 2px; }
+.m-groups-head, .m-groups-path-head {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--quiet);
+  background: transparent;
+  text-align: left;
+}
+.m-groups-head { margin-top: 6px; font: 600 12px/16px var(--m-font); letter-spacing: 0.02em; }
+.m-groups-name { overflow: hidden; flex: 1 1 auto; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.m-groups-path-head { min-height: 30px; padding-left: 22px; font: 12px/16px var(--m-font); }
+.m-groups-path-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-group-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--p-radius);
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+}
+.m-group-row:hover:not(:disabled) { background: var(--surface-hover); }
+.m-group-row[aria-current="true"] { color: var(--text); background: var(--surface-hover); }
+.m-group-row[aria-current="true"]::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  content: "";
+}
+.m-group-row-await { background: color-mix(in srgb, var(--amber) calc(9% * var(--tint-scale)), transparent); }
+.m-group-row > svg { flex: 0 0 auto; }
+.m-group-row-text { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; gap: 1px; }
+.m-group-row-name {
+  overflow: hidden;
+  color: var(--text);
+  font: 500 14px/18px var(--m-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-group-row-meta {
+  overflow: hidden;
+  color: var(--quiet);
+  font: 12px/15px var(--m-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 레일·서랍 머리와 바닥 */
+.m-rail-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  height: calc(44px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 2px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.m-host-name {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font: 600 14px/1.2 var(--m-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-rail-foot {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 6px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+}
+.m-new-button {
+  display: flex;
+  flex: 1 1 auto;
+  height: 40px;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--p-radius);
+  color: var(--text);
+  background: var(--surface);
+  font: 600 14px/1 var(--m-font);
+}
+.m-new-button:hover:not(:disabled) { background: var(--surface-hover); }
+
+/* 서랍(좁은 폰의 ☰) — 레일과 같은 목록이 왼쪽에서 덮어 온다. */
+.m-drawer-overlay { position: fixed; z-index: 20; inset: 0; }
+.m-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--backdrop);
+}
+.m-drawer-backdrop:hover:not(:disabled) { background: var(--backdrop); }
+.m-drawer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: flex;
+  width: min(86vw, 320px);
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+  box-shadow: var(--shadow);
+}
+.m-drawer-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 8px; }
+
+/* ── 레일 배치(폴드를 편 화면처럼 폭이 되는 폰) ─────────────── */
+.m-split {
+  display: grid;
+  grid-template-columns: clamp(184px, 27vw, 272px) minmax(0, 1fr);
+  height: 100%;
+}
+.m-split.m-rail-collapsed { grid-template-columns: 60px minmax(0, 1fr); }
+.m-rail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+}
+.m-rail .m-conn-strip {
+  margin: 0;
+  padding: 5px 12px;
+  color: var(--warning-text);
+  background: color-mix(in srgb, var(--amber) calc(12% * var(--tint-scale)), transparent);
+  font: 12px/16px var(--m-font);
+}
+.m-rail-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 8px; }
+.m-split-main { position: relative; min-width: 0; min-height: 0; height: 100%; }
+.m-split-empty { display: grid; height: 100%; margin: 0; place-items: center; }
+/* 접은 레일: 점과 아이콘만. 이름은 title로. */
+.m-rail-collapsed .m-group-row-text,
+.m-rail-collapsed .m-groups-head,
+.m-rail-collapsed .m-groups-path-head,
+.m-rail-collapsed .m-host-name,
+.m-rail-collapsed .m-rail-head .m-await-pill,
+.m-rail-collapsed .m-rail-more,
+.m-rail-collapsed .m-new-button span,
+.m-rail-collapsed .m-conn-strip { display: none; }
+.m-rail-collapsed .m-rail-head { justify-content: center; padding-left: 2px; }
+.m-rail-collapsed .m-group-row { justify-content: center; gap: 4px; padding: 5px 0; }
+.m-rail-collapsed .m-rail-foot { flex-direction: column; align-items: center; }
+.m-rail-collapsed .m-new-button { flex: 0 0 auto; width: 44px; padding: 0; }
+/* 레일 옆 세션: 키와 입력을 한 줄에. */
+.m-rail-session .m-bottom { display: flex; align-items: center; }
+.m-rail-session .m-keys { flex: 0 1 auto; max-width: 55%; padding: 6px 4px 6px 8px; }
+.m-rail-session .m-composer { flex: 1 1 auto; min-width: 0; align-items: center; padding: 4px 8px 4px 4px; }
+
+/* ── 하단 시트 ─────────────────────────────────────────────── */
+.m-sheet-overlay { position: fixed; z-index: 30; inset: 0; }
+.m-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--backdrop);
+}
+.m-sheet-backdrop:hover:not(:disabled) { background: var(--backdrop); }
+.m-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  max-width: 560px;
+  max-height: 88%;
+  margin: 0 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 0 calc(10px + env(safe-area-inset-bottom));
+  border-radius: 16px 16px 0 0;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  animation: m-sheet-in 160ms ease-out;
+}
+@keyframes m-sheet-in { from { transform: translateY(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .m-sheet { animation: none; } }
+.m-sheet-handle { width: 36px; height: 4px; margin: 6px auto 8px; border-radius: 2px; background: var(--line-strong); }
+.m-sheet-head { display: flex; align-items: flex-start; gap: 10px; padding: 2px 16px 12px; border-bottom: 1px solid var(--line); }
+.m-sheet-head > .m-dot, .m-sheet-head > .m-conn { margin-top: 7px; }
+.m-sheet-head-text { flex: 1 1 auto; min-width: 0; }
+.m-sheet-title { margin: 0; font: 600 16px/21px var(--m-font); }
+.m-sheet-sub { margin: 2px 0 0; color: var(--muted); font: 12px/16px var(--m-font); overflow-wrap: anywhere; }
+.m-sheet-path { font-family: var(--m-mono); }
+.m-sheet-section { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.m-sheet-section:last-child { border-bottom: 0; }
+.m-sheet-label { margin: 0; padding: 10px 16px 2px; color: var(--quiet); font: 600 11px/14px var(--m-font); letter-spacing: 0.04em; }
+.m-sheet-item {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+  font: 15px/1.3 var(--m-font);
+  text-align: left;
+}
+button.m-sheet-item:hover:not(:disabled), button.m-sheet-item:active { background: var(--surface-hover); }
+.m-sheet-item > svg { flex: 0 0 auto; color: var(--muted); }
+.m-sheet-item-text { flex: 1 1 auto; min-width: 0; padding: 6px 0; }
+.m-sheet-item-text small { display: block; margin-top: 1px; color: var(--quiet); font: 12px/16px var(--m-font); }
+.m-sheet-danger, .m-sheet-danger > svg { color: var(--danger-text); }
+.m-sheet-confirm { display: flex; gap: 8px; padding: 4px 16px 10px; }
+.m-sheet-confirm button {
+  flex: 1 1 0;
+  height: 44px;
+  min-height: 0;
+  border: 0;
+  border-radius: var(--p-radius);
+  background: var(--surface);
+  font: 600 15px/44px var(--m-font);
+}
+.m-danger-button { color: var(--danger-text); background: color-mix(in srgb, var(--red) calc(22% * var(--tint-scale)), var(--surface)) !important; }
+.m-switch { position: relative; flex: 0 0 auto; width: 42px; height: 26px; border-radius: 13px; background: var(--line-strong); }
+.m-switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  content: "";
+  transition: transform 150ms;
+}
+.m-switch.on { background: var(--accent); }
+.m-switch.on::after { transform: translateX(16px); }
+.m-stepper { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; padding: 2px; border-radius: var(--p-radius); background: var(--surface); }
+.m-stepper button {
+  width: 38px;
+  height: 34px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: 600 16px/34px var(--m-font);
+}
+.m-stepper output { min-width: 44px; color: var(--muted); font: 13px/1 var(--m-mono); text-align: center; }
+.m-sheet-rename { display: flex; align-items: center; gap: 8px; padding: 6px 16px; }
+.m-sheet-rename input { flex: 1 1 auto; width: auto; min-width: 0; height: 40px; border-radius: var(--p-radius); }
+.m-sheet-rename button { height: 40px; min-height: 0; padding: 0 14px; border-radius: var(--p-radius); }
+.m-sheet-rename button:not(.m-primary-button) { border: 0; background: var(--surface); }
+.m-sheet-rename .m-primary-button { line-height: 40px; }
+
+/* 새 세션 시트 */
+.m-new-session-sheet { gap: 6px; padding: 2px 16px 4px; border-bottom: 0; }
+.m-new-session-sheet .m-sheet-title { margin-bottom: 4px; }
+.m-new-session-sheet label, .m-field { display: grid; gap: 6px; color: var(--muted); font: 12px/16px var(--m-font); }
+.m-new-session-sheet select {
+  height: 46px;
+  padding: 0 12px;
+  border-radius: var(--p-radius);
+  color: var(--text);
+  font: 15px var(--m-font);
+}
+.m-agents { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+.m-agent {
+  display: flex;
+  height: 62px;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  font: 13px/1.2 var(--m-font);
+}
+.m-agent[aria-checked="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) calc(13% * var(--tint-scale)), var(--surface));
+}
+.m-start-button { width: 100%; height: 48px; margin-top: 10px; line-height: 48px; }
+
+/* ── 페어링 ─────────────────────────────────────────────── */
+.m-pair { min-height: 100%; align-content: center; gap: 14px; padding: 32px 20px; }
+.m-pair h1 { margin: 0; font: 700 22px/28px var(--m-font); }
+.m-pair-hint { margin: 0; color: var(--muted); font: 14px/20px var(--m-font); }
+.m-pair label { font: 13px/18px var(--m-font); }
+.m-pair input { height: 46px; border-radius: var(--p-radius); font-size: 16px; }
+.m-pair .m-pair-code { height: 56px; font: 600 22px/1 var(--m-mono); letter-spacing: 0.18em; text-align: center; text-transform: uppercase; }
+.m-pair .m-primary-button { height: 48px; line-height: 48px; }
+
+/* ── 거절 알림(스낵바) ─────────────────────────────────────── */
+.m-toast {
+  right: 12px;
+  left: 12px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 6px 6px 6px 14px;
+  border-color: var(--line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.m-toast button { height: 34px; min-height: 0; padding: 0 12px; border: 0; color: var(--accent); background: transparent; font-weight: 700; }
+
+/* ── 높이가 낮을 때(키보드가 열렸거나 가로로 눕힌 폰) ──────── */
+@media (max-height: 500px) {
+  :root { --p-bar: 38px; }
+  .m-phone-session .m-title-sub { display: none; }
+  .m-phone-session .m-await-pill { height: 24px; line-height: 24px; }
+  .m-phone-session .m-keys { display: none; }
+  .m-phone-session.m-keys-open .m-keys { display: flex; }
+  /* 키 줄을 접어 둬도 승인 대기면 답할 키(1·2·3·Esc)만은 남긴다. */
+  .m-phone-session.m-has-hot:not(.m-keys-open) .m-keys { display: flex; }
+  .m-phone-session.m-has-hot:not(.m-keys-open) .m-key:not(.m-key-hot) { display: none; }
+  .m-phone-session .m-keys-toggle { display: grid; }
+  .m-phone-session .m-composer { padding-top: 3px; padding-bottom: 3px; }
+  .m-phone-session .m-composer textarea { height: 34px; max-height: 56px; padding-top: 7px; padding-bottom: 7px; }
+  .m-send { width: 34px; height: 34px; }
+}
+/* 레일 옆 시트는 화면 가운데 뜬 카드다. */
+@media (min-width: 600px) {
+  .m-sheet { bottom: 12px; max-width: 520px; border-radius: 16px; }
+}

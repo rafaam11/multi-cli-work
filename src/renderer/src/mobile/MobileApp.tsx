@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Ellipsis, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import type { RemoteCatalog, RemoteMirror, RemoteSessionSummary, RemoteViewAction } from "@shared/remote-types";
-import { startSize, type MeasuredSize } from "./initial-size";
+import { BottomSheet } from "./BottomSheet";
+import { CONNECTION_LABEL, HostMenu } from "./HostMenu";
+import { startSize, type MeasuredSize, type ScreenLayout } from "./initial-size";
 import { NewSessionForm } from "./NewSessionForm";
 import { MirrorGrid } from "./MirrorGrid";
 import { closePane, gridColumns, loadPanes, placePane, savePanes } from "./pane-grid";
@@ -18,15 +21,15 @@ import {
 import { SHELF_TEXT } from "../shelves";
 import { SessionList } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
-import { applySessionMessage } from "./session-list-model";
+import { applySessionMessage, awaitingCount, nextAwaiting } from "./session-list-model";
 import { setHostTheme } from "./color-scheme";
+import { loadPhonePref, savePhonePref } from "./phone-prefs";
 import { readShellBridge } from "./shell-bridge";
-import { SessionTabs } from "./SessionTabs";
 import { SessionDrawer } from "./SessionDrawer";
-import { SessionContext } from "./SessionContext";
-import { useSessionDrawer } from "./use-session-drawer";
+import { SessionGroups } from "./SessionGroups";
+import { useOverlayEntry, useSessionDrawer } from "./use-session-drawer";
 import { useSessionViewing } from "./use-session-viewing";
-import { sessionHash, sessionIdFromHash, useWideLayout } from "./wide-layout";
+import { sessionHash, sessionIdFromHash, useRailLayout, useWideLayout } from "./wide-layout";
 
 /** 이 앱이 세션 화면으로 쌓은 history 항목 표시. 이 항목에서 ←는 history.back()이다. */
 const SESSION_ENTRY = { mcw: "session" } as const;
@@ -78,8 +81,15 @@ export function MobileApp() {
   });
   const [openSessionId, setOpenSessionId] = useState<string | null>(() => sessionIdFromHash(window.location.hash));
   const wide = useWideLayout();
-  /** 새 세션 폼이 열려 있는지와, 호스트가 알려 준 폴더·에이전트 목록. */
+  /** 폰 배치인데 폭이 되면(폴드를 편 화면) 목록을 옆 레일로 늘 둔다. */
+  const rail = useRailLayout();
+  const layout: ScreenLayout = wide ? "wide" : rail ? "rail" : "narrow";
+  /** 새 세션 폼이 열려 있는지(넓은 화면 — 목록 위 폼)와, 호스트가 알려 준 폴더·에이전트 목록. */
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  /** 폰은 새 세션 폼을 하단 시트로 연다 — 뒤로가기로 닫힌다. */
+  const newSheet = useOverlayEntry("new-session");
+  const railMenu = useOverlayEntry("rail-host-menu");
+  const [railCollapsed, setRailCollapsed] = useState(() => loadPhonePref("railCollapsed"));
   /** 트리의 "+"로 열면 그 폴더·worktree가 골라진 채로 연다. */
   const [newSessionInitial, setNewSessionInitial] = useState<{ projectId: string; worktreeId: string | null } | null>(null);
   // 목록에서 세션을 누를 때마다 늘린다 — 호스트 포커스가 이미 그 칸이어도 키보드가 터미널로 가게.
@@ -113,6 +123,9 @@ export function MobileApp() {
   openSessionIdRef.current = openSessionId;
   const wideRef = useRef(wide);
   wideRef.current = wide;
+  /** 레일도 넓은 화면처럼 목록이 늘 옆에 있다 — 세션을 바꿔도 history를 쌓지 않는다. */
+  const listBesideRef = useRef(wide || rail);
+  listBesideRef.current = wide || rail;
   /** 넓은 화면이 호스트 그리드를 따라 그리는 중인지. 그때는 칸을 이 화면이 놓지 않고 호스트에 요청한다. */
   const mirroring = wide && mirror !== null;
   const mirroringRef = useRef(mirroring);
@@ -166,9 +179,9 @@ export function MobileApp() {
     };
   }, []);
 
-  /** 목록에서 열면 새 항목, 세션끼리 옮기면(탭) 지금 항목을 바꾼다. 넓은 화면은 목록이 늘 옆에 있어 바꾸기만 한다. */
+  /** 목록에서 열면 새 항목, 세션끼리 옮기면(서랍) 지금 항목을 바꾼다. 넓은 화면·레일은 목록이 늘 옆에 있어 바꾸기만 한다. */
   const showSession = (sessionId: string, from: "list" | "session") => {
-    if (from === "list" && !wideRef.current) window.history.pushState(SESSION_ENTRY, "", sessionHash(sessionId));
+    if (from === "list" && !listBesideRef.current) window.history.pushState(SESSION_ENTRY, "", sessionHash(sessionId));
     else window.history.replaceState(window.history.state, "", sessionHash(sessionId));
     setOpenSessionId(sessionId);
   };
@@ -206,8 +219,9 @@ export function MobileApp() {
     if (mainRef.current) mainRef.current.inert = drawer.isOpen && !wide;
   }, [drawer.isOpen, wide]);
   useEffect(() => {
-    if (wide && drawer.isOpen) drawer.close();
-  }, [wide, drawer.isOpen, drawer.close]);
+    // 폴드를 펴는 등 목록이 옆에 서는 배치로 바뀌면 서랍은 필요 없다.
+    if ((wide || rail) && drawer.isOpen) drawer.close();
+  }, [wide, rail, drawer.isOpen, drawer.close]);
 
   // 클라이언트는 effect 안에서 만들고 cleanup에서 닫는다 — 닫힌 RemoteClient는 다시 connect하지
   // 않으므로, StrictMode의 이중 실행에서도 매번 새 인스턴스여야 한다.
@@ -274,8 +288,22 @@ export function MobileApp() {
     // 폴더·에이전트는 열 때마다 다시 묻는다 — 호스트에서 그사이 바뀌었을 수 있다.
     setCatalog(null);
     setNewSessionInitial(initial);
-    setNewSessionOpen(true);
+    if (wide) setNewSessionOpen(true);
+    else newSheet.open();
     client.send({ type: "catalog" });
+  };
+  /** 새 세션을 이 화면 크기로 띄운다. 폰은 시트를 먼저 닫는다 — 닫는 뒤로가기가 새 세션 화면 항목을 지우지 않게. */
+  const startNewSession = (projectId: string, kind: string, worktreeId: string | null) => {
+    const size = startSize({
+      measured: measuredRef.current,
+      layout,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
+    const create = () => client.send({ type: "create", projectId, kind, ...(worktreeId ? { worktreeId } : {}), ...size });
+    if (wide) {
+      create();
+      setNewSessionOpen(false);
+    } else newSheet.close(create);
   };
   const gridSessions = panes
     .map((id) => named.find((session) => session.id === id))
@@ -314,8 +342,20 @@ export function MobileApp() {
       onOpenSession={openFromList}
     />
   ) : null;
+  /** 셸(앱) 안이면 호스트 목록으로 돌아가고, 브라우저면 이 기기의 연결을 끊는다(기본 이름 "연결 해제"). */
+  const leaveLabel = bridge ? "호스트 목록" : undefined;
+  const leave = () => {
+    if (bridge) {
+      bridge.backToHosts();
+      return;
+    }
+    clearPairing(storage());
+    setPairing(null);
+  };
+  const newSessionKey = newSessionInitial ? `${newSessionInitial.projectId}:${newSessionInitial.worktreeId ?? ""}` : "blank";
   const list = (
     <SessionList
+      variant={wide ? "panel" : "phone"}
       hostName={pairing.hostName}
       connection={connection}
       sessions={named}
@@ -323,37 +363,35 @@ export function MobileApp() {
       activeSessionId={wide ? (mirroring ? mirrorFocusId : (openSession?.id ?? null)) : null}
       onScreenSessionIds={wide ? (mirroring ? mirrorSessionIds : gridSessions.map((session) => session.id)) : []}
       onMoveShelf={(sessionId, shelf) => client.send({ type: "shelf", sessionId, shelf })}
-      leaveLabel={bridge ? "호스트 목록" : "연결 해제"}
-      onUnpair={() => {
-        if (bridge) {
-          bridge.backToHosts();
-          return;
-        }
-        clearPairing(storage());
-        setPairing(null);
-      }}
+      leaveLabel={leaveLabel}
+      onUnpair={leave}
       onNewSession={() => openNewSessionForm()}
       footer={tree}
     >
-      {newSessionOpen ? (
+      {wide && newSessionOpen ? (
         <NewSessionForm
-          key={newSessionInitial ? `${newSessionInitial.projectId}:${newSessionInitial.worktreeId ?? ""}` : "blank"}
+          key={newSessionKey}
           catalog={catalog}
           initial={newSessionInitial}
-          onStart={(projectId, kind, worktreeId) => {
-            const size = startSize({
-              measured: measuredRef.current,
-              wide,
-              viewport: { width: window.innerWidth, height: window.innerHeight },
-            });
-            client.send({ type: "create", projectId, kind, ...(worktreeId ? { worktreeId } : {}), ...size });
-            setNewSessionOpen(false);
-          }}
+          onStart={startNewSession}
           onCancel={() => setNewSessionOpen(false)}
         />
       ) : null}
     </SessionList>
   );
+  const newSessionSheet =
+    !wide && newSheet.isOpen ? (
+      <BottomSheet label="새 세션" onClose={() => newSheet.close()}>
+        <NewSessionForm
+          key={newSessionKey}
+          variant="sheet"
+          catalog={catalog}
+          initial={newSessionInitial}
+          onStart={startNewSession}
+          onCancel={() => newSheet.close()}
+        />
+      </BottomSheet>
+    ) : null;
   const toast = refusal ? (
     <p className="m-toast" role="alert">
       <span>{refusal}</span>
@@ -363,7 +401,15 @@ export function MobileApp() {
     </p>
   ) : null;
   const measured = (size: { cols: number; rows: number }) => {
-    measuredRef.current = { ...size, wide };
+    measuredRef.current = { ...size, layout };
+  };
+  // 폰의 "대기 N": 숨긴 세션은 세지 않는다 — 숨김 칸에서 직접 연 세션이면 그것만 남긴다.
+  const switchable = named.filter((session) => !session.hidden || session.id === openSession?.id);
+  const currentId = openSession?.id ?? null;
+  const waitingCount = awaitingCount(switchable, currentId);
+  const jumpToWaiting = () => {
+    const next = nextAwaiting(switchable, currentId);
+    if (next) showSession(next.id, currentId ? "session" : "list");
   };
   const screen = openSession ? (
     <SessionScreen
@@ -372,23 +418,12 @@ export function MobileApp() {
       session={openSession}
       deviceId={pairing.deviceId}
       wide={wide}
+      rail={rail}
+      onOpenDrawer={wide || rail ? undefined : drawer.open}
+      awaiting={wide || rail ? null : { count: waitingCount, onJump: jumpToWaiting }}
       onReady={ready => sessionReady(openSession.id, ready)}
-      onBack={showList}
       onMeasured={measured}
       onRename={rename(openSession.id)}
-      tabs={
-        wide ? undefined : (
-          <SessionTabs
-            sessions={named}
-            activeSessionId={openSession.id}
-            onSelect={(sessionId) => showSession(sessionId, "session")}
-            onNewSession={() => {
-              showList();
-              openNewSessionForm();
-            }}
-          />
-        )
-      }
     />
   ) : null;
 
@@ -417,7 +452,6 @@ export function MobileApp() {
                 fitOnlyWhenFocused
                 focused={pane.focused}
                 onReady={ready => sessionReady(pane.session.id, ready)}
-                onBack={showList}
                 onMeasured={pane.focused ? measured : undefined}
                 onFocus={pane.onFocus}
                 onClose={pane.onClose}
@@ -457,7 +491,6 @@ export function MobileApp() {
                     wide
                     focused={focused}
                     onReady={ready => sessionReady(session.id, ready)}
-                    onBack={showList}
                     onMeasured={focused ? measured : undefined}
                     onFocus={() => showSession(session.id, "session")}
                     onClose={() => closeGridPane(session.id)}
@@ -474,13 +507,81 @@ export function MobileApp() {
       </>
     );
   }
+  if (rail) {
+    // 폴드를 편 화면처럼 넓은 폰: 목록은 옆 레일, 세로는 모두 터미널 몫이다.
+    const banner = CONNECTION_LABEL[connection];
+    return (
+      <>
+        <div className={railCollapsed ? "m-split m-rail-collapsed" : "m-split"}>
+          <aside className="m-rail" aria-label="세션 레일">
+            <header className="m-rail-head">
+              <span className={`m-conn m-conn-${connection}`} aria-hidden="true" />
+              <h1 className="m-host-name">{pairing.hostName}</h1>
+              {waitingCount > 0 ? (
+                <button type="button" className="m-await-pill" onClick={jumpToWaiting}>
+                  대기 {waitingCount}
+                </button>
+              ) : null}
+              <button type="button" className="m-icon m-rail-more" aria-label="호스트 메뉴" aria-haspopup="dialog" onClick={railMenu.open}>
+                <Ellipsis size={20} aria-hidden="true" />
+              </button>
+            </header>
+            {banner ? <p className="m-banner m-conn-strip">{banner}</p> : null}
+            <div className="m-rail-scroll">
+              <SessionGroups hostId={hostId} sessions={named} activeId={currentId} onSelect={(id) => showSession(id, "list")} />
+            </div>
+            <footer className="m-rail-foot">
+              <button type="button" className="m-new-button" disabled={disabled} onClick={() => openNewSessionForm()}>
+                <Plus size={18} aria-hidden="true" />
+                <span>새 세션</span>
+              </button>
+              <button
+                type="button"
+                className="m-icon"
+                aria-label={railCollapsed ? "레일 펼치기" : "레일 접기"}
+                onClick={() => {
+                  savePhonePref("railCollapsed", !railCollapsed);
+                  setRailCollapsed(!railCollapsed);
+                }}
+              >
+                {railCollapsed ? <PanelLeftOpen size={20} aria-hidden="true" /> : <PanelLeftClose size={20} aria-hidden="true" />}
+              </button>
+            </footer>
+          </aside>
+          <div className="m-split-main">{screen ?? <p className="m-empty m-split-empty">왼쪽에서 세션을 고르세요</p>}</div>
+        </div>
+        {railMenu.isOpen ? (
+          <HostMenu
+            hostName={pairing.hostName}
+            connection={connection}
+            leaveLabel={leaveLabel}
+            onLeave={() => railMenu.close(leave)}
+            onClose={() => railMenu.close()}
+          />
+        ) : null}
+        {newSessionSheet}
+        {toast}
+      </>
+    );
+  }
   return (
     <>
       <div className="m-phone-main" ref={mainRef}>
-        {openSession && <SessionContext key={openSession.id} session={openSession} onOpen={drawer.open} />}
         <div className="m-phone-body">{screen ?? list}</div>
       </div>
-      {drawer.isOpen && <SessionDrawer hostId={hostId} hostName={pairing.hostName} sessions={named} activeId={openSession?.id ?? null} onClose={() => drawer.close()} onSelect={id => drawer.close(() => showSession(id, openSession ? "session" : "list"))} />}
+      {drawer.isOpen && (
+        <SessionDrawer
+          hostId={hostId}
+          hostName={pairing.hostName}
+          sessions={named}
+          activeId={currentId}
+          onClose={() => drawer.close()}
+          onSelect={(id) => drawer.close(() => showSession(id, openSession ? "session" : "list"))}
+          onShowList={openSession ? () => drawer.close(showList) : undefined}
+          onNewSession={() => drawer.close(() => openNewSessionForm())}
+        />
+      )}
+      {newSessionSheet}
       {toast}
     </>
   );

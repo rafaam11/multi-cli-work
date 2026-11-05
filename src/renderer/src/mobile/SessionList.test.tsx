@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteSessionSummary } from "@shared/remote-types";
 import { SessionList } from "./SessionList";
@@ -109,5 +109,48 @@ describe("SessionList", () => {
     renderList([], { connection: "reconnecting" });
     expect(screen.getByText("열린 세션이 없습니다")).toBeInTheDocument();
     expect(screen.getByText("다시 연결하는 중…")).toBeInTheDocument();
+  });
+});
+
+describe("SessionList on a phone", () => {
+  afterEach(() => window.history.replaceState(null, "", window.location.pathname));
+
+  it("gives each session two lines so the name is not squeezed, and heads the waiting ones", () => {
+    renderList(
+      [s("work", { label: "아주 긴 세션 이름이라도 한 줄을 다 쓴다", worktreeBranch: "feat/x" }), s("ask", { status: "awaiting-approval" })],
+      { variant: "phone" },
+    );
+    expect(rowNames()).toEqual(["ask, 승인 대기", "아주 긴 세션 이름이라도 한 줄을 다 쓴다, 작업 중"]);
+    // 묶음 이름 줄은 화면 읽기에서 빼 두었다(aria-hidden) — 행 이름이 상태를 이미 말한다.
+    const rows = [...screen.getByRole("list", { name: "세션 목록" }).querySelectorAll(":scope > li")];
+    expect(rows.map((row) => (row.classList.contains("m-rows-label") ? `[${row.textContent}]` : "row"))).toEqual([
+      "[응답 대기]",
+      "row",
+      "[세션]",
+      "row",
+    ]);
+    // 폴더와 브랜치는 이름 아래 줄에 — 같은 곳의 행이 이어져도 지우지 않는다.
+    expect(rows[3]).toHaveTextContent("A");
+    expect(rows[3]).toHaveTextContent("feat/x");
+  });
+
+  it("keeps new session in the top bar and puts leaving behind the ⋯ menu", async () => {
+    const onUnpair = vi.fn();
+    const onNewSession = vi.fn();
+    renderList([s("1")], { variant: "phone", onUnpair, onNewSession });
+    expect(screen.getByRole("heading", { name: "PC" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "연결 해제" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "새 세션" }));
+    expect(onNewSession).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "호스트 메뉴" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "호스트 메뉴" })).getByRole("button", { name: "연결 해제" }));
+    await waitFor(() => expect(onUnpair).toHaveBeenCalledOnce());
+  });
+
+  it("filters to waiting sessions with counts on the segmented control", () => {
+    renderList([s("1"), s("2", { status: "awaiting-input" })], { variant: "phone" });
+    fireEvent.click(screen.getByRole("button", { name: "대기 1" }));
+    expect(rowNames()).toEqual(["2, 입력 대기"]);
+    expect(screen.getByRole("button", { name: "전체 2" })).toHaveAttribute("aria-pressed", "false");
   });
 });

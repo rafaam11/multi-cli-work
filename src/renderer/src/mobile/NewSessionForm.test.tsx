@@ -90,6 +90,17 @@ describe("NewSessionForm", () => {
     expect(onStart).not.toHaveBeenCalled();
   });
 
+  it("picks the agent from icon buttons in the phone sheet", () => {
+    const onStart = vi.fn();
+    render(<NewSessionForm variant="sheet" catalog={CATALOG} onStart={onStart} onCancel={vi.fn()} />);
+    expect(screen.getByRole("radio", { name: "Claude" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("button", { name: "취소" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    expect(screen.getByRole("radio", { name: "Codex" })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+    expect(onStart).toHaveBeenCalledWith("p1", "codex", null);
+  });
+
   it("waits for the catalog", () => {
     const onCancel = vi.fn();
     render(<NewSessionForm catalog={null} onStart={vi.fn()} onCancel={onCancel} />);

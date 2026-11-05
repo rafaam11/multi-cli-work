@@ -20,17 +20,24 @@ export function PairScreen({ notice, onPaired }: { notice: string | null; onPair
   return (
     <form className="m-pair" onSubmit={submit}>
       <h1>PC와 연결</h1>
-      <p>PC의 설정 ▸ 원격 ▸ 기기 추가에 나온 코드를 입력하세요.</p>
+      <p className="m-pair-hint">PC의 설정 ▸ 원격 ▸ 기기 추가에 나온 코드를 입력하세요.</p>
       {notice ? <p className="m-notice">{notice}</p> : null}
       <label>
         페어링 코드
-        <input value={code} autoCapitalize="characters" autoComplete="one-time-code" onChange={(event) => setCode(event.target.value)} />
+        <input
+          className="m-pair-code"
+          value={code}
+          autoCapitalize="characters"
+          autoComplete="one-time-code"
+          spellCheck={false}
+          onChange={(event) => setCode(event.target.value)}
+        />
       </label>
       <label>
         이 기기 이름
         <input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} />
       </label>
-      <button type="submit" disabled={busy || code.trim().length === 0}>
+      <button type="submit" className="m-primary-button" disabled={busy || code.trim().length === 0}>
         연결
       </button>
       {error ? <p className="m-error">{error}</p> : null}

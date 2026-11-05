@@ -168,14 +168,22 @@ process.stdin.on("data", (data) => {
     await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_FROM_PHONE");
     await expect(page.locator(".xterm-rows")).toContainText("MCW_FROM_PHONE");
 
-    // 폰 크기로 맞춘 뒤에도 손가락 드래그로 스크롤백을 거슬러 올라갈 수 있다.
+    // 폰은 열자마자 터미널을 이 화면 폭에 맞춘다 — PC 열 수 그대로 옆으로 넘치지 않는다.
+    await expect
+      .poll(() =>
+        phone.evaluate(() => {
+          const host = document.querySelector<HTMLElement>(".m-terminal-host")!;
+          return host.scrollWidth <= host.clientWidth + 1;
+        }),
+      )
+      .toBe(true);
+
+    // 맞춘 뒤에도 손가락 드래그로 스크롤백을 거슬러 올라갈 수 있다.
     await phone.getByLabel("입력").fill(
       WINDOWS ? "1..120 | ForEach-Object { 'MCW_TOUCH_' + $_ }" : "i=1; while [ $i -le 120 ]; do echo MCW_TOUCH_$i; i=$((i+1)); done",
     );
     await phone.getByRole("button", { name: "전송" }).click();
     await expect(phone.locator(".m-terminal .xterm-rows")).toContainText("MCW_TOUCH_120");
-    await phone.getByRole("button", { name: "📱 폰 크기로" }).click();
-    await expect(phone.getByRole("button", { name: "📱 폰 크기로" })).toHaveAttribute("aria-pressed", "true");
     const firstTouchRow = phone.locator(".m-terminal .xterm-rows > div").filter({ hasText: /^MCW_TOUCH_1$/ });
     await expect(firstTouchRow).toBeHidden();
     const box = await phone.locator(".m-terminal").boundingBox();
@@ -237,13 +245,15 @@ process.stdin.on("data", (data) => {
       await phone.getByRole("button", { name: "전송" }).click();
     }
 
-    // 세션 탭 줄로 다른 세션에 바로 옮겨 가고, 뒤로가기는 PC 목록이 아니라 세션 목록으로 간다.
+    // ☰ 서랍으로 다른 세션에 바로 옮겨 가고, 뒤로가기는 PC 목록이 아니라 세션 목록으로 간다.
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
-    const otherTab = phone.locator(".m-tab:not(.m-tab-new):not([aria-current])");
-    await expect(otherTab).toHaveCount(1);
+    await phone.getByRole("button", { name: "세션 사이드바 열기" }).click();
+    const drawer = phone.getByRole("dialog", { name: "프로젝트와 경로별 세션" });
+    const otherSession = drawer.locator(".m-group-row:not([aria-current])");
+    await expect(otherSession).toHaveCount(1);
     const firstHash = await phone.evaluate(() => window.location.hash);
-    await otherTab.click();
-    await expect(phone.locator(".m-tab[aria-current]")).toHaveCount(1);
+    await otherSession.click();
+    await expect(drawer).toBeHidden();
     await expect.poll(() => phone.evaluate(() => window.location.hash)).not.toBe(firstHash);
     await expect(phone.locator(".m-terminal .xterm-rows")).not.toContainText("MCW_FROM_PHONE");
     await phone.getByLabel("입력").fill(WINDOWS ? "Write-Output MCW_IN_TAB_B" : "echo MCW_IN_TAB_B");
@@ -307,16 +317,22 @@ process.stdin.on("data", (data) => {
       const before = { attaches, resizes };
       await phone.getByRole("button", { name: "세션 사이드바 열기" }).click();
       await expect(phone.getByRole("dialog")).toBeVisible();
-      await expect(phone.locator(".m-drawer-project")).toHaveCount(2);
-      await expect(phone.locator(".m-drawer-path-label").first()).toHaveText(active.cwd);
+      await expect(phone.locator(".m-groups-project")).toHaveCount(2);
+      // 경로가 둘인 프로젝트만 경로 줄을 둔다 — 짧게 보이고 전체 경로는 title에.
+      const pathLine = phone.locator(".m-groups-path-head").first();
+      await expect(pathLine).toHaveText("…/multi-cli-work/feature");
+      await expect(pathLine).toHaveAttribute("title", active.cwd);
       await phone.screenshot({ path: testInfo.outputPath(`mobile-${mode}-drawer.png`) });
       await phone.goBack();
       await expect(phone.getByRole("dialog")).toBeHidden();
       expect(await terminal?.evaluate(node => node === document.querySelector(".xterm"))).toBe(true);
       expect({ attaches, resizes }).toEqual(before);
-      await phone.getByRole("button", { name: "현재 세션 경로" }).click();
-      await expect(phone.locator(".m-context-full")).toContainText(active.cwd);
-      await phone.getByRole("button", { name: "전체 경로 닫기" }).click();
+      // 전체 경로는 ⋯ 세션 메뉴 머리에 있다. 뒤로가기는 메뉴만 닫는다.
+      await phone.getByRole("button", { name: "세션 메뉴" }).click();
+      await expect(phone.getByRole("dialog", { name: "세션 메뉴" })).toContainText(active.cwd);
+      await phone.goBack();
+      await expect(phone.getByRole("dialog", { name: "세션 메뉴" })).toBeHidden();
+      expect(await terminal?.evaluate(node => node === document.querySelector(".xterm"))).toBe(true);
       const box = await phone.locator(".m-terminal").boundingBox();
       if (!box) throw new Error("terminal missing");
       const cdp = await phone.context().newCDPSession(phone);

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { RemoteCatalog } from "@shared/remote-types";
+import { AgentIcon } from "../brand-icons";
+import { remoteAgent } from "./SessionList";
 
 interface NewSessionFormProps {
   /** 호스트에 물어 둔 폴더·에이전트 목록. 아직 답이 없으면 null. */
@@ -9,13 +11,20 @@ interface NewSessionFormProps {
   /** worktreeId가 null이면 폴더 루트에서 시작한다. */
   onStart(projectId: string, kind: string, worktreeId: string | null): void;
   onCancel(): void;
+  /**
+   * inline: 넓은 화면 목록 위에 펼치는 폼. sheet: 폰 하단 시트 — 에이전트를 아이콘 버튼으로 고르고 시작
+   * 버튼이 꽉 찬다. 취소는 시트 바깥을 누르거나 뒤로가기다.
+   */
+  variant?: "inline" | "sheet";
 }
 
 /**
  * 호스트 PC에 새 세션을 띄우는 폼. 어디서(폴더, 있으면 그 안의 워크트리) 무엇을(에이전트) 돌릴지만 고른다 — 시작 크기는
  * MobileApp이 이 화면에 맞게 어림해 싣고, 열린 뒤에는 다른 세션과 같은 규칙으로 맞춘다.
  */
-export function NewSessionForm({ catalog, initial = null, onStart, onCancel }: NewSessionFormProps) {
+export function NewSessionForm({ catalog, initial = null, onStart, onCancel, variant = "inline" }: NewSessionFormProps) {
+  const sheet = variant === "sheet";
+  const formClass = sheet ? "m-new-session m-new-session-sheet" : "m-new-session";
   const [projectId, setProjectId] = useState(initial?.projectId ?? "");
   const [kind, setKind] = useState("");
   /** 고른 폴더 안의 작업 위치. 빈 문자열이 폴더 루트다. */
@@ -35,7 +44,8 @@ export function NewSessionForm({ catalog, initial = null, onStart, onCancel }: N
 
   if (!catalog) {
     return (
-      <form className="m-new-session" onSubmit={(event) => event.preventDefault()}>
+      <form className={formClass} onSubmit={(event) => event.preventDefault()}>
+        {sheet ? <h2 className="m-sheet-title">새 세션</h2> : null}
         <p className="m-empty">불러오는 중…</p>
         <div className="m-new-session-actions">
           <button type="button" onClick={onCancel}>
@@ -51,12 +61,13 @@ export function NewSessionForm({ catalog, initial = null, onStart, onCancel }: N
 
   return (
     <form
-      className="m-new-session"
+      className={formClass}
       onSubmit={(event) => {
         event.preventDefault();
         if (ready) onStart(projectId, kind, worktreeId === "" ? null : worktreeId);
       }}
     >
+      {sheet ? <h2 className="m-sheet-title">새 세션</h2> : null}
       {catalog.projects.length === 0 ? (
         <p className="m-notice">호스트에 등록된 폴더가 없습니다</p>
       ) : (
@@ -93,6 +104,25 @@ export function NewSessionForm({ catalog, initial = null, onStart, onCancel }: N
       ) : null}
       {catalog.agents.length === 0 ? (
         <p className="m-notice">호스트에서 실행할 수 있는 에이전트가 없습니다</p>
+      ) : sheet ? (
+        <div className="m-field">
+          <span className="m-field-label">에이전트</span>
+          <div className="m-agents" role="radiogroup" aria-label="에이전트">
+            {catalog.agents.map((agent) => (
+              <button
+                type="button"
+                key={agent.id}
+                role="radio"
+                aria-checked={kind === agent.id}
+                className="m-agent"
+                onClick={() => setKind(agent.id)}
+              >
+                <AgentIcon agent={remoteAgent({ kind: agent.id })} size={22} />
+                <span>{agent.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       ) : (
         <label>
           에이전트
@@ -105,14 +135,20 @@ export function NewSessionForm({ catalog, initial = null, onStart, onCancel }: N
           </select>
         </label>
       )}
-      <div className="m-new-session-actions">
-        <button type="submit" disabled={!ready}>
+      {sheet ? (
+        <button type="submit" className="m-primary-button m-start-button" disabled={!ready}>
           시작
         </button>
-        <button type="button" onClick={onCancel}>
-          취소
-        </button>
-      </div>
+      ) : (
+        <div className="m-new-session-actions">
+          <button type="submit" disabled={!ready}>
+            시작
+          </button>
+          <button type="button" onClick={onCancel}>
+            취소
+          </button>
+        </div>
+      )}
     </form>
   );
 }

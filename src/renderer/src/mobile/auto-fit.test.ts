@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAutoFit, type AutoFitState } from "./auto-fit";
 
-function setup() {
+function setup(keepHost = false) {
   let size: { cols: number; rows: number } | null = { cols: 120, rows: 40 };
   const resize = vi.fn();
   const release = vi.fn();
   const states: AutoFitState[] = [];
   const fit = createAutoFit({
     deviceId: "me",
+    keepHost,
     measure: () => size,
     resize,
     release,
@@ -17,6 +18,19 @@ function setup() {
 }
 
 describe("createAutoFit", () => {
+  it("starts on the host's size when this device keeps it, without asking the host to release anything", () => {
+    const { fit, resize, release, setSize } = setup(true);
+    expect(fit.state()).toBe("host");
+    fit.attached();
+    setSize({ cols: 80, rows: 20 });
+    fit.areaChanged();
+    fit.windowResized();
+    expect(resize).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+    fit.keepHost(false);
+    expect(resize).toHaveBeenCalledWith(80, 20);
+  });
+
   it("fits the terminal to this window once attached", () => {
     const { fit, resize } = setup();
     fit.areaChanged();

@@ -1,31 +1,52 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { AArrowDown, AArrowUp, CircleStop, Keyboard, Maximize2, Minimize2, Pin, RotateCcw, Trash2, X } from "lucide-react";
+import {
+  AArrowDown,
+  AArrowUp,
+  ArrowUp,
+  CircleStop,
+  Ellipsis,
+  Keyboard,
+  Maximize2,
+  Menu,
+  Minimize2,
+  Pin,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { REMOTE_SESSION_NAME_MAX, type RemoteSessionSummary } from "@shared/remote-types";
 import { DEFAULT_SETTINGS } from "@shared/settings-types";
 import { splitReplay } from "@shared/terminal-replay";
 import { createAutoFit, type AutoFit, type AutoFitState } from "./auto-fit";
 import { TERMINAL_FONT_INDEX, TERMINAL_FONT_SIZES, type TerminalSize } from "./initial-size";
+import { loadPhonePref, savePhonePref } from "./phone-prefs";
 import type { RemoteClient } from "./remote-client";
+import { projectLabel } from "./session-groups";
+import { SessionMenu } from "./SessionMenu";
 import { statusLabels as STATUS_LABEL } from "../session-labels";
 import { terminalTheme } from "../terminal-themes";
 import { currentTheme, useResolvedTheme } from "../theme";
-import { clipboardKeyAction, createReplayGate, encodeComposerInput, QUICK_KEYS } from "./terminal-input";
+import { clipboardKeyAction, createReplayGate, encodeComposerInput, phoneQuickKeys, QUICK_KEYS } from "./terminal-input";
 import { planTouchScroll, shouldSendWheel } from "./touch-scroll";
+import { useOverlayEntry } from "./use-session-drawer";
 
 interface SessionScreenProps {
   client: RemoteClient;
   session: RemoteSessionSummary;
   deviceId: string;
-  onBack(): void;
   /** 넓은 화면(PC): 목록이 옆에 있고, 터미널을 이 창 크기에 맞추며, 키보드로 바로 입력한다. */
   wide?: boolean;
   /** 이 화면에 들어가는 터미널 크기를 잴 때마다 알린다 — 새 세션을 그 크기로 띄우려고. */
   onMeasured?(size: TerminalSize): void;
-  /** 헤더 바로 아래에 그리는 세션 탭 줄(좁은 화면). */
-  tabs?: ReactNode;
+  /** 폰: 세션 목록이 옆 레일에 있다 — 머리줄 없이 터미널이 위까지 차고, ⋯는 터미널 위에 뜬다. */
+  rail?: boolean;
+  /** 폰 머리줄의 ☰ — 프로젝트·경로별 세션 서랍을 연다. */
+  onOpenDrawer?(): void;
+  /** 폰 머리줄의 "대기 N" — 다른 세션이 답을 기다린다. */
+  awaiting?: { count: number; onJump(): void } | null;
   /**
    * 넓은 화면 그리드에서 키보드 입력을 받는 칸인지. 포커스 칸만 터미널에 포커스를 주고 도구 줄을 보인다.
    * 그리드가 아니면 늘 true다.
@@ -62,18 +83,19 @@ const FONT_SIZES = TERMINAL_FONT_SIZES;
 const AUTO_FIT_DEBOUNCE_MS = 150;
 
 /**
- * 세션 화면. 폰(좁은 화면)의 기본은 PC의 열 수를 그대로 그리고 가로로 스크롤하는 것이고, "폰 크기로"를
- * 켜면 이 화면 폭으로 PTY를 줄인다. 넓은 화면(PC)은 반대로 이 창 크기에 맞추는 것이 기본이다. 어느
- * 쪽이든 호스트가 크기를 되찾으면(입력·패인 크기 변경) 맞춤이 꺼지거나 멈춘다.
+ * 세션 화면. 폰과 넓은 화면 모두 PTY를 이 화면 크기에 맞추는 것이 기본이다 — 폰에서 PC 열 수 그대로
+ * 그리면 옆으로 넘친다. 호스트가 크기를 되찾으면(입력·패인 크기 변경) 맞춤이 멈추고 "다시 맞추기"를
+ * 띄운다. 폰은 ⋯ 메뉴의 "PC 크기 유지"로 맞춤을 끌 수 있고, 그 선택은 기기에 남는다.
  */
 export function SessionScreen({
   client,
   session,
   deviceId,
-  onBack,
   wide = false,
   onMeasured,
-  tabs,
+  rail = false,
+  onOpenDrawer,
+  awaiting = null,
   focused = true,
   onClose,
   onFocus,
@@ -92,9 +114,11 @@ export function SessionScreen({
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const autoFitRef = useRef<AutoFit | null>(null);
-  const phoneSizeRef = useRef(false);
-  const [phoneSize, setPhoneSize] = useState(false);
   const [fitState, setFitState] = useState<AutoFitState>("fitting");
+  /** 폰: 높이가 낮을 때(키보드가 열렸을 때) 접어 두는 키 줄을 펼쳐 둘지. */
+  const [keysOpen, setKeysOpen] = useState(() => loadPhonePref("keysOpenWhenLow"));
+  const menu = useOverlayEntry("session-menu");
+  const draftRef = useRef<HTMLTextAreaElement>(null);
   // 넓은 화면은 키보드가 있다 — 빠른 키 바와 입력창은 접어 둔다.
   const [toolsOpen, setToolsOpen] = useState(!wide);
   const [fontIndex, setFontIndex] = useState(TERMINAL_FONT_INDEX);
@@ -136,6 +160,9 @@ export function SessionScreen({
       fontSize: FONT_SIZES[TERMINAL_FONT_INDEX],
       fontFamily: 'ui-monospace, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace',
       scrollback: DEFAULT_SETTINGS.terminal.scrollback,
+      // 폰은 손가락으로 스크롤한다(touch-scroll) — FitAddon이 스크롤바 자리로 14px를 빼서 오른쪽이 비지
+      // 않게 얇은 위치 표시만 남긴다. 475px 폭에서 두 열이 더 들어간다.
+      ...(wide ? {} : { overviewRuler: { width: 4 } }),
       scrollOnEraseInDisplay: true,
       cursorBlink: false,
       theme: terminalTheme(currentTheme()),
@@ -165,25 +192,26 @@ export function SessionScreen({
       });
     }
 
-    const autoFit = wide
-      ? createAutoFit({
-          deviceId,
-          measure: () => {
-            const dims = fit.proposeDimensions();
-            return dims ? { cols: dims.cols, rows: dims.rows } : null;
-          },
-          resize: (cols, rows) => {
-            if (fitOnlyRef.current && !focusedRef.current) return;
-            client.send({ type: "resize", sessionId: session.id, cols, rows });
-          },
-          release: () => {
-            client.send({ type: "releaseSize", sessionId: session.id });
-          },
-          onChange: setFitState,
-        })
-      : null;
+    // 폰도 넓은 화면과 같은 규칙으로 맞춘다. "PC 크기 유지"를 켜 둔 기기만 처음부터 호스트 크기다.
+    const keepHost = !wide && loadPhonePref("keepHostSize");
+    const autoFit = createAutoFit({
+      deviceId,
+      keepHost,
+      measure: () => {
+        const dims = fit.proposeDimensions();
+        return dims ? { cols: dims.cols, rows: dims.rows } : null;
+      },
+      resize: (cols, rows) => {
+        if (fitOnlyRef.current && !focusedRef.current) return;
+        client.send({ type: "resize", sessionId: session.id, cols, rows });
+      },
+      release: () => {
+        client.send({ type: "releaseSize", sessionId: session.id });
+      },
+      onChange: setFitState,
+    });
     autoFitRef.current = autoFit;
-    setFitState("fitting");
+    setFitState(keepHost ? "host" : "fitting");
     if (wide && focusedRef.current) terminal.focus();
 
     let replaying = false;
@@ -261,12 +289,6 @@ export function SessionScreen({
     const applySize = (cols: number | null, rows: number | null) => {
       if (cols !== null && rows !== null && (terminal.cols !== cols || terminal.rows !== rows)) terminal.resize(cols, rows);
     };
-    const giveBackToggle = (owner: string) => {
-      if (owner !== deviceId && phoneSizeRef.current) {
-        phoneSizeRef.current = false;
-        setPhoneSize(false);
-      }
-    };
 
     const offMessage = client.onMessage((message) => {
       if (!("sessionId" in message) || message.sessionId !== session.id) return;
@@ -276,16 +298,14 @@ export function SessionScreen({
         terminal.write("", () => { if (live && revision === attachment) terminal.reset(); });
         terminal.options.scrollback = message.scrollback ?? DEFAULT_SETTINGS.terminal.scrollback;
         currentSize = { cols: message.cols, rows: message.rows };
-        if (autoFit) autoFit.attached();
-        else giveBackToggle(message.sizeOwner);
+        autoFit.attached();
         gate.attached(message.replay, message.sequence);
       } else if (message.type === "data") {
         gate.data(message.data, message.sequence);
       } else if (message.type === "size") {
         currentSize = { cols: message.cols, rows: message.rows };
         if (!replaying) applySize(message.cols, message.rows);
-        if (autoFit) autoFit.owner(message.sizeOwner);
-        else giveBackToggle(message.sizeOwner);
+        autoFit.owner(message.sizeOwner);
       }
     });
     reattachRef.current = () => {
@@ -297,8 +317,6 @@ export function SessionScreen({
       notReady();
       if (state !== "open") return;
       gate.reset();
-      phoneSizeRef.current = false;
-      setPhoneSize(false);
       client.send({ type: "attach", sessionId: session.id });
     });
     client.send({ type: "attach", sessionId: session.id });
@@ -309,7 +327,6 @@ export function SessionScreen({
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     let windowResized = false;
     const scheduleFit = () => {
-      if (!autoFit) return;
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         if (windowResized) autoFit.windowResized();
@@ -430,7 +447,8 @@ export function SessionScreen({
       host.removeEventListener("touchmove", onTouchMove);
       host.removeEventListener("touchend", onTouchEnd);
       host.removeEventListener("touchcancel", onTouchEnd);
-      if (phoneSizeRef.current) client.send({ type: "releaseSize", sessionId: session.id });
+      // 폰이 크기를 맞춰 쥐고 있었으면 떠날 때 PC에 돌려준다 — 폰 폭으로 줄어든 채 남지 않게.
+      if (!wide && autoFit.state() === "fitting") client.send({ type: "releaseSize", sessionId: session.id });
       client.send({ type: "detach", sessionId: session.id });
       live = false;
       notReady();
@@ -467,21 +485,13 @@ export function SessionScreen({
     rescaleRef.current?.();
   }, [fontIndex]);
 
-  const togglePhoneSize = () => {
-    const next = !phoneSizeRef.current;
-    phoneSizeRef.current = next;
-    setPhoneSize(next);
-    if (!next) {
-      client.send({ type: "releaseSize", sessionId: session.id });
-      return;
-    }
-    const dims = fitRef.current?.proposeDimensions();
-    if (dims && dims.cols >= 2 && dims.rows >= 1) {
-      client.send({ type: "resize", sessionId: session.id, cols: dims.cols, rows: dims.rows });
-    }
-  };
-
   const sendKeys = (data: string) => client.send({ type: "write", sessionId: session.id, data });
+
+  const submitDraft = () => {
+    sendKeys(encodeComposerInput(draft));
+    setDraft("");
+    if (draftRef.current) draftRef.current.style.height = "";
+  };
 
   // 포커스는 누르기를 마친 뒤에 옮긴다. 끌어서 글을 골랐으면 옮기지 않는다 — 포커스를 받은 칸은 크기를
   // 다시 맞추고, 크기가 바뀌면 xterm이 고른 것을 지우기 때문이다. 고른 칸에 키보드를 줘 Ctrl+C가 닿게 한다.
@@ -495,11 +505,144 @@ export function SessionScreen({
     onFocus?.();
   };
 
+  if (!wide) {
+    const approval = session.status === "awaiting-approval";
+    const place = [projectLabel(session), session.worktreeBranch].filter(Boolean).join(" · ");
+    return (
+      <main
+        className={[
+          "m-session-screen",
+          "m-phone-session",
+          rail ? "m-rail-session" : "",
+          keysOpen ? "m-keys-open" : "",
+          approval ? "m-has-hot" : "",
+          `status-${session.status}`,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {rail ? null : (
+          <header className="m-topbar">
+            {onOpenDrawer ? (
+              <button type="button" className="m-icon" aria-label="세션 사이드바 열기" onClick={onOpenDrawer}>
+                <Menu size={22} aria-hidden="true" />
+              </button>
+            ) : null}
+            <button type="button" className="m-title" aria-haspopup="dialog" onClick={menu.open}>
+              <span className="m-title-main">
+                <span className={`m-dot m-dot-${session.status}`} aria-hidden="true" />
+                <span className="m-title-text">{session.label}</span>
+              </span>
+              <span className="m-title-sub">
+                <span className={`m-status-${session.status}`}>{STATUS_LABEL[session.status]}</span>
+                {place ? ` · ${place}` : null}
+              </span>
+            </button>
+            {awaiting && awaiting.count > 0 ? (
+              <button type="button" className="m-await-pill" onClick={awaiting.onJump}>
+                대기 {awaiting.count}
+              </button>
+            ) : null}
+            <button type="button" className="m-icon" aria-label="세션 메뉴" aria-haspopup="dialog" onClick={menu.open}>
+              <Ellipsis size={22} aria-hidden="true" />
+            </button>
+          </header>
+        )}
+        <div className="m-terminal" role="region" aria-label={`${session.label} 터미널`}>
+          <div className="m-terminal-host" ref={hostRef} />
+          {rail ? (
+            <button type="button" className="m-fab-menu" aria-label="세션 메뉴" aria-haspopup="dialog" onClick={menu.open}>
+              <Ellipsis size={20} aria-hidden="true" />
+            </button>
+          ) : null}
+          {fitState === "paused" ? (
+            <span className="m-fit-notice m-phone-fit-notice" role="status">
+              <span>PC가 크기를 가져갔습니다</span>
+              <button type="button" onClick={() => autoFitRef.current?.refit()}>
+                다시 맞추기
+              </button>
+            </span>
+          ) : null}
+        </div>
+        <div className="m-bottom">
+          <div className="m-keys" role="group" aria-label="빠른 키">
+            {phoneQuickKeys(approval).map((key) => (
+              <button
+                type="button"
+                key={key.label}
+                className={key.hot ? "m-key m-key-hot" : "m-key"}
+                aria-label={key.ariaLabel}
+                onClick={() => sendKeys(key.data)}
+              >
+                {key.label}
+              </button>
+            ))}
+          </div>
+          <form
+            className="m-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitDraft();
+            }}
+          >
+            <button
+              type="button"
+              className="m-icon m-keys-toggle"
+              aria-label="키 줄"
+              aria-pressed={keysOpen}
+              onClick={() => {
+                savePhonePref("keysOpenWhenLow", !keysOpen);
+                setKeysOpen(!keysOpen);
+              }}
+            >
+              <Keyboard size={20} aria-hidden="true" />
+            </button>
+            <textarea
+              ref={draftRef}
+              aria-label="입력"
+              rows={1}
+              placeholder="메시지 또는 명령"
+              value={draft}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                // 여러 줄이면 몇 줄까지 늘린다(최대 높이는 phone.css).
+                const area = event.target;
+                area.style.height = "";
+                area.style.height = `${area.scrollHeight}px`;
+              }}
+            />
+            <button type="submit" className="m-send" aria-label="전송">
+              <ArrowUp size={20} aria-hidden="true" />
+            </button>
+          </form>
+        </div>
+        {menu.isOpen ? (
+          <SessionMenu
+            session={session}
+            fitState={fitState}
+            onKeepHost={(on) => {
+              savePhonePref("keepHostSize", on);
+              autoFitRef.current?.keepHost(on);
+            }}
+            fontSize={FONT_SIZES[fontIndex]}
+            canShrink={fontIndex > 0}
+            canGrow={fontIndex < FONT_SIZES.length - 1}
+            onFont={(step) => setFontIndex((index) => Math.min(FONT_SIZES.length - 1, Math.max(0, index + step)))}
+            onRename={onRename}
+            onStop={() => menu.close(() => client.send({ type: "stop", sessionId: session.id }))}
+            onResume={() => menu.close(() => client.send({ type: "resume", sessionId: session.id }))}
+            onRemove={() => menu.close(() => client.send({ type: "remove", sessionId: session.id }))}
+            onClose={() => menu.close()}
+          />
+        ) : null}
+      </main>
+    );
+  }
+
   return (
     <main
       className={[
         "m-session-screen",
-        tabs ? "m-has-tabs" : "",
         onClose ? "m-pane" : "",
         onClose && focused ? "m-pane-focused" : "",
         `status-${session.status}`,
@@ -514,11 +657,6 @@ export function SessionScreen({
         onDragStart={onHeaderDragStart}
       >
         {onClose ? <span className={`m-dot m-dot-${session.status}`} aria-hidden="true" /> : null}
-        {wide ? null : (
-          <button type="button" onClick={onBack} aria-label="세션 목록으로">
-            ←
-          </button>
-        )}
         {renaming !== null && onRename ? (
           <form
             className="m-rename"
@@ -694,26 +832,17 @@ export function SessionScreen({
           </button>
         )}
       </header>
-      {tabs}
       <div className="m-tools" hidden={!focused || pane}>
-        {wide ? (
-          <>
-            <button
-              type="button"
-              aria-pressed={fitState === "host"}
-              onClick={() => autoFitRef.current?.keepHost(fitState !== "host")}
-            >
-              호스트 크기 유지
-            </button>
-            <button type="button" aria-pressed={toolsOpen} onClick={() => setToolsOpen((open) => !open)}>
-              입력 도구
-            </button>
-          </>
-        ) : (
-          <button type="button" aria-pressed={phoneSize} onClick={togglePhoneSize}>
-            📱 폰 크기로
-          </button>
-        )}
+        <button
+          type="button"
+          aria-pressed={fitState === "host"}
+          onClick={() => autoFitRef.current?.keepHost(fitState !== "host")}
+        >
+          호스트 크기 유지
+        </button>
+        <button type="button" aria-pressed={toolsOpen} onClick={() => setToolsOpen((open) => !open)}>
+          입력 도구
+        </button>
         <button type="button" aria-label="글자 작게" onClick={() => setFontIndex((index) => Math.max(0, index - 1))}>
           A−
         </button>

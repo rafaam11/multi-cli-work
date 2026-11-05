@@ -4,6 +4,7 @@ import { startColorScheme } from "./color-scheme";
 import { MobileApp } from "./MobileApp";
 import "../theme-colors.css";
 import "./mobile.css";
+import "./phone.css";
 
 startColorScheme();
 

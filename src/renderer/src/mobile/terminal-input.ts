@@ -14,6 +14,28 @@ export const QUICK_KEYS: ReadonlyArray<{ label: string; ariaLabel: string; data:
   { label: "/", ariaLabel: "슬래시", data: "/" },
 ];
 
+export type QuickKey = (typeof QUICK_KEYS)[number];
+
+const key = (label: string) => QUICK_KEYS.find((candidate) => candidate.label === label)!;
+
+/** 폰 키 줄: 자주 누르는 것부터. 화면 폭을 넘치면 옆으로 민다. */
+const PHONE_ORDER = ["Esc", "↑", "↓", "Enter", "Tab", "^C", "1", "2", "3", "←", "→", "/"].map(key);
+/** 승인을 기다리면 답할 키(1·2·3·Esc)를 앞으로 당긴다 — 키 줄을 접어 둔 낮은 화면에서도 이것만은 남는다. */
+const APPROVAL_FIRST = ["1", "2", "3", "Esc"].map(key);
+
+export interface PhoneKey extends QuickKey {
+  /** 지금 상태에서 답하는 데 쓰는 키. */
+  hot: boolean;
+}
+
+export function phoneQuickKeys(approval: boolean): PhoneKey[] {
+  if (!approval) return PHONE_ORDER.map((item) => ({ ...item, hot: false }));
+  return [
+    ...APPROVAL_FIRST.map((item) => ({ ...item, hot: true })),
+    ...PHONE_ORDER.filter((item) => !APPROVAL_FIRST.includes(item)).map((item) => ({ ...item, hot: false })),
+  ];
+}
+
 /**
  * 입력창 내용을 PTY로 보낼 바이트로. 여러 줄은 bracketed paste로 감싸 CLI가 줄바꿈마다 제출하지
  * 않게 하고, 마지막에 Enter를 한 번 누른다.

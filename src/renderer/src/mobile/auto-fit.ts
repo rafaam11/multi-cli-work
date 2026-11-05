@@ -13,6 +13,8 @@ export interface AutoFitOptions {
   resize(cols: number, rows: number): void;
   release(): void;
   onChange(state: AutoFitState): void;
+  /** 처음부터 호스트 크기를 유지할지 — 이 기기에서 "PC 크기 유지"를 켜 둔 경우. */
+  keepHost?: boolean;
 }
 
 /**
@@ -21,7 +23,7 @@ export interface AutoFitOptions {
  * 되므로, 되찾기를 보면 멈추고 사용자가 창 크기를 바꾸거나 "다시 맞추기"를 누를 때만 다시 맞춘다.
  */
 export function createAutoFit(options: AutoFitOptions) {
-  let state: AutoFitState = "fitting";
+  let state: AutoFitState = options.keepHost ? "host" : "fitting";
   let attachedOnce = false;
   /** 마지막으로 보낸 크기. 맞추는 중에 같은 크기를 되풀이해 보내지 않으려고 둔다. */
   let lastFit: Size | null = null;
