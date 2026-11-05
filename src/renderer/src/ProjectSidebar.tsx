@@ -7,6 +7,8 @@ import type { WorkProject, WorkProjectRole } from "@shared/work-project-types";
 import type { ProjectCategorySetting } from "@shared/settings-types";
 import type { GitWorkspaceView, SharedWorktree } from "@shared/worktree-types";
 import {
+  Archive,
+  ArchiveRestore,
   Briefcase,
   ChevronDown,
   ChevronRight,
@@ -164,6 +166,12 @@ const SIDEBAR_STATE_KEY = "multi-cli-work.sidebar.v1";
 interface SidebarPrefs {
   favoriteProjectIds: string[];
   favoritesOpen: boolean;
+  /**
+   * Work projects filed under 아카이브 at the bottom of the tree. Only where the sidebar draws them —
+   * the work project's own 상태 is the user's record of where the work stands and stays untouched.
+   */
+  archivedWorkProjectIds: string[];
+  archiveOpen: boolean;
   expandedWorkspaces: string[];
   openShelves: ShelfKind[];
   sessionPanelOpen: boolean;
@@ -178,6 +186,8 @@ function readSidebarState(): SidebarPrefs {
   const empty: SidebarPrefs = {
     favoriteProjectIds: [],
     favoritesOpen: true,
+    archivedWorkProjectIds: [],
+    archiveOpen: false,
     expandedWorkspaces: [],
     openShelves: [],
     sessionPanelOpen: true,
@@ -187,6 +197,8 @@ function readSidebarState(): SidebarPrefs {
     const value = JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) ?? "{}") as {
       favoriteProjectIds?: unknown;
       favoritesOpen?: unknown;
+      archivedWorkProjectIds?: unknown;
+      archiveOpen?: unknown;
       expandedWorkspaces?: string[];
       openShelves?: unknown[];
       sessionPanelOpen?: unknown;
@@ -197,6 +209,11 @@ function readSidebarState(): SidebarPrefs {
       favoriteProjectIds: Array.isArray(value.favoriteProjectIds)
         ? [...new Set(value.favoriteProjectIds.filter((id): id is string => typeof id === "string"))]
         : [],
+      archivedWorkProjectIds: Array.isArray(value.archivedWorkProjectIds)
+        ? [...new Set(value.archivedWorkProjectIds.filter((id): id is string => typeof id === "string"))]
+        : [],
+      // The archive is where things go to be out of the way, so it starts folded.
+      archiveOpen: value.archiveOpen === true,
       expandedWorkspaces: value.expandedWorkspaces ?? [],
       openShelves: (value.openShelves ?? []).filter((kind): kind is ShelfKind =>
         SHELF_KINDS.includes(kind as ShelfKind),
@@ -316,7 +333,9 @@ export function ProjectSidebar({
   const [savedSidebarState] = useState(readSidebarState);
   const [favoriteProjectIds, setFavoriteProjectIds] = useState(savedSidebarState.favoriteProjectIds);
   const [favoritesOpen, setFavoritesOpen] = useState(savedSidebarState.favoritesOpen);
-  const favoriteProjects = favoriteProjectIds.flatMap((id) => {
+  const [archivedWorkProjectIds, setArchivedWorkProjectIds] = useState(savedSidebarState.archivedWorkProjectIds);
+  const [archiveOpen, setArchiveOpen] = useState(savedSidebarState.archiveOpen);
+  const favoriteProjects =favoriteProjectIds.flatMap((id) => {
     const project = projects.find((candidate) => candidate.id === id);
     return project ? [project] : [];
   });
@@ -341,6 +360,8 @@ export function ProjectSidebar({
           version: 1,
           favoriteProjectIds: next.favoriteProjectIds,
           favoritesOpen: next.favoritesOpen,
+          archivedWorkProjectIds: next.archivedWorkProjectIds,
+          archiveOpen: next.archiveOpen,
           expandedWorkspaces: next.expandedWorkspaces,
           openShelves: next.openShelves,
           sessionPanelOpen: next.sessionPanelOpen,
@@ -354,6 +375,14 @@ export function ProjectSidebar({
     const next = current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId];
     setFavoriteProjectIds(next);
     persist({ favoriteProjectIds: next });
+  };
+  const toggleArchived = (workProjectId: string) => {
+    const current = prefsRef.current.archivedWorkProjectIds;
+    const next = current.includes(workProjectId)
+      ? current.filter((id) => id !== workProjectId)
+      : [...current, workProjectId];
+    setArchivedWorkProjectIds(next);
+    persist({ archivedWorkProjectIds: next });
   };
   const renderFavoriteToggle = (project: SharedProject) => {
     const favorite = favoriteProjectIds.includes(project.id);
@@ -496,6 +525,21 @@ export function ProjectSidebar({
     () => buildTreeSections(workProjects, projects, projectMembership),
     [workProjects, projects, projectMembership],
   );
+  // An archived work project leaves the tree whole, folders and all, and keeps its place in the
+  // order — bringing it back puts it where it was. 미분류 has no row to archive from, so it stays.
+  const { activeSections, archivedSections } = useMemo(() => {
+    const archived = new Set(archivedWorkProjectIds);
+    const isArchived = (section: TreeSection) => section.workProject !== null && archived.has(section.workProject.id);
+    return {
+      activeSections: treeSections.filter((section) => !isArchived(section)),
+      archivedSections: treeSections.filter(isArchived),
+    };
+  }, [treeSections, archivedWorkProjectIds]);
+  const leaveTreeOnDrag = (event: ReactDragEvent<HTMLElement>) => {
+    // Only when the pointer actually left the list, not on every hop between rows.
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDrag((current) => (current?.over ? { ...current, over: null } : current));
+  };
   const attentionOf = (candidates: TerminalSessionView[]) => rollUpAttention(candidates, unread);
 
   /** Documents hang under the folder or worktree they were opened from, beside that place's sessions. */
@@ -674,6 +718,23 @@ export function ProjectSidebar({
 
 
   /** 업무 프로젝트 하나(또는 미분류)와 그 아래 폴더를 그린다. */
+  /** The same spot on the row both files a project away and, inside 아카이브, brings it back. */
+  const renderArchiveToggle = (workProject: WorkProject) => {
+    const archived = archivedWorkProjectIds.includes(workProject.id);
+    const label = archived ? `${workProject.name} 아카이브에서 꺼내기` : `${workProject.name} 아카이브`;
+    return (
+      <button
+        type="button"
+        className="icon-button work-project-archive-toggle"
+        onClick={() => toggleArchived(workProject.id)}
+        aria-label={label}
+        title={archived ? "아카이브에서 꺼내기" : "아카이브로 보내기"}
+      >
+        {archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}
+      </button>
+    );
+  };
+
   const renderSection = (section: TreeSection) => {
     const workProject = section.workProject;
     const sectionExpanded = workProject ? expandedWorkProjects.has(workProject.id) : true;
@@ -780,6 +841,7 @@ export function ProjectSidebar({
                 <TagChips tags={tagsByWorkProject[workProject.id] ?? []} />
               </span>
             </button>
+            {renderArchiveToggle(workProject)}
           </div>
         ) : workProjects.length > 0 ? (
           <div
@@ -1341,17 +1403,36 @@ export function ProjectSidebar({
             <span>아직 프로젝트가 없습니다</span>
           </div>
         ) : (
-          <ul
-            className="project-tree"
-            role="tree"
-            onDragLeave={(event) => {
-              // Only when the pointer actually left the list, not on every hop between rows.
-              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-              setDrag((current) => (current?.over ? { ...current, over: null } : current));
-            }}
-          >
-            {treeSections.map(renderSection)}
-          </ul>
+          <>
+            <ul className="project-tree" role="tree" aria-label="프로젝트 목록" onDragLeave={leaveTreeOnDrag}>
+              {activeSections.map(renderSection)}
+            </ul>
+            {archivedSections.length > 0 ? (
+              <section className={`project-archive ${archiveOpen ? "" : "is-collapsed"}`} aria-label="아카이브">
+                <button
+                  type="button"
+                  className="section-heading favorites-heading"
+                  aria-expanded={archiveOpen}
+                  aria-label={`아카이브 ${archiveOpen ? "접기" : "펼치기"}`}
+                  onClick={() => {
+                    const next = !archiveOpen;
+                    setArchiveOpen(next);
+                    persist({ archiveOpen: next });
+                  }}
+                >
+                  {archiveOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  <Archive size={13} aria-hidden="true" />
+                  <span>아카이브</span>
+                  <span className="favorites-count">{archivedSections.length}</span>
+                </button>
+                {archiveOpen ? (
+                  <ul className="project-tree" role="tree" aria-label="아카이브된 프로젝트" onDragLeave={leaveTreeOnDrag}>
+                    {archivedSections.map(renderSection)}
+                  </ul>
+                ) : null}
+              </section>
+            ) : null}
+          </>
         )}
 
       </nav>

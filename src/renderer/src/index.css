@@ -2116,6 +2116,31 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-bottom: 1px solid var(--line);
 }
 
+/* 아카이브 sits pinned under the tree. Opened, it shares the height with the tree and scrolls on its
+   own instead of pushing the tree out of the clipped navigation. */
+.project-navigation > .project-archive {
+  display: flex;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 45%;
+  flex-direction: column;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.project-archive .section-heading {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.project-archive > .project-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
 .project-favorites-list {
   max-height: 180px;
   overflow: auto;
@@ -2345,10 +2370,25 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
    height is what separates the layers now that the tree is only two deep. */
 .work-project-row {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr) 29px;
   min-height: 36px;
   align-items: center;
   border-radius: 5px;
+}
+
+/* Like the folder star: a whole tree of these would be noise, so it shows on the row in hand. */
+.work-project-archive-toggle {
+  align-self: center;
+  opacity: 0;
+}
+
+.work-project-row:hover .work-project-archive-toggle,
+.work-project-row:focus-within .work-project-archive-toggle {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .work-project-archive-toggle { opacity: 1; }
 }
 
 .work-project-row:hover {

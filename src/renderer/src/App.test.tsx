@@ -2044,6 +2044,56 @@ describe("work project categories", () => {
       expect(harness.api.workspace.list).toHaveBeenCalledTimes(2);
     });
 
+    it("프로젝트를 맨 아래 아카이브로 보내고, 아카이브의 같은 자리 버튼으로 되돌린다", async () => {
+      const harness = createApi({
+        projects: [atlas],
+        sessions: [],
+        workProjects: [
+          workProject("wp-vsp", "가상수술계획", "개인", { members: [{ projectId: atlas.id, role: "repo" }] }),
+          workProject("wp-career", "진로", "기타", { order: 1 }),
+        ],
+      });
+      window.multiCliWork = harness.api;
+      const view = render(<App />);
+
+      let nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      await within(nav).findByRole("button", { name: "가상수술계획 프로젝트 열기" });
+      // 비어 있는 아카이브는 자리를 차지하지 않는다.
+      expect(within(nav).queryByRole("region", { name: "아카이브" })).not.toBeInTheDocument();
+
+      fireEvent.click(within(nav).getByRole("button", { name: "가상수술계획 아카이브" }));
+
+      const tree = within(nav).getByRole("tree", { name: "프로젝트 목록" });
+      expect(within(tree).queryByRole("button", { name: "가상수술계획 프로젝트 열기" })).not.toBeInTheDocument();
+      expect(within(tree).queryByRole("button", { name: "Atlas 폴더 선택" })).not.toBeInTheDocument();
+      let archive = within(nav).getByRole("region", { name: "아카이브" });
+      // 목록 맨 아래에 서고, 처음엔 접혀서 머리 줄의 개수만 보인다.
+      expect(tree.compareDocumentPosition(archive) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(within(archive).getByRole("button", { name: "아카이브 펼치기" })).toHaveTextContent("1");
+      expect(within(archive).queryByRole("button", { name: "가상수술계획 프로젝트 열기" })).not.toBeInTheDocument();
+      expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1")!)).toMatchObject({
+        archivedWorkProjectIds: ["wp-vsp"],
+      });
+
+      view.unmount();
+      render(<App />);
+      nav = await screen.findByRole("navigation", { name: "프로젝트" });
+      archive = await within(nav).findByRole("region", { name: "아카이브" });
+      fireEvent.click(within(archive).getByRole("button", { name: "아카이브 펼치기" }));
+      const archived = within(archive).getByRole("button", { name: "가상수술계획 프로젝트 열기" }).closest(".work-project-node")!;
+      expect(within(archived as HTMLElement).getByRole("button", { name: "Atlas 폴더 선택" })).toBeInTheDocument();
+
+      fireEvent.click(within(archive).getByRole("button", { name: "가상수술계획 아카이브에서 꺼내기" }));
+
+      expect(within(nav).queryByRole("region", { name: "아카이브" })).not.toBeInTheDocument();
+      expect(
+        [...within(nav).getByRole("tree", { name: "프로젝트 목록" }).children].map(
+          (node) => node.querySelector(".work-project-select")?.textContent,
+        ),
+      ).toEqual(["가상수술계획", "진로"]);
+      expect(JSON.parse(localStorage.getItem("multi-cli-work.sidebar.v1")!).archivedWorkProjectIds).toEqual([]);
+    });
+
     it("draws the tree exactly as before when no workspace root is registered", async () => {
       const harness = createApi({
         projects: [atlas],
