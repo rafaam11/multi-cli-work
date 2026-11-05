@@ -1214,6 +1214,14 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
                   <option value="system">시스템 설정 따르기</option>
                 </select>
               </div>
+              {/* Claude Code는 자기 테마로 색을 칠한다 — 앱이 라이트인데 Claude가 다크면 흰 바탕에 흰 글씨가
+                  남는다. 앱이 띄우는 세션에만 --settings로 넘기고 사용자의 Claude 설정은 건드리지 않는다. */}
+              {checkboxRow(
+                "Claude Code 화면도 앱 테마 따라가기 — 새로 시작하는 세션부터",
+                "settings-claude-theme",
+                settings.appearance.claudeTheme,
+                (next) => ({ appearance: { claudeTheme: next } }),
+              )}
               {checkboxRow("창을 닫으면 트레이에 남기기", "settings-close-to-tray", settings.general.closeToTray, (next) => ({
                 general: { closeToTray: next },
               }))}

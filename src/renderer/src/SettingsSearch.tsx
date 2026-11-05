@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { SettingsTab } from "./SettingsDialog";
 const ENTRIES: { tab: SettingsTab; title: string; keywords: string; phase: string; target?: string }[] = [
   { tab: "general", title: "테마", keywords: "theme dark light 시스템 밝기", target: "settings-theme", phase: "즉시 적용" },
+  { tab: "general", title: "Claude Code 테마 따라가기", keywords: "claude theme 라이트 다크 터미널 색", target: "settings-claude-theme", phase: "새 세션부터" },
   { tab: "general", title: "시각 효과", keywords: "애니메이션 관제실 풍부하게 최소 effects 모션", target: "settings-effects", phase: "즉시 적용" },
   { tab: "general", title: "화면 밀도", keywords: "간격 compact comfortable density", target: "settings-density", phase: "즉시 적용" },
   { tab: "general", title: "일반 · 시작 및 트레이", keywords: "자동 재개 업데이트 창 닫기 트레이 진행률 전역 단축키 summon", phase: "항목별 적용" },

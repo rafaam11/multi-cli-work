@@ -10,6 +10,7 @@ import {
   CLAUDE_STATUS_HOOK,
   CLAUDE_STATUS_HOOK_PYTHON,
   ensureClaudeIntegration,
+  writeClaudeSettings,
 } from "./claude-integration";
 
 const execFileAsync = promisify(execFile);
@@ -93,6 +94,21 @@ describe("Claude app-owned integration", () => {
       buildClaudeSettings(integration.hookPath, "win32"),
     );
     expect(await fs.readFile(integration.hookPath, "utf8")).toContain("MULTI_CLI_WORK_SESSION_ID");
+  });
+
+  it("carries Claude Code's theme only when the app follows its own theme", async () => {
+    expect(buildClaudeSettings("/tmp/claude-status.py", "linux")).not.toHaveProperty("theme");
+    expect(buildClaudeSettings("/tmp/claude-status.py", "linux", "light-daltonized")).toMatchObject({ theme: "light-daltonized" });
+
+    const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-theme-"));
+    roots.push(root);
+    const integration = await ensureClaudeIntegration(root, "win32");
+    await writeClaudeSettings(integration, "win32", "light");
+    expect(JSON.parse(await fs.readFile(integration.settingsPath, "utf8"))).toEqual(
+      buildClaudeSettings(integration.hookPath, "win32", "light"),
+    );
+    await writeClaudeSettings(integration, "win32", null);
+    expect(JSON.parse(await fs.readFile(integration.settingsPath, "utf8"))).not.toHaveProperty("theme");
   });
 
   it("treats a failed turn as waiting for input instead of a terminal process error", () => {

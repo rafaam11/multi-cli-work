@@ -1005,6 +1005,13 @@ describe("main IPC boundary", () => {
     expect(() => handlers.get("settings:update")!({}, { appearance: { theme: "sepia" } })).toThrow(/theme/);
   });
 
+  it("accepts turning the Claude Code theme sync off and rejects a non-boolean", async () => {
+    const { handlers, settingsGateway } = setup();
+    await handlers.get("settings:update")!({}, { appearance: { claudeTheme: false } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({ appearance: { claudeTheme: false } });
+    expect(() => handlers.get("settings:update")!({}, { appearance: { claudeTheme: "off" } })).toThrow(/claudeTheme/);
+  });
+
   it("accepts a summon shortcut with a modifier and rejects a bare key", async () => {
     const { handlers, settingsGateway } = setup();
 

@@ -288,10 +288,20 @@ describe("팬아웃 템플릿", () => {
 
 describe("테마", () => {
   it("기본은 다크이고, 모르는 값은 다크로 되돌리며, patch로 바꾼다", () => {
-    expect(DEFAULT_SETTINGS.appearance).toEqual({ theme: "dark", effects: "rich", density: "comfortable" });
+    expect(DEFAULT_SETTINGS.appearance).toEqual({ theme: "dark", effects: "rich", density: "comfortable", claudeTheme: true });
     expect(parseSettings({ appearance: { theme: "sepia" } }).appearance.theme).toBe("dark");
     expect(parseSettings({ appearance: { theme: "system" } }).appearance.theme).toBe("system");
     expect(mergeSettingsPatch(DEFAULT_SETTINGS, { appearance: { theme: "light" } }).appearance.theme).toBe("light");
+  });
+
+  it("Claude Code 테마 따라가기는 기본으로 켜져 있고, 끈 값을 기억한다", () => {
+    expect(parseSettings({}).appearance.claudeTheme).toBe(true);
+    expect(parseSettings({ appearance: { claudeTheme: "yes" } }).appearance.claudeTheme).toBe(true);
+    expect(parseSettings({ appearance: { claudeTheme: false } }).appearance.claudeTheme).toBe(false);
+    expect(mergeSettingsPatch(DEFAULT_SETTINGS, { appearance: { claudeTheme: false } }).appearance).toMatchObject({
+      theme: "dark",
+      claudeTheme: false,
+    });
   });
 });
 

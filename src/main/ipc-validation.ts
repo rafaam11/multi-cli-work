@@ -538,7 +538,7 @@ export function validateSettingsPatch(value: unknown): AppSettingsPatch {
     }
   }
   if (raw.appearance !== undefined) {
-    const appearance = exactObject(raw.appearance, ["theme", "effects", "density"], "Settings appearance");
+    const appearance = exactObject(raw.appearance, ["theme", "effects", "density", "claudeTheme"], "Settings appearance");
     const next: NonNullable<AppSettingsPatch["appearance"]> = {};
     if (appearance.effects !== undefined) {
       if (appearance.effects !== "rich" && appearance.effects !== "balanced" && appearance.effects !== "minimal") throw new Error("Invalid visual effects preference");
@@ -553,6 +553,10 @@ export function validateSettingsPatch(value: unknown): AppSettingsPatch {
         throw new Error("Settings appearance.theme must be dark, light, or system");
       }
       next.theme = appearance.theme;
+    }
+    if (appearance.claudeTheme !== undefined) {
+      if (typeof appearance.claudeTheme !== "boolean") throw new Error("Settings appearance.claudeTheme must be a boolean");
+      next.claudeTheme = appearance.claudeTheme;
     }
     patch.appearance = next;
   }

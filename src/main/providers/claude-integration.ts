@@ -24,11 +24,14 @@ interface ClaudeHookHandler {
 
 export interface ClaudeSettingsOverlay {
   hooks: Record<(typeof CLAUDE_EVENTS)[number], Array<{ hooks: ClaudeHookHandler[] }>>;
+  /** Claude Code's colour theme for the sessions the app starts — present only while it follows the app (claude-theme.ts). */
+  theme?: string;
 }
 
 export function buildClaudeSettings(
   hookPath: string,
   platform: NodeJS.Platform = process.platform,
+  theme: string | null = null,
 ): ClaudeSettingsOverlay {
   const handler: ClaudeHookHandler = platform === "win32"
     ? {
@@ -42,6 +45,7 @@ export function buildClaudeSettings(
     hooks: Object.fromEntries(
       CLAUDE_EVENTS.map((event) => [event, [{ hooks: [{ ...handler, args: [...handler.args] }] }]]),
     ) as ClaudeSettingsOverlay["hooks"],
+    ...(theme ? { theme } : {}),
   };
 }
 
@@ -221,6 +225,18 @@ export async function ensureClaudeIntegration(
   await Promise.all([fs.mkdir(hookDir, { recursive: true }), fs.mkdir(statusDir, { recursive: true })]);
   await replaceFile(hookPath, platform === "win32" ? CLAUDE_STATUS_HOOK : CLAUDE_STATUS_HOOK_PYTHON);
   if (platform !== "win32") await fs.chmod(hookPath, 0o755);
-  await replaceFile(settingsPath, `${JSON.stringify(buildClaudeSettings(hookPath, platform), null, 2)}\n`);
+  await writeClaudeSettings({ settingsPath, hookPath }, platform, null);
   return { settingsPath, hookPath, statusDir };
+}
+
+/** Rewrites the app-owned settings overlay — on start, and again whenever the theme it carries changes. */
+export async function writeClaudeSettings(
+  integration: { settingsPath: string; hookPath: string },
+  platform: NodeJS.Platform,
+  theme: string | null,
+): Promise<void> {
+  await replaceFile(
+    integration.settingsPath,
+    `${JSON.stringify(buildClaudeSettings(integration.hookPath, platform, theme), null, 2)}\n`,
+  );
 }

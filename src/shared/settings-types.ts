@@ -150,6 +150,11 @@ export interface AppearanceSettings {
   theme: ThemePreference;
   effects: "rich" | "balanced" | "minimal";
   density: "comfortable" | "compact";
+  /**
+   * Claude Code sessions the app starts take the app's light or dark theme (via the app-owned
+   * `--settings` file — the user's own Claude settings are never written). New sessions only.
+   */
+  claudeTheme: boolean;
 }
 
 export interface RemoteSettings {
@@ -258,7 +263,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   projects: { categories: [...DEFAULT_PROJECT_CATEGORIES], defaultCategory: "기타", folderTemplates: defaultFolderTemplates() },
   files: { defaultOpenWith: "os", openWith: {}, unsupportedOpensWithOs: true },
   fanOut: { templates: [] },
-  appearance: { theme: "dark", effects: "rich", density: "comfortable" },
+  appearance: { theme: "dark", effects: "rich", density: "comfortable", claudeTheme: true },
   remote: { enabled: false, port: DEFAULT_REMOTE_PORT },
   usage: { enabled: true, notifyAt90: true },
   pcRoots: { dev: null, data: null, work: null, drive: null },
@@ -536,6 +541,7 @@ export function parseSettings(value: unknown): AppSettings {
         appearance.theme === "light" || appearance.theme === "system" || appearance.theme === "dark"
           ? appearance.theme
           : defaults.appearance.theme,
+      claudeTheme: readBoolean(appearance.claudeTheme, defaults.appearance.claudeTheme),
     },
     remote: {
       enabled: readBoolean(remote.enabled, defaults.remote.enabled),

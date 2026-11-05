@@ -122,6 +122,14 @@ describe("SettingsDialog", () => {
     fireEvent.change(screen.getByLabelText("테마"), { target: { value: "system" } });
     await waitFor(() => expect(update).toHaveBeenCalledWith({ appearance: { theme: "system" } }));
   });
+
+  it("Claude Code 화면이 앱 테마를 따라가는 것을 끌 수 있다", async () => {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    const toggle = screen.getByLabelText("Claude Code 화면도 앱 테마 따라가기 — 새로 시작하는 세션부터");
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ appearance: { claudeTheme: false } }));
+  });
   it("시각 효과와 화면 밀도를 저장하고 검색으로 다른 분류를 연다", async () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
     fireEvent.change(screen.getByLabelText("시각 효과 · 즉시 적용"), { target: { value: "minimal" } });

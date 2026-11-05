@@ -7,6 +7,7 @@ import {
   dialog,
   ipcMain,
   nativeImage,
+  nativeTheme,
   net,
   Notification,
   powerMonitor,
@@ -113,7 +114,8 @@ import {
 } from "./projects/workspace-files";
 import { WorktreeService } from "./projects/worktree-service";
 import { createTerminalPathService } from "./projects/terminal-paths";
-import { ensureClaudeIntegration } from "./providers/claude-integration";
+import { ensureClaudeIntegration, writeClaudeSettings } from "./providers/claude-integration";
+import { createClaudeThemeSync } from "./providers/claude-theme";
 import { ensureCodexIntegration } from "./providers/codex-integration";
 import { ensurePowerShellIntegration } from "./providers/powershell-integration";
 import { SessionWorkspaceReader } from "./providers/session-workspace";
@@ -227,6 +229,20 @@ export async function createDesktopRuntime(
   const claudeProjectsDirectory = process.env.MULTI_CLI_WORK_CLAUDE_PROJECTS_DIR;
   const codexSessionsDirectory = process.env.MULTI_CLI_WORK_CODEX_SESSIONS_DIR;
   const claudeIntegration = await ensureClaudeIntegration(userData, process.platform);
+  // Claude Code paints with its own theme; new sessions take the app's light or dark through the
+  // app-owned --settings file. "system" resolves the same way the renderer's prefers-color-scheme does.
+  const claudeTheme = createClaudeThemeSync({
+    enabled: () => settingsService.current().appearance.claudeTheme,
+    appTheme: () => {
+      const preference = settingsService.current().appearance.theme;
+      if (preference !== "system") return preference;
+      return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+    },
+    userConfigDir: process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
+    write: (theme) => writeClaudeSettings(claudeIntegration, process.platform, theme),
+  });
+  await claudeTheme.sync();
+  nativeTheme.on("updated", () => void claudeTheme.sync());
   const codexIntegration = await ensureCodexIntegration({ userData });
   const shellIntegrationPath = process.platform === "win32" ? await ensurePowerShellIntegration(userData) : undefined;
   const sessionWorkspaceReader = new SessionWorkspaceReader();
@@ -859,6 +875,7 @@ export async function createDesktopRuntime(
     if (patch.remote) await remoteAccess.apply(next.remote);
     if (patch.general?.taskbarProgress !== undefined) applyTaskbarProgress();
     if (patch.usage?.enabled === true) void usageService.refresh(true);
+    if (patch.appearance) void claudeTheme.sync();
     sendToMainWindow(host.getMainWindow(), "settings:changed", next);
     return next;
   };
