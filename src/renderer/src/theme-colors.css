@@ -52,6 +52,27 @@
   --gh-purple: #a371f7;
   --gh-yellow: #d29922;
   --gh-blue: #58a6ff;
+  /*
+   * Roles and strengths, so the light theme is not the dark one with its values flipped. --accent is
+   * "here, now" — selection, focus, the active tab, a drop target, a link, the primary action — while
+   * --teal stays the colour of a working session. The scales are what a wash, a glow and a shadow are
+   * multiplied by: tints and glows that read as a soft light on a dark ground turn into heavy blocks
+   * and smudges on white, so the light theme turns them down rather than inheriting the dark ratios.
+   */
+  --accent: #4fb7a4;
+  --on-accent: #161918;
+  --on-danger: #fff;
+  --on-warning: #111;
+  --tint-scale: 1;
+  --glow-scale: 1;
+  --shadow-rgb: 0 0 0;
+  --shadow-scale: 1;
+  --shadow: 0 12px 30px rgb(var(--shadow-rgb) / calc(36% * var(--shadow-scale)));
+  --backdrop: rgb(0 0 0 / 52%);
+  --surface-2: var(--surface-raised);
+  --diff-add-bg: color-mix(in srgb, #238636 20%, transparent);
+  --diff-del-bg: color-mix(in srgb, #da3633 20%, transparent);
+  --diff-hunk-bg: color-mix(in srgb, #1f6feb 15%, transparent);
 }
 
 /*
@@ -96,4 +117,16 @@
   --gh-purple: #8250df;
   --gh-yellow: #9a6700;
   --gh-blue: #0969da;
+  --accent: #0969da;
+  --on-accent: #ffffff;
+  --on-danger: #ffffff;
+  --on-warning: #ffffff;
+  --tint-scale: 0.6;
+  --glow-scale: 0;
+  --shadow-rgb: 31 35 40;
+  --shadow-scale: 0.4;
+  --backdrop: rgb(31 35 40 / 30%);
+  --diff-add-bg: #dafbe1;
+  --diff-del-bg: #ffebe9;
+  --diff-hunk-bg: #ddf4ff;
 }

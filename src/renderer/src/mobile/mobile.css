@@ -59,7 +59,7 @@ select { min-height: 40px; }
 .m-panel { padding: 4px 8px 8px; }
 .m-panel-heading { display: flex; align-items: center; gap: 6px; padding: 6px 4px; }
 .m-panel-heading h2 { flex: 1 1 auto; margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
-.m-await-jump { min-height: 28px; padding: 2px 8px; border-color: color-mix(in srgb, var(--amber) 55%, transparent); color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); font-size: 12px; }
+.m-await-jump { min-height: 28px; padding: 2px 8px; border-color: color-mix(in srgb, var(--amber) 55%, transparent); color: var(--amber); background: color-mix(in srgb, var(--amber) calc(12% * var(--tint-scale)), transparent); font-size: 12px; }
 .m-scope { display: inline-flex; gap: 2px; }
 .m-scope button { min-height: 28px; padding: 2px 8px; background: transparent; color: var(--muted); font-size: 12px; }
 .m-scope button[aria-pressed="true"] { color: var(--text); background: var(--surface-hover); }
@@ -68,7 +68,7 @@ select { min-height: 40px; }
 .m-row:hover, .m-row.current { background: var(--surface-hover); color: var(--text); }
 .m-row.current { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .m-row.on-screen { color: var(--text); }
-.m-row.status-working:not(.current):not(:hover) { background: color-mix(in srgb, var(--teal) 8%, transparent); }
+.m-row.status-working:not(.current):not(:hover) { background: color-mix(in srgb, var(--teal) calc(8% * var(--tint-scale)), transparent); }
 .m-row-open { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; text-align: left; }
 .m-row-open:hover:not(:disabled) { background: transparent; }
 .m-row-open > svg { flex: 0 0 auto; }
@@ -133,7 +133,7 @@ select { min-height: 40px; }
 .m-wide .m-panel-heading h2 { font: var(--type-secondary); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
 .m-wide .m-row { position: relative; }
 .m-wide .m-row.current { box-shadow: none; }
-.m-wide .m-row.current::before, .m-wide .m-tree-row.current::before { position: absolute; top: 4px; bottom: 4px; left: 0; width: 2px; border-radius: 1px; background: var(--teal); content: ""; }
+.m-wide .m-row.current::before, .m-wide .m-tree-row.current::before { position: absolute; top: 4px; bottom: 4px; left: 0; width: 2px; border-radius: 1px; background: var(--accent); content: ""; }
 .m-wide .m-row-place, .m-wide .m-row-branch, .m-wide .m-status { font: var(--type-caption); }
 .m-grid { display: grid; grid-auto-rows: minmax(0, 1fr); gap: 1px; min-width: 0; min-height: 0; height: 100%; background: var(--line); }
 .m-grid[data-count="3"] > :last-child { grid-column: 1 / -1; }
@@ -143,7 +143,7 @@ select { min-height: 40px; }
 .m-pane .m-bar { flex: 0 0 auto; gap: 6px; min-height: 28px; padding: 2px 4px 2px 8px; border-left: 2px solid transparent; background: var(--header-bg); color: var(--muted); cursor: grab; font: var(--type-ui); }
 .m-pane .m-bar h1 { flex: 1 1 auto; min-width: 0; font: var(--type-ui-semibold); color: var(--text); }
 .m-pane:not(.m-pane-focused) .m-bar h1 { color: var(--muted); }
-.m-pane.status-working > .m-bar { background: color-mix(in srgb, var(--teal) 10%, var(--bg)); }
+.m-pane.status-working > .m-bar { background: color-mix(in srgb, var(--teal) calc(10% * var(--tint-scale)), var(--bg)); }
 .m-pane .m-status { font: var(--type-caption); }
 .m-pane .m-rename input { cursor: text; }
 .m-pane-actions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 1px; margin-left: auto; cursor: default; }
@@ -162,17 +162,17 @@ select { min-height: 40px; }
 }
 .m-wide .m-icon-button, .m-icon-button { display: grid; width: 22px; height: 22px; min-height: 0; flex: 0 0 22px; padding: 0; place-items: center; border: 0; border-radius: 4px; color: var(--muted); background: transparent; }
 .m-icon-button:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
-.m-icon-button.active { color: var(--teal); }
-.m-icon-danger:hover:not(:disabled) { color: var(--danger-text); background: rgb(212 106 106 / 11%); }
+.m-icon-button.active { color: var(--accent); }
+.m-icon-danger:hover:not(:disabled) { color: var(--danger-text); background: color-mix(in srgb, var(--red) calc(11% * var(--tint-scale)), transparent); }
 .m-wide .m-text-button, .m-text-button { min-height: 22px; padding: 0 8px; border-radius: 4px; font: var(--type-secondary); }
 .m-bar-divider { width: 1px; height: 14px; margin: 0 3px; background: var(--line); }
 /* 포커스 링은 터미널 위에 겹친 틀로 그린다 — 터미널 바탕이 칸의 그림자를 덮기 때문(메인과 같다). */
-.m-grid:not([data-count="1"]):not([data-slots="1"]):not([data-zoomed]) .m-pane-focused::after { position: absolute; z-index: 2; inset: 0; border: 2px solid var(--teal); box-shadow: inset 0 0 9px color-mix(in srgb, var(--teal) 20%, transparent); content: ""; pointer-events: none; }
-.m-grid[data-zoomed] .m-pane-focused::after { position: absolute; z-index: 2; inset: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--teal) 55%, transparent); content: ""; pointer-events: none; }
+.m-grid:not([data-count="1"]):not([data-slots="1"]):not([data-zoomed]) .m-pane-focused::after { position: absolute; z-index: 2; inset: 0; border: 2px solid var(--accent); box-shadow: inset 0 0 9px color-mix(in srgb, var(--accent) calc(20% * var(--glow-scale)), transparent); content: ""; pointer-events: none; }
+.m-grid[data-zoomed] .m-pane-focused::after { position: absolute; z-index: 2; inset: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); content: ""; pointer-events: none; }
 .m-pane.status-awaiting-input { --session-accent: var(--violet); }
 .m-pane.status-awaiting-approval { --session-accent: var(--amber); }
 .m-pane.status-error { --session-accent: var(--red); }
-.m-pane.status-awaiting-input::before, .m-pane.status-awaiting-approval::before, .m-pane.status-error::before { position: absolute; z-index: 1; inset: 0; border: 2px solid var(--session-accent); box-shadow: inset 0 0 12px color-mix(in srgb, var(--session-accent) 22%, transparent); content: ""; pointer-events: none; }
+.m-pane.status-awaiting-input::before, .m-pane.status-awaiting-approval::before, .m-pane.status-error::before { position: absolute; z-index: 1; inset: 0; border: 2px solid var(--session-accent); box-shadow: inset 0 0 12px color-mix(in srgb, var(--session-accent) calc(22% * var(--glow-scale)), transparent); content: ""; pointer-events: none; }
 /* 알림이 뜨고 사라질 때 도구 줄이 줄바꿈되면 터미널 영역의 높이가 바뀌어 자동 맞춤이 다시 돈다 — 한 줄로 둔다. */
 .m-wide .m-tools { align-items: center; flex-wrap: nowrap; }
 .m-wide .m-tools > button { flex: 0 0 auto; white-space: nowrap; }
@@ -195,7 +195,7 @@ select { min-height: 40px; }
 .m-tree .m-tree-children { padding-left: 14px; }
 .m-tree-row { position: relative; display: flex; align-items: center; border-radius: 4px; color: var(--muted); }
 .m-tree-row:hover { background: var(--surface-hover); color: var(--text); }
-.m-tree-row.current { background: var(--surface-hover); color: var(--text); box-shadow: inset 2px 0 0 var(--teal); }
+.m-tree-row.current { background: var(--surface-hover); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
 .m-wide .m-tree-row.current { box-shadow: none; }
 .m-tree-row .m-row-open:disabled { opacity: 1; cursor: default; }
 .m-tree-toggle { flex: 0 0 auto; min-width: 24px; padding: 0; border: 0; background: transparent; color: var(--quiet); }
@@ -223,7 +223,7 @@ select { min-height: 40px; }
 .m-mirror-slot.m-slot-empty > * { flex: 0 0 auto; }
 .m-slot-number { font: 16px/1 var(--m-mono); }
 .m-wide .m-slot-new { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text); background: var(--surface-raised); }
-.m-wide .m-slot-new:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); background: var(--surface-raised); }
+.m-wide .m-slot-new:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--surface-raised); }
 .m-mirror-placeholder > .m-bar { flex: 0 0 auto; }
 .m-mirror-placeholder > .m-bar > svg { flex: 0 0 auto; color: var(--quiet); }
 /* 시작 화면·문서 자리 — 메인 창 .terminal-empty / .empty-glyph. */
@@ -240,12 +240,12 @@ select { min-height: 40px; }
 .m-context-path { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; border: 0; background: transparent; text-align: left; padding: 4px; font-size: 12px; }
 .m-context-path strong { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-context-path span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-context-full { position: absolute; top: 100%; left: 12px; right: 12px; z-index: 5; background: var(--surface-raised); border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px #0008; }
+.m-context-full { position: absolute; top: 100%; left: 12px; right: 12px; z-index: 5; background: var(--surface-raised); border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgb(var(--shadow-rgb) / calc(53.333% * var(--shadow-scale))); }
 .m-context-full span { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 12px/1.6 monospace; }
 .m-phone-main .m-session-screen > .m-bar { padding-top: 6px; }
 .m-drawer-overlay { position: fixed; inset: 0; z-index: 20; }
-.m-drawer-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: #0009; }
-.m-drawer { position: absolute; inset: 0 auto 0 0; width: min(86vw, 320px); background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; box-shadow: 8px 0 32px #0006; }
+.m-drawer-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--shadow-rgb) / calc(60% * var(--shadow-scale))); }
+.m-drawer { position: absolute; inset: 0 auto 0 0; width: min(86vw, 320px); background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; box-shadow: 8px 0 32px rgb(var(--shadow-rgb) / calc(40% * var(--shadow-scale))); }
 .m-drawer .m-bar { border-bottom: 1px solid var(--line); }
 .m-drawer-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 10px max(12px, env(safe-area-inset-bottom)); }
 .m-drawer-project + .m-drawer-project { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
@@ -259,7 +259,7 @@ select { min-height: 40px; }
 .m-drawer .m-session-text { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
 .m-drawer .m-session-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-drawer .m-session-meta { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.m-drawer-backdrop:hover:not(:disabled) { background: #0009; }
+.m-drawer-backdrop:hover:not(:disabled) { background: rgb(var(--shadow-rgb) / calc(60% * var(--shadow-scale))); }
 .m-drawer .m-session[aria-current="true"] { border-color: var(--blue); background: var(--surface-hover); }
 
 /* 메인 창 LayoutPicker(.layout-*)의 규칙 — 타일 하나하나가 그리드의 미리보기다. */
