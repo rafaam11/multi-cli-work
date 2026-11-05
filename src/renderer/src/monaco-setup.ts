@@ -24,19 +24,19 @@ monaco.editor.defineTheme("mcw-dark", {
   },
 });
 
-/** The same diff tints on the light theme's surfaces. */
+/** GitHub's light diff: green and red washes on white, rather than the dark theme's teal at low alpha. */
 monaco.editor.defineTheme("mcw-light", {
   base: "vs",
   inherit: true,
   rules: [],
   colors: {
-    "editor.background": "#f7f8f7",
-    "editorGutter.background": "#f7f8f7",
-    "editor.lineHighlightBackground": "#e7ecea66",
-    "diffEditor.insertedTextBackground": "#1b786733",
-    "diffEditor.removedTextBackground": "#b33a3a2e",
-    "diffEditor.insertedLineBackground": "#1b78671a",
-    "diffEditor.removedLineBackground": "#b33a3a17",
+    "editor.background": "#ffffff",
+    "editorGutter.background": "#ffffff",
+    "editor.lineHighlightBackground": "#f6f8fa",
+    "diffEditor.insertedTextBackground": "#2da44e4d",
+    "diffEditor.removedTextBackground": "#cf222e33",
+    "diffEditor.insertedLineBackground": "#2da44e26",
+    "diffEditor.removedLineBackground": "#cf222e1a",
   },
 });
 

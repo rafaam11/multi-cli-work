@@ -27,34 +27,44 @@ const DARK: ITheme = {
 };
 
 /**
- * Light counterpart on --bg #f7f8f7. CLIs print "white" and "bright white" as body text on the
- * assumption of a dark background, so those two map to dark greys here; every colour keeps roughly
- * 4.5:1 against the background so agent output stays readable.
+ * Light counterpart on --bg #ffffff, after GitHub's light terminal. CLIs print "white" and "bright
+ * white" as body text on the assumption of a dark background, so those two map to dark greys here;
+ * every colour keeps 4.5:1 against the background so agent output stays readable (theme-colors.test).
  */
 const LIGHT: ITheme = {
-  background: "#f7f8f7",
-  foreground: "#1d2321",
-  cursor: "#1b7867",
-  cursorAccent: "#f7f8f7",
-  selectionBackground: "#bfe0d8",
-  black: "#1d2321",
-  red: "#b33a3a",
-  green: "#2d7a45",
-  yellow: "#8a5d0c",
-  blue: "#2c6aa3",
-  magenta: "#7450a0",
-  cyan: "#1b7867",
-  white: "#4f5a55",
-  brightBlack: "#66716c",
-  brightRed: "#c0392b",
-  brightGreen: "#237a3e",
-  brightYellow: "#7a5200",
-  brightBlue: "#1f5f99",
-  brightMagenta: "#6a3fa0",
-  brightCyan: "#136b5c",
-  brightWhite: "#1d2321",
+  background: "#ffffff",
+  foreground: "#1f2328",
+  cursor: "#0969da",
+  cursorAccent: "#ffffff",
+  selectionBackground: "#b6e3ff",
+  black: "#24292f",
+  red: "#cf222e",
+  green: "#116329",
+  yellow: "#9a6700",
+  blue: "#0969da",
+  magenta: "#8250df",
+  cyan: "#1b7c83",
+  white: "#59636e",
+  brightBlack: "#6e7781",
+  brightRed: "#a40e26",
+  brightGreen: "#1a7f37",
+  brightYellow: "#7d4e00",
+  brightBlue: "#0550ae",
+  brightMagenta: "#6639ba",
+  brightCyan: "#136061",
+  brightWhite: "#1f2328",
 };
 
 export function terminalTheme(theme: ResolvedTheme): ITheme {
   return theme === "light" ? LIGHT : DARK;
+}
+
+/**
+ * The palette above only covers the 16 ANSI colours. A CLI that paints with 24-bit colour picks
+ * them for a dark background — white body text, pale greys — and on white that text all but
+ * vanishes. On the light theme xterm darkens any glyph below 4.5:1 against the cell behind it; the
+ * dark theme keeps every colour exactly as the CLI sent it.
+ */
+export function terminalMinimumContrast(theme: ResolvedTheme): number {
+  return theme === "light" ? 4.5 : 1;
 }

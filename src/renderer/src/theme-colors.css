@@ -76,42 +76,45 @@
 }
 
 /*
- * Light theme. Same token names, so every rule above and below follows without change. Text tokens
- * keep at least 4.5:1 on --bg and --surface; state colours are darkened for the same reason (the dark
- * theme's pastel reds and ambers wash out on white).
+ * Light theme, after GitHub's and VS Code's light themes rather than the dark one inverted: neutral
+ * cool greys instead of the dark theme's green-tinted ones, white for the panes and editors, a lighter
+ * sidebar and header, and blue as the accent. Same token names, so every rule follows without change.
+ * Foreground tokens keep 4.5:1 on every light surface (theme-colors.test.ts). Washes run at 0.6 of
+ * their dark ratio and glows not at all: on white, saturated tints read as blocks and glows as smudges.
  */
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f7f8f7;
-  --sidebar: #eef1ef;
+  --bg: #ffffff;
+  --sidebar: #f6f8fa;
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --surface-hover: #e7ecea;
-  --line: #d5dbd8;
-  --line-strong: #b3bcb8;
-  --text: #1d2321;
-  --muted: #4f5a55;
-  --quiet: #66716c;
-  --teal: #1b7867;
-  --amber: #946410;
-  --blue: #2c6aa3;
-  --red: #b33a3a;
-  --green: #2d7a45;
-  --violet: #7450a0;
-  --category-government: #b3453c;
-  --category-outsourcing: #2b8049;
-  --category-research: #a4457b;
-  --category-product: #2c6aa3;
-  --category-etc: #5b6661;
-  --accent-6: #1c7e73;
-  --accent-7: #7650a4;
-  --header-bg: #f0f3f1;
-  --surface-accent: #e1eeea;
-  --surface-accent-soft: #edf3f1;
-  --wash: rgb(0 0 0 / 6%);
-  --danger-text: #b42318;
-  --danger-line: #e0a3a3;
-  --warning-text: #875800;
+  --surface-hover: #eff2f5;
+  --line: #d1d9e0;
+  --line-strong: #afb8c1;
+  --text: #1f2328;
+  --muted: #59636e;
+  --quiet: #636c76;
+  --teal: #1b7c83;
+  --amber: #9a6700;
+  --blue: #0969da;
+  --red: #cf222e;
+  --green: #1a7f37;
+  --violet: #8250df;
+  /* One step quieter than the state colours, so a sidebar of categories does not compete with them. */
+  --category-government: #b5473a;
+  --category-outsourcing: #2a7d46;
+  --category-research: #a3427a;
+  --category-product: #2f69a8;
+  --category-etc: #59636e;
+  --accent-6: #187a73;
+  --accent-7: #7b4fc4;
+  --header-bg: #f6f8fa;
+  --surface-accent: #ddf4ff;
+  --surface-accent-soft: #f1f8ff;
+  --wash: rgb(31 35 40 / 6%);
+  --danger-text: #d1242f;
+  --danger-line: #ffcecb;
+  --warning-text: #9a6700;
   --gh-green: #1a7f37;
   --gh-red: #cf222e;
   --gh-purple: #8250df;

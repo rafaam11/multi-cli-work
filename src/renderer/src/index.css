@@ -2398,10 +2398,11 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 /* Selection cannot use an inset left bar any more — that is where the group rail already is, and
    the two would read as one doubled line. A denser wash plus a ring instead. Both carry the
    category colour: a grey ring over a hover-coloured wash was too close to plain hover to read as
-   the current selection. */
+   the current selection. The ring's share of it follows --tint-scale too — at full strength on
+   white, a 2px red or pink ring was the loudest thing on the light sidebar. */
 .work-project-row.selected {
   background: color-mix(in srgb, var(--category-accent, transparent) calc(28% * var(--tint-scale)), var(--surface-hover));
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--category-accent, transparent) 75%, var(--line-strong));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--category-accent, transparent) calc(75% * var(--tint-scale)), var(--line-strong));
 }
 
 .work-project-select {

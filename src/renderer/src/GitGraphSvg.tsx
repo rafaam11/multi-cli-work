@@ -1,4 +1,5 @@
 import type { GitGraphLayout } from "@shared/git-graph-layout";
+import { type ResolvedTheme, useResolvedTheme } from "./theme";
 
 export const ROW_HEIGHT = 26;
 const LANE_WIDTH = 14;
@@ -7,9 +8,14 @@ const NODE_RADIUS = 4;
 const HEAD_NODE_RADIUS = 5.5;
 
 /** GitHub Primer hues, cycled per branch. Eight keeps repeats rare on a busy graph. */
-const PALETTE = ["#4493f8", "#3fb950", "#d29922", "#a371f7", "#39c5cf", "#f85149", "#db61a2", "#e3956a"];
+const DARK_PALETTE = ["#4493f8", "#3fb950", "#d29922", "#a371f7", "#39c5cf", "#f85149", "#db61a2", "#e3956a"];
+/** The same eight hues from Primer's light scale — the dark ones are too pale to hold a line on white. */
+const LIGHT_PALETTE = ["#0969da", "#1a7f37", "#9a6700", "#8250df", "#1b7c83", "#cf222e", "#bf3989", "#bc4c00"];
 
-export const laneColor = (colorIndex: number): string => PALETTE[colorIndex % PALETTE.length];
+export const laneColor = (colorIndex: number, theme: ResolvedTheme = "dark"): string => {
+  const palette = theme === "light" ? LIGHT_PALETTE : DARK_PALETTE;
+  return palette[colorIndex % palette.length];
+};
 
 /** Lanes are never clamped: a deep history widens the gutter and scrolls rather than collapsing. */
 export const laneX = (lane: number): number => lane * LANE_WIDTH + LANE_WIDTH / 2;
@@ -52,6 +58,8 @@ export interface GitGraphSvgProps {
 }
 
 export function GitGraphSvg({ layout, first, last, height, rowY, headHash, uncommittedY }: GitGraphSvgProps) {
+  const theme = useResolvedTheme();
+  const color = (colorIndex: number) => laneColor(colorIndex, theme);
   const head = headHash === null ? null : layout.nodes.find((node) => node.hash === headHash) ?? null;
   // A parent that has not been paged in yet stops one row past the last loaded commit. Anchoring to
   // the content — not the viewport — keeps the stub still while scrolling, and it becomes a real
@@ -72,14 +80,14 @@ export function GitGraphSvg({ layout, first, last, height, rowY, headHash, uncom
             d={`M ${laneX(head?.lane ?? 0)} ${uncommittedY} L ${laneX(head?.lane ?? 0)} ${
               head ? rowY(head.row) : uncommittedY + ROW_HEIGHT / 2
             }`}
-            stroke={laneColor(head?.colorIndex ?? 0)}
+            stroke={color(head?.colorIndex ?? 0)}
           />
           <circle
             className="graph-node graph-node-pending"
             cx={laneX(head?.lane ?? 0)}
             cy={uncommittedY}
             r={NODE_RADIUS}
-            stroke={laneColor(head?.colorIndex ?? 0)}
+            stroke={color(head?.colorIndex ?? 0)}
           />
         </>
       )}
@@ -96,7 +104,7 @@ export function GitGraphSvg({ layout, first, last, height, rowY, headHash, uncom
               edge.toRow === null ? truncatedY : rowY(edge.toRow),
               edge.isMerge,
             )}
-            stroke={laneColor(edge.colorIndex)}
+            stroke={color(edge.colorIndex)}
           />
         ))}
       {layout.nodes.slice(first, last + 1).map((node) => (
@@ -106,7 +114,7 @@ export function GitGraphSvg({ layout, first, last, height, rowY, headHash, uncom
           cx={laneX(node.lane)}
           cy={rowY(node.row)}
           r={node.hash === headHash ? HEAD_NODE_RADIUS : NODE_RADIUS}
-          fill={laneColor(node.colorIndex)}
+          fill={color(node.colorIndex)}
         />
       ))}
     </svg>
