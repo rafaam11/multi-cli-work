@@ -3666,41 +3666,39 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 /*
  * Panes past the layout's capacity paginate instead of disappearing, so this row rides beside the
- * workspace name. Each page is a tab that names what it holds — a page the user
- * cannot see is otherwise a page they forget. The strip may shrink, never wrap: a tab gives up its
- * names before its number, so even a crowded header keeps every page one click away.
+ * workspace name. Each page is a tab reading 페이지 N — a page the user cannot see is otherwise a
+ * page they forget — sized like the launchers beside it so it reads as a control, not a badge.
+ * The strip may shrink, never wrap: a narrow header drops the word and keeps the number, so even a
+ * crowded header keeps every page one click away.
  */
-/* The outsized shrink factor makes the tabs give up width before the controls do —
-   a tab without its names is still a tab, a launcher scrolled out of view is gone. The floor is
-   every tab at its number alone: without it the strip shrank to nothing on a narrow header and
-   took every page with it. */
+/* Neither the strip nor a tab shrinks: a label of three characters and a number has nothing to
+   give up but the word, and a tab that clipped its own text used to be the strip shrinking to
+   nothing on a narrow header. The workspace name beside it ellipsizes instead, and the container
+   query below drops the word once the header is genuinely narrow. The floor keeps a bare number
+   from turning into a sliver. */
 .workspace-page-tabs {
-  --page-tab-min: 36px;
-
   display: flex;
-  flex: 0 1000 auto;
-  min-width: calc(var(--page-tab-count) * var(--page-tab-min) + (var(--page-tab-count) - 1) * 3px);
+  flex: 0 0 auto;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .workspace-page-tab {
   position: relative;
   display: inline-flex;
-  min-width: var(--page-tab-min);
-  max-width: 180px;
-  height: 28px;
-  flex: 0 1 auto;
+  min-width: 36px;
+  height: 30px;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  padding: 0 9px;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 5px;
   color: var(--muted);
   background: var(--surface);
   cursor: pointer;
-  font-size: var(--type-secondary-size);
+  font-size: var(--type-ui-size);
   white-space: nowrap;
 }
 
@@ -3716,16 +3714,13 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--surface-hover);
 }
 
+.workspace-page-word,
 .workspace-page-number {
   flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
 }
 
-.workspace-page-names {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.workspace-page-number {
+  font-variant-numeric: tabular-nums;
 }
 
 /* A corner badge rather than an inline dot, so a tab squeezed down to its number still shows it. */
@@ -7825,9 +7820,9 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
     display: none;
   }
 
-  /* Names are why the tabs exist, so they go last: above this they shrink to an ellipsis instead.
-     A tab keeps its number and waiting dot; the names live on in its tooltip. */
-  .workspace-header .workspace-page-names {
+  /* The word goes before the number: a tab keeps its number and waiting dot, and the names live
+     on in its tooltip. */
+  .workspace-header .workspace-page-word {
     display: none;
   }
 }

@@ -1302,7 +1302,7 @@ describe("folder workspace", () => {
     expect(await screen.findByRole("region", { name: "PowerShell 7" })).toBeInTheDocument();
     expect(screen.getByLabelText("2페이지 중 2페이지")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^1페이지/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^페이지 1/ }));
     await waitFor(() => expect(document.querySelector(".workspace-grid")).toHaveAttribute("data-slots", "6"));
     expect(screen.getByRole("region", { name: "PowerShell 1" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "PowerShell 6" })).toBeInTheDocument();
@@ -3981,7 +3981,7 @@ describe("새 세션 from an empty slot", () => {
     const { container } = render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
-    fireEvent.click(screen.getByRole("tab", { name: /^2페이지/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^페이지 2/ }));
     await screen.findByLabelText("2페이지 중 2페이지");
 
     fireEvent.click(within(screen.getByLabelText(EMPTY_SLOT_2)).getByRole("button", { name: "새 세션" }));
@@ -3994,7 +3994,7 @@ describe("새 세션 from an empty slot", () => {
     expect(screen.getByLabelText("2페이지 중 2페이지")).toBeInTheDocument();
 
     // Page 1 kept the two panes it had, in the order it had them.
-    fireEvent.click(screen.getByRole("tab", { name: /^1페이지/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^페이지 1/ }));
     await screen.findByLabelText("2페이지 중 1페이지");
     expect([...container.querySelectorAll(".grid-pane")].map((pane) => pane.getAttribute("aria-label"))).toEqual([
       "PowerShell",
@@ -4002,7 +4002,7 @@ describe("새 세션 from an empty slot", () => {
     ]);
   });
 
-  it("names each page's panes on its tab, marks the page someone is waiting on, and turns by keyboard", async () => {
+  it("numbers each page on its tab with the panes' names in its tooltip, marks the page someone is waiting on, and turns by keyboard", async () => {
     const harness = createApi({
       projects: [atlas, dashboard],
       sessions: [powershellSession, claudeSession, codexSession],
@@ -4019,10 +4019,16 @@ describe("새 세션 from an empty slot", () => {
     const { container } = render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Atlas 폴더 선택" }));
-    const first = await screen.findByRole("tab", { name: "1페이지: PowerShell, Claude Code" });
-    const second = screen.getByRole("tab", { name: "2페이지: Codex" });
+    const first = await screen.findByRole("tab", { name: "페이지 1: PowerShell, Claude Code" });
+    const second = screen.getByRole("tab", { name: "페이지 2: Codex" });
     expect(first).toHaveAttribute("aria-selected", "true");
     expect(second).toHaveAttribute("aria-selected", "false");
+
+    // The tab reads "페이지 N" and nothing more — a first pane's title made a poor name for a page.
+    // Which panes it holds is tooltip material.
+    expect(first).toHaveTextContent(/^페이지 1$/);
+    expect(first).toHaveAttribute("title", "페이지 1 — PowerShell, Claude Code");
+    expect(second).toHaveTextContent(/^페이지 2$/);
 
     // The page out of sight is the one that has to say someone is waiting there.
     act(() => harness.emitAttention({ [codexSession.id]: "approval" }));

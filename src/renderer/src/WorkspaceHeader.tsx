@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { isAutoLayout } from "./grid-layouts";
 import { LayoutPicker } from "./LayoutPicker";
@@ -31,8 +31,9 @@ interface WorkspaceHeaderProps {
   /**
    * Which page of the arrangement is showing. Panes that do not fit the layout paginate rather than
    * disappear, so this row is the way back to them — it rides beside the workspace name.
-   * Each page is a tab naming the panes it holds, with the sidebar's
-   * waiting dot when one of them wants the user, so the page worth turning to says so itself.
+   * Each page is a tab reading 페이지 N — the panes it holds go in its tooltip, since a first
+   * pane's title made a poor name for a page — with the sidebar's waiting dot when one of them
+   * wants the user, so the page worth turning to says so itself.
    */
   pages: {
     page: number;
@@ -168,7 +169,6 @@ export function WorkspaceHeader({
             className="workspace-page-tabs"
             role="tablist"
             aria-label={`${pages.items.length}페이지 중 ${pages.page + 1}페이지`}
-            style={{ "--page-tab-count": pages.items.length } as CSSProperties}
           >
             {pages.items.map((item, index) => {
               const names = item.labels.join(", ");
@@ -180,14 +180,12 @@ export function WorkspaceHeader({
                   type="button"
                   role="tab"
                   aria-selected={current}
-                  aria-label={`${index + 1}페이지: ${names || "빈 페이지"}`}
-                  title={`${index + 1}페이지 — ${names || "빈 페이지"}`}
+                  aria-label={`페이지 ${index + 1}: ${names || "빈 페이지"}`}
+                  title={`페이지 ${index + 1} — ${names || "빈 페이지"}`}
                   onClick={() => pages.onChange(index)}
                 >
+                  <span className="workspace-page-word">페이지</span>{" "}
                   <span className="workspace-page-number">{index + 1}</span>
-                  {item.labels.length > 0 ? (
-                    <span className="workspace-page-names">{item.labels.join(" · ")}</span>
-                  ) : null}
                   {item.attention ? (
                     <span className={`unread-dot unread-${item.attention}`} aria-hidden="true" />
                   ) : null}
