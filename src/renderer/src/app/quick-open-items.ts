@@ -5,7 +5,7 @@ import type { WorkProject } from "@shared/work-project-types";
 import { isWorkingBranch } from "@shared/working-branches";
 import type { GitWorkspaceView } from "@shared/worktree-types";
 import type { QuickOpenItem } from "../quick-open";
-import { newSessionLabel, projectName, sessionLabel } from "../session-labels";
+import { projectName, sessionLabel } from "../session-labels";
 
 export interface QuickOpenSources {
   sessions: readonly TerminalSessionView[];
@@ -14,13 +14,14 @@ export interface QuickOpenSources {
   workProjects: readonly WorkProject[];
   tagsByWorkProjectId: Readonly<Record<string, readonly string[]>>;
   agents: readonly AgentView[];
-  /** 새 세션 명령을 붙일 폴더. 선택이 없거나 폴더가 디스크에서 사라졌으면 null. */
-  selectedProject: SharedProject | null;
 }
 
-/** 빠른 열기(Ctrl+P) 목록: 최근 세션, 작업 위치, 폴더, 업무 프로젝트, 명령 순. */
+/**
+ * 빠른 열기(Ctrl+P)의 이동 대상: 최근 세션, 작업 위치, 폴더, 업무 프로젝트 순. 명령은 여기 없다 —
+ * `commands.ts`의 `buildCommandItems`가 레지스트리에서 만들고 명령 팔레트(Ctrl+Shift+P)만 보여 준다.
+ */
 export function buildQuickOpenItems(sources: QuickOpenSources): QuickOpenItem[] {
-  const { sessions, projects, workspaceViews, workProjects, tagsByWorkProjectId, agents, selectedProject } = sources;
+  const { sessions, projects, workspaceViews, workProjects, tagsByWorkProjectId, agents } = sources;
   const nameById = new Map(projects.map((project) => [project.id, projectName(project)]));
   const sessionItems = [...sessions]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
@@ -60,26 +61,5 @@ export function buildQuickOpenItems(sources: QuickOpenSources): QuickOpenItem[] 
       detail: (tagsByWorkProjectId[workProject.id] ?? []).map((tag) => `#${tag}`).join(" ") || null,
     }),
   );
-  const commandItems: QuickOpenItem[] = [
-    { key: "command:home", kind: "command", label: "홈 대시보드 열기", detail: null },
-    ...(selectedProject
-      ? agents
-          .filter((agent) => agent.available)
-          .map(
-            (agent): QuickOpenItem => ({
-              key: `command:new-session:${agent.id}`,
-              kind: "command",
-              label: newSessionLabel(agent),
-              detail: projectName(selectedProject),
-            }),
-          )
-      : []),
-    { key: "command:edit-agents", kind: "command", label: "에이전트 추가 (agents.json)", detail: null },
-    { key: "command:check-updates", kind: "command", label: "업데이트 확인", detail: null },
-    { key: "command:prompts", kind: "command", label: "프롬프트 라이브러리 열기", detail: null },
-    { key: "command:deliveries", kind: "command", label: "보류 메시지 관리", detail: null },
-    { key: "command:records", kind: "command", label: "폴더 기록 열기", detail: null },
-    { key: "command:settings", kind: "command", label: "설정 열기", detail: null },
-  ];
-  return [...sessionItems, ...workspaceItems, ...projectItems, ...workProjectItems, ...commandItems];
+  return [...sessionItems, ...workspaceItems, ...projectItems, ...workProjectItems];
 }

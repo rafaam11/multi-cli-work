@@ -22,23 +22,18 @@ function sources(overrides: Partial<QuickOpenSources> = {}): QuickOpenSources {
     workProjects: [{ id: "w1", name: "세컨드브레인" } as WorkProject],
     tagsByWorkProjectId: { w1: ["개인", "지식"] },
     agents: [claude, missing],
-    selectedProject: project,
     ...overrides,
   };
 }
 
 describe("buildQuickOpenItems", () => {
-  it("lists folders, work projects with their tags, and commands", () => {
+  it("lists folders and work projects with their tags", () => {
     const items = buildQuickOpenItems(sources());
     expect(items.find((item) => item.key === "project:p1")).toMatchObject({ label: "atlas", detail: "C:\\work\\atlas" });
     expect(items.find((item) => item.key === "work-project:w1")).toMatchObject({ detail: "#개인 #지식" });
-    expect(items.at(-1)).toMatchObject({ key: "command:settings" });
   });
 
-  it("offers a new session only with installed agents on the selected folder", () => {
-    const keys = buildQuickOpenItems(sources()).map((item) => item.key);
-    expect(keys).toContain("command:new-session:claude");
-    expect(keys).not.toContain("command:new-session:codex");
-    expect(buildQuickOpenItems(sources({ selectedProject: null })).some((item) => item.key.startsWith("command:new-session"))).toBe(false);
+  it("leaves commands to the registry — 빠른 열기 is for going places", () => {
+    expect(buildQuickOpenItems(sources()).some((item) => item.kind === "command")).toBe(false);
   });
 });

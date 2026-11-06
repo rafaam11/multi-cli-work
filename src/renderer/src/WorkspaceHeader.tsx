@@ -2,16 +2,7 @@ import type { AgentView } from "@shared/agent-types";
 import type { SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import {
-  EyeOff,
-  FolderOpen,
-  LayoutGrid,
-  MonitorDot,
-  PanelsTopLeft,
-  Plus,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
+import { EyeOff, LayoutGrid, MonitorDot, PanelsTopLeft, Plus, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { isAutoLayout } from "./grid-layouts";
@@ -50,18 +41,14 @@ interface WorkspaceHeaderProps {
   selectedSession: TerminalSessionView | null;
   selectedSessionLabel: string | null;
   /**
-   * The session in the pane that has the focus, wherever that pane came from. `selectedSession`
-   * belongs to the folder on screen and is null on a shelf, which holds panes from several — so
-   * the 제거 button follows the focus instead, and works on both surfaces. The launchers do the
-   * same on a shelf: with no folder of its own, the focused pane's path is what "here" means, and
-   * `launchDisabledReason` says why that path cannot start anything right now.
+   * The session in the pane that has the focus, wherever that pane came from. A shelf holds panes
+   * from several folders and has no folder of its own, so there the launchers aim at the focused
+   * pane's path, and `launchDisabledReason` says why that path cannot start anything right now.
    */
   focusedSession: { session: TerminalSessionView; label: string; launchDisabledReason: string | null } | null;
-  onRemoveSession(session: TerminalSessionView): void;
   projectMissing: boolean;
   agents: AgentView[];
   pendingAction: boolean;
-  readOnly: boolean;
   /** Whether the 상세 page is what the workspace is already showing. */
   detailActive: boolean;
   onOpenDetail(): void;
@@ -71,13 +58,13 @@ interface WorkspaceHeaderProps {
    * arrangement closes every gap — so on that layout this is the only way in to the list.
    */
   onRequestNewSession(anchor: { x: number; y: number }): void;
-  onRelinkProject(): void;
 }
 
 /**
  * The header names what is on screen and starts new work. Per-session controls live on the pane
  * headers instead — with a grid of terminals, only the pane itself says which session a button
- * would act on.
+ * would act on — and so does 제거, which every pane header already carries. 폴더 다시 연결 is
+ * the missing-folder notice's button, the 파일 menu's and the folder's right-click menu's.
  *
  * A shelf holds panes from several folders at once, so there is no folder for 상세 to open. That
  * control is for folder surfaces only; a shelf gets a title saying how much it holds and where from.
@@ -93,16 +80,13 @@ export function WorkspaceHeader({
   selectedSession,
   selectedSessionLabel,
   focusedSession,
-  onRemoveSession,
   projectMissing,
   agents,
   pendingAction,
-  readOnly,
   detailActive,
   onOpenDetail,
   onStartSession,
   onRequestNewSession,
-  onRelinkProject,
 }: WorkspaceHeaderProps) {
   /**
    * A folder surface launches into the folder it is showing; a shelf launches into whichever pane
@@ -223,19 +207,6 @@ export function WorkspaceHeader({
             {statusLabels[selectedSession.status]}
           </span>
         ) : null}
-        {!workspace && selectedProject && !selectedSession?.tool ? (
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onRelinkProject}
-            disabled={readOnly}
-            aria-label="폴더 다시 연결"
-            title="폴더 다시 연결"
-          >
-            <FolderOpen size={15} />
-          </button>
-        ) : null}
-
         {/* Opening a folder goes straight to its terminals, so the 상세 page needs its own way in. */}
         {!workspace && selectedProject ? (
           <button
@@ -299,20 +270,6 @@ export function WorkspaceHeader({
               </button>
             ) : null}
           </div>
-        ) : null}
-
-        {/* Last in the row and on its own: the only control here that destroys anything. */}
-        {focusedSession ? (
-          <button
-            className="icon-button danger-button"
-            type="button"
-            onClick={() => onRemoveSession(focusedSession.session)}
-            disabled={pendingAction}
-            aria-label={`${focusedSession.label} 세션 제거`}
-            title={`${focusedSession.label} 세션 제거 (스크롤백까지 삭제)`}
-          >
-            <Trash2 size={15} />
-          </button>
         ) : null}
       </div>
     </header>

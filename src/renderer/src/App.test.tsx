@@ -770,14 +770,15 @@ describe("folder workspace", () => {
     render(<App />);
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
     fireEvent.keyDown(window, { key: "p", ctrlKey: true, shiftKey: true });
-    fireEvent.click(await screen.findByText("프롬프트 라이브러리 열기"));
+    fireEvent.click(await screen.findByText("세션: 프롬프트 라이브러리"));
     fireEvent.change(screen.getByLabelText("프롬프트", { exact: true }), { target: { value: "keep unsaved text" } });
-    fireEvent.keyDown(window, { key: destination === "palette" ? "p" : ",", ctrlKey: true });
+    // The commands live in the command palette (Ctrl+Shift+P), not in 빠른 열기.
+    fireEvent.keyDown(window, { key: destination === "palette" ? "P" : ",", ctrlKey: true, shiftKey: destination === "palette" });
     expect(await screen.findByRole("dialog", { name: destination === "palette" ? "빠른 열기" : "설정" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "프롬프트 라이브러리" })).not.toBeInTheDocument();
     if (destination === "palette") {
       expect(screen.getByRole("textbox", { name: "빠른 열기 검색" })).toHaveFocus();
-      fireEvent.click(screen.getByText("프롬프트 라이브러리 열기"));
+      fireEvent.click(screen.getByText("세션: 프롬프트 라이브러리"));
       expect(screen.getByLabelText("프롬프트", { exact: true })).toHaveValue("keep unsaved text");
     }
   });
@@ -886,7 +887,7 @@ describe("folder workspace", () => {
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
     expect(harness.api.projects.list).toHaveBeenCalledOnce();
 
-    const refreshButton = screen.getByRole("button", { name: "목록 새로고침" });
+    const refreshButton = screen.getByRole("button", { name: "작업 영역 새로고침" });
     fireEvent.click(refreshButton);
     expect(refreshButton).toBeDisabled();
 
@@ -914,7 +915,7 @@ describe("folder workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dashboard 폴더 선택" }));
     await waitFor(() => expect(harness.api.terminals.attach).toHaveBeenCalledWith(dashboardSession.id, PANE_SIZE));
 
-    fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업 영역 새로고침" }));
     await waitFor(() => expect(harness.api.projects.list).toHaveBeenCalledTimes(2));
 
     expect(screen.getByRole("button", { name: "Dashboard 폴더 선택" }).closest(".project-row")).toHaveClass(
@@ -933,7 +934,7 @@ describe("folder workspace", () => {
     expect(screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")).toHaveClass("selected");
 
     vi.mocked(harness.api.projects.list).mockResolvedValueOnce(registry([dashboard]));
-    fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업 영역 새로고침" }));
 
     await waitFor(() => expect(harness.api.projects.list).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("button", { name: "Atlas 폴더 선택" })).not.toBeInTheDocument();
@@ -1394,8 +1395,9 @@ describe("folder workspace", () => {
     render(<App />);
 
     await screen.findByRole("button", { name: "Atlas 폴더 선택" });
-    // The 🔧 header menu is gone; the title bar's 도구 menu is the single way in.
-    fireEvent.click(screen.getByRole("menuitem", { name: "도구" }));
+    // The CLI updates live under 세션 › 에이전트 — the old 도구 menu folded into 세션.
+    fireEvent.click(screen.getByRole("menuitem", { name: "세션" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "에이전트" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Claude Code 업데이트" }));
 
     await waitFor(() =>
@@ -1425,13 +1427,14 @@ describe("folder workspace", () => {
     expect(document.querySelector(".workspace-title")).toHaveTextContent("도구");
   });
 
-  it("keeps the Tools menu usable when no folder is open, but not for a missing CLI", async () => {
+  it("keeps the CLI updates usable when no folder is open, but not for a missing CLI", async () => {
     const harness = createApi({ projects: [], sessions: [] });
     window.multiCliWork = harness.api;
     render(<App />);
 
     await screen.findByText("아직 프로젝트가 없습니다");
-    fireEvent.click(screen.getByRole("menuitem", { name: "도구" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "세션" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "에이전트" }));
 
     // Codex is absent in this harness, so its update must not be offered.
     expect(await screen.findByRole("menuitem", { name: "Codex 업데이트" })).toBeDisabled();
@@ -1840,7 +1843,9 @@ describe("folder workspace", () => {
 
     expect(await screen.findByText("폴더를 찾을 수 없습니다")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "새 PowerShell 세션" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "폴더 다시 연결" })).toBeInTheDocument();
+    // The notice carries the one 다시 연결 button; the header no longer repeats it.
+    expect(screen.getByRole("button", { name: "누락된 폴더 다시 연결" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "폴더 다시 연결" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Atlas 폴더 선택" }).closest(".project-row")).toHaveClass(
       "missing",
     );
@@ -1851,7 +1856,7 @@ describe("folder workspace", () => {
       "folder-idle",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "폴더 다시 연결" }));
+    fireEvent.click(screen.getByRole("button", { name: "누락된 폴더 다시 연결" }));
     await waitFor(() => expect(harness.api.projects.relink).toHaveBeenCalledWith(atlas.id));
     expect(screen.queryByText("폴더를 찾을 수 없습니다")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "새 PowerShell 세션" })).toBeEnabled();
@@ -2740,7 +2745,7 @@ describe("quick open palette", () => {
     expect(screen.queryByRole("dialog", { name: "빠른 열기" })).not.toBeInTheDocument();
   });
 
-  it("lists folders and commands alongside sessions", async () => {
+  it("lists folders alongside sessions, and the commands under Ctrl+Shift+P", async () => {
     const harness = createApi({ projects: [atlas, dashboard] });
     window.multiCliWork = harness.api;
     render(<App />);
@@ -2755,7 +2760,7 @@ describe("quick open palette", () => {
     // A folder opens into its grid, which is empty here — every session belongs to Atlas.
     expect(await screen.findByText("Dashboard에서 시작")).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "P", ctrlKey: true, shiftKey: true });
     const reopened = await screen.findByRole("dialog", { name: "빠른 열기" });
     fireEvent.change(within(reopened).getByRole("textbox", { name: "빠른 열기 검색" }), {
       target: { value: "홈 대시보드" },
@@ -4337,7 +4342,13 @@ describe("title bar", () => {
   const terminalHost = (name: string) =>
     screen.getByRole("region", { name }).querySelector(".terminal-host")!;
 
-  it("sends 편집 menu commands to the terminal that last took the keyboard", async () => {
+  const openTerminalMenu = (name: string) => {
+    fireEvent.mouseDown(document.body);
+    fireEvent.contextMenu(terminalHost(name));
+    return screen.findByRole("menu", { name: "터미널" });
+  };
+
+  it("drives the terminal it was right-clicked on, and makes that pane the focus", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
@@ -4350,30 +4361,102 @@ describe("title bar", () => {
     const secondary = await xtermFor(claudeSession.id);
     secondary.selection = "claude output";
 
-    fireEvent.focusIn(terminalHost("claude 터미널"));
-    fireEvent.click(within(await openMenu("편집")).getByRole("menuitem", { name: /복사/ }));
+    fireEvent.click(within(await openTerminalMenu("claude 터미널")).getByRole("menuitem", { name: /복사/ }));
     await waitFor(() => expect(harness.api.clipboard.writeText).toHaveBeenCalledWith("claude output"));
+    expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code");
 
-    // Nothing about the grid changed — only which pane holds the keyboard.
-    fireEvent.focusIn(terminalHost("powershell 터미널"));
-    fireEvent.click(within(await openMenu("편집")).getByRole("menuitem", { name: /모두 선택/ }));
+    fireEvent.click(within(await openTerminalMenu("powershell 터미널")).getByRole("menuitem", { name: /모두 선택/ }));
     expect(primary.selectAll).toHaveBeenCalledOnce();
     expect(secondary.selectAll).not.toHaveBeenCalled();
 
-    fireEvent.click(within(await openMenu("편집")).getByRole("menuitem", { name: "터미널 지우기" }));
+    fireEvent.click(within(await openTerminalMenu("powershell 터미널")).getByRole("menuitem", { name: /화면 지우기/ }));
     expect(primary.clear).toHaveBeenCalledOnce();
   });
 
-  it("greys the 편집 menu out once no terminal is on screen", async () => {
+  it("offers 복사 only when the terminal has a selection, and no 편집 menu in the title bar", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
 
     await screen.findByRole("region", { name: "powershell 터미널" });
-    expect(within(await openMenu("편집")).getByRole("menuitem", { name: /복사/ })).toBeEnabled();
+    expect(within(await openTerminalMenu("powershell 터미널")).getByRole("menuitem", { name: /복사/ })).toBeDisabled();
+    expect(screen.queryByRole("menuitem", { name: "편집" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "도구" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "홈 대시보드 열기" }));
-    expect(within(await openMenu("편집")).getByRole("menuitem", { name: /복사/ })).toBeDisabled();
+  it("aims the 세션 menu at the focused pane, not the folder's remembered session", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+
+    await screen.findByRole("button", { name: "세션 작업공간 열기 (패인 2개)" });
+    fireEvent.click(screen.getByRole("button", { name: /Claude Code 세션 열기/ }));
+    await waitFor(() =>
+      expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "Claude Code"),
+    );
+
+    // Entering 작업공간 focuses its first pane without touching the selection, which stays on Claude.
+    fireEvent.click(screen.getByRole("button", { name: "세션 작업공간 열기 (패인 2개)" }));
+    await waitFor(() =>
+      expect(document.querySelector(".grid-pane.pane-focused")).toHaveAttribute("aria-label", "PowerShell"),
+    );
+    fireEvent.click(within(await openMenu("세션")).getByRole("menuitem", { name: "중지" }));
+    await waitFor(() => expect(harness.api.terminals.stop).toHaveBeenCalledWith(powershellSession.id));
+    expect(harness.api.terminals.stop).not.toHaveBeenCalledWith(claudeSession.id);
+  });
+
+  it("runs a menu command from the command palette, with its key shown beside it", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "powershell 터미널" });
+
+    fireEvent.keyDown(window, { key: "P", ctrlKey: true, shiftKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "빠른 열기" });
+    const input = within(dialog).getByRole("textbox", { name: "빠른 열기 검색" });
+    fireEvent.change(input, { target: { value: "세션 중지" } });
+    const row = within(dialog).getByRole("option", { name: /세션: 중지/ });
+    expect(row).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(harness.api.terminals.stop).toHaveBeenCalledWith(powershellSession.id));
+  });
+
+  it("leaves the commands out of 빠른 열기, which only goes places", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("region", { name: "powershell 터미널" });
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "빠른 열기" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "빠른 열기 검색" }), { target: { value: "설정" } });
+    expect(within(dialog).queryByRole("option", { name: /설정 열기/ })).not.toBeInTheDocument();
+  });
+
+  it("says so when a manual update check finds nothing new", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    fireEvent.click(within(await openMenu("도움말")).getByRole("menuitem", { name: "업데이트 확인" }));
+    await waitFor(() => expect(harness.api.updates.check).toHaveBeenCalledOnce());
+    expect(await screen.findByText("최신 버전입니다")).toBeInTheDocument();
+  });
+
+  it("snoozes the desktop notifications from the 세션 menu, through the same setting the tray writes", async () => {
+    const harness = createApi();
+    window.multiCliWork = harness.api;
+    render(<App />);
+    await screen.findByRole("button", { name: "Atlas 폴더 선택" });
+
+    fireEvent.click(within(await openMenu("세션")).getByRole("menuitem", { name: "알림 1시간 끄기" }));
+    await waitFor(() =>
+      expect(harness.api.settings.update).toHaveBeenCalledWith({
+        notifications: { snoozedUntil: expect.any(String) },
+      }),
+    );
   });
 
   it("quits through the app rather than the tray, and folds the sidebar from 보기", async () => {
@@ -4872,13 +4955,13 @@ describe("settings entry points", () => {
     expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
   });
 
-  it("빠른 열기의 설정 열기 명령이 같은 다이얼로그를 연다", async () => {
+  it("명령 팔레트의 설정 열기 명령이 같은 다이얼로그를 연다", async () => {
     const harness = createApi();
     window.multiCliWork = harness.api;
     render(<App />);
-    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "P", ctrlKey: true, shiftKey: true });
     fireEvent.change(await screen.findByRole("textbox", { name: "빠른 열기 검색" }), { target: { value: "설정 열기" } });
-    fireEvent.click(await screen.findByText("설정 열기"));
+    fireEvent.click(await screen.findByText("파일: 설정 열기"));
     expect(await screen.findByRole("dialog", { name: "설정" })).toBeInTheDocument();
   });
 });

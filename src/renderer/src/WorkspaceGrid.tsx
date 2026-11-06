@@ -51,6 +51,8 @@ interface WorkspaceGridProps {
   onRegisterCommands(sessionId: string, commands: TerminalCommands | null): void;
   /** A terminal took the keyboard — the 편집 menu's target, not a selection change. */
   onTerminalFocused(sessionId: string): void;
+  /** A right-click on a terminal's body — its own menu, apart from the pane header's session menu. */
+  onTerminalContextMenu?(sessionId: string, position: { x: number; y: number }, hasSelection: boolean): void;
   /** A Ctrl+clicked file path in a session's output. */
   onOpenFileLink?(sessionId: string, link: ResolvedFileLink, position: FileLinkPosition | null): void;
   /** The user pressed inside this pane, which is what moves the focused-pane selection. */
@@ -118,6 +120,7 @@ export function WorkspaceGrid({
   onError,
   onRegisterCommands,
   onTerminalFocused,
+  onTerminalContextMenu,
   onOpenFileLink,
   onFocusPane,
   onResumeSession,
@@ -376,6 +379,7 @@ export function WorkspaceGrid({
               onError={onError}
               onRegisterCommands={onRegisterCommands}
               onTerminalFocused={onTerminalFocused}
+              onOpenContextMenu={onTerminalContextMenu}
               onOpenFileLink={(link, position) => onOpenFileLink?.(session.id, link, position)}
             />
             {session.status === "working" ? (

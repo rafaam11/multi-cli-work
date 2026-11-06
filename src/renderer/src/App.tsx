@@ -37,7 +37,9 @@ import { QuickOpenPalette } from "./QuickOpenPalette";
 import { SessionContextMenu } from "./SessionContextMenu";
 import type { TerminalCommands } from "./TerminalPane";
 import { TitleBar } from "./TitleBar";
-import { buildTitleBarMenus, NEW_SESSION_PREFIX } from "./title-bar-menu";
+import { buildTitleBarMenus } from "./title-bar-menu";
+import { buildCommandItems, commandEnabled, NEW_SESSION_PREFIX, notificationsSnoozed, type CommandContext } from "./commands";
+import { TerminalContextMenu } from "./TerminalContextMenu";
 import { WorkProjectCreateDialog } from "./WorkProjectCreateDialog";
 import { sortWorkProjects } from "./work-project-order";
 import { WorkProjectDetailPage } from "./WorkProjectDetailPage";
@@ -195,6 +197,8 @@ export function App() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
+  /** The right-click menu on a terminal's body: which terminal, where, and whether it had a selection. */
+  const [terminalMenu, setTerminalMenu] = useState<{ sessionId: string; x: number; y: number; hasSelection: boolean } | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; surface: RenameSurface } | null>(null);
   const [removal, setRemoval] = useState<RemovalState | null>(null);
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
@@ -1538,7 +1542,6 @@ export function App() {
             workProjects,
             tagsByWorkProjectId,
             agents,
-            selectedProject: selectedProjectMissing ? null : selectedProject,
           })
         : [],
     [
@@ -1549,20 +1552,14 @@ export function App() {
       workProjects,
       tagsByWorkProjectId,
       agents,
-      selectedProject,
-      selectedProjectMissing,
     ],
   );
 
   const handleQuickOpenSelect = (item: QuickOpenItem) => {
     setQuickOpenVisible(false);
-    if (item.key === "command:prompts" || item.key === "command:deliveries") {
-      setAuxiliaryTool(item.key === "command:prompts" ? "prompts" : "deliveries");
-      return;
-    }
-    if (item.key === "command:records" || item.key === "command:activity") {
-      setRightSidebarTab("records");
-      setRightSidebarCollapsed(false);
+    // 명령 행은 메뉴·단축키와 같은 디스패처로 간다 — 키는 `command:<레지스트리 id>`다.
+    if (item.kind === "command") {
+      handleMenuAction(item.key.slice("command:".length));
       return;
     }
     const [prefix, ...rest] = item.key.split(":");
@@ -1578,17 +1575,6 @@ export function App() {
       if (worktree) selectWorktree(worktree);
     } else if (prefix === "work-project") {
       selectWorkProject(rest.join(":"));
-    } else if (item.key === "command:home") {
-      openHome();
-    } else if (item.key === "command:edit-agents") {
-      void editAgents();
-    } else if (item.key === "command:check-updates") {
-      void window.multiCliWork.updates.check().catch((error) => setActionError(errorMessage(error)));
-    } else if (item.key === "command:settings") {
-      setSettingsOpen(true);
-      return;
-    } else if (rest[0] === "new-session" && selectedProject) {
-      void startSession(selectedProject, rest.slice(1).join(":"));
     }
   };
 
@@ -2097,44 +2083,80 @@ export function App() {
    */
   const showsLayoutPicker = !loading && !loadError && activeView === "terminal";
 
-  const titleBarMenus = useMemo(
-    () =>
-      buildTitleBarMenus(
-        {
-          agents,
-          appVersion,
-          project: headerProject ? { missing: selectedProjectMissing } : null,
-          readOnly: Boolean(snapshot && !snapshot.writable),
-          pendingAction,
-          session: headerSession
-            ? {
-                status: headerSession.status,
-                tool: headerSession.tool !== null,
-                refreshing: refreshingSessionIds.has(headerSession.id),
-              }
-            : null,
-          terminalFocused: editTargetId !== null,
-          canSaveFile,
-          sidebarCollapsed,
-          rightSidebarCollapsed,
-        },
-        appSettings.keybindings,
-      ),
+  /**
+   * The session the 세션 commands act on: the one behind the focused pane, the same session that
+   * pane's own header buttons drive. A document pane, or no grid at all, leaves them nothing to act on.
+   */
+  const commandSession = headerFocusedSession?.session ?? null;
+
+  /**
+   * Where 새 세션 starts — the header launchers' rule (`startSessionFromHeader`): the folder on
+   * screen, or on a shelf the focused pane's folder and worktree.
+   */
+  const launchTarget: CommandContext["launch"] = (() => {
+    if (activeView === "home") return null;
+    if (shelfKind === null) {
+      if (!selectedProject) return null;
+      return {
+        label: projectName(selectedProject),
+        blockedReason: selectedProjectMissing ? "세션을 시작하려면 먼저 폴더를 다시 연결하세요" : null,
+      };
+    }
+    const focusedProjectId = headerFocusedSession?.session.projectId ?? null;
+    const focusedProject = focusedProjectId ? projects.find((project) => project.id === focusedProjectId) : undefined;
+    if (!headerFocusedSession || !focusedProject) return null;
+    return { label: projectName(focusedProject), blockedReason: headerFocusedSession.launchDisabledReason };
+  })();
+
+  const commandContext = useMemo<CommandContext>(
+    () => ({
+      agents,
+      project: headerProject ? { missing: selectedProjectMissing } : null,
+      readOnly: Boolean(snapshot && !snapshot.writable),
+      pendingAction,
+      session: commandSession
+        ? {
+            status: commandSession.status,
+            refreshing: refreshingSessionIds.has(commandSession.id),
+            missingRoot: commandSession.tool === null && isProjectMissing(commandSession.projectId),
+          }
+        : null,
+      launch: launchTarget,
+      terminalFocused: editTargetId !== null,
+      canSaveFile,
+      sidebarCollapsed,
+      rightSidebarCollapsed,
+      grid: showsGrid ? { page: resolvedView.page, pages: resolvedView.pages } : null,
+      notificationsSnoozedUntil: appSettings.notifications.snoozedUntil,
+      now: Date.now(),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       agents,
-      appVersion,
       headerProject,
       selectedProjectMissing,
       snapshot,
       pendingAction,
-      headerSession,
+      commandSession,
       refreshingSessionIds,
+      isProjectMissing,
+      launchTarget?.label,
+      launchTarget?.blockedReason,
+      launchTarget === null,
       editTargetId,
       canSaveFile,
       sidebarCollapsed,
       rightSidebarCollapsed,
-      appSettings.keybindings,
+      showsGrid,
+      resolvedView.page,
+      resolvedView.pages,
+      appSettings.notifications.snoozedUntil,
     ],
+  );
+
+  const titleBarMenus = useMemo(
+    () => buildTitleBarMenus({ ...commandContext, appVersion }, appSettings.keybindings),
+    [commandContext, appVersion, appSettings.keybindings],
   );
 
   // Same rule the window frame and the taskbar badge use: an approval outranks a plain input wait.
@@ -2177,12 +2199,15 @@ export function App() {
         : null;
 
   const handleMenuAction = (id: string) => {
+    // A command that is off does nothing, whichever surface asked — the menu greys it and the palette
+    // leaves it out, but a stale palette row or a key bound by hand must not slip past either.
+    if (!commandEnabled(id, commandContext)) return;
     if (id.startsWith("workspace.focus-slot-")) {
       focusVisibleSlot(Number(id.slice("workspace.focus-slot-".length)));
       return;
     }
-    if (id.startsWith(NEW_SESSION_PREFIX) && selectedProject) {
-      void startSession(selectedProject, id.slice(NEW_SESSION_PREFIX.length), selectedWorktree?.id);
+    if (id.startsWith(NEW_SESSION_PREFIX)) {
+      startSessionFromHeader(id.slice(NEW_SESSION_PREFIX.length));
       return;
     }
     const terminal = editTargetId ? (terminalCommands.current.get(editTargetId) ?? null) : null;
@@ -2209,6 +2234,14 @@ export function App() {
       case "view.full-screen": void window.multiCliWork.window.toggleFullScreen(); break;
       case "view.reload": void window.multiCliWork.window.reload(); break;
       case "view.dev-tools": void window.multiCliWork.window.toggleDevTools(); break;
+      case "view.home": openHome(); break;
+      case "view.records":
+        setRightSidebarTab("records");
+        setRightSidebarCollapsed(false);
+        break;
+      case "workspace.reload":
+        void loadWorkspace({ projectId: selectedProjectId, sessionId: selectedSessionId, view: activeView });
+        break;
       case "view.zoom-pane":
         if (showsGrid && focusedPaneId && visiblePaneIds.includes(focusedPaneId)) toggleZoom(focusedPaneId);
         break;
@@ -2216,8 +2249,8 @@ export function App() {
       case "workspace.focus-right": moveFocus("right"); break;
       case "workspace.focus-up": moveFocus("up"); break;
       case "workspace.focus-down": moveFocus("down"); break;
-      case "session.resume": void resumeSession(); break;
-      case "session.refresh": if (headerSession) void refreshSession(headerSession.id); break;
+      case "session.resume": void resumeSession(commandSession); break;
+      case "session.refresh": if (commandSession) void refreshSession(commandSession.id); break;
       case "session.next":
         cycleVisibleSession(1);
         break;
@@ -2229,15 +2262,39 @@ export function App() {
         break;
       case "workspace.page-prev": turnPage(-1); break;
       case "workspace.page-next": turnPage(1); break;
-      case "session.stop": void stopSession(); break;
+      case "session.stop": void stopSession(commandSession); break;
       case "session.remove":
-        if (selectedSession) void removeSessionById(selectedSession);
+        if (commandSession) void removeSessionById(commandSession);
         break;
+      case "session.prompts": setAuxiliaryTool("prompts"); break;
+      case "session.deliveries": setAuxiliaryTool("deliveries"); break;
+      case "notifications.snooze": {
+        // The tray and 설정 › 알림 write the same value, so all three read each other's choice.
+        const snoozedUntil = notificationsSnoozed({ ...commandContext, now: Date.now() })
+          ? null
+          : new Date(Date.now() + 60 * 60_000).toISOString();
+        void window.multiCliWork.settings
+          .update({ notifications: { snoozedUntil } })
+          .catch((error) => setActionError(errorMessage(error)));
+        break;
+      }
       case "tools.claude-update": void startTool("claude-update"); break;
       case "tools.codex-update": void startTool("codex-update"); break;
       case "tools.edit-agents": void editAgents(); break;
       case "help.check-updates":
-        void window.multiCliWork.updates.check().catch((error) => setActionError(errorMessage(error)));
+        // The sidebar badge only speaks up when there is something to do, so "nothing new" is said here.
+        void window.multiCliWork.updates
+          .check()
+          .then(() => window.multiCliWork.updates.status())
+          .then((status) => {
+            if (status.state === "idle") showToast({ tone: "success", title: "최신 버전입니다", detail: `v${appVersion}` });
+          })
+          .catch((error) => setActionError(errorMessage(error)));
+        break;
+      case "help.keybindings":
+        setAuxiliaryTool(null);
+        setSettingsTab("keybindings");
+        setSettingsOpen(true);
         break;
       case "help.release-notes": void window.multiCliWork.updates.openReleases(); break;
       case "help.repository": void window.multiCliWork.updates.openRepository(); break;
@@ -2249,25 +2306,9 @@ export function App() {
   };
 
   handleMenuActionRef.current = handleMenuAction;
-  keyActionEnabledRef.current = (id: string): boolean => {
-    switch (id) {
-      case "file.save":
-        // 예전 Ctrl+S 리스너의 가드: 저장 불가한 탭이면 preventDefault 없이 흘려보냈다.
-        return Boolean(
-          selectedFileTab &&
-            ["markdown", "html", "text"].includes(selectedFileTab.category) &&
-            !selectedFileTab.truncated &&
-            selectedFileTab.encoding === "utf8",
-        );
-      // 넘길 페이지가 없으면 키를 삼키지 않는다 — 터미널 안 프로그램이 Ctrl+PageUp/Down을 받는다.
-      case "workspace.page-prev":
-        return showsGrid && resolvedView.page > 0;
-      case "workspace.page-next":
-        return showsGrid && resolvedView.page < resolvedView.pages - 1;
-      default:
-        return true;
-    }
-  };
+  // 메뉴와 같은 판정: 꺼진 명령의 키는 삼키지 않고 터미널로 흘려보낸다(저장 불가 탭의 Ctrl+S,
+  // 넘길 페이지가 없는 Ctrl+PageUp/Down 등).
+  keyActionEnabledRef.current = (id: string): boolean => commandEnabled(id, commandContext);
 
   return (
     <MotionConfig reducedMotion={reduceMotion ? "always" : "user"}>
@@ -2280,7 +2321,7 @@ export function App() {
         workProjectName={titleBarWorkProjectName}
         folderName={activeView === "work-project" ? null : headerProject ? projectName(headerProject) : null}
         attention={titleBarAttention}
-        onQuickOpen={() => setQuickOpenVisible((visible) => !visible)}
+        onQuickOpen={() => handleMenuAction("view.quick-open")}
         onJumpToWaiting={jumpToNextWaiting}
         usage={appSettings.usage.enabled ? usage : null}
         onRefreshUsage={refreshUsage}
@@ -2421,16 +2462,13 @@ export function App() {
           selectedSession={headerSession}
           selectedSessionLabel={headerSessionLabel}
           focusedSession={headerFocusedSession}
-          onRemoveSession={(session) => void removeSessionById(session)}
           projectMissing={selectedProjectMissing}
           agents={agents}
           pendingAction={pendingAction}
-          readOnly={Boolean(snapshot && !snapshot.writable)}
           detailActive={activeView === "detail"}
           onOpenDetail={() => setActiveView("detail")}
           onStartSession={(kind) => startSessionFromHeader(kind)}
           onRequestNewSession={(anchor) => setNewSessionSlot({ index: null, ...anchor })}
-          onRelinkProject={relinkSelectedProject}
         />
 
         <div className="workspace-body">
@@ -2500,6 +2538,12 @@ export function App() {
                 onError={(message) => setActionError(message)}
                 onRegisterCommands={registerTerminalCommands}
                 onTerminalFocused={setLastFocusedTerminalId}
+                onTerminalContextMenu={(sessionId, position, hasSelection) => {
+                  // The menu acts on the terminal it was opened on, which becomes the focus like a click would.
+                  focusPane(sessionId);
+                  setLastFocusedTerminalId(sessionId);
+                  setTerminalMenu({ sessionId, ...position, hasSelection });
+                }}
                 onFocusPane={focusPane}
                 onResumeSession={(session) => void resumeSession(session)}
                 remoteSizeOwners={remoteSizeOwners}
@@ -2897,11 +2941,31 @@ export function App() {
         />
       ) : null}
 
+      {terminalMenu ? (
+        <TerminalContextMenu
+          x={terminalMenu.x}
+          y={terminalMenu.y}
+          hasSelection={terminalMenu.hasSelection}
+          onAction={(action) => {
+            const terminal = terminalCommands.current.get(terminalMenu.sessionId);
+            if (!terminal) return;
+            if (action === "edit.copy") terminal.copySelection();
+            else if (action === "edit.paste") terminal.paste();
+            else if (action === "edit.select-all") terminal.selectAll();
+            else if (action === "edit.clear") terminal.clear();
+            // 찾기 bar takes the keyboard itself; everything else hands it back to the terminal.
+            if (action === "edit.find") terminal.find();
+            else terminal.focus();
+          }}
+          onClose={() => setTerminalMenu(null)}
+        />
+      ) : null}
+
       {quickOpenVisible ? (
         <QuickOpenPalette
           initialKind={quickOpenKind}
           currentProjectId={selectedProjectId}
-          items={quickOpenItems}
+          items={[...quickOpenItems, ...buildCommandItems(commandContext, appSettings.keybindings)]}
           onSelect={handleQuickOpenSelect}
           onClose={() => setQuickOpenVisible(false)}
         />

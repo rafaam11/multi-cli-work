@@ -31,14 +31,19 @@ function createUpdatesApi(initial: UpdaterStatus = { state: "idle" }) {
 afterEach(cleanup);
 
 describe("update badge", () => {
-  it("shows the running version and reports being up to date", async () => {
+  it("takes no sidebar room while up to date, and speaks up once an update is on its way", async () => {
     const harness = createUpdatesApi();
 
-    render(<UpdateBadge />);
+    const { container } = render(<UpdateBadge />);
 
-    expect(await screen.findByText("v1.0.0")).toBeInTheDocument();
-    expect(screen.getByText("최신 버전")).toBeInTheDocument();
-    expect(harness.updates.status).toHaveBeenCalledOnce();
+    await waitFor(() => expect(harness.updates.status).toHaveBeenCalledOnce());
+    // The 도움말 menu already names the running version; "최신 버전" is the usual case and says nothing.
+    expect(screen.queryByText("최신 버전")).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+
+    harness.emit({ state: "downloading", percent: 40 });
+    expect(screen.getByText("다운로드 중 40%")).toBeInTheDocument();
+    expect(screen.getByText("v1.0.0")).toBeInTheDocument();
   });
 
   it("adopts an update that finished downloading before the renderer mounted", async () => {
@@ -61,8 +66,9 @@ describe("update badge", () => {
     expect(harness.updates.openReleases).toHaveBeenCalledOnce();
   });
 
-  it("checks on demand and follows the download through to the restart prompt", async () => {
-    const harness = createUpdatesApi();
+  it("checks again on demand and follows the download through to the restart prompt", async () => {
+    // Up to date, the badge is not there to press — 도움말 › 업데이트 확인 is. Once it shows, it can re-check.
+    const harness = createUpdatesApi({ state: "available", version: "1.1.0" });
 
     render(<UpdateBadge />);
     fireEvent.click(await screen.findByRole("button", { name: "확인" }));

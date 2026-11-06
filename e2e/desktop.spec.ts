@@ -894,7 +894,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       return { top: rect.top, height: Math.round(rect.height) };
     });
     expect(geometry).toEqual({ top: 0, height: 35 });
-    for (const label of ["파일", "편집", "보기", "세션", "도구", "도움말"]) {
+    for (const label of ["파일", "보기", "세션", "도움말"]) {
       await expect(titleBar.getByRole("menuitem", { name: label })).toBeVisible();
     }
     for (const label of ["최소화", "최대화", "닫기"]) {
@@ -921,6 +921,37 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(page.getByRole("dialog", { name: "빠른 열기" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "빠른 열기" })).toBeHidden();
+  });
+
+  /** The old 편집 menu moved onto the terminal it acts on: a right-click on its body. */
+  test("@smoke opens the terminal's own menu on a right-click", async () => {
+    await openFolder();
+    const known = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map((session) => session.id));
+    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    try {
+      const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` }).last().locator(".terminal-host");
+      await expect(terminal).toBeVisible();
+      await terminal.click({ button: "right" });
+      const menu = page.getByRole("menu", { name: "터미널" });
+      await expect(menu).toBeVisible();
+      for (const label of [/복사/, /붙여넣기/, /모두 선택/, /찾기/, /화면 지우기/]) {
+        await expect(menu.getByRole("menuitem", { name: label })).toBeVisible();
+      }
+      await attachScreenshot("terminal-context-menu");
+      await menu.getByRole("menuitem", { name: /찾기/ }).click();
+      await expect(menu).toBeHidden();
+      const search = page.getByRole("search", { name: "터미널에서 찾기" });
+      await expect(search).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(search).toBeHidden();
+    } finally {
+      // Leave the folder as the next tests expect it: only the sessions it had before this one.
+      await page.evaluate(async (before) => {
+        for (const session of await window.multiCliWork.terminals.list()) {
+          if (!before.includes(session.id)) await window.multiCliWork.terminals.remove(session.id);
+        }
+      }, known);
+    }
   });
 
   test("@smoke toggles and immediately saves a Markdown task", async () => {
@@ -1103,8 +1134,8 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const externalPath = path.join(tempRoot, "external worktree");
     await execFileAsync("git", ["-C", projectRoot, "worktree", "add", "-b", "feature/external", externalPath]);
 
-    // exact: the right sidebar's "파일 목록 새로고침" also matches the substring.
-    await page.getByRole("button", { name: "목록 새로고침", exact: true }).click();
+    // The sidebar's own refresh, not the right sidebar's "파일 목록 새로고침".
+    await page.getByRole("button", { name: "작업 영역 새로고침", exact: true }).click();
     // A discovered worktree shows up on the folder's 워크트리 card, which is the path driven here.
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
     await page.getByRole("button", { name: "폴더 상세" }).click();
@@ -1113,7 +1144,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       .getByRole("button", { name: "feature/external 워크트리 열기" });
     await expect(originalRow).toBeVisible();
     await execFileAsync("git", ["-C", externalPath, "checkout", "-b", "feature/외부-변경"]);
-    await page.getByRole("button", { name: "목록 새로고침", exact: true }).click();
+    await page.getByRole("button", { name: "작업 영역 새로고침", exact: true }).click();
     await expect(page.getByRole("button", { name: "feature/외부-변경 worktree 선택", exact: true })).toBeVisible();
     // Refresh restores the folder's session view, so reopen its detail card before checking it.
     await page.getByRole("button", { name: "폴더 상세" }).click();

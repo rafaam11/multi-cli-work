@@ -1,12 +1,12 @@
-import type { AgentView } from "@shared/agent-types";
-import type { TerminalStatus, ToolCommand } from "@shared/terminal-types";
-import { TOOL_AGENT_ID, findAgent, toolDetails } from "./session-labels";
+import { NEW_SESSION_PREFIX, canStartSession, commandEnabled, commandLabel, type CommandContext } from "./commands";
 import { effectiveAccelerator } from "./keymap";
 
+export { NEW_SESSION_PREFIX } from "./commands";
+
 /**
- * The title bar's menus as plain data. Keeping the enablement rules out of the component is what
- * makes them checkable: every "why is this greyed out?" answer lives in `buildTitleBarMenus` and is
- * asserted directly, instead of being reached through a rendered dropdown.
+ * The title bar's menus as plain data. The menus only say where each command sits; what it is called,
+ * which key runs it and whether it can run right now all come from the command registry
+ * (`keymap.ts`) and `commands.ts`, which the command palette reads too — so the two never disagree.
  */
 export type TitleBarEntry =
   | { kind: "separator" }
@@ -21,155 +21,128 @@ export interface TitleBarMenu {
   action?: string;
 }
 
-const TOOL_COMMANDS: readonly ToolCommand[] = ["claude-update", "codex-update"];
-
-/** The id prefix a 새 세션 item carries; the rest of the id is the agent to launch. */
-export const NEW_SESSION_PREFIX = "session.new:";
-
-export interface TitleBarMenuContext {
-  agents: readonly AgentView[];
+export interface TitleBarMenuContext extends CommandContext {
   /** Shown as the last 도움말 entry instead of an about dialog the app does not have. */
   appVersion: string;
-  /** The folder in scope, or null on the home screen. `missing` means its root is gone from disk. */
-  project: { missing: boolean } | null;
-  /** The registry fell back to a read-only copy, so nothing may be written to it. */
-  readOnly: boolean;
-  /** A session action is already in flight; a second one would race it. */
-  pendingAction: boolean;
-  /** The session the 세션 menu acts on. */
-  session: { status: TerminalStatus; tool: boolean; refreshing: boolean } | null;
-  /**
-   * Whether a terminal currently owns the keyboard. The 편집 menu drives xterm's own selection and
-   * clipboard, so with a file tab or the home screen in front there is nothing for it to act on.
-   */
-  terminalFocused: boolean;
-  /** An open file tab whose contents can be written back. */
-  canSaveFile: boolean;
-  sidebarCollapsed: boolean;
-  rightSidebarCollapsed: boolean;
 }
+
+/** A place in a menu: a command id, a separator, or a flyout of further places. */
+type Slot = string | "-" | { submenu: string; label: string; items: Slot[] } | "new-session" | "version";
+
+const MENU_LAYOUT: { id: string; label: string; slots: Slot[] }[] = [
+  {
+    id: "file",
+    label: "파일",
+    slots: ["file.add-folder", "file.add-work-project", "-", "file.save", "file.relink", "-", "file.quit"],
+  },
+  {
+    id: "view",
+    label: "보기",
+    slots: [
+      "view.commands",
+      "view.quick-open",
+      "view.home",
+      "-",
+      "view.toggle-sidebar",
+      "view.toggle-right-sidebar",
+      "view.records",
+      "-",
+      "view.zoom-pane",
+      "-",
+      { submenu: "view.zoom", label: "화면 배율", items: ["view.zoom-in", "view.zoom-out", "view.zoom-reset"] },
+      "view.full-screen",
+      "-",
+      "file.refresh",
+      "workspace.reload",
+    ],
+  },
+  {
+    id: "session",
+    label: "세션",
+    slots: [
+      "new-session",
+      "-",
+      "session.next",
+      "session.prev",
+      "session.next-waiting",
+      "-",
+      "session.resume",
+      "session.refresh",
+      "session.stop",
+      "session.remove",
+      "-",
+      "session.prompts",
+      "session.deliveries",
+      "notifications.snooze",
+      "-",
+      {
+        submenu: "session.agents",
+        label: "에이전트",
+        items: ["tools.claude-update", "tools.codex-update", "-", "tools.edit-agents"],
+      },
+    ],
+  },
+  {
+    id: "help",
+    label: "도움말",
+    slots: [
+      "help.check-updates",
+      "help.release-notes",
+      "help.repository",
+      "-",
+      "help.keybindings",
+      "-",
+      { submenu: "help.troubleshoot", label: "문제 해결", items: ["view.reload", "view.dev-tools"] },
+      "-",
+      "version",
+    ],
+  },
+];
 
 const separator: TitleBarEntry = { kind: "separator" };
-
-function item(id: string, label: string, options?: { shortcut?: string; disabled?: boolean }): TitleBarEntry {
-  return {
-    kind: "item",
-    id,
-    label,
-    ...(options?.shortcut ? { shortcut: options.shortcut } : {}),
-    ...(options?.disabled ? { disabled: true } : {}),
-  };
-}
 
 export function buildTitleBarMenus(
   context: TitleBarMenuContext,
   keybindings: Record<string, string | null> = {},
 ): TitleBarMenu[] {
-  const { project, session } = context;
-  const shortcutFor = (actionId: string): string | undefined =>
-    effectiveAccelerator(actionId, keybindings) ?? undefined;
-  // Same rules the workspace header uses for its own buttons, so the two never disagree.
-  const finished = session?.status === "exited" || session?.status === "error";
-  const canLaunch = project !== null && !project.missing && !context.pendingAction;
-  const blockedByMissingRoot = Boolean(project?.missing) && !session?.tool;
+  const command = (id: string): TitleBarEntry => {
+    const shortcut = effectiveAccelerator(id, keybindings);
+    return {
+      kind: "item",
+      id,
+      label: commandLabel(id, context),
+      ...(shortcut ? { shortcut } : {}),
+      ...(commandEnabled(id, context) ? {} : { disabled: true }),
+    };
+  };
+
+  const place = (slot: Slot): TitleBarEntry => {
+    if (slot === "-") return separator;
+    if (slot === "version") {
+      return { kind: "item", id: "help.version", label: `버전 v${context.appVersion}`, disabled: true };
+    }
+    if (slot === "new-session") {
+      return {
+        kind: "submenu",
+        id: "session.new",
+        label: "새 세션",
+        ...(context.launch === null ? { disabled: true } : {}),
+        items: context.agents.map((agent) => ({
+          kind: "item",
+          id: `${NEW_SESSION_PREFIX}${agent.id}`,
+          label: agent.label,
+          ...(canStartSession(agent, context) ? {} : { disabled: true }),
+        })),
+      };
+    }
+    if (typeof slot === "object") {
+      return { kind: "submenu", id: slot.submenu, label: slot.label, items: slot.items.map(place) };
+    }
+    return command(slot);
+  };
 
   return [
-    {
-      id: "file",
-      label: "파일",
-      entries: [
-        item("file.add-folder", "폴더 추가", { disabled: context.readOnly }),
-        item("file.add-work-project", "업무 프로젝트 추가", { disabled: context.readOnly }),
-        separator,
-        item("file.save", "파일 저장", { shortcut: shortcutFor("file.save"), disabled: !context.canSaveFile }),
-        item("file.relink", "폴더 다시 연결", { disabled: project === null || context.readOnly }),
-        separator,
-        item("file.quit", "종료"),
-      ],
-    },
-    {
-      id: "edit",
-      label: "편집",
-      entries: [
-        item("edit.copy", "복사", { shortcut: shortcutFor("edit.copy"), disabled: !context.terminalFocused }),
-        item("edit.paste", "붙여넣기", { shortcut: shortcutFor("edit.paste"), disabled: !context.terminalFocused }),
-        item("edit.select-all", "모두 선택", { shortcut: shortcutFor("edit.select-all"), disabled: !context.terminalFocused }),
-        separator,
-        item("edit.find", "찾기", { shortcut: shortcutFor("edit.find"), disabled: !context.terminalFocused }),
-        item("edit.clear", "터미널 지우기", { disabled: !context.terminalFocused }),
-      ],
-    },
-    {
-      id: "view",
-      label: "보기",
-      entries: [
-        item("view.toggle-sidebar", context.sidebarCollapsed ? "왼쪽 사이드바 펼치기" : "왼쪽 사이드바 접기"),
-        item(
-          "view.toggle-right-sidebar",
-          context.rightSidebarCollapsed ? "오른쪽 사이드바 펼치기" : "오른쪽 사이드바 접기",
-        ),
-        separator,
-        item("view.quick-open", "빠른 열기", { shortcut: shortcutFor("view.quick-open") }),
-        item("file.refresh", "파일 목록 새로고침", { shortcut: shortcutFor("file.refresh") }),
-        separator,
-        item("view.zoom-in", "확대", { shortcut: shortcutFor("view.zoom-in") }),
-        item("view.zoom-out", "축소", { shortcut: shortcutFor("view.zoom-out") }),
-        item("view.zoom-reset", "원래 크기", { shortcut: shortcutFor("view.zoom-reset") }),
-        item("view.full-screen", "전체 화면", { shortcut: shortcutFor("view.full-screen") }),
-        separator,
-        item("view.reload", "다시 로드", { shortcut: shortcutFor("view.reload") }),
-        item("view.dev-tools", "개발자 도구", { shortcut: shortcutFor("view.dev-tools") }),
-      ],
-    },
-    {
-      id: "session",
-      label: "세션",
-      entries: [
-        {
-          kind: "submenu",
-          id: "session.new",
-          label: "새 세션",
-          disabled: project === null,
-          items: context.agents.map((agent) =>
-            item(`${NEW_SESSION_PREFIX}${agent.id}`, agent.label, { disabled: !canLaunch || !agent.available }),
-          ),
-        },
-        separator,
-        item("session.resume", "재개", {
-          disabled: !session || !finished || context.pendingAction || blockedByMissingRoot,
-        }),
-        item("session.refresh", "새로고침", {
-          shortcut: shortcutFor("session.refresh"),
-          disabled: !session || session.refreshing,
-        }),
-        item("session.stop", "중지", { disabled: !session || finished || context.pendingAction }),
-        item("session.remove", "제거", { disabled: !session || context.pendingAction }),
-      ],
-    },
-    {
-      id: "tools",
-      label: "도구",
-      entries: [
-        ...TOOL_COMMANDS.map((tool) =>
-          item(`tools.${tool}`, toolDetails[tool].menuLabel, {
-            disabled: !findAgent(context.agents, TOOL_AGENT_ID[tool])?.available || context.pendingAction,
-          }),
-        ),
-        separator,
-        item("tools.edit-agents", "에이전트 추가"),
-      ],
-    },
-    {
-      id: "help",
-      label: "도움말",
-      entries: [
-        item("help.check-updates", "업데이트 확인"),
-        item("help.release-notes", "릴리스 노트"),
-        item("help.repository", "GitHub 저장소"),
-        separator,
-        item("help.version", `버전 v${context.appVersion}`, { disabled: true }),
-      ],
-    },
+    ...MENU_LAYOUT.map((menu) => ({ id: menu.id, label: menu.label, entries: menu.slots.map(place) })),
     // 스펙: "도움말" 오른쪽. 메뉴가 아니라 버튼 — 누르면 설정 창이 바로 열린다.
     { id: "settings", label: "설정", entries: [], action: "settings.open" },
   ];

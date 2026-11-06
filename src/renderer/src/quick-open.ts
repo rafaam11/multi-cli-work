@@ -7,6 +7,8 @@ export interface QuickOpenItem {
   detail: string | null;
   projectId?: string | null;
   agentId?: string;
+  /** A command's key, shown at the row's end so the palette teaches the shortcut it stands in for. */
+  shortcut?: string;
 }
 
 /**
@@ -36,7 +38,7 @@ export function fuzzyScore(query: string, target: string): number | null {
  * An empty query keeps the caller's order (most recent first is the caller's job); ties keep it
  * too, so equally-scored sessions stay ahead of equally-scored commands.
  */
-export function rankQuickOpen<T extends QuickOpenItem>(items: readonly T[], query: string, limit = 10): T[] {
+export function rankQuickOpen<T extends QuickOpenItem>(items: readonly T[], query: string, limit: number = 10): T[] {
   const trimmed = query.trim();
   if (trimmed === "") return items.slice(0, limit);
   const scored: Array<{ item: T; score: number; order: number }> = [];

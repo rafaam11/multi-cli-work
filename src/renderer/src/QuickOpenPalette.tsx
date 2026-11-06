@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { rankQuickOpen, type QuickOpenItem } from "./quick-open";
 
 const KIND_LABELS: Record<QuickOpenItem["kind"], string> = {
@@ -23,10 +23,18 @@ export function QuickOpenPalette({ items, onSelect, onClose, currentProjectId, i
   const [activeIndex, setActiveIndex] = useState(0);
   const [kind, setKind] = useState<QuickOpenItem["kind"] | "all">(initialKind);
   const [localOnly, setLocalOnly] = useState(false);
+  const list = useRef<HTMLUListElement>(null);
+  // 전체(Ctrl+P)는 이동만 — 명령은 명령 칩(Ctrl+Shift+P)에서만 찾는다. 명령은 전부 보여 주고 스크롤한다.
   const ranked = useMemo(() => rankQuickOpen(items.filter(item =>
-    (kind === "all" || item.kind === kind) &&
-    (!localOnly || !currentProjectId || item.projectId === currentProjectId || item.kind === "command" && !item.projectId)), query), [items, query, kind, localOnly, currentProjectId]);
+    (kind === "all" ? item.kind !== "command" : item.kind === kind) &&
+    (!localOnly || !currentProjectId || item.projectId === currentProjectId || item.kind === "command" && !item.projectId)), query,
+    kind === "command" ? Number.POSITIVE_INFINITY : 10), [items, query, kind, localOnly, currentProjectId]);
   const active = ranked[Math.min(activeIndex, ranked.length - 1)] ?? null;
+
+  // With every command listed the arrow keys walk past the visible rows; the chosen one stays in view.
+  useEffect(() => {
+    list.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -64,7 +72,7 @@ export function QuickOpenPalette({ items, onSelect, onClose, currentProjectId, i
         <input
           type="text"
           className="quick-open-input"
-          placeholder="세션·폴더·명령 검색"
+          placeholder={kind === "command" ? "명령 검색" : "세션·폴더 검색"}
           aria-label="빠른 열기 검색"
           autoFocus
           value={query}
@@ -77,7 +85,7 @@ export function QuickOpenPalette({ items, onSelect, onClose, currentProjectId, i
         {ranked.length === 0 ? (
           <p className="quick-open-empty">결과 없음</p>
         ) : (
-          <ul className="quick-open-list" role="listbox" aria-label="빠른 열기 결과">
+          <ul className="quick-open-list" role="listbox" aria-label="빠른 열기 결과" ref={list}>
             {ranked.map((item, index) => (
               <li key={item.key} role="option" aria-selected={item === active}>
                 <button
@@ -93,6 +101,7 @@ export function QuickOpenPalette({ items, onSelect, onClose, currentProjectId, i
                       {item.detail}
                     </span>
                   ) : null}
+                  {item.shortcut ? <kbd className="quick-open-shortcut">{item.shortcut}</kbd> : null}
                 </button>
               </li>
             ))}

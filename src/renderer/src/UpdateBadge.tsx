@@ -18,6 +18,10 @@ export function UpdateBadge() {
   const downloaded = status.state === "downloaded";
   const busy = status.state === "checking" || status.state === "downloading";
 
+  // Up to date is the usual case and says nothing the 도움말 menu's version line does not; the badge
+  // only takes sidebar room while an update is on its way, waiting for a restart, or has failed.
+  if (status.state === "idle") return null;
+
   return (
     <div className="update-badge">
       <RefreshCw size={12} className={busy ? "spinning" : undefined} aria-hidden="true" />

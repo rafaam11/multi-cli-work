@@ -4944,6 +4944,16 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: var(--line);
 }
 
+/* The terminal's menu names a key per row, the way the title bar's menus do. */
+.terminal-context-menu button {
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+}
+
+.context-menu-shortcut {
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+}
+
 .context-menu-label {
   padding: 4px 10px 2px;
   color: var(--quiet);
@@ -5146,6 +5156,19 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   font-size: var(--type-caption-size);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A command's key sits at the row's end, after its detail when it has one. */
+.quick-open-shortcut {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--quiet);
+  font-family: inherit;
+  font-size: var(--type-caption-size);
+}
+
+.quick-open-detail + .quick-open-shortcut {
+  margin-left: 8px;
 }
 
 .worktree-branch-input,

@@ -28,3 +28,28 @@ it("filters navigation without losing keyboard selection", () => {
   fireEvent.click(screen.getByRole("button", { name: /^전체$/ }));
   expect(screen.getByText("Builder")).toBeInTheDocument();
 });
+
+it("keeps commands out of 전체 — 빠른 열기 is for going places, Ctrl+Shift+P for doing things", () => {
+  render(<QuickOpenPalette items={[
+    { key: "session:s", kind: "session", label: "Builder", detail: "repo" },
+    { key: "command:c", kind: "command", label: "보기: 확대", detail: null, shortcut: "Ctrl+=" },
+  ]} onSelect={vi.fn()} onClose={vi.fn()} />);
+  expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "세션·폴더 검색");
+  expect(screen.queryByText("보기: 확대")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /^명령$/ }));
+  expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "명령 검색");
+  expect(screen.getByText("보기: 확대")).toBeInTheDocument();
+  expect(screen.getByText("Ctrl+=")).toBeInTheDocument();
+});
+
+it("lists every command, not just the first ten", () => {
+  const commands = Array.from({ length: 30 }, (_, index) => ({
+    key: `command:c${index}`,
+    kind: "command" as const,
+    label: `명령 ${index}`,
+    detail: null,
+  }));
+  render(<QuickOpenPalette initialKind="command" items={commands} onSelect={vi.fn()} onClose={vi.fn()} />);
+  expect(screen.getAllByRole("option")).toHaveLength(30);
+});

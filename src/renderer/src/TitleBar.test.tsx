@@ -145,6 +145,50 @@ describe("title bar", () => {
     expect(onAction).toHaveBeenCalledExactlyOnceWith("session.new:claude");
   });
 
+  it("reaches a second submenu in the same menu from the keyboard", () => {
+    createWindowApi();
+    const help: TitleBarMenu = {
+      id: "help",
+      label: "도움말",
+      entries: [
+        { kind: "item", id: "help.check-updates", label: "업데이트 확인" },
+        {
+          kind: "submenu",
+          id: "session.agents",
+          label: "에이전트",
+          items: [{ kind: "item", id: "tools.edit-agents", label: "에이전트 추가" }],
+        },
+        {
+          kind: "submenu",
+          id: "help.troubleshoot",
+          label: "문제 해결",
+          items: [
+            { kind: "item", id: "view.reload", label: "다시 로드" },
+            { kind: "item", id: "view.dev-tools", label: "개발자 도구", shortcut: "F12" },
+          ],
+        },
+      ],
+    };
+    const { onAction } = renderTitleBar({ menus: [help] });
+
+    const helpButton = screen.getByRole("menuitem", { name: "도움말" });
+    fireEvent.click(helpButton);
+    for (let step = 0; step < 3; step += 1) fireEvent.keyDown(helpButton, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: /문제 해결/ })).toHaveFocus();
+
+    fireEvent.keyDown(helpButton, { key: "ArrowRight" });
+    const submenu = screen.getByRole("menu", { name: "문제 해결" });
+    expect(within(submenu).getByRole("menuitem", { name: "다시 로드" })).toHaveFocus();
+    // The other flyout stays shut: only one submenu is open at a time.
+    expect(screen.queryByRole("menu", { name: "에이전트" })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(helpButton, { key: "ArrowDown" });
+    const devTools = within(submenu).getByRole("menuitem", { name: /개발자 도구/ });
+    expect(devTools).toHaveFocus();
+    fireEvent.click(devTools);
+    expect(onAction).toHaveBeenCalledExactlyOnceWith("view.dev-tools");
+  });
+
   it("names the folder in the command centre and opens quick open when it is pressed", () => {
     createWindowApi();
     const { onQuickOpen } = renderTitleBar();

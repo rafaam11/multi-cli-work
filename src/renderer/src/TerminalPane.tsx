@@ -49,6 +49,11 @@ interface TerminalPaneProps {
   onTerminalFocused?(sessionId: string): void;
   /** A Ctrl+clicked file path this session printed, already resolved to a file under its root. */
   onOpenFileLink?(link: ResolvedFileLink, position: FileLinkPosition | null): void;
+  /**
+   * A right-click on the terminal itself, with whether text was selected at that moment — the
+   * selection is read here because the menu's 복사 has to know before anything can clear it.
+   */
+  onOpenContextMenu?(sessionId: string, position: { x: number; y: number }, hasSelection: boolean): void;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -71,6 +76,7 @@ export function TerminalPane({
   onRegisterCommands,
   onTerminalFocused,
   onOpenFileLink,
+  onOpenContextMenu,
 }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -444,7 +450,22 @@ export function TerminalPane({
 
   return (
     <section className="terminal-surface" aria-label={`${session.kind} 터미널`}>
-      <div className="terminal-host" ref={hostRef}>
+      <div
+        className="terminal-host"
+        ref={hostRef}
+        onContextMenu={
+          onOpenContextMenu
+            ? (event) => {
+                event.preventDefault();
+                onOpenContextMenu(
+                  session.id,
+                  { x: event.clientX, y: event.clientY },
+                  Boolean(terminalInstanceRef.current?.getSelection()),
+                );
+              }
+            : undefined
+        }
+      >
         <div className="terminal-frame" ref={frameRef} />
       </div>
       {attaching ? <span className="terminal-progress">세션 연결 중</span> : null}

@@ -1341,8 +1341,8 @@ export function ProjectSidebar({
             type="button"
             onClick={onReload}
             disabled={loading}
-            aria-label="목록 새로고침"
-            title="목록 새로고침"
+            aria-label="작업 영역 새로고침"
+            title="작업 영역 새로고침"
           >
             <RefreshCw size={16} />
           </button>
@@ -1351,8 +1351,8 @@ export function ProjectSidebar({
             type="button"
             onClick={onCreateWorkProject}
             disabled={readOnly}
-            aria-label="프로젝트 만들기"
-            title="프로젝트 만들기"
+            aria-label="업무 프로젝트 만들기"
+            title="업무 프로젝트 만들기"
           >
             <Briefcase size={16} />
           </button>

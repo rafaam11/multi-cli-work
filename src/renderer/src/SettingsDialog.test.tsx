@@ -454,7 +454,7 @@ describe("단축키 탭", () => {
 
   it("충돌 시 기존 바인딩 해제를 물어보고, 확인하면 둘 다 반영한다", async () => {
     openKeybindings();
-    const row = screen.getByText("세션 새로고침").closest(".settings-key-row")! as HTMLElement;
+    const row = screen.getByText("새로고침").closest(".settings-key-row")! as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "키 변경" }));
     fireEvent.keyDown(window, { key: "p", ctrlKey: true }); // 빠른 열기의 Ctrl+P와 충돌
     expect(await screen.findByRole("alertdialog")).toHaveTextContent("빠른 열기"); // 충돌 안내
@@ -468,7 +468,7 @@ describe("단축키 탭", () => {
 
   it("고정 키(Ctrl+V 등)와의 충돌은 거부한다", async () => {
     openKeybindings();
-    const row = screen.getByText("세션 새로고침").closest(".settings-key-row")! as HTMLElement;
+    const row = screen.getByText("새로고침").closest(".settings-key-row")! as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "키 변경" }));
     fireEvent.keyDown(window, { key: "v", ctrlKey: true });
     expect(await screen.findByText(/고정 키입니다/)).toBeInTheDocument();

@@ -1,5 +1,6 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
+import type { SharedProject } from "@shared/project-types";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -52,16 +53,13 @@ function renderHeader(overrides: Partial<Parameters<typeof WorkspaceHeader>[0]> 
     selectedSession: null,
     selectedSessionLabel: null,
     focusedSession: null,
-    onRemoveSession: vi.fn(),
     projectMissing: false,
     agents: [],
     pendingAction: false,
-    readOnly: false,
     detailActive: false,
     onOpenDetail: vi.fn(),
     onStartSession: vi.fn(),
     onRequestNewSession: vi.fn(),
-    onRelinkProject: vi.fn(),
     ...overrides,
   };
   const result = render(<WorkspaceHeader {...props} />);
@@ -121,28 +119,19 @@ describe("WorkspaceHeader", () => {
   });
 
   /**
-   * Deleting a session was reachable only by right-clicking a pane header. The header button names
-   * the session it would delete, because on a grid nothing else says which one that is.
+   * 제거 is on every pane header, and 폴더 다시 연결 is the missing-folder notice's button, the 파일
+   * menu's and the folder's right-click menu's. The header carried a second copy of each.
    */
-  it("offers 제거 for the focused pane's session, naming it", () => {
-    const { props } = renderHeader({
-      focusedSession: { session, label: "Echo Agent", launchDisabledReason: null },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Echo Agent 세션 제거" }));
-    expect(props.onRemoveSession).toHaveBeenCalledWith(session);
-  });
-
-  it("offers 제거 on a shelf too, where the focus is the only thing that says which session", () => {
+  it("leaves 제거 to the pane headers and 다시 연결 to the missing-folder notice", () => {
     renderHeader({
-      workspace: { kind: "active", paneCount: 2, folderCount: 2 },
+      selectedProject: { id: "p1", rootPath: "C:\\work\\atlas", displayName: "Atlas" } as SharedProject,
+      selectedSession: session,
+      selectedSessionLabel: "Echo Agent",
       focusedSession: { session, label: "Echo Agent", launchDisabledReason: null },
+      projectMissing: true,
     });
-    expect(screen.getByRole("button", { name: "Echo Agent 세션 제거" })).toBeTruthy();
-  });
-
-  it("has nothing to delete when the focused pane is a document", () => {
-    renderHeader({ focusedSession: null });
     expect(screen.queryByRole("button", { name: /세션 제거/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /다시 연결/ })).toBeNull();
   });
 
   /**

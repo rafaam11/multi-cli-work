@@ -6,6 +6,7 @@ import {
   isBindableAccelerator,
   isTypingTarget,
   normalizeKeyEvent,
+  qualifiedLabel,
   resolveKeymap,
 } from "./keymap";
 
@@ -69,9 +70,69 @@ describe("키맵 카탈로그", () => {
     expect(byId.get("view.reload")?.defaultAccelerator).toBeNull(); // Ctrl+R은 의도적으로 없음
     expect(byId.get("edit.copy")).toMatchObject({ defaultAccelerator: "Ctrl+Shift+C", fixed: true });
     expect(byId.get("edit.paste")).toMatchObject({ defaultAccelerator: "Ctrl+V", fixed: true });
-    expect(byId.get("edit.select-all")).toMatchObject({ defaultAccelerator: "Ctrl+A", fixed: true });
+    // Ctrl+A reaches the shell (start of line); TerminalPane never took it, so the label must not claim it.
+    expect(byId.get("edit.select-all")).toMatchObject({ defaultAccelerator: null, fixed: true });
     // 터미널 안의 Ctrl+F는 TerminalPane이 잡는다 — 디스패처가 가로채면 반쪽 리매핑이 된다.
     expect(byId.get("edit.find")).toMatchObject({ defaultAccelerator: "Ctrl+F", fixed: true });
+  });
+});
+
+describe("명령 레지스트리", () => {
+  // Keys a user may have remapped are stored under these ids — renaming one would drop the remap.
+  const REMAPPABLE_BEFORE_THE_REGISTRY: Record<string, string | null> = {
+    "view.quick-open": "Ctrl+P",
+    "view.commands": "Ctrl+Shift+P",
+    "file.save": "Ctrl+S",
+    "file.refresh": "F5",
+    "settings.open": "Ctrl+,",
+    "view.zoom-in": "Ctrl+=",
+    "view.zoom-out": "Ctrl+-",
+    "view.zoom-reset": "Ctrl+0",
+    "view.full-screen": "F11",
+    "view.dev-tools": "F12",
+    "view.reload": null,
+    "view.zoom-pane": "Ctrl+Shift+Enter",
+    "session.refresh": null,
+    "session.next": "Ctrl+Tab",
+    "session.prev": "Ctrl+Shift+Tab",
+    "session.next-waiting": "Ctrl+Shift+U",
+    "workspace.focus-left": "Ctrl+Alt+ArrowLeft",
+    "workspace.focus-right": "Ctrl+Alt+ArrowRight",
+    "workspace.focus-up": "Ctrl+Alt+ArrowUp",
+    "workspace.focus-down": "Ctrl+Alt+ArrowDown",
+    "workspace.page-prev": "Ctrl+PageUp",
+    "workspace.page-next": "Ctrl+PageDown",
+    ...Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`workspace.focus-slot-${index + 1}`, `Ctrl+${index + 1}`])),
+  };
+
+  it("keeps every id and default key a remap could be stored under", () => {
+    for (const [id, accelerator] of Object.entries(REMAPPABLE_BEFORE_THE_REGISTRY)) {
+      const found = KEYMAP_ACTIONS.find((candidate) => candidate.id === id);
+      expect(found, id).toBeDefined();
+      expect(found?.defaultAccelerator, id).toBe(accelerator);
+      expect(found?.fixed, id).toBe(false);
+    }
+  });
+
+  it("registers the menu-only commands under the ids the dispatcher already used", () => {
+    const ids = new Set(KEYMAP_ACTIONS.map((candidate) => candidate.id));
+    for (const id of ["file.add-folder", "file.relink", "file.quit", "session.stop", "session.remove", "tools.edit-agents", "help.check-updates"]) {
+      expect(ids.has(id), id).toBe(true);
+    }
+  });
+
+  it("has no duplicate ids", () => {
+    const ids = KEYMAP_ACTIONS.map((candidate) => candidate.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("keeps the clipboard trio out of the palette — it would take the keyboard from their terminal", () => {
+    const off = KEYMAP_ACTIONS.filter((candidate) => !candidate.palette).map((candidate) => candidate.id);
+    expect(off.sort()).toEqual(["edit.copy", "edit.paste", "edit.select-all"]);
+  });
+
+  it("names a command with its category away from its menu", () => {
+    expect(qualifiedLabel(KEYMAP_ACTIONS.find((candidate) => candidate.id === "session.stop")!)).toBe("세션: 중지");
   });
 });
 
