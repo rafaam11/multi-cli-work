@@ -9,10 +9,15 @@ import { SessionScreen } from "./SessionScreen";
 const keyHandlers: Array<(event: KeyboardEvent) => boolean> = [];
 const focus = vi.fn();
 const replayHarness = vi.hoisted(() => ({ events: [] as string[], callbacks: [] as Array<() => void>, hold: false }));
+const terminals = vi.hoisted(() => [] as Array<{ options: Record<string, unknown> }>);
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     options: Record<string, unknown> = {};
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = { ...options };
+      terminals.push(this);
+    }
     cols = 80;
     rows = 24;
     buffer = { active: { type: "normal", viewportY: 0, baseY: 0 } };
@@ -97,6 +102,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SessionScreen", () => {
+  it("lifts glyph contrast on a light host's terminal, as the desktop does, without a new terminal", async () => {
+    terminals.length = 0;
+    render(<SessionScreen client={fakeClient().client} session={SESSION} deviceId="d" onOpenDrawer={vi.fn()} />);
+    const terminal = terminals.at(-1)!;
+    expect(terminal.options.minimumContrastRatio).toBe(1);
+
+    document.documentElement.dataset.theme = "light";
+    await waitFor(() => expect(terminal.options.minimumContrastRatio).toBe(4.5));
+    expect((terminal.options.theme as { background?: string }).background).toBe("#ffffff");
+    expect(terminals).toHaveLength(1);
+    delete document.documentElement.dataset.theme;
+  });
+
   it("parses historical sizes before restoring the latest live size, including a split CSI", async () => {
     const { client, deliver } = fakeClient();
     const ready = vi.fn();

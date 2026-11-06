@@ -70,6 +70,9 @@
   --shadow: 0 12px 30px rgb(var(--shadow-rgb) / calc(36% * var(--shadow-scale)));
   --backdrop: rgb(0 0 0 / 52%);
   --surface-2: var(--surface-raised);
+  /* The file tree's "changed here, not by an agent" edge. Blue beside a teal selection in the dark;
+     the light theme's accent is that same blue, so there it moves to teal. */
+  --change-local: var(--blue);
   --diff-add-bg: color-mix(in srgb, #238636 20%, transparent);
   --diff-del-bg: color-mix(in srgb, #da3633 20%, transparent);
   --diff-hunk-bg: color-mix(in srgb, #1f6feb 15%, transparent);
@@ -121,6 +124,7 @@
   --gh-yellow: #9a6700;
   --gh-blue: #0969da;
   --accent: #0969da;
+  --change-local: var(--teal);
   --on-accent: #ffffff;
   --on-danger: #ffffff;
   --on-warning: #ffffff;

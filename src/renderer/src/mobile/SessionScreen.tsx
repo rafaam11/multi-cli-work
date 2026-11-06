@@ -27,7 +27,7 @@ import type { RemoteClient } from "./remote-client";
 import { projectLabel } from "./session-groups";
 import { SessionMenu } from "./SessionMenu";
 import { statusLabels as STATUS_LABEL } from "../session-labels";
-import { terminalTheme } from "../terminal-themes";
+import { terminalMinimumContrast, terminalTheme } from "../terminal-themes";
 import { currentTheme, useResolvedTheme } from "../theme";
 import { clipboardKeyAction, createReplayGate, encodeComposerInput, phoneQuickKeys, QUICK_KEYS } from "./terminal-input";
 import { planTouchScroll, shouldSendWheel } from "./touch-scroll";
@@ -166,6 +166,7 @@ export function SessionScreen({
       scrollOnEraseInDisplay: true,
       cursorBlink: false,
       theme: terminalTheme(currentTheme()),
+      minimumContrastRatio: terminalMinimumContrast(currentTheme()),
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -458,8 +459,12 @@ export function SessionScreen({
     };
   }, [client, session.id, deviceId, wide]);
 
+  // 호스트 창과 같은 규칙 — 라이트에서만 흰 트루컬러 글자를 진하게 끌어올리고, 터미널은 다시 만들지 않는다.
   useEffect(() => {
-    if (terminalRef.current) terminalRef.current.options.theme = terminalTheme(resolvedTheme);
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.theme = terminalTheme(resolvedTheme);
+    terminal.options.minimumContrastRatio = terminalMinimumContrast(resolvedTheme);
   }, [resolvedTheme]);
 
   // 그리드에서 이 칸이 포커스를 받으면 키보드 입력도 이리로 온다.

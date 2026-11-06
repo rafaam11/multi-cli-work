@@ -1,3 +1,4 @@
+import { watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -26,16 +27,51 @@ export function claudeThemeFor(appTheme: AppTheme, userTheme: unknown): string |
   return preset ? `${appTheme}${preset[1] ?? ""}` : null;
 }
 
-/** The theme `/theme` saved in the user's Claude settings, or undefined when there is none. Read only. */
+/**
+ * The theme `/theme` saved in the user's Claude settings — undefined when there is no file or no
+ * theme in it, null when the file cannot be read as settings (half-written, say), which
+ * claudeThemeFor takes as "leave it alone" rather than as no choice. Read only.
+ */
 export async function readUserClaudeTheme(configDir: string): Promise<unknown> {
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(await fs.readFile(path.join(configDir, "settings.json"), "utf8"));
+    text = await fs.readFile(path.join(configDir, "settings.json"), "utf8");
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>).theme
-      : undefined;
+      : null;
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+/**
+ * Calls back when the user's Claude settings file changes, so a `/theme` picked while the app runs
+ * — a colour-blind preset, a custom theme — reaches the next session without a restart. Watches
+ * the folder rather than the file: Claude replaces the file, which a file watch would lose.
+ * Returns the function that stops watching; a folder that does not exist is simply not watched.
+ */
+export function watchUserClaudeSettings(configDir: string, onChange: () => void): () => void {
+  let timer: NodeJS.Timeout | undefined;
+  let watcher: ReturnType<typeof watch> | undefined;
+  try {
+    watcher = watch(configDir, (_event, filename) => {
+      if (filename !== "settings.json") return;
+      clearTimeout(timer);
+      timer = setTimeout(onChange, 150);
+    });
+    watcher.on("error", () => watcher?.close());
+  } catch {
+    return () => undefined;
+  }
+  return () => {
+    clearTimeout(timer);
+    watcher?.close();
+  };
 }
 
 export interface ClaudeThemeSyncOptions {

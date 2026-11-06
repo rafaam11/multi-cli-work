@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { claudeThemeFor, createClaudeThemeSync, readUserClaudeTheme, type AppTheme } from "./claude-theme";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { claudeThemeFor, createClaudeThemeSync, readUserClaudeTheme, watchUserClaudeSettings, type AppTheme } from "./claude-theme";
 
 const roots: string[] = [];
 async function configDir(settings?: unknown): Promise<string> {
@@ -39,10 +39,35 @@ describe("readUserClaudeTheme", () => {
     expect(await readUserClaudeTheme(await configDir({ theme: "light-daltonized", model: "x" }))).toBe("light-daltonized");
   });
 
-  it("treats a missing or unreadable settings file as no choice", async () => {
+  it("treats a missing settings file, or one without a theme, as no choice", async () => {
     expect(await readUserClaudeTheme(await configDir())).toBeUndefined();
-    expect(await readUserClaudeTheme(await configDir("{ not json"))).toBeUndefined();
     expect(await readUserClaudeTheme(await configDir({ model: "x" }))).toBeUndefined();
+  });
+
+  it("leaves the theme alone when the settings file cannot be read — it may be half-written", async () => {
+    const unreadable = await readUserClaudeTheme(await configDir("{ not json"));
+    expect(claudeThemeFor("light", unreadable)).toBeNull();
+  });
+});
+
+describe("watchUserClaudeSettings", () => {
+  it("reports a /theme change made while the app runs, and stops when disposed", async () => {
+    const dir = await configDir({ theme: "dark" });
+    const changes: string[] = [];
+    const stop = watchUserClaudeSettings(dir, () => changes.push("changed"));
+    await fs.writeFile(path.join(dir, "history.jsonl"), "{}\n");
+    await fs.writeFile(path.join(dir, "settings.json"), JSON.stringify({ theme: "dark-daltonized" }));
+    await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0), { timeout: 3000 });
+    stop();
+    const seen = changes.length;
+    await fs.writeFile(path.join(dir, "settings.json"), JSON.stringify({ theme: "light" }));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(changes.length).toBe(seen);
+  });
+
+  it("does nothing for a config folder that does not exist", () => {
+    const stop = watchUserClaudeSettings(path.join(os.tmpdir(), "mcw-no-such-claude-dir-0f3a"), () => undefined);
+    expect(() => stop()).not.toThrow();
   });
 });
 

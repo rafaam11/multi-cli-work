@@ -1987,7 +1987,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .file-tree-row.change-local {
-  box-shadow: inset 2px 0 0 var(--blue);
+  box-shadow: inset 2px 0 0 var(--change-local);
 }
 
 .file-tree-row.change-below-agent {
@@ -2054,7 +2054,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   border-radius: 6px;
   color: var(--teal);
   background: var(--surface-accent);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 72%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--teal) 72%, transparent);
 }
 
 .brand-copy,
@@ -4463,7 +4463,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   flex: 0 0 6px;
   border-radius: 50%;
   background: var(--teal);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 10%, transparent);
 }
 
 .footer-separator {

@@ -132,6 +132,29 @@ describe("stylesheets", () => {
     expect([...undefinedReads]).toEqual([]);
   });
 
+  it("paints xterm's viewport with the page background on both the desktop and the remote screen", () => {
+    // xterm.css paints it black; below the last whole row it shows through as a band.
+    for (const css of [indexCss, mobileCss]) {
+      expect(css).toMatch(/\.xterm \.xterm-viewport \{\s*background-color: var\(--bg\);/);
+    }
+  });
+
+  it("gives each rule one role: a working-status teal never shares a rule with the accent", () => {
+    const mixed: string[] = [];
+    for (const [file, css] of [["index.css", indexCss], ["mobile.css", mobileCss]] as const) {
+      for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (body.includes("var(--teal)") && body.includes("var(--accent)")) mixed.push(`${file}: ${selector.trim().slice(-60)}`);
+      }
+    }
+    expect(mixed).toEqual([]);
+  });
+
+  it("keeps a locally changed file distinguishable from the selected one in both themes", () => {
+    expect(value("dark", "change-local")).toBe(value("dark", "blue"));
+    expect(value("light", "change-local")).not.toBe(value("light", "accent"));
+    expect(indexCss).toMatch(/\.file-tree-row\.change-local \{\s*box-shadow: inset 2px 0 0 var\(--change-local\);/);
+  });
+
   it("writes no theme-blind colours by hand", () => {
     const offenders: string[] = [];
     for (const [file, css] of [["index.css", indexCss], ["mobile.css", mobileCss]] as const) {

@@ -106,6 +106,10 @@ select { min-height: 40px; }
 .m-terminal-host { position: absolute; inset: 2px 0 0 4px; overflow: auto; }
 /* 칸에 맞게 줄여 그리는 동안은 넘칠 것이 없다 — 줄인 뒤에 남는 스크롤바를 지운다. */
 .m-terminal-host.m-scaled { overflow: hidden; }
+/* xterm.css가 viewport를 검게 칠해 마지막 줄 아래로 띠가 비친다 — 라이트에서 특히. 데스크톱과 같은 처리. */
+.m-terminal-host .xterm .xterm-viewport {
+  background-color: var(--bg);
+}
 .m-keys { display: flex; gap: 4px; overflow-x: auto; padding: 6px 8px; }
 .m-keys button { flex: 0 0 auto; min-width: 44px; }
 .m-composer { display: flex; gap: 6px; padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
