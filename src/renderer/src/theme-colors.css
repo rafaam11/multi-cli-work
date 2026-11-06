@@ -73,6 +73,10 @@
   /* The file tree's "changed here, not by an agent" edge. Blue beside a teal selection in the dark;
      the light theme's accent is that same blue, so there it moves to teal. */
   --change-local: var(--blue);
+  /* The selected work project row: its category's wash over this surface. The light theme drops the
+     wash for a plain grey a step darker than hover — a pink or red block was the loudest thing there. */
+  --surface-selected: var(--surface-hover);
+  --category-selection-tint: 28%;
   --diff-add-bg: color-mix(in srgb, #238636 20%, transparent);
   --diff-del-bg: color-mix(in srgb, #da3633 20%, transparent);
   --diff-hunk-bg: color-mix(in srgb, #1f6feb 15%, transparent);
@@ -125,6 +129,8 @@
   --gh-blue: #0969da;
   --accent: #0969da;
   --change-local: var(--teal);
+  --surface-selected: #e6eaef;
+  --category-selection-tint: 0%;
   --on-accent: #ffffff;
   --on-danger: #ffffff;
   --on-warning: #ffffff;

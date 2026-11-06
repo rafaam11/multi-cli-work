@@ -89,9 +89,12 @@ describe("theme colour tokens", () => {
         if (ratio < 4.5) failures.push(`--${foreground} on --${surface}: ${ratio.toFixed(2)}`);
       }
     }
-    for (const foreground of ["text", "muted", "accent"]) {
-      const ratio = contrast(value("light", foreground), value("light", "surface-hover"));
-      if (ratio < 4.5) failures.push(`--${foreground} on --surface-hover: ${ratio.toFixed(2)}`);
+    // Hover can sit under any text; the selected work project row holds its name and counts only.
+    for (const [surface, foregrounds] of [["surface-hover", ["text", "muted", "accent"]], ["surface-selected", ["text", "muted"]]] as const) {
+      for (const foreground of foregrounds) {
+        const ratio = contrast(value("light", foreground), value("light", surface));
+        if (ratio < 4.5) failures.push(`--${foreground} on --${surface}: ${ratio.toFixed(2)}`);
+      }
     }
     expect(failures).toEqual([]);
   });
@@ -147,6 +150,16 @@ describe("stylesheets", () => {
       }
     }
     expect(mixed).toEqual([]);
+  });
+
+  it("selects a work project with a neutral grey on light, a step darker than hover; dark keeps its category wash", () => {
+    expect(value("dark", "category-selection-tint")).toBe("28%");
+    expect(value("dark", "surface-selected")).toBe(value("dark", "surface-hover"));
+    expect(value("light", "category-selection-tint")).toBe("0%");
+    expect(luminance(value("light", "surface-selected"))).toBeLessThan(luminance(value("light", "surface-hover")));
+    expect(indexCss).toMatch(
+      /\.work-project-row\.selected \{\s*background: color-mix\(in srgb, var\(--category-accent, transparent\) var\(--category-selection-tint\), var\(--surface-selected\)\);/,
+    );
   });
 
   it("keeps a locally changed file distinguishable from the selected one in both themes", () => {
