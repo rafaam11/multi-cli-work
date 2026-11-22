@@ -42,6 +42,13 @@ export interface GeneralSettings {
    * 싣는다(최대 3초 대기). 꺼도 업무 프로젝트 화면의 "모든 레포 최신화" 버튼은 동작한다.
    */
   repoSyncOnSessionStart: boolean;
+  /**
+   * Claude·Codex 세션의 폴더가 PRJ(ws-root `PROJECT.yaml`의 `repos:`)에 속하면, 그 PRJ의 Linear 열린 이슈·최근
+   * 기록을 브리프에 싣는다(최대 3초 대기). Linear API 키가 있어야 동작한다.
+   */
+  linearBrief: boolean;
+  /** Linear 맥락이 실린 Claude 세션이 새 커밋 뒤에 멈추면, Linear에 기록을 남기라고 한 번 일러 준다. */
+  linearRecordReminder: boolean;
 }
 
 export interface TerminalSettings {
@@ -244,7 +251,7 @@ const MAX_FILE_OPEN_WITH_ENTRIES = 200;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "ko",
-  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null, taskbarProgress: true, reduceMotion: false, jkMcp: true, repoSyncOnSessionStart: true },
+  general: { closeToTray: true, autoResumeSessions: true, autoCheckUpdates: true, summonShortcut: null, taskbarProgress: true, reduceMotion: false, jkMcp: true, repoSyncOnSessionStart: true, linearBrief: true, linearRecordReminder: true },
   terminal: {
     fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -469,6 +476,8 @@ export function parseSettings(value: unknown): AppSettings {
       taskbarProgress: readBoolean(general.taskbarProgress, defaults.general.taskbarProgress),
       jkMcp: readBoolean(general.jkMcp, defaults.general.jkMcp),
       repoSyncOnSessionStart: readBoolean(general.repoSyncOnSessionStart, defaults.general.repoSyncOnSessionStart),
+      linearBrief: readBoolean(general.linearBrief, defaults.general.linearBrief),
+      linearRecordReminder: readBoolean(general.linearRecordReminder, defaults.general.linearRecordReminder),
       summonShortcut:
         typeof general.summonShortcut === "string" &&
         general.summonShortcut.length > 0 &&

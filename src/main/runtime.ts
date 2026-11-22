@@ -31,6 +31,8 @@ import { createNotionService } from "./notion/notion-service";
 import { createNotionTokenStore } from "./notion/notion-token-store";
 import { createLinearKeyStore } from "./linear/linear-key-store";
 import { createLinearService } from "./linear/linear-service";
+import { linearLookupRegistry, prjKeyForFolder } from "./linear/prj-key-for-folder";
+import { pathStyleFor } from "../shared/workspace-path";
 import {
   CONTROL_ENDPOINT_ENV,
   CONTROL_PIPE_ENV,
@@ -291,6 +293,9 @@ export async function createDesktopRuntime(
   // ws-root 워크스페이스 루트. 등록된 루트가 없으면 이 기능 전체가 잠자코 있는다 — 아무것도
   // 스캔하지 않고, 업무 프로젝트도 만들지 않으며, 브리프에 워크스페이스 절이 붙지 않는다.
   const workspaceIndex = new WorkspaceIndex({ platform: process.platform });
+  // Linear 브리프용 PRJ 조회는 ws-root 하나짜리 합성 레지스트리로 읽는다. snapshot()은 넘긴 레지스트리에 없는
+  // 루트의 캐시를 비우므로, 사이드바용 인덱스와 캐시를 나눠 서로 밀어내지 않게 한다.
+  const linearWorkspaceIndex = new WorkspaceIndex({ platform: process.platform });
   const workspaceRegistryOptions = workspaceRegistryPath ? { registryPath: workspaceRegistryPath } : {};
   const workspaceSnapshot = async () =>
     workspaceIndex.snapshot(await readWorkspaceRegistry(workspaceRegistryOptions));
@@ -442,6 +447,23 @@ export async function createDesktopRuntime(
             return section;
           })
         : Promise.resolve(null);
+      // 폴더가 속한 PRJ의 Linear 맥락(설계 2026-11-23). 레포 최신화와 함께 먼저 시작해 두고 끝에서 기다린다 —
+      // 둘 다 3초 상한이라 서로를 늦추지 않는다. 어떤 실패도 절이 빠지는 것으로 끝난다.
+      const linearSection = (async () => {
+        const general = settingsService.current().general;
+        const folder = registry.projects[projectId];
+        const workRoot = pcRoots.info().effective.work;
+        if (!general.linearBrief || !folder || !workRoot) return null;
+        if (launch.agentId !== "claude" && launch.agentId !== "codex") return null;
+        const snapshot = await linearWorkspaceIndex.snapshot(await linearLookupRegistry(workRoot));
+        const prjKey = prjKeyForFolder(folder.rootPath, snapshot, pathStyleFor(process.platform));
+        if (!prjKey) return null;
+        return linearService.briefSection({
+          prjKey,
+          repoName: path.basename(folder.rootPath),
+          recordReminder: general.linearRecordReminder,
+        });
+      })().catch(() => null);
       const tags = workProject ? tagsOf(await readProjectTags(projectTagsOptions), workProject.id) : [];
       const workProjectSection = workProject
         ? renderWorkProjectBrief(
@@ -470,6 +492,7 @@ export async function createDesktopRuntime(
           : null;
       return writeSessionBrief(path.join(userData, "project-briefs"), projectId, [
         workProjectSection,
+        await linearSection,
         await repoSyncSection,
         workspaceSection,
       ]);

@@ -35,6 +35,8 @@ describe("parseSettings", () => {
       reduceMotion: false,
       jkMcp: true,
       repoSyncOnSessionStart: true,
+      linearBrief: true,
+      linearRecordReminder: true,
     });
     expect(DEFAULT_SETTINGS.notifications).toEqual({
       desktop: true,
@@ -45,6 +47,12 @@ describe("parseSettings", () => {
     expect(DEFAULT_SETTINGS.language).toBe("ko");
     expect(DEFAULT_SETTINGS.keybindings).toEqual({});
     expect(DEFAULT_SETTINGS.files).toEqual({ defaultOpenWith: "os", openWith: {}, unsupportedOpensWithOs: true });
+  });
+
+  it("Linear 플래그는 불리언만 받고 아니면 기본값(true)으로 되돌린다", () => {
+    const parsed = parseSettings({ general: { linearBrief: false, linearRecordReminder: "no" } });
+    expect(parsed.general.linearBrief).toBe(false);
+    expect(parsed.general.linearRecordReminder).toBe(true);
   });
 
   it("모르는 필드는 버리고, 범위 밖·타입 불일치 값은 필드 단위로 기본값에 되돌린다", () => {
