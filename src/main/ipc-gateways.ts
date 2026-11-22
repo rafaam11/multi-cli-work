@@ -38,6 +38,7 @@ import type {
   PullRequestReviewAnnotationSnapshot, PullRequestReviewFinishRequest, PullRequestReviewFinishResult, PullRequestReviewStartResult,
 } from "../shared/github-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "../shared/notion-types";
+import type { LinearKeyStatus } from "../shared/linear-types";
 import type {
   RemoteAccessStatus,
   RemoteDeviceInfo,
@@ -303,6 +304,12 @@ export interface ClipboardGateway {
   writeText(text: string): void;
 }
 
+export interface LinearGateway {
+  status(): Promise<LinearKeyStatus>;
+  setKey(key: string): Promise<LinearKeyStatus>;
+  clearKey(): Promise<LinearKeyStatus>;
+}
+
 export interface NotionGateway {
   status(): Promise<NotionTokenStatus>;
   setToken(token: string): Promise<NotionTokenStatus>;
@@ -346,6 +353,7 @@ export interface MainIpcDependencies {
   shell: ShellGateway;
   clipboard: ClipboardGateway;
   notion: NotionGateway;
+  linear: LinearGateway;
   remote: RemoteGateway;
   remoteHosts: RemoteHostsGateway;
   sizes: TerminalSizeGateway;

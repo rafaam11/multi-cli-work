@@ -29,6 +29,8 @@ import { createRetryableDisposer } from "./runtime-disposal";
 import { createSettingsService, type SettingsService } from "./settings/settings-store";
 import { createNotionService } from "./notion/notion-service";
 import { createNotionTokenStore } from "./notion/notion-token-store";
+import { createLinearKeyStore } from "./linear/linear-key-store";
+import { createLinearService } from "./linear/linear-service";
 import {
   CONTROL_ENDPOINT_ENV,
   CONTROL_PIPE_ENV,
@@ -223,6 +225,9 @@ export async function createDesktopRuntime(
   // 노션 통합 토큰은 시크릿이라 settings.json(평문)이 아니라 safeStorage로 암호화한 별도 파일에 둔다.
   const notionService = createNotionService(
     createNotionTokenStore(path.join(userData, "notion-credentials.json"), safeStorage),
+  );
+  const linearService = createLinearService(
+    createLinearKeyStore(path.join(userData, "linear-credentials.json"), safeStorage),
   );
   const registryPath = process.env.MULTI_CLI_WORK_REGISTRY_PATH;
   // Both transcript directories are only overridden so tests can point at a fixture.
@@ -957,6 +962,7 @@ export async function createDesktopRuntime(
     },
     coordinator,
     notion: notionService,
+    linear: linearService,
     remote: {
       status: () => remoteAccess.status(),
       issuePairingCode: () => remoteAccess.issuePairingCode(),

@@ -931,6 +931,12 @@ export function registerMainIpc(registrar: IpcRegistrar, dependencies: MainIpcDe
   ipc.handle("notion:inspect-link", async (_event, url: unknown) =>
     dependencies.notion.inspectLink(externalUrl(url)),
   );
+  ipc.handle("linear:status", () => dependencies.linear.status());
+  ipc.handle("linear:set-key", async (_event, key: unknown) =>
+    // 노션 토큰과 같이, 붙여넣은 키의 앞뒤 공백을 다듬은 뒤 다시 비었는지 본다.
+    dependencies.linear.setKey(nonEmptyString(nonEmptyString(key, "Linear key").trim(), "Linear key")),
+  );
+  ipc.handle("linear:clear-key", () => dependencies.linear.clearKey());
 
   ipc.handle("settings:get", () => dependencies.settings.get());
   ipc.handle("settings:update", (_event, patch: unknown) => dependencies.settings.update(validateSettingsPatch(patch)));

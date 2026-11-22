@@ -440,6 +440,11 @@ function createApi(options?: {
       clearToken: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true }),
       inspectLink: vi.fn().mockResolvedValue({ state: "no-token", title: null, message: null }),
     },
+    linear: {
+      status: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true, lastError: null }),
+      setKey: vi.fn().mockResolvedValue({ configured: true, encryptionAvailable: true, lastError: null }),
+      clearKey: vi.fn().mockResolvedValue({ configured: false, encryptionAvailable: true, lastError: null }),
+    },
     remote: {
       status: vi.fn().mockResolvedValue({ state: "off", url: null, port: 47821, message: null }),
       issuePairingCode: vi.fn(),

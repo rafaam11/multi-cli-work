@@ -41,6 +41,7 @@ import type { PcRootsInfo } from "./pc-roots-types";
 import type { ProfileExportResult, ProfileImportPreview, ProfileImportResult } from "./profile-types";
 import type { DriveCreateOptions, DriveOverview, DriveProjectStatus } from "./drive-types";
 import type { NotionLinkCheck, NotionTokenStatus } from "./notion-types";
+import type { LinearKeyStatus } from "./linear-types";
 import type {
   RemoteAccessStatus,
   RemoteDeviceInfo,
@@ -688,6 +689,12 @@ export interface MultiCliWorkApi {
     clearToken(): Promise<NotionTokenStatus>;
     /** 제목 조회 겸 "이 링크가 통합(=MCP)에서 보이는가" 검증. */
     inspectLink(url: string): Promise<NotionLinkCheck>;
+  };
+  linear: {
+    status(): Promise<LinearKeyStatus>;
+    /** 저장 전에 Linear가 키를 받아주는지 확인한다 — 거절되면 저장하지 않고 거부한다. */
+    setKey(key: string): Promise<LinearKeyStatus>;
+    clearKey(): Promise<LinearKeyStatus>;
   };
   remote: {
     status(): Promise<RemoteAccessStatus>;

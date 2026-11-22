@@ -249,6 +249,12 @@ function setup(
     clearToken: vi.fn(async () => ({ configured: false, encryptionAvailable: true })),
     inspectLink: vi.fn(async (_url: string) => notionLinkCheck("ok", "삼성서울병원 채널")),
   };
+  const linearStatus = { configured: true, encryptionAvailable: true, lastError: null };
+  const linearGateway = {
+    status: vi.fn(async () => linearStatus),
+    setKey: vi.fn(async (_key: string) => linearStatus),
+    clearKey: vi.fn(async () => ({ configured: false, encryptionAvailable: true, lastError: null })),
+  };
   const remoteGateway = {
     status: vi.fn(() => ({ state: "off" as const, url: null, port: 47821, message: null })),
     issuePairingCode: vi.fn(async () => ({ code: "ABCD-EFGH", expiresAt: "x", url: "u", pairUri: "p", installUrl: "i" })),
@@ -324,6 +330,7 @@ function setup(
     pcRoots: pcRootsGateway,
     profile: profileGateway,
     notion: notionGateway,
+    linear: linearGateway,
     remote: remoteGateway,
     remoteHosts: remoteHostsGateway as never,
     sizes: sizesGateway,
@@ -350,6 +357,7 @@ function setup(
     pcRootsGateway,
     profileGateway,
     notionGateway,
+    linearGateway,
     workProjectService,
     workProjectRegistry,
     workspaceGateway,
@@ -1131,6 +1139,19 @@ describe("main IPC boundary", () => {
     });
 
     await expect(handlers.get("notion:set-token")!({}, "  ")).rejects.toThrow(/Notion token/);
+  });
+
+  it("delegates linear key channels, trims the key and never echoes it back", async () => {
+    const { handlers, linearGateway } = setup();
+
+    await expect(handlers.get("linear:status")!({})).resolves.toEqual({ configured: true, encryptionAvailable: true, lastError: null });
+
+    const saved = await handlers.get("linear:set-key")!({}, "  lin_api_supersecret  ");
+    expect(linearGateway.setKey).toHaveBeenCalledWith("lin_api_supersecret");
+    expect(JSON.stringify(saved)).not.toContain("lin_api_supersecret");
+
+    await expect(handlers.get("linear:clear-key")!({})).resolves.toMatchObject({ configured: false });
+    await expect(handlers.get("linear:set-key")!({}, "  ")).rejects.toThrow(/Linear key/);
   });
 
   it("validates the link before asking notion about it", async () => {
