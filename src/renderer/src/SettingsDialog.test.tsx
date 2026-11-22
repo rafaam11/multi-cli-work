@@ -17,15 +17,24 @@ const notion = {
   clearToken: vi.fn(),
   inspectLink: vi.fn(),
 };
+const linear = {
+  status: vi.fn(),
+  setKey: vi.fn(),
+  clearKey: vi.fn(),
+};
 
 beforeEach(() => {
   update.mockClear();
   notion.status.mockReset().mockResolvedValue({ configured: false, encryptionAvailable: true });
   notion.setToken.mockReset().mockResolvedValue({ configured: true, encryptionAvailable: true });
   notion.clearToken.mockReset().mockResolvedValue({ configured: false, encryptionAvailable: true });
+  linear.status.mockReset().mockResolvedValue({ configured: false, encryptionAvailable: true, lastError: null });
+  linear.setKey.mockReset().mockResolvedValue({ configured: true, encryptionAvailable: true, lastError: null });
+  linear.clearKey.mockReset().mockResolvedValue({ configured: false, encryptionAvailable: true, lastError: null });
   window.multiCliWork = {
     settings: { get: vi.fn().mockResolvedValue(DEFAULT_SETTINGS), update, onChange: vi.fn(() => () => undefined) },
     notion,
+    linear,
     remote: {
       status: vi.fn().mockResolvedValue({ state: "off", url: null, port: 47821, message: null }),
       issuePairingCode: vi.fn(),
@@ -314,6 +323,50 @@ describe("원격 탭", () => {
   it("처음부터 원격 탭으로 열 수 있다", () => {
     render(<SettingsDialog settings={DEFAULT_SETTINGS} initialTab="mobile" onClose={() => undefined} />);
     expect(screen.getByLabelText("원격 접속 허용")).toBeInTheDocument();
+  });
+});
+
+describe("Linear 탭", () => {
+  async function openLinear() {
+    render(<SettingsDialog settings={DEFAULT_SETTINGS} onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Linear" }));
+    await waitFor(() => expect(linear.status).toHaveBeenCalled());
+  }
+
+  it("saves a Linear key and shows 설정됨", async () => {
+    await openLinear();
+    expect(await screen.findByText("설정되지 않음")).toBeInTheDocument();
+    const input = document.getElementById("settings-linear-key") as HTMLInputElement;
+    expect(input.type).toBe("password");
+    fireEvent.change(input, { target: { value: "  lin_api_supersecret  " } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(linear.setKey).toHaveBeenCalledWith("lin_api_supersecret"));
+    expect(await screen.findByText("설정됨")).toBeInTheDocument();
+    expect(input.value).toBe("");
+    expect(document.body.innerHTML).not.toContain("lin_api_supersecret");
+  });
+
+  it("shows lastError from status", async () => {
+    linear.status.mockResolvedValue({ configured: true, encryptionAvailable: true, lastError: "Linear API 키가 거부됐습니다" });
+    await openLinear();
+    expect(await screen.findByText(/Linear API 키가 거부됐습니다/)).toBeInTheDocument();
+  });
+
+  it("toggles linearBrief and linearRecordReminder", async () => {
+    linear.status.mockResolvedValue({ configured: true, encryptionAvailable: true, lastError: null });
+    await openLinear();
+    await screen.findByText("설정됨");
+    fireEvent.click(screen.getByLabelText("브리프에 Linear 맥락 싣기"));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ general: { linearBrief: false } }));
+    fireEvent.click(screen.getByLabelText("커밋 후 기록 리마인드(Claude)"));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ general: { linearRecordReminder: false } }));
+  });
+
+  it("disables both toggles without a key", async () => {
+    await openLinear();
+    await screen.findByText("설정되지 않음");
+    expect(screen.getByLabelText("브리프에 Linear 맥락 싣기")).toBeDisabled();
+    expect(screen.getByLabelText("커밋 후 기록 리마인드(Claude)")).toBeDisabled();
   });
 });
 

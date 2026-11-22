@@ -4,6 +4,7 @@ import { DRIVE_KINDS, driveKindLabel, inferDriveKind } from "@shared/drive-kind"
 import type { PcRootsInfo } from "@shared/pc-roots-types";
 import type { ProfileFolderAction, ProfileImportPreview } from "@shared/profile-types";
 import type { NotionTokenStatus } from "@shared/notion-types";
+import type { LinearKeyStatus } from "@shared/linear-types";
 import type {
   AppSettings,
   AppSettingsPatch,
@@ -53,6 +54,7 @@ export type SettingsTab =
   | "workspace"
   | "files"
   | "notion"
+  | "linear"
   | "mobile"
   | "keybindings"
   | "presets"
@@ -69,6 +71,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "presets", label: "팀 프리셋" },
   { id: "launch-profiles", label: "시작 프로필" },
   { id: "notion", label: "노션" },
+  { id: "linear", label: "Linear" },
   { id: "mobile", label: "원격" },
   { id: "keybindings", label: "단축키" },
   { id: "pc", label: "PC · 프로필" },
@@ -96,6 +99,140 @@ interface SettingsDialogProps {
   onClose(): void;
   /** 사이드바의 "다시 페어링 필요"처럼 특정 탭으로 바로 열 때. */
   initialTab?: SettingsTab;
+}
+
+/**
+ * Linear 탭 — 키는 노션 토큰처럼 메인 프로세스의 암호화 저장소에 있고 렌더러는 설정 여부·마지막 실패 사유만
+ * 안다. 두 토글(general.linearBrief·linearRecordReminder)은 일반 설정과 같은 경로로 저장된다.
+ */
+function LinearSettings({ settings, onUpdate }: { settings: AppSettings; onUpdate: (patch: AppSettingsPatch) => void }) {
+  const [status, setStatus] = useState<LinearKeyStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    window.multiCliWork.linear
+      .status()
+      .then((next) => {
+        if (alive) setStatus(next);
+      })
+      .catch((cause: unknown) => {
+        if (alive) setError(errorMessage(cause));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const run = (action: () => Promise<LinearKeyStatus>, done: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    action()
+      .then((next) => {
+        setStatus(next);
+        setKey("");
+        setNotice(done);
+      })
+      .catch((cause: unknown) => setError(errorMessage(cause)))
+      .finally(() => setBusy(false));
+  };
+
+  const trimmed = key.trim();
+  const encryptionAvailable = status?.encryptionAvailable !== false;
+  const configured = status?.configured === true;
+
+  return (
+    <>
+      <h2>Linear</h2>
+      <p className="settings-hint">
+        API 키가 있으면 PRJ에 속한 폴더에서 Claude·Codex 세션을 열 때, 그 PRJ의 Linear 열린 이슈와 최근 기록을
+        세션 브리프에 싣습니다(최대 3초 대기, 5분 캐시).
+      </p>
+      <div className="settings-row">
+        <span>상태</span>
+        <span>{status === null ? "확인 중…" : configured ? "설정됨" : "설정되지 않음"}</span>
+      </div>
+      {status?.lastError ? (
+        <p className="settings-error" role="alert">
+          마지막 조회 실패: {status.lastError}
+        </p>
+      ) : null}
+      <div className="settings-row">
+        <label htmlFor="settings-linear-key">API 키</label>
+        <input
+          id="settings-linear-key"
+          type="password"
+          autoComplete="off"
+          placeholder={configured ? "저장됨 — 바꾸려면 새 키를 붙여넣으세요" : "lin_api_…"}
+          value={key}
+          disabled={busy || !encryptionAvailable}
+          onChange={(event) => setKey(event.target.value)}
+        />
+      </div>
+      <div className="settings-row">
+        <span />
+        <span className="settings-key-controls">
+          <button
+            type="button"
+            disabled={busy || trimmed.length === 0 || !encryptionAvailable}
+            onClick={() => run(() => window.multiCliWork.linear.setKey(trimmed), "키를 저장했습니다")}
+          >
+            저장
+          </button>
+          <button
+            type="button"
+            disabled={busy || !configured}
+            onClick={() => run(() => window.multiCliWork.linear.clearKey(), "키를 제거했습니다")}
+          >
+            제거
+          </button>
+        </span>
+      </div>
+      {encryptionAvailable ? null : (
+        <p className="settings-error" role="alert">
+          이 환경에서는 키를 안전하게 저장할 수 없어 입력을 막았습니다 (OS 키체인 사용 불가).
+        </p>
+      )}
+      <div className="settings-row">
+        <label htmlFor="settings-linear-brief">브리프에 Linear 맥락 싣기</label>
+        <input
+          id="settings-linear-brief"
+          type="checkbox"
+          checked={settings.general.linearBrief}
+          disabled={!configured}
+          onChange={(event) => onUpdate({ general: { linearBrief: event.target.checked } })}
+        />
+      </div>
+      <div className="settings-row">
+        <label htmlFor="settings-linear-record-reminder">커밋 후 기록 리마인드(Claude)</label>
+        <input
+          id="settings-linear-record-reminder"
+          type="checkbox"
+          checked={settings.general.linearRecordReminder}
+          disabled={!configured}
+          onChange={(event) => onUpdate({ general: { linearRecordReminder: event.target.checked } })}
+        />
+      </div>
+      <p className="settings-hint">
+        Linear 설정 › Security &amp; access › Personal API keys에서 발급한다. 키는 이 PC의 OS 자격 증명으로
+        암호화해 저장하고, 세션에는 넘기지 않는다. 폴더를 PRJ에 잇는 방법은 PROJECT.yaml의 repos:(/ws-link-repo)다.
+      </p>
+      {notice ? (
+        <p className="settings-hint" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="settings-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -1522,6 +1659,7 @@ export function SettingsDialog({ settings, onClose, initialTab }: SettingsDialog
             </>
           ) : null}
           {tab === "notion" ? <NotionSettings /> : null}
+          {tab === "linear" ? <LinearSettings settings={settings} onUpdate={update} /> : null}
           {tab === "pc" ? <PcSettings profileSection={<ProfileSection />} /> : null}
           {tab === "mobile" ? <RemoteSettings settings={settings} /> : null}
           {tab === "keybindings" ? (

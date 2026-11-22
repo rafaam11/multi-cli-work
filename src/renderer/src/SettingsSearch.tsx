@@ -16,6 +16,7 @@ const ENTRIES: { tab: SettingsTab; title: string; keywords: string; phase: strin
   { tab: "presets", title: "팀 프리셋", keywords: "팀 역할 첫 프롬프트 claude codex builder reviewer", phase: "다음 팀 시작부터" },
   { tab: "launch-profiles", title: "시작 프로필 · 모델 및 추론", keywords: "model effort reasoning 프로필 codex claude", phase: "다음 새 세션부터" },
   { tab: "notion", title: "노션 연결", keywords: "notion 토큰 로그인 API 연동", target: "settings-notion-token", phase: "저장 후 적용" },
+  { tab: "linear", title: "Linear 연결", keywords: "linear 리니어 API 키 이슈 브리프 기록", target: "settings-linear-key", phase: "저장 후 적용" },
   { tab: "mobile", title: "원격 · 모바일", keywords: "tailscale pairing 페어링 호스트 다른 PC 연결", phase: "항목별 적용" },
   { tab: "keybindings", title: "단축키", keywords: "keybindings keyboard shortcut 키 바인딩 충돌", phase: "즉시 적용" },
   { tab: "pc", title: "PC 루트 · 설정 프로필", keywords: "프로필 가져오기 내보내기 import export 드라이브 경로", phase: "미리보기 후 적용" },
