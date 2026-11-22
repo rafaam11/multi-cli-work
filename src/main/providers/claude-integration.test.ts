@@ -10,8 +10,10 @@ import {
   CLAUDE_STATUS_HOOK,
   CLAUDE_STATUS_HOOK_PYTHON,
   ensureClaudeIntegration,
+  LINEAR_RECORD_REMINDER,
   writeClaudeSettings,
 } from "./claude-integration";
+import { LINEAR_RECORD_MARKER } from "../linear/linear-brief";
 
 const execFileAsync = promisify(execFile);
 
@@ -189,5 +191,88 @@ describe("Claude app-owned integration", () => {
     const integration = await ensureClaudeIntegration(root, "linux");
     expect(integration.hookPath).toMatch(/claude-status\.py$/);
     if (process.platform !== "win32") expect((await fs.stat(integration.hookPath)).mode & 0o111).not.toBe(0);
+  });
+
+  describe("Linear record reminder at Stop", () => {
+    const hookCommand = () => (process.platform === "win32" ? "powershell.exe" : "python3");
+    const hookArgs = (hookPath: string) =>
+      process.platform === "win32" ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", hookPath] : [hookPath];
+    const git = (cwd: string, ...args: string[]) =>
+      execFileAsync("git", ["-c", "user.email=test@example.com", "-c", "user.name=test", ...args], { cwd });
+
+    async function fixture(options: { marker?: boolean; gitRepo?: boolean } = {}) {
+      const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-linear-"));
+      roots.push(root);
+      const integration = await ensureClaudeIntegration(root, process.platform);
+      const repo = path.join(root, "repo");
+      await fs.mkdir(repo);
+      if (options.gitRepo !== false) {
+        await git(repo, "init", "-q");
+        await git(repo, "commit", "--allow-empty", "-q", "-m", "one");
+      }
+      const briefPath = path.join(root, "brief.md");
+      await fs.writeFile(briefPath, `## Linear 맥락 (PRJ-0017 x)
+${options.marker === false ? "" : LINEAR_RECORD_MARKER}
+`, "utf8");
+      const stateDir = path.join(root, "session-linear");
+      const run = async (input: Record<string, unknown>) => {
+        const child = execFileAsync(hookCommand(), hookArgs(integration.hookPath), {
+          env: {
+            ...process.env,
+            MULTI_CLI_WORK_SESSION_ID: "session-linear",
+            MULTI_CLI_WORK_STATUS_DIR: path.join(root, "status"),
+            MULTI_CLI_WORK_PROJECT_BRIEF: briefPath,
+            MULTI_CLI_WORK_LINEAR_STATE_DIR: stateDir,
+          },
+        });
+        child.child.stdin?.end(JSON.stringify({ session_id: "claude-1", cwd: repo, ...input }));
+        return (await child).stdout;
+      };
+      const head = async () => (await git(repo, "rev-parse", "HEAD")).stdout.trim();
+      return { repo, stateDir, run, head };
+    }
+
+    it("records HEAD at SessionStart and stays silent at Stop with the same HEAD", async () => {
+      const { stateDir, run, head } = await fixture();
+      await run({ hook_event_name: "SessionStart" });
+      expect((await fs.readFile(path.join(stateDir, "session-linear.head"), "utf8")).trim()).toBe(await head());
+      await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
+    }, 30_000);
+
+    it("blocks once after a new commit", async () => {
+      const { repo, run } = await fixture();
+      await run({ hook_event_name: "SessionStart" });
+      await git(repo, "commit", "--allow-empty", "-q", "-m", "two");
+      const stdout = await run({ hook_event_name: "Stop" });
+      expect(JSON.parse(stdout)).toEqual({ decision: "block", reason: LINEAR_RECORD_REMINDER });
+      await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
+    }, 30_000);
+
+    it("respects stop_hook_active", async () => {
+      const { repo, run } = await fixture();
+      await run({ hook_event_name: "SessionStart" });
+      await git(repo, "commit", "--allow-empty", "-q", "-m", "two");
+      await expect(run({ hook_event_name: "Stop", stop_hook_active: true })).resolves.toBe("");
+    }, 30_000);
+
+    it("ignores sessions whose brief has no marker", async () => {
+      const { repo, stateDir, run } = await fixture({ marker: false });
+      await run({ hook_event_name: "SessionStart" });
+      await git(repo, "commit", "--allow-empty", "-q", "-m", "two");
+      await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
+      await expect(fs.stat(path.join(stateDir, "session-linear.head"))).rejects.toThrow();
+    }, 30_000);
+
+    it("stays silent outside a git repository", async () => {
+      const { stateDir, run } = await fixture({ gitRepo: false });
+      // SessionStart still hands over the brief; only the HEAD bookkeeping is skipped.
+      await run({ hook_event_name: "SessionStart" });
+      await expect(fs.stat(path.join(stateDir, "session-linear.head"))).rejects.toThrow();
+      await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
+    }, 30_000);
+
+    it("keeps the PowerShell hook pure ASCII", () => {
+      expect(CLAUDE_STATUS_HOOK).not.toMatch(/[^ -]/);
+    });
   });
 });

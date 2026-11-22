@@ -1,5 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { LINEAR_RECORD_MARKER } from "../linear/linear-brief";
+
+/**
+ * Stop 리마인드 문구(설계 2026-11-23 §4.5). Linear 맥락이 실린 Claude 세션에서 지난 리마인드 이후 HEAD가
+ * 바뀌었을 때만 한 번 나간다 — Claude는 이 문구로 한 턴을 더 돌아 Linear에 기록을 남긴다.
+ */
+export const LINEAR_RECORD_REMINDER =
+  "방금 새 커밋이 생겼다. 관련 Linear 이슈에 진행·결정·다음 할 일을 댓글 1건으로 남겨라(첫 줄은 [mcw-claude]). 이미 남겼으면 바로 멈춰라.";
+
+/**
+ * 비ASCII 문자를 `\uXXXX`로. Windows PowerShell 5.1은 BOM 없는 .ps1의 한글을 ANSI 코드 페이지로 읽으므로
+ * 스크립트에는 이 표기만 넣고 `[regex]::Unescape`로 되살린다. 같은 표기는 Python 문자열 안에서도 유효하다.
+ */
+function asciiEscapes(text: string): string {
+  return text.replace(/[^\x00-\x7F]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+const LINEAR_REMINDER_ESCAPED = asciiEscapes(LINEAR_RECORD_REMINDER);
 
 const CLAUDE_EVENTS = [
   "SessionStart",
@@ -135,6 +153,32 @@ if ($eventName -eq "SessionStart") {
     } catch { }
   }
 }
+
+# Linear record reminder: only for sessions whose brief carries the marker. SessionStart records HEAD;
+# a later Stop with a different HEAD blocks once so Claude records its work in Linear.
+$linearStateDir = $env:MULTI_CLI_WORK_LINEAR_STATE_DIR
+if (($eventName -eq "SessionStart" -or $eventName -eq "Stop") -and $linearStateDir -and $env:MULTI_CLI_WORK_PROJECT_BRIEF -and -not $inputValue.stop_hook_active -and $inputValue.cwd) {
+  try {
+    $briefText = [IO.File]::ReadAllText($env:MULTI_CLI_WORK_PROJECT_BRIEF, [Text.UTF8Encoding]::new($false))
+    if ($briefText.Contains("${LINEAR_RECORD_MARKER}")) {
+      $head = (& git -C ([string]$inputValue.cwd) rev-parse HEAD 2>$null)
+      if ($LASTEXITCODE -eq 0 -and $head) {
+        $head = ([string]$head).Trim()
+        [IO.Directory]::CreateDirectory($linearStateDir) | Out-Null
+        $headFile = Join-Path $linearStateDir ($sessionId + ".head")
+        $lastHead = $null
+        if (Test-Path -LiteralPath $headFile) { $lastHead = ([IO.File]::ReadAllText($headFile)).Trim() }
+        [IO.File]::WriteAllText($headFile, $head, [Text.UTF8Encoding]::new($false))
+        if ($eventName -eq "Stop" -and $lastHead -and $lastHead -ne $head) {
+          $reason = [regex]::Unescape('${LINEAR_REMINDER_ESCAPED}')
+          $json = @{ decision = "block"; reason = $reason } | ConvertTo-Json -Compress
+          $json = [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+          [Console]::Out.Write($json)
+        }
+      }
+    }
+  } catch { }
+}
 exit 0
 `;
 
@@ -198,6 +242,28 @@ if event == "SessionStart":
             if brief.strip():
                 json.dump(dict(hookSpecificOutput=dict(hookEventName="SessionStart", additionalContext=brief)), sys.stdout)
         except Exception: pass
+# Linear record reminder: only for sessions whose brief carries the marker. SessionStart records HEAD;
+# a later Stop with a different HEAD blocks once so Claude records its work in Linear.
+linear_state_dir = os.environ.get("MULTI_CLI_WORK_LINEAR_STATE_DIR", "")
+linear_brief_path = os.environ.get("MULTI_CLI_WORK_PROJECT_BRIEF", "")
+linear_cwd = value.get("cwd")
+if event in ("SessionStart", "Stop") and linear_state_dir and linear_brief_path and not value.get("stop_hook_active") and isinstance(linear_cwd, str) and linear_cwd:
+    try:
+        with open(linear_brief_path, "r", encoding="utf-8") as brief_file: has_marker = "${LINEAR_RECORD_MARKER}" in brief_file.read()
+        if has_marker:
+            import subprocess
+            result = subprocess.run(["git", "-C", linear_cwd, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3)
+            head = result.stdout.strip() if result.returncode == 0 else ""
+            if head:
+                os.makedirs(linear_state_dir, exist_ok=True)
+                head_file = os.path.join(linear_state_dir, session_id + ".head")
+                last_head = ""
+                if os.path.exists(head_file):
+                    with open(head_file, "r", encoding="utf-8") as handle: last_head = handle.read().strip()
+                with open(head_file, "w", encoding="utf-8") as handle: handle.write(head)
+                if event == "Stop" and last_head and last_head != head:
+                    json.dump(dict(decision="block", reason="${LINEAR_REMINDER_ESCAPED}"), sys.stdout)
+    except Exception: pass
 `;
 
 async function replaceFile(filePath: string, content: string): Promise<void> {

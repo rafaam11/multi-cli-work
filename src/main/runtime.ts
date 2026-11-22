@@ -389,6 +389,8 @@ export async function createDesktopRuntime(
       ...providerEnvironment,
       MULTI_CLI_WORK_STATUS_DIR: claudeIntegration.statusDir,
       MULTI_CLI_WORK_ACTIVITY_DIR: path.join(userData, "activity-events"),
+      // Claude 상태 훅이 Linear 기록 리마인드의 기준 HEAD를 세션별로 적는 곳(local-data.md).
+      MULTI_CLI_WORK_LINEAR_STATE_DIR: path.join(userData, "session-linear"),
       [CONTROL_PIPE_ENV]: controlPipeName,
       [CONTROL_TOKEN_ENV]: controlToken,
     },
