@@ -25,6 +25,16 @@ function firstLine(text: string): string {
   return text.split(/\r?\n/, 1)[0]?.trim() ?? "";
 }
 
+/**
+ * 댓글의 요지 한 줄. 세션은 첫 줄에 작성자 태그(`[mcw-claude]`)만 두고 쓰므로, 첫 줄이 태그뿐이면 다음 내용 줄을
+ * 붙인다 — 그러지 않으면 MCW가 남긴 기록이 전부 태그로만 보인다.
+ */
+function commentGist(body: string): string {
+  const lines = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  const [first = "", second] = lines;
+  return /^\[[^\]]+\]$/.test(first) && second ? `${first} ${second}` : first;
+}
+
 const pad = (value: number) => String(value).padStart(2, "0");
 
 /** 로컬 시간대 기준 `MM-DD`. */
@@ -87,7 +97,7 @@ export function renderLinearBrief(input: LinearBriefInput): string {
   let issues = [...context.issues].sort(compareIssues(repoLabel)).slice(0, MAX_ISSUES).map(issueLine);
   let comments = context.comments
     .slice(0, MAX_COMMENTS)
-    .map((comment) => `  - ${isoMonthDay(comment.createdAt)} ${comment.issueIdentifier} "${truncate(firstLine(comment.body), COMMENT_MAX)}"`);
+    .map((comment) => `  - ${isoMonthDay(comment.createdAt)} ${comment.issueIdentifier} "${truncate(commentGist(comment.body), COMMENT_MAX)}"`);
 
   const footer = [
     "",

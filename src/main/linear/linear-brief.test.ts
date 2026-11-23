@@ -99,6 +99,20 @@ describe("renderLinearBrief", () => {
     expect(on.trimEnd().endsWith(LINEAR_RECORD_MARKER)).toBe(true);
   });
 
+  it("shows the text after a bare author tag line", () => {
+    // The brief and the Stop reminder ask sessions to put `[mcw-claude]` alone on the first line.
+    const text = renderLinearBrief({
+      prjKey: "PRJ-0017",
+      repoName: null,
+      context: context({
+        comments: [{ issueIdentifier: "SB-41", body: "[mcw-claude]\n\n브리프 절 구현 끝\n다음: 실기 확인", createdAt: "2026-11-23T03:00:00.000Z" }],
+      }),
+      fetchedAt,
+      recordReminder: false,
+    });
+    expect(text).toContain('  - 11-23 SB-41 "[mcw-claude] 브리프 절 구현 끝"');
+  });
+
   it("writes 열린 이슈 없음 when there are no open issues", () => {
     const text = renderLinearBrief({ prjKey: "PRJ-0017", repoName: null, context: context({ issues: [], comments: [] }), fetchedAt, recordReminder: false });
     expect(text).toContain("- 열린 이슈 없음");
