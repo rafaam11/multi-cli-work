@@ -388,7 +388,7 @@ export function validateSettingsPatch(value: unknown): AppSettingsPatch {
   if (raw.general !== undefined) {
     const general = exactObject(
       raw.general,
-      ["closeToTray", "autoResumeSessions", "autoCheckUpdates", "summonShortcut", "taskbarProgress", "reduceMotion", "jkMcp", "repoSyncOnSessionStart"],
+      ["closeToTray", "autoResumeSessions", "autoCheckUpdates", "summonShortcut", "taskbarProgress", "reduceMotion", "jkMcp", "repoSyncOnSessionStart", "linearBrief", "linearRecordReminder"],
       "Settings general",
     );
     patch.general = {};
@@ -408,6 +408,12 @@ export function validateSettingsPatch(value: unknown): AppSettingsPatch {
     }
     if (general.reduceMotion !== undefined) {
       patch.general.reduceMotion = booleanValue(general.reduceMotion, "Settings reduceMotion");
+    }
+    if (general.linearBrief !== undefined) {
+      patch.general.linearBrief = booleanValue(general.linearBrief, "Settings linearBrief");
+    }
+    if (general.linearRecordReminder !== undefined) {
+      patch.general.linearRecordReminder = booleanValue(general.linearRecordReminder, "Settings linearRecordReminder");
     }
     if (general.summonShortcut !== undefined) {
       const shortcut = general.summonShortcut;

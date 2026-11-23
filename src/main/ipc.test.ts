@@ -1038,6 +1038,16 @@ describe("main IPC boundary", () => {
     );
   });
 
+  it("accepts the Linear toggles and rejects non-booleans", async () => {
+    const { handlers, settingsGateway } = setup();
+
+    await handlers.get("settings:update")!({}, { general: { linearBrief: false, linearRecordReminder: true } });
+    expect(settingsGateway.update).toHaveBeenCalledWith({ general: { linearBrief: false, linearRecordReminder: true } });
+
+    expect(() => handlers.get("settings:update")!({}, { general: { linearBrief: "no" } })).toThrow(/linearBrief/);
+    expect(() => handlers.get("settings:update")!({}, { general: { linearRecordReminder: 1 } })).toThrow(/linearRecordReminder/);
+  });
+
   it("accepts quiet hours and a snooze, and rejects malformed ones", async () => {
     const { handlers, settingsGateway } = setup();
 
