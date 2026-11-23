@@ -37,7 +37,15 @@ describe("renderLinearBrief", () => {
     expect(text).toContain('  - 11-23 SB-38 "[메타몽] 브리핑 도착"');
     expect(text).toContain("`linear --help`로 명령을 확인하고 `linear issue view <키>` 등으로 더 읽는다");
     expect(text).toContain("커밋·브랜치·PR에는 이슈 키를 넣는다");
+    // New issues carry the repo and author labels the Linear team uses (system roles audit).
+    expect(text).toContain("라벨 `repo:<레포>`·`by:mcw-<cli>`");
     expect(text).not.toContain(LINEAR_RECORD_MARKER);
+  });
+
+  it("names the PRJ key when the Linear project is a broad one", () => {
+    // Four broad projects (회사, 세컨드브레인, …) each hold several PRJ keys.
+    const text = renderLinearBrief({ prjKey: "PRJ-0017", repoName: null, context: context({ name: "세컨드브레인" }), fetchedAt, recordReminder: false });
+    expect(text.split("\n")[0]).toBe("## Linear 맥락 (PRJ-0017 · 세컨드브레인 · 조회 11-23 09:12)");
   });
 
   it("orders issues by repo label, then priority (0 last), then due date (null last)", () => {

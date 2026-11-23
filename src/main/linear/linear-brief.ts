@@ -77,7 +77,9 @@ export interface LinearBriefInput {
 export function renderLinearBrief(input: LinearBriefInput): string {
   const { context } = input;
   const repoLabel = input.repoName ? `repo:${input.repoName}` : null;
-  const header = `## Linear 맥락 (${context.name} · 조회 ${monthDay(input.fetchedAt)} ${pad(input.fetchedAt.getHours())}:${pad(input.fetchedAt.getMinutes())})`;
+  // Linear 프로젝트는 큰 단위 몇 개라 이름만으로는 어느 PRJ인지 모른다 — 이름이 키로 시작하지 않으면 키를 앞에 붙인다.
+  const title = context.name.startsWith(input.prjKey) ? context.name : `${input.prjKey} · ${context.name}`;
+  const header = `## Linear 맥락 (${title} · 조회 ${monthDay(input.fetchedAt)} ${pad(input.fetchedAt.getHours())}:${pad(input.fetchedAt.getMinutes())})`;
 
   let issues = [...context.issues].sort(compareIssues(repoLabel)).slice(0, MAX_ISSUES).map(issueLine);
   let comments = context.comments
@@ -87,7 +89,7 @@ export function renderLinearBrief(input: LinearBriefInput): string {
   const footer = [
     "",
     "더 필요하면 `linear --help`로 명령을 확인하고 `linear issue view <키>` 등으로 더 읽는다.",
-    "작업 단위가 끝나면 해당 이슈에 댓글 1건(첫 줄 `[mcw-<cli>]`)으로 진행·결정·막힘·다음 할 일을 남긴다. 새 이슈를 만들면 라벨 `repo:<레포>`를 붙인다.",
+    "작업 단위가 끝나면 해당 이슈에 댓글 1건(첫 줄 `[mcw-<cli>]`)으로 진행·결정·막힘·다음 할 일을 남긴다. 새 이슈를 만들면 라벨 `repo:<레포>`·`by:mcw-<cli>`를 붙인다.",
     "커밋·브랜치·PR에는 이슈 키를 넣는다(Linear의 GitHub 연동이 상태를 옮긴다).",
     ...(input.recordReminder ? [LINEAR_RECORD_MARKER] : []),
   ];

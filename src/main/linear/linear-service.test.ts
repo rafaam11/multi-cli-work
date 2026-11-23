@@ -20,15 +20,20 @@ function memoryStore(initial: string | null = null): LinearKeyStore & { written:
   };
 }
 
+/** One body that answers every query the client sends: viewer, the project directory and the project's issues. */
 function okResponse(): Response {
   const project = {
-    name: "PRJ-0017 세컨드브레인",
+    id: "brain",
+    name: "세컨드브레인",
     url: "https://linear.app/ws/project/x",
-    projectUpdates: { nodes: [] },
+    content: "projectKey: PRJ-0017, PRJ-0013",
     issues: { nodes: [{ identifier: "SB-1", title: "할 일", dueDate: null, priority: 0, state: { name: "할 일", type: "unstarted" }, labels: { nodes: [] }, comments: { nodes: [] } }] },
   };
-  return new Response(JSON.stringify({ data: { projects: { nodes: [project] }, viewer: { id: "u" } } }), { status: 200 });
+  return new Response(JSON.stringify({ data: { projects: { nodes: [project] }, project, viewer: { id: "u" } } }), { status: 200 });
 }
+
+const directoryCalls = (fetch: { mock: { calls: Array<[string, RequestInit]> } }) =>
+  fetch.mock.calls.filter(([, init]) => String(init.body).includes("ProjectDirectory")).length;
 
 const input = { prjKey: "PRJ-0017", repoName: "multi-cli-work", recordReminder: false };
 
@@ -45,13 +50,13 @@ describe("LinearService", () => {
     const fetch = vi.fn<FetchLike>(async () => okResponse());
     const service = createLinearService(memoryStore("lin_api_x"), { fetch, now: () => now });
     const first = await service.briefSection(input);
-    expect(first).toContain("## Linear 맥락 (PRJ-0017 세컨드브레인");
+    expect(first).toContain("## Linear 맥락 (PRJ-0017 · 세컨드브레인");
     expect(first).toContain("SB-1");
     await service.briefSection(input);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(directoryCalls(fetch)).toBe(1);
     now += 300_001;
     await service.briefSection(input);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(directoryCalls(fetch)).toBe(2);
   });
 
   it("briefSection returns null after the deadline", async () => {

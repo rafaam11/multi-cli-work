@@ -35,22 +35,29 @@ export function linearFailureMessage(kind: LinearFailureKind): string {
 const VIEWER_QUERY = "query { viewer { id } }";
 
 /**
- * 한 번의 질의로 프로젝트·열린 이슈·댓글을 가져온다(설계 §4.3). 프로젝트 업데이트는 읽지 않는다 — 프로젝트 상태는
- * Notion 프로젝트 DB가 정본이다(역할 감사 A4). Linear는 연결 필드를 `first`(기본 50)로 곱해 복잡도를 세고
- * 10,000점을 넘으면 거부한다 — 모든 연결에 `first`를 단다(대략 3 × 50 × 17 ≈ 2,600점).
+ * 1단계: 프로젝트 목록. Linear 프로젝트는 PRJ마다 하나가 아니라 큰 단위 몇 개이고, 프로젝트 본문(content) 첫 줄의
+ * `projectKey: PRJ-0017, PRJ-0013`이 어느 PRJ를 담는지 말한다(역할 감사, 2026-11-23 실측). Linear의 프로젝트 필터에는
+ * 본문 조건이 없어서 목록을 받아 앱에서 고른다 — 50 × 속성 몇 개라 복잡도는 100점 안쪽이다.
  */
-const PROJECT_QUERY = `query($prjKey: String!) {
-  projects(filter: { name: { startsWith: $prjKey } }, first: 3) {
-    nodes {
-      name
-      url
-      issues(first: 50, filter: { state: { type: { nin: ["completed", "canceled"] } } }) {
-        nodes {
-          identifier title dueDate priority
-          state { name type }
-          labels(first: 10) { nodes { name } }
-          comments(first: 3) { nodes { body createdAt } }
-        }
+const DIRECTORY_QUERY = `query ProjectDirectory {
+  projects(first: 50) { nodes { id name url description content } }
+}`;
+
+/**
+ * 2단계: 고른 프로젝트의 열린 이슈와 댓글(설계 §4.3). 프로젝트 업데이트는 읽지 않는다 — 프로젝트 상태는 Notion 프로젝트
+ * DB가 정본이다(역할 감사 A4). Linear는 연결 필드를 `first`(기본 50)로 곱해 복잡도를 세고 10,000점을 넘으면 거부한다 —
+ * 모든 연결에 `first`를 단다(대략 50 × 17 ≈ 900점).
+ */
+const ISSUES_QUERY = `query ProjectIssues($id: String!) {
+  project(id: $id) {
+    name
+    url
+    issues(first: 50, filter: { state: { type: { nin: ["completed", "canceled"] } } }) {
+      nodes {
+        identifier title dueDate priority
+        state { name type }
+        labels(first: 10) { nodes { name } }
+        comments(first: 3) { nodes { body createdAt } }
       }
     }
   }
@@ -124,6 +131,28 @@ function isExactKey(name: string, prjKey: string): boolean {
   return /^PRJ-\d{4}(\s|$)/.test(name) && name.slice(0, prjKey.length) === prjKey;
 }
 
+/** 글의 **첫 줄**이 `projectKey: A, B`이고 그 목록에 키가 그대로 있는가. 둘째 줄 이후의 언급은 세지 않는다. */
+function listsKey(body: string, prjKey: string): boolean {
+  const firstLine = body.split(/\r?\n/, 1)[0] ?? "";
+  const match = /^\s*projectKey:\s*(.*)$/.exec(firstLine);
+  if (!match) return false;
+  return match[1].split(",").map((key) => key.trim()).includes(prjKey);
+}
+
+/**
+ * 본문(content) 첫 줄에 키를 나열한 프로젝트가 먼저, 짧은 설명(description) 첫 줄이 그다음, 이름이 키로 시작하는 옛 방식
+ * (`PRJ-0017 세컨드브레인`)이 마지막이다.
+ */
+function pickProject(projects: unknown[], prjKey: string): Record<string, unknown> | null {
+  const candidates = projects.filter(isRecord);
+  return (
+    candidates.find((project) => listsKey(text(project.content), prjKey)) ??
+    candidates.find((project) => listsKey(text(project.description), prjKey)) ??
+    candidates.find((project) => isExactKey(text(project.name), prjKey)) ??
+    null
+  );
+}
+
 function toContext(project: Record<string, unknown>): LinearProjectContext {
   const issues: LinearIssueSummary[] = [];
   const comments: LinearCommentSummary[] = [];
@@ -153,9 +182,12 @@ export async function fetchLinearProjectContext(
   prjKey: string,
   options: LinearClientOptions = {},
 ): Promise<LinearFetchResult> {
-  const result = await send(key, PROJECT_QUERY, { prjKey }, options);
-  if (result.kind !== "ok") return result;
-  const projects = isRecord(result.data) ? nodes(result.data.projects) : [];
-  const project = projects.find((candidate) => isRecord(candidate) && isExactKey(text(candidate.name), prjKey));
-  return isRecord(project) ? { kind: "ok", context: toContext(project) } : { kind: "no-project" };
+  const directory = await send(key, DIRECTORY_QUERY, {}, options);
+  if (directory.kind !== "ok") return directory;
+  const picked = pickProject(isRecord(directory.data) ? nodes(directory.data.projects) : [], prjKey);
+  if (!picked || !text(picked.id)) return { kind: "no-project" };
+  const detail = await send(key, ISSUES_QUERY, { id: text(picked.id) }, options);
+  if (detail.kind !== "ok") return detail;
+  const project = isRecord(detail.data) && isRecord(detail.data.project) ? detail.data.project : null;
+  return project ? { kind: "ok", context: toContext(project) } : { kind: "no-project" };
 }
