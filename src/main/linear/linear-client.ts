@@ -21,6 +21,7 @@ export type LinearFetchResult =
   | { kind: "no-project" }
   | { kind: "unauthorized" }
   | { kind: "rate-limited" }
+  | { kind: "rejected" }
   | { kind: "network-error" };
 
 export type LinearFailureKind = Exclude<LinearFetchResult["kind"], "ok">;
@@ -29,6 +30,7 @@ const FAILURE_MESSAGES: Record<LinearFailureKind, string> = {
   unauthorized: "Linear API 키가 거부됐습니다",
   "rate-limited": "Linear 요청 한도에 걸렸습니다. 잠시 후 다시 시도하세요",
   "network-error": "Linear에 연결할 수 없습니다",
+  rejected: "Linear가 조회를 거부했습니다(쿼리 오류)",
   "no-project": "이 PRJ의 Linear 프로젝트를 찾지 못했습니다",
 };
 
@@ -38,9 +40,12 @@ export function linearFailureMessage(kind: LinearFailureKind): string {
 
 const VIEWER_QUERY = "query { viewer { id } }";
 
-/** 한 번의 질의로 프로젝트·열린 이슈·업데이트·댓글을 가져온다(설계 §4.3). */
+/**
+ * 한 번의 질의로 프로젝트·열린 이슈·업데이트·댓글을 가져온다(설계 §4.3). Linear는 연결 필드를 `first`(기본 50)로
+ * 곱해 복잡도를 세고 10,000점을 넘으면 거부한다 — 모든 연결에 `first`를 단다(대략 3 × 50 × 17 ≈ 2,600점).
+ */
 const PROJECT_QUERY = `query($prjKey: String!) {
-  projects(filter: { name: { startsWith: $prjKey } }, first: 5) {
+  projects(filter: { name: { startsWith: $prjKey } }, first: 3) {
     nodes {
       name
       url
@@ -49,7 +54,7 @@ const PROJECT_QUERY = `query($prjKey: String!) {
         nodes {
           identifier title dueDate priority
           state { name type }
-          labels { nodes { name } }
+          labels(first: 10) { nodes { name } }
           comments(first: 3) { nodes { body createdAt } }
         }
       }
@@ -57,7 +62,12 @@ const PROJECT_QUERY = `query($prjKey: String!) {
   }
 }`;
 
-type SendResult = { kind: "ok"; data: unknown } | { kind: "unauthorized" } | { kind: "rate-limited" } | { kind: "network-error" };
+type SendResult =
+  | { kind: "ok"; data: unknown }
+  | { kind: "unauthorized" }
+  | { kind: "rate-limited" }
+  | { kind: "rejected" }
+  | { kind: "network-error" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -88,7 +98,9 @@ async function send(key: string, query: string, variables: Record<string, unknow
     const codes = errorCodes(body);
     if (codes.includes("AUTHENTICATION_ERROR")) return { kind: "unauthorized" };
     if (codes.includes("RATELIMITED")) return { kind: "rate-limited" };
-    if (!response.ok || codes.length > 0 || !isRecord(body)) return { kind: "network-error" };
+    // 인증·한도 밖의 GraphQL 오류(복잡도 초과·필드 오류)는 연결 문제가 아니다 — 사유를 따로 보여 준다.
+    if (codes.length > 0) return { kind: "rejected" };
+    if (!response.ok || !isRecord(body)) return { kind: "network-error" };
     return { kind: "ok", data: body.data };
   } catch {
     // 타임아웃(abort)·DNS·오프라인·JSON 아님이 전부 여기로 온다. 원문은 버린다 — 키가 섞일 여지를 없앤다.

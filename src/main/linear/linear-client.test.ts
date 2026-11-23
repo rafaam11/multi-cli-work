@@ -110,6 +110,27 @@ describe("fetchLinearProjectContext", () => {
     await expect(fetchLinearProjectContext("k", "PRJ-0017", { fetch: html })).resolves.toEqual({ kind: "network-error" });
   });
 
+  it("bounds every connection so the query stays under Linear's complexity cap", async () => {
+    // Linear multiplies a connection by `first` (default 50) and rejects queries above 10,000 points.
+    const fetch = vi.fn<FetchLike>(async () => jsonResponse({ data: { projects: { nodes: [] } } }));
+    await fetchLinearProjectContext("k", "PRJ-0017", { fetch });
+    const query = (JSON.parse(String(fetch.mock.calls[0][1].body)) as { query: string }).query;
+    const bound = (field: string) => Number(new RegExp(`\\b${field}\\([^)]*first:\\s*(\\d+)`).exec(query)?.[1] ?? Number.NaN);
+    expect(bound("projects")).toBeLessThanOrEqual(3);
+    expect(bound("projectUpdates")).toBeLessThanOrEqual(2);
+    expect(bound("issues")).toBeLessThanOrEqual(50);
+    expect(bound("labels")).toBeLessThanOrEqual(10);
+    expect(bound("comments")).toBeLessThanOrEqual(3);
+  });
+
+  it("maps other GraphQL errors to rejected, not to a network error", async () => {
+    const tooComplex = vi.fn<FetchLike>(async () =>
+      jsonResponse({ errors: [{ message: "Query too complex", extensions: { code: "INVALID_INPUT" } }] }, 400),
+    );
+    await expect(fetchLinearProjectContext("k", "PRJ-0017", { fetch: tooComplex })).resolves.toEqual({ kind: "rejected" });
+    expect(linearFailureMessage("rejected")).toBe("Linear가 조회를 거부했습니다(쿼리 오류)");
+  });
+
   it("returns no-project when no name matches", async () => {
     const fetch = vi.fn<FetchLike>(async () => jsonResponse({ data: { projects: { nodes: [projectNode("PRJ-00170")] } } }));
     await expect(fetchLinearProjectContext("k", "PRJ-0017", { fetch })).resolves.toEqual({ kind: "no-project" });
