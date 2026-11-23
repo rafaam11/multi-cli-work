@@ -2,6 +2,7 @@
 
 - 작성: 2026-11-23 · 상태: **설계 승인**(사용자 인터뷰) · 구현 계획 전
 - 상위 설계: `C:/dev/llmwiki/docs/superpowers/specs/2026-11-23-linear-notion-agent-context-design.md`(P1). 이 문서는 그중 P2인 "MCW 세션 ↔ Linear"만 다룬다.
+- **개정(같은 날, 역할 감사 A4)**: `C:/dev/llmwiki/docs/superpowers/specs/2026-11-23-system-roles-audit.md`에 따라 프로젝트 상태는 Notion 프로젝트 DB가 정본이다. Linear 프로젝트 업데이트는 쓰지 않으므로, 브리프도 읽지 않고 싣지 않는다(v1.63.0 다음 버전부터).
 
 ## 1. 배경
 
@@ -70,7 +71,7 @@ MCW의 역할은 바뀌지 않는다. **사용자가 직접 지휘하는 개발 
     - 필터: 상태 유형이 completed·canceled가 아닌 것
     - 정렬: `repo:<폴더 레포>` 라벨을 먼저, 그다음 우선순위, 기한 순
     - 필드: identifier, title, state, dueDate, 라벨 이름
-  - 최근 프로젝트 업데이트 2건: health, body 첫 2줄, 작성 시각
+  - ~~최근 프로젝트 업데이트 2건~~ — 역할 감사 A4로 뺐다
   - 최근 댓글 5건: 위 이슈들에 달린 것, 작성자 라벨과 첫 줄
 - 상한은 **3초**다(AbortController). 응답이 늦으면 절을 빼고 세션을 띄운다.
 - 캐시: 키·프로젝트별로 5분. 같은 폴더에서 세션을 연달아 열어도 다시 조회하지 않는다.
@@ -80,7 +81,6 @@ MCW의 역할은 바뀌지 않는다. **사용자가 직접 지휘하는 개발 
 
 ```markdown
 ## Linear 맥락 (PRJ-0017 세컨드브레인 · 조회 11-23 09:12)
-- 프로젝트 상태: 정상 — "MCW 세션 Linear 연결 설계 승인" (11-23)
 - 열린 이슈
   - SB-41 [진행 중] 세션 브리프 Linear 절 · repo:multi-cli-work · 기한 11-30
   - SB-38 [할 일] Grok Bot 시험 판정표 채우기 · 기한 12-07

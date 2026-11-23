@@ -14,7 +14,6 @@ function context(overrides: Partial<LinearProjectContext> = {}): LinearProjectCo
       issue({ identifier: "SB-41", title: "세션 브리프 Linear 절", stateName: "진행 중", dueDate: "2026-11-30", priority: 2, labels: ["repo:multi-cli-work", "할 일"] }),
       issue({ identifier: "SB-38", title: "판정표 채우기" }),
     ],
-    updates: [{ health: "onTrack", body: "설계 승인\n세부 내용", createdAt: "2026-11-23T03:00:00.000Z" }],
     comments: [
       { issueIdentifier: "SB-38", body: "[메타몽] 브리핑 도착\n둘째 줄", createdAt: "2026-11-23T03:00:00.000Z" },
       { issueIdentifier: "SB-41", body: "[mcw-claude] 첫 기록", createdAt: "2026-11-22T03:00:00.000Z" },
@@ -26,31 +25,19 @@ function context(overrides: Partial<LinearProjectContext> = {}): LinearProjectCo
 const fetchedAt = new Date(2026, 10, 23, 9, 12);
 
 describe("renderLinearBrief", () => {
-  it("renders header, health, issues, recent records and the CLI instruction", () => {
+  it("renders header, issues, recent records and the CLI instruction", () => {
     const text = renderLinearBrief({ prjKey: "PRJ-0017", repoName: "multi-cli-work", context: context(), fetchedAt, recordReminder: false });
     const lines = text.split("\n");
     expect(lines[0]).toBe("## Linear 맥락 (PRJ-0017 세컨드브레인 · 조회 11-23 09:12)");
-    expect(text).toContain('- 프로젝트 상태: 정상 — "설계 승인" (11-23)');
+    // Project status lives in the Notion project DB (system roles audit A4): the brief carries none.
+    expect(text).not.toContain("프로젝트 상태");
+    expect(text).not.toContain("지난 업데이트");
     expect(text).toContain("  - SB-41 [진행 중] 세션 브리프 Linear 절 · repo:multi-cli-work · 기한 11-30");
     expect(text).toContain("  - SB-38 [할 일] 판정표 채우기");
     expect(text).toContain('  - 11-23 SB-38 "[메타몽] 브리핑 도착"');
     expect(text).toContain("`linear --help`로 명령을 확인하고 `linear issue view <키>` 등으로 더 읽는다");
     expect(text).toContain("커밋·브랜치·PR에는 이슈 키를 넣는다");
     expect(text).not.toContain(LINEAR_RECORD_MARKER);
-  });
-
-  it("maps every health value", () => {
-    const render = (health: LinearProjectContext["updates"][number]["health"]) =>
-      renderLinearBrief({
-        prjKey: "PRJ-0017",
-        repoName: null,
-        context: context({ updates: [{ health, body: "x", createdAt: "2026-11-23T03:00:00.000Z" }] }),
-        fetchedAt,
-        recordReminder: false,
-      });
-    expect(render("atRisk")).toContain("프로젝트 상태: 위험");
-    expect(render("offTrack")).toContain("프로젝트 상태: 이탈");
-    expect(render(null)).toContain("프로젝트 상태: 상태 없음");
   });
 
   it("orders issues by repo label, then priority (0 last), then due date (null last)", () => {

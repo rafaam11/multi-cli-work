@@ -1,10 +1,4 @@
-import type {
-  LinearCommentSummary,
-  LinearHealth,
-  LinearIssueSummary,
-  LinearProjectContext,
-  LinearUpdateSummary,
-} from "../../shared/linear-types";
+import type { LinearCommentSummary, LinearIssueSummary, LinearProjectContext } from "../../shared/linear-types";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 const LINEAR_TIMEOUT_MS = 15_000;
@@ -41,15 +35,15 @@ export function linearFailureMessage(kind: LinearFailureKind): string {
 const VIEWER_QUERY = "query { viewer { id } }";
 
 /**
- * 한 번의 질의로 프로젝트·열린 이슈·업데이트·댓글을 가져온다(설계 §4.3). Linear는 연결 필드를 `first`(기본 50)로
- * 곱해 복잡도를 세고 10,000점을 넘으면 거부한다 — 모든 연결에 `first`를 단다(대략 3 × 50 × 17 ≈ 2,600점).
+ * 한 번의 질의로 프로젝트·열린 이슈·댓글을 가져온다(설계 §4.3). 프로젝트 업데이트는 읽지 않는다 — 프로젝트 상태는
+ * Notion 프로젝트 DB가 정본이다(역할 감사 A4). Linear는 연결 필드를 `first`(기본 50)로 곱해 복잡도를 세고
+ * 10,000점을 넘으면 거부한다 — 모든 연결에 `first`를 단다(대략 3 × 50 × 17 ≈ 2,600점).
  */
 const PROJECT_QUERY = `query($prjKey: String!) {
   projects(filter: { name: { startsWith: $prjKey } }, first: 3) {
     nodes {
       name
       url
-      projectUpdates(first: 2) { nodes { health body createdAt } }
       issues(first: 50, filter: { state: { type: { nin: ["completed", "canceled"] } } }) {
         nodes {
           identifier title dueDate priority
@@ -125,10 +119,6 @@ function text(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function health(value: unknown): LinearHealth | null {
-  return value === "onTrack" || value === "atRisk" || value === "offTrack" ? value : null;
-}
-
 /** 이름이 정확히 그 키로 시작하고 그 뒤가 공백이거나 끝인 프로젝트만 같은 PRJ다(`PRJ-00170` 배제). */
 function isExactKey(name: string, prjKey: string): boolean {
   return /^PRJ-\d{4}(\s|$)/.test(name) && name.slice(0, prjKey.length) === prjKey;
@@ -155,10 +145,7 @@ function toContext(project: Record<string, unknown>): LinearProjectContext {
     }
   }
   comments.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const updates: LinearUpdateSummary[] = nodes(project.projectUpdates)
-    .filter(isRecord)
-    .map((update) => ({ health: health(update.health), body: text(update.body), createdAt: text(update.createdAt) }));
-  return { name: text(project.name), url: text(project.url), issues, updates, comments };
+  return { name: text(project.name), url: text(project.url), issues, comments };
 }
 
 export async function fetchLinearProjectContext(

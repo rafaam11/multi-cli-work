@@ -67,7 +67,7 @@ describe("fetchLinearProjectContext", () => {
     expect(body.variables.prjKey).toBe("PRJ-0017");
   });
 
-  it("flattens issues, labels, updates and comments", async () => {
+  it("flattens issues, labels and comments", async () => {
     const fetch = vi.fn<FetchLike>(async () => jsonResponse({ data: { projects: { nodes: [projectNode("PRJ-0017")] } } }));
     const result = await fetchLinearProjectContext("lin_api_x", "PRJ-0017", { fetch });
     if (result.kind !== "ok") throw new Error(result.kind);
@@ -80,7 +80,7 @@ describe("fetchLinearProjectContext", () => {
       priority: 2,
       labels: ["repo:multi-cli-work"],
     });
-    expect(result.context.updates).toEqual([{ health: "onTrack", body: "설계 승인\n세부", createdAt: "2026-11-23T00:00:00.000Z" }]);
+    expect("updates" in result.context).toBe(false);
     expect(result.context.comments.map((comment) => comment.issueIdentifier)).toEqual(["SB-38", "SB-41"]);
   });
 
@@ -117,7 +117,8 @@ describe("fetchLinearProjectContext", () => {
     const query = (JSON.parse(String(fetch.mock.calls[0][1].body)) as { query: string }).query;
     const bound = (field: string) => Number(new RegExp(`\\b${field}\\([^)]*first:\\s*(\\d+)`).exec(query)?.[1] ?? Number.NaN);
     expect(bound("projects")).toBeLessThanOrEqual(3);
-    expect(bound("projectUpdates")).toBeLessThanOrEqual(2);
+    // Linear project updates are not used (system roles audit A4): the query must not ask for them.
+    expect(query).not.toContain("projectUpdates");
     expect(bound("issues")).toBeLessThanOrEqual(50);
     expect(bound("labels")).toBeLessThanOrEqual(10);
     expect(bound("comments")).toBeLessThanOrEqual(3);

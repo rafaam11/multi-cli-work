@@ -1,4 +1,4 @@
-import type { LinearHealth, LinearIssueSummary, LinearProjectContext } from "../../shared/linear-types";
+import type { LinearIssueSummary, LinearProjectContext } from "../../shared/linear-types";
 
 /**
  * 이 절이 실렸고 기록 리마인드가 켜졌다는 표식. Claude 상태 훅이 브리프 파일에서 이 문자열을 찾아
@@ -7,22 +7,14 @@ import type { LinearHealth, LinearIssueSummary, LinearProjectContext } from "../
 export const LINEAR_RECORD_MARKER = "<!-- mcw:linear-record -->";
 
 const MAX_ISSUES = 8;
-const MAX_UPDATES = 2;
 const MAX_COMMENTS = 5;
 const MAX_LINES = 30;
 const TITLE_MAX = 80;
-const UPDATE_MAX = 80;
 const COMMENT_MAX = 60;
-
-const HEALTH_LABEL: Record<LinearHealth, string> = { onTrack: "정상", atRisk: "위험", offTrack: "이탈" };
 
 function truncate(text: string, max: number): string {
   const chars = Array.from(text);
   return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : text;
-}
-
-function firstLine(text: string): string {
-  return text.split(/\r?\n/, 1)[0]?.trim() ?? "";
 }
 
 /**
@@ -87,13 +79,6 @@ export function renderLinearBrief(input: LinearBriefInput): string {
   const repoLabel = input.repoName ? `repo:${input.repoName}` : null;
   const header = `## Linear 맥락 (${context.name} · 조회 ${monthDay(input.fetchedAt)} ${pad(input.fetchedAt.getHours())}:${pad(input.fetchedAt.getMinutes())})`;
 
-  const updates = context.updates.slice(0, MAX_UPDATES).map((update, index) => {
-    const label = update.health ? HEALTH_LABEL[update.health] : "상태 없음";
-    const prefix = index === 0 ? "- 프로젝트 상태" : "- 지난 업데이트";
-    return `${prefix}: ${label} — "${truncate(firstLine(update.body), UPDATE_MAX)}" (${isoMonthDay(update.createdAt)})`;
-  });
-  if (updates.length === 0) updates.push("- 프로젝트 상태: 업데이트 없음");
-
   let issues = [...context.issues].sort(compareIssues(repoLabel)).slice(0, MAX_ISSUES).map(issueLine);
   let comments = context.comments
     .slice(0, MAX_COMMENTS)
@@ -109,7 +94,6 @@ export function renderLinearBrief(input: LinearBriefInput): string {
 
   const assemble = () => [
     header,
-    ...updates,
     ...(issues.length > 0 ? ["- 열린 이슈", ...issues] : ["- 열린 이슈 없음"]),
     ...(comments.length > 0 ? ["- 최근 기록", ...comments] : []),
     ...footer,
