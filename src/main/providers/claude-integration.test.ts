@@ -2,6 +2,7 @@
 
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
@@ -201,7 +202,8 @@ describe("Claude app-owned integration", () => {
       execFileAsync("git", ["-c", "user.email=test@example.com", "-c", "user.name=test", ...args], { cwd });
 
     async function fixture(options: { marker?: boolean; gitRepo?: boolean } = {}) {
-      const root = await fs.mkdtemp(path.join(process.env.TEMP ?? process.cwd(), "mcw-claude-linear-"));
+      // os.tmpdir(), not $TEMP: Linux runners leave TEMP unset, which would put the fixture inside the checkout.
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "mcw-claude-linear-"));
       roots.push(root);
       const integration = await ensureClaudeIntegration(root, process.platform);
       const repo = path.join(root, "repo");
@@ -223,56 +225,87 @@ ${options.marker === false ? "" : LINEAR_RECORD_MARKER}
             MULTI_CLI_WORK_STATUS_DIR: path.join(root, "status"),
             MULTI_CLI_WORK_PROJECT_BRIEF: briefPath,
             MULTI_CLI_WORK_LINEAR_STATE_DIR: stateDir,
+            // Never let git climb out of the fixture into whatever repository holds the temp folder.
+            GIT_CEILING_DIRECTORIES: root,
           },
         });
         child.child.stdin?.end(JSON.stringify({ session_id: "claude-1", cwd: repo, ...input }));
         return (await child).stdout;
       };
-      const head = async () => (await git(repo, "rev-parse", "HEAD")).stdout.trim();
-      return { repo, stateDir, run, head };
+      return { repo, stateDir, run };
     }
 
-    it("records HEAD at SessionStart and stays silent at Stop with the same HEAD", async () => {
-      const { stateDir, run, head } = await fixture();
+    /** One shell tool call as Claude reports it: PreToolUse, the command itself, PostToolUse. */
+    async function shellTool(
+      run: (input: Record<string, unknown>) => Promise<string>,
+      options: { tool?: string; command?: string; between?: () => Promise<unknown> } = {},
+    ) {
+      const call = { tool_name: options.tool ?? "Bash", tool_input: { command: options.command ?? "git add -A && git commit -m two" } };
+      await run({ hook_event_name: "PreToolUse", ...call });
+      await options.between?.();
+      await run({ hook_event_name: "PostToolUse", ...call });
+    }
+
+    it("stays silent at Stop when this session committed nothing", async () => {
+      const { run } = await fixture();
       await run({ hook_event_name: "SessionStart" });
-      expect((await fs.readFile(path.join(stateDir, "session-linear.head"), "utf8")).trim()).toBe(await head());
       await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
     }, 30_000);
 
-    it("blocks once after a new commit", async () => {
+    it("reminds once after this session commits through a shell tool", async () => {
       const { repo, run } = await fixture();
       await run({ hook_event_name: "SessionStart" });
-      await git(repo, "commit", "--allow-empty", "-q", "-m", "two");
-      const stdout = await run({ hook_event_name: "Stop" });
-      expect(JSON.parse(stdout)).toEqual({ decision: "block", reason: LINEAR_RECORD_REMINDER });
+      await shellTool(run, { between: () => git(repo, "commit", "--allow-empty", "-q", "-m", "two") });
+      expect(JSON.parse(await run({ hook_event_name: "Stop" }))).toEqual({ decision: "block", reason: LINEAR_RECORD_REMINDER });
+      await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
+      // The PowerShell tool counts the same as Bash.
+      await shellTool(run, { tool: "PowerShell", command: "git commit -q -m three", between: () => git(repo, "commit", "--allow-empty", "-q", "-m", "three") });
+      expect(JSON.parse(await run({ hook_event_name: "Stop" }))).toMatchObject({ decision: "block" });
+    }, 40_000);
+
+    it("does not remind when HEAD moved without this session committing", async () => {
+      // Another session sharing the working tree, a pull or a checkout moves HEAD too.
+      const { repo, run } = await fixture();
+      await run({ hook_event_name: "SessionStart" });
+      await git(repo, "commit", "--allow-empty", "-q", "-m", "someone else");
+      await shellTool(run, { command: "git status" });
       await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
     }, 30_000);
 
-    it("respects stop_hook_active", async () => {
+    it("ignores a commit command that did not move HEAD, even after someone else committed", async () => {
       const { repo, run } = await fixture();
       await run({ hook_event_name: "SessionStart" });
-      await git(repo, "commit", "--allow-empty", "-q", "-m", "two");
+      await git(repo, "commit", "--allow-empty", "-q", "-m", "someone else");
+      await shellTool(run, { command: "git commit -m nothing-staged" });
+      await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
+    }, 30_000);
+
+    it("respects stop_hook_active and keeps the reminder for the next Stop", async () => {
+      const { repo, run } = await fixture();
+      await run({ hook_event_name: "SessionStart" });
+      await shellTool(run, { between: () => git(repo, "commit", "--allow-empty", "-q", "-m", "two") });
       await expect(run({ hook_event_name: "Stop", stop_hook_active: true })).resolves.toBe("");
+      expect(JSON.parse(await run({ hook_event_name: "Stop" }))).toMatchObject({ decision: "block" });
     }, 30_000);
 
     it("ignores sessions whose brief has no marker", async () => {
       const { repo, stateDir, run } = await fixture({ marker: false });
       await run({ hook_event_name: "SessionStart" });
-      await git(repo, "commit", "--allow-empty", "-q", "-m", "two");
+      await shellTool(run, { between: () => git(repo, "commit", "--allow-empty", "-q", "-m", "two") });
       await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
-      await expect(fs.stat(path.join(stateDir, "session-linear.head"))).rejects.toThrow();
+      await expect(fs.readdir(stateDir)).rejects.toThrow();
     }, 30_000);
 
     it("stays silent outside a git repository", async () => {
       const { stateDir, run } = await fixture({ gitRepo: false });
-      // SessionStart still hands over the brief; only the HEAD bookkeeping is skipped.
       await run({ hook_event_name: "SessionStart" });
-      await expect(fs.stat(path.join(stateDir, "session-linear.head"))).rejects.toThrow();
+      await shellTool(run);
       await expect(run({ hook_event_name: "Stop" })).resolves.toBe("");
+      await expect(fs.readdir(stateDir)).rejects.toThrow();
     }, 30_000);
 
     it("keeps the PowerShell hook pure ASCII", () => {
-      expect(CLAUDE_STATUS_HOOK).not.toMatch(/[^ -]/);
+      expect(CLAUDE_STATUS_HOOK).not.toMatch(/[^\x00-\x7F]/);
     });
   });
 });

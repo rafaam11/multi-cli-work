@@ -33,7 +33,7 @@
 | `state.json` | 창 크기, 선택된 폴더, 레이아웃, 패인 배치, 작업공간·숨김 소속 |
 | `notion-credentials.json` | 노션 통합 토큰. OS 자격 증명 저장소(safeStorage)로 암호화한 암호문만 담는다 |
 | `linear-credentials.json` | Linear 개인 API 키. safeStorage로 암호화한 암호문만 담는다. 세션 환경변수로는 넘기지 않는다 |
-| `session-linear/` | 세션별 마지막 기록 리마인드 시점의 `HEAD`(`<sessionId>.head`). Claude 상태 훅이 쓴다 |
+| `session-linear/` | Claude 상태 훅의 기록 리마인드 상태. `<sessionId>.prehead`(커밋 명령 직전의 `HEAD`)와 `<sessionId>.pending`(다음 Stop에서 한 번 리마인드)만 담는다 |
 | `remote-devices.json` | 이 PC에 접속을 허용한 기기(폰·다른 PC)와 이 PC의 호스트 ID. 기기 토큰은 해시만 담는다 |
 | `remote-hosts.json` | 이 PC가 접속하려고 등록한 다른 PC. 기기 토큰은 safeStorage로 암호화한 암호문만 담는다 |
 | `settings.json` | 언어·터미널·알림·단축키·업무 프로젝트 구분 목록(구분 코드 포함)과 이 PC의 루트(`pcRoots`: dev·data·work·Google Drive, 비우면 자동 탐지). 모르는 필드는 버린다 |

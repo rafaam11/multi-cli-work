@@ -154,26 +154,39 @@ if ($eventName -eq "SessionStart") {
   }
 }
 
-# Linear record reminder: only for sessions whose brief carries the marker. SessionStart records HEAD;
-# a later Stop with a different HEAD blocks once so Claude records its work in Linear.
+# Linear record reminder: only for sessions whose brief carries the marker. A shell tool call of this
+# session that runs git commit records HEAD before (PreToolUse) and compares after (PostToolUse); if that
+# command moved HEAD it leaves a pending flag and the next Stop blocks once. HEAD moved by anything else
+# (another session in the same tree, a pull, a checkout) never reminds.
 $linearStateDir = $env:MULTI_CLI_WORK_LINEAR_STATE_DIR
-if (($eventName -eq "SessionStart" -or $eventName -eq "Stop") -and $linearStateDir -and $env:MULTI_CLI_WORK_PROJECT_BRIEF -and -not $inputValue.stop_hook_active -and $inputValue.cwd) {
+if ($linearStateDir -and $env:MULTI_CLI_WORK_PROJECT_BRIEF -and $inputValue.cwd) {
   try {
-    $briefText = [IO.File]::ReadAllText($env:MULTI_CLI_WORK_PROJECT_BRIEF, [Text.UTF8Encoding]::new($false))
-    if ($briefText.Contains("${LINEAR_RECORD_MARKER}")) {
-      $head = (& git -C ([string]$inputValue.cwd) rev-parse HEAD 2>$null)
-      if ($LASTEXITCODE -eq 0 -and $head) {
-        $head = ([string]$head).Trim()
-        [IO.Directory]::CreateDirectory($linearStateDir) | Out-Null
-        $headFile = Join-Path $linearStateDir ($sessionId + ".head")
-        $lastHead = $null
-        if (Test-Path -LiteralPath $headFile) { $lastHead = ([IO.File]::ReadAllText($headFile)).Trim() }
-        [IO.File]::WriteAllText($headFile, $head, [Text.UTF8Encoding]::new($false))
-        if ($eventName -eq "Stop" -and $lastHead -and $lastHead -ne $head) {
-          $reason = [regex]::Unescape('${LINEAR_REMINDER_ESCAPED}')
-          $json = @{ decision = "block"; reason = $reason } | ConvertTo-Json -Compress
-          $json = [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
-          [Console]::Out.Write($json)
+    $preHeadFile = Join-Path $linearStateDir ($sessionId + ".prehead")
+    $pendingFile = Join-Path $linearStateDir ($sessionId + ".pending")
+    $isCommit = ([string]$inputValue.tool_name) -in @("Bash", "PowerShell") -and ([string]$inputValue.tool_input.command) -match '\bgit\b[^|;&]*\bcommit\b'
+    if ($eventName -eq "Stop") {
+      if (-not $inputValue.stop_hook_active -and (Test-Path -LiteralPath $pendingFile)) {
+        Remove-Item -LiteralPath $pendingFile -Force
+        $reason = [regex]::Unescape('${LINEAR_REMINDER_ESCAPED}')
+        $json = @{ decision = "block"; reason = $reason } | ConvertTo-Json -Compress
+        $json = [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+        [Console]::Out.Write($json)
+      }
+    } elseif ($isCommit -and ($eventName -eq "PreToolUse" -or $eventName -eq "PostToolUse")) {
+      $briefText = [IO.File]::ReadAllText($env:MULTI_CLI_WORK_PROJECT_BRIEF, [Text.UTF8Encoding]::new($false))
+      if ($briefText.Contains("${LINEAR_RECORD_MARKER}")) {
+        $head = (& git -C ([string]$inputValue.cwd) rev-parse HEAD 2>$null)
+        # Missing git leaves $LASTEXITCODE stale, so an empty $head is what decides "no HEAD".
+        if ($LASTEXITCODE -ne 0 -or -not $head) { $head = "" } else { $head = ([string]$head).Trim() }
+        if ($eventName -eq "PreToolUse") {
+          if ($head) {
+            [IO.Directory]::CreateDirectory($linearStateDir) | Out-Null
+            [IO.File]::WriteAllText($preHeadFile, $head, [Text.UTF8Encoding]::new($false))
+          }
+        } elseif (Test-Path -LiteralPath $preHeadFile) {
+          $before = ([IO.File]::ReadAllText($preHeadFile)).Trim()
+          Remove-Item -LiteralPath $preHeadFile -Force
+          if ($head -and $head -ne $before) { [IO.File]::WriteAllText($pendingFile, $head, [Text.UTF8Encoding]::new($false)) }
         }
       }
     }
@@ -242,27 +255,38 @@ if event == "SessionStart":
             if brief.strip():
                 json.dump(dict(hookSpecificOutput=dict(hookEventName="SessionStart", additionalContext=brief)), sys.stdout)
         except Exception: pass
-# Linear record reminder: only for sessions whose brief carries the marker. SessionStart records HEAD;
-# a later Stop with a different HEAD blocks once so Claude records its work in Linear.
+# Linear record reminder: only for sessions whose brief carries the marker. A shell tool call of this
+# session that runs git commit records HEAD before (PreToolUse) and compares after (PostToolUse); if that
+# command moved HEAD it leaves a pending flag and the next Stop blocks once. HEAD moved by anything else
+# (another session in the same tree, a pull, a checkout) never reminds.
 linear_state_dir = os.environ.get("MULTI_CLI_WORK_LINEAR_STATE_DIR", "")
 linear_brief_path = os.environ.get("MULTI_CLI_WORK_PROJECT_BRIEF", "")
 linear_cwd = value.get("cwd")
-if event in ("SessionStart", "Stop") and linear_state_dir and linear_brief_path and not value.get("stop_hook_active") and isinstance(linear_cwd, str) and linear_cwd:
+if linear_state_dir and linear_brief_path and isinstance(linear_cwd, str) and linear_cwd:
     try:
-        with open(linear_brief_path, "r", encoding="utf-8") as brief_file: has_marker = "${LINEAR_RECORD_MARKER}" in brief_file.read()
-        if has_marker:
-            import subprocess
-            result = subprocess.run(["git", "-C", linear_cwd, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3)
-            head = result.stdout.strip() if result.returncode == 0 else ""
-            if head:
-                os.makedirs(linear_state_dir, exist_ok=True)
-                head_file = os.path.join(linear_state_dir, session_id + ".head")
-                last_head = ""
-                if os.path.exists(head_file):
-                    with open(head_file, "r", encoding="utf-8") as handle: last_head = handle.read().strip()
-                with open(head_file, "w", encoding="utf-8") as handle: handle.write(head)
-                if event == "Stop" and last_head and last_head != head:
-                    json.dump(dict(decision="block", reason="${LINEAR_REMINDER_ESCAPED}"), sys.stdout)
+        pre_head_file = os.path.join(linear_state_dir, session_id + ".prehead")
+        pending_file = os.path.join(linear_state_dir, session_id + ".pending")
+        tool_input = value.get("tool_input") if isinstance(value.get("tool_input"), dict) else {}
+        is_commit = value.get("tool_name") in ("Bash", "PowerShell") and re.search(r"\bgit\b[^|;&]*\bcommit\b", str(tool_input.get("command", ""))) is not None
+        if event == "Stop":
+            if not value.get("stop_hook_active") and os.path.exists(pending_file):
+                os.remove(pending_file)
+                json.dump(dict(decision="block", reason="${LINEAR_REMINDER_ESCAPED}"), sys.stdout)
+        elif is_commit and event in ("PreToolUse", "PostToolUse"):
+            with open(linear_brief_path, "r", encoding="utf-8") as brief_file: has_marker = "${LINEAR_RECORD_MARKER}" in brief_file.read()
+            if has_marker:
+                import subprocess
+                result = subprocess.run(["git", "-C", linear_cwd, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3)
+                head = result.stdout.strip() if result.returncode == 0 else ""
+                if event == "PreToolUse":
+                    if head:
+                        os.makedirs(linear_state_dir, exist_ok=True)
+                        with open(pre_head_file, "w", encoding="utf-8") as handle: handle.write(head)
+                elif os.path.exists(pre_head_file):
+                    with open(pre_head_file, "r", encoding="utf-8") as handle: before = handle.read().strip()
+                    os.remove(pre_head_file)
+                    if head and head != before:
+                        with open(pending_file, "w", encoding="utf-8") as handle: handle.write(head)
     except Exception: pass
 `;
 

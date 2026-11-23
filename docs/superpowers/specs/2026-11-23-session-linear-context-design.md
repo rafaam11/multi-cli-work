@@ -99,11 +99,11 @@ MCW의 역할은 바뀌지 않는다. **사용자가 직접 지휘하는 개발 
 ### 4.5 작업 기록 리마인드
 
 **Claude**
-- Stop 훅이 세션별 상태 파일(`userData/session-linear/<sessionId>.json`)에 마지막으로 리마인드했을 때의 `HEAD` sha를 적어 둔다.
-- 아래 조건을 **모두** 만족하면 Stop 출력으로 `decision: "block"`과 리마인드 문구(`reason`)를 낸다.
-  1. Linear 매핑이 있다.
-  2. `stop_hook_active`가 거짓이다.
-  3. 세션 cwd의 `HEAD`가 마지막 리마인드 이후 바뀌었다(새 커밋이 생김).
+- **이 세션이 만든 커밋만 센다**(최종 검토 반영). 여러 세션이 한 작업 트리를 함께 쓰므로, 다른 세션의 커밋·pull·checkout으로 HEAD가 움직여도 리마인드하지 않는다.
+  1. 셸 도구(Bash·PowerShell)의 명령이 `git … commit`이면 PreToolUse에서 `HEAD`를 `userData/session-linear/<sessionId>.prehead`에 적는다.
+  2. 같은 명령의 PostToolUse에서 `HEAD`가 그 값과 다르면(커밋이 실제로 생김) `<sessionId>.pending`을 만든다.
+  3. 다음 Stop에서 `stop_hook_active`가 거짓이고 `.pending`이 있으면 지우고 `decision: "block"`과 리마인드 문구(`reason`)를 낸다.
+- 브리프에 마커가 없는 세션(Linear 매핑 없음·리마인드 꺼짐), git이 아닌 폴더, git 미설치에서는 아무것도 쓰거나 출력하지 않는다. 커밋이 하나도 없는 새 레포의 첫 커밋은 세지 않는다(직전 `HEAD`가 없다).
 - 이 출력은 Claude에게 기록 한 턴을 더 하게 만든다. 커밋이 생길 때만 이런 일이 일어나므로, 턴마다 기록이 쌓이지는 않는다.
 - 문구 예: "방금 커밋이 생겼다. 관련 Linear 이슈에 진행·결정·다음 할 일을 댓글 1건으로 남기고 멈춰라. 이미 남겼으면 바로 멈춰라."
 - PS1 훅은 BOM 없는 파일의 한글이 깨지는 문제가 있다(릴리스 메모리). 그래서 문구를 `\uXXXX`로 이스케이프해 JSON에 넣는다.
