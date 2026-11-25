@@ -89,6 +89,47 @@ async function attachScreenshot(name: string): Promise<void> {
   await test.info().attach(name, { path: screenshotPath, contentType: "image/png" });
 }
 
+/**
+ * What shares the workspace header and how wide each part drew, for the message of a failed bounds
+ * check. A CI runner draws text with other fonts and scaling than a desktop, so a failure there has
+ * to say which part outgrew the header rather than only that something did.
+ */
+async function workspaceHeaderGeometry(): Promise<string> {
+  return page.evaluate(() => {
+    const round = (value: number) => Math.round(value * 100) / 100;
+    const box = (element: Element | null) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 ? { left: round(rect.left), width: round(rect.width), right: round(rect.right) } : null;
+    };
+    const header = document.querySelector<HTMLElement>(".workspace-header");
+    const headerStyle = header ? getComputedStyle(header) : null;
+    const buttons = [...document.querySelectorAll<HTMLElement>(".workspace-actions button")]
+      .filter((element) => element.getBoundingClientRect().width > 0)
+      .map((element) => ({
+        name: element.getAttribute("aria-label") ?? element.textContent ?? "button",
+        ...box(element),
+        labels: [...element.querySelectorAll("span")]
+          .filter((span) => span.children.length === 0 && span.textContent && span.getBoundingClientRect().width > 0)
+          .map((span) => `${span.textContent}=${round(span.getBoundingClientRect().width)}`),
+      }));
+    return JSON.stringify({
+      devicePixelRatio: window.devicePixelRatio,
+      font: header ? getComputedStyle(header).fontFamily : null,
+      header: box(header),
+      headerPadding: headerStyle ? `${headerStyle.paddingLeft} ${headerStyle.paddingRight}` : null,
+      headerGap: headerStyle?.columnGap ?? null,
+      heading: box(document.querySelector(".workspace-heading")),
+      identity: box(document.querySelector(".workspace-identity")),
+      title: box(document.querySelector(".workspace-primary-title")),
+      pageTabs: box(document.querySelector(".workspace-page-tabs")),
+      actions: box(document.querySelector(".workspace-actions")),
+      launcherRow: box(document.querySelector(".launcher-row")),
+      buttons,
+    });
+  });
+}
+
 async function computedFontSize(selector: string): Promise<string> {
   return page.locator(selector).first().evaluate((element) => getComputedStyle(element).fontSize);
 }
@@ -1711,8 +1752,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
           launcherTrigger.boundingBox(),
         ]);
         if (!headerBox || !launcherBox) throw new Error("Compact header controls have no bounds");
-        expect(launcherBox.x).toBeGreaterThanOrEqual(headerBox.x - 0.5);
-        expect(launcherBox.x + launcherBox.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
+        const headerGeometry = await workspaceHeaderGeometry();
+        expect(launcherBox.x, headerGeometry).toBeGreaterThanOrEqual(headerBox.x - 0.5);
+        expect(launcherBox.x + launcherBox.width, headerGeometry).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
       } else {
         await expect(page.getByRole("button", { name: "새 Echo Agent 세션" })).toBeVisible();
       }
@@ -1739,11 +1781,12 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
             .map((control, index) => `${controls[index].name} > ${control.name}`),
         };
       });
+      const headerGeometry = await workspaceHeaderGeometry();
       expect(geometry.gridLeft).toBeGreaterThanOrEqual(geometry.sidebarRight);
       expect(geometry.workspaceScroll).toBe(0);
-      expect(geometry.titleWidth).toBeGreaterThan(32);
-      expect(geometry.titleInsideHeader).toBe(true);
-      expect(geometry.overlaps).toEqual([]);
+      expect(geometry.titleWidth, headerGeometry).toBeGreaterThan(32);
+      expect(geometry.titleInsideHeader, headerGeometry).toBe(true);
+      expect(geometry.overlaps, headerGeometry).toEqual([]);
       await attachScreenshot(`workspace-header-${scenario.width}x${scenario.height}`);
     }
 
