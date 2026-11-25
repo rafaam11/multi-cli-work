@@ -114,7 +114,7 @@ describe("WorkspaceGrid", () => {
     });
     const terminal = screen.getByTestId("terminal-session-1");
     expect(container.querySelector(".pane-activity")).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByText("작업 중")).toHaveClass("pane-working-badge");
+    expect(screen.getByText("작업 중").closest(".pane-status-badge")).toHaveClass("pane-working-badge");
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
 
     for (const status of ["awaiting-input", "awaiting-approval", "error", "exited", "idle", "starting", "working"] as const) {
@@ -123,6 +123,9 @@ describe("WorkspaceGrid", () => {
       expect(container.querySelector(".grid-pane")).toHaveClass(`status-${status}`, "pane-focused");
       expect(container.querySelector(".pane-activity") !== null).toBe(status === "working");
       expect(container.querySelector(".pane-working-badge") !== null).toBe(status === "working");
+      expect(container.querySelector(".pane-status-badge") !== null).toBe(
+        ["working", "awaiting-input", "awaiting-approval", "error"].includes(status),
+      );
       expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
       expect(screen.getByTestId("terminal-session-1")).toBe(terminal);
     }

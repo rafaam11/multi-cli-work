@@ -133,13 +133,24 @@ describe("PaneHeader indicators", () => {
 
   it("shows a working badge without inventing progress, and removes it when idle", () => {
     const { container } = renderHeader(makeSession({ status: "working" }));
-    expect(screen.getByText("작업 중")).toHaveClass("pane-working-badge");
+    expect(screen.getByText("작업 중").closest(".pane-status-badge")).toHaveClass("pane-working-badge");
     expect(container.querySelector(".pane-progress")).toBeNull();
     expect(screen.queryByRole("progressbar")).toBeNull();
     cleanup();
     const idle = renderHeader(makeSession({ status: "idle" }));
     expect(idle.container.querySelector(".pane-progress")).toBeNull();
     expect(screen.queryByText("작업 중")).toBeNull();
+  });
+
+  it.each([
+    ["working", "작업 중"],
+    ["awaiting-input", "입력 대기"],
+    ["awaiting-approval", "승인 대기"],
+    ["error", "오류"],
+  ] as const)("shows %s as a short text status", (status, label) => {
+    const { container } = renderHeader(makeSession({ status }));
+    expect(screen.getByText(label).closest(".pane-status-badge")).toHaveClass(`status-${status}`);
+    expect(container.querySelector(".pane-status-badge .status-dot")).toHaveClass(`status-${status}`);
   });
 
   it("shows the pinned chips in order with their colour", () => {

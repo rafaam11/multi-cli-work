@@ -1,6 +1,6 @@
 import type { AgentView } from "@shared/agent-types";
 import type { TerminalSessionView } from "@shared/api-types";
-import type { SessionIndicators, SessionProgress } from "@shared/terminal-types";
+import type { SessionIndicators, SessionProgress, TerminalStatus } from "@shared/terminal-types";
 import {
   Briefcase,
   Check,
@@ -197,6 +197,30 @@ function SessionId({ id }: { id: string }) {
   );
 }
 
+const TEXT_STATUS = new Set<TerminalStatus>(["working", "awaiting-input", "awaiting-approval", "error"]);
+
+function PaneStatus({ status }: { status: TerminalStatus }) {
+  if (!TEXT_STATUS.has(status)) {
+    return (
+      <span
+        className={`status-dot status-${status}`}
+        title={statusLabels[status]}
+        aria-label={statusLabels[status]}
+      />
+    );
+  }
+  return (
+    <span
+      className={`pane-status-badge status-${status}${status === "working" ? " pane-working-badge" : ""}`}
+      title={statusLabels[status]}
+    >
+      <span className={`status-dot status-${status}`} aria-hidden="true" />
+      {status === "working" ? <LoaderCircle size={11} aria-hidden="true" /> : null}
+      <span>{statusLabels[status]}</span>
+    </span>
+  );
+}
+
 /**
  * Session controls live on the pane, not in the workspace header: with several terminals on screen
  * only the pane itself says which session a button acts on. Refreshing is the one exception — it
@@ -245,18 +269,8 @@ export function PaneHeader({
         <SessionId key={session.id} id={session.id} />
       </div>
       <div className="pane-header-main">
-        <span
-          className={`status-dot status-${session.status}`}
-          title={statusLabels[session.status]}
-          aria-label={statusLabels[session.status]}
-        />
+        <PaneStatus status={session.status} />
         {agent ? <AgentIcon agent={agent} size={13} className={agentAccentClass(agent)} /> : null}
-        {session.status === "working" ? (
-          <span className="pane-working-badge">
-            <LoaderCircle size={11} aria-hidden="true" />
-            {statusLabels.working}
-          </span>
-        ) : null}
         {renaming ? (
           <SessionNameInput initialName={label} onSubmit={onRename} onCancel={onCancelRename} />
         ) : (

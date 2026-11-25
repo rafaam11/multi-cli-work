@@ -3424,8 +3424,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 .workspace-grid:not([data-slots="1"]) .grid-pane.pane-focused::after {
   position: absolute;
   z-index: 1;
-  border: 2px solid var(--accent);
-  box-shadow: inset 0 0 9px color-mix(in srgb, var(--accent) calc(20% * var(--glow-scale)), transparent);
+  border: 1px solid var(--accent);
+  box-shadow: inset 0 0 7px color-mix(in srgb, var(--accent) calc(16% * var(--glow-scale)), transparent);
   content: "";
   inset: 0;
   pointer-events: none;
@@ -3830,21 +3830,38 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   background: color-mix(in srgb, var(--teal) calc(10% * var(--tint-scale)), var(--bg));
 }
 
-.pane-working-badge {
+.grid-pane.pane-focused > .pane-header {
+  border-bottom-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) calc(11% * var(--tint-scale)), var(--bg));
+}
+
+.pane-status-badge {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
   padding: 1px 5px;
-  border: 1px solid color-mix(in srgb, var(--teal) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pane-status-color) 55%, transparent);
   border-radius: 4px;
-  color: var(--teal);
-  background: color-mix(in srgb, var(--teal) calc(15% * var(--tint-scale)), var(--bg));
+  color: var(--pane-status-color);
+  background: color-mix(in srgb, var(--pane-status-color) calc(15% * var(--tint-scale)), var(--bg));
   font: var(--type-caption-semibold);
   white-space: nowrap;
+  --pane-status-color: var(--muted);
 }
 
-.pane-working-badge svg {
+.pane-status-badge.status-working { --pane-status-color: var(--teal); }
+.pane-status-badge.status-awaiting-input { --pane-status-color: var(--violet); }
+.pane-status-badge.status-awaiting-approval { --pane-status-color: var(--amber); }
+.pane-status-badge.status-error { --pane-status-color: var(--red); }
+
+.pane-status-badge .status-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+}
+
+.pane-status-badge.status-working svg {
   flex: 0 0 auto;
   animation: pane-working-spin var(--session-activity-cycle) linear infinite;
 }
@@ -3859,7 +3876,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
     animation: none;
   }
 
-  .pane-working-badge svg,
+  .pane-status-badge.status-working svg,
   .project-sidebar .session-row.status-working::before {
     animation: none;
   }
@@ -3870,7 +3887,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   animation: none;
 }
 
-:root[data-reduce-motion] .pane-working-badge svg,
+:root[data-reduce-motion] .pane-status-badge.status-working svg,
 :root[data-reduce-motion] .project-sidebar .session-row.status-working::before {
   animation: none;
 }
@@ -4547,8 +4564,8 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 .workspace-heading {
   display: flex;
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 140px;
   align-items: center;
   gap: 16px;
 }
@@ -4556,7 +4573,7 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 /* Keep the tabs next to the name; spare width belongs between this group and the controls. */
 .workspace-identity {
   display: flex;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   align-items: center;
   gap: 9px;
@@ -4577,8 +4594,28 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .workspace-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
   color: var(--text);
   font: var(--type-panel-title);
+}
+
+.workspace-primary-title,
+.workspace-secondary-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-primary-title {
+  flex: 1 1 auto;
+}
+
+.workspace-secondary-title {
+  flex: 0 1 38%;
+  color: var(--muted);
 }
 
 .workspace-path {
@@ -4590,13 +4627,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 .breadcrumb-separator {
+  flex: 0 0 auto;
   margin: 0 7px;
   color: var(--line-strong);
 }
 
 .workspace-actions {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   align-items: center;
   gap: 3px;
@@ -4682,6 +4720,71 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--quiet);
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: var(--type-caption-size);
+}
+
+.layout-picker {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.layout-compact-anchor,
+.launcher-menu-anchor {
+  position: relative;
+  display: none;
+  flex: 0 0 auto;
+}
+
+.header-compact-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  width: 220px;
+}
+
+.header-compact-menu button.current {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.compact-menu-divider {
+  display: block;
+  height: 1px;
+  margin: 5px 3px;
+  background: var(--line);
+}
+
+.layout-compact-button {
+  gap: 5px;
+  padding-inline: 7px;
+}
+
+.layout-compact-button .layout-preview {
+  width: 28px;
+  height: 16px;
+}
+
+.layout-compact-current {
+  color: var(--quiet);
+  font-size: var(--type-caption-size);
+}
+
+.layout-menu button {
+  grid-template-columns: 40px minmax(0, 1fr) 14px;
+}
+
+.layout-menu .layout-preview {
+  width: 38px;
+  height: 18px;
+}
+
+.launcher-menu-button {
+  gap: 5px;
+  padding-inline: 8px;
+}
+
+.launcher-menu button {
+  grid-template-columns: 17px minmax(0, 1fr) auto;
 }
 
 /*
@@ -7835,13 +7938,39 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 
 
 @container (max-width: 820px) {
+  .workspace-header .layout-picker > .layout-bar {
+    display: none;
+  }
+
+  .workspace-header .layout-compact-anchor {
+    display: block;
+  }
+
+  .workspace-header .workspace-heading {
+    gap: 8px;
+  }
+
+  .workspace-header .workspace-page-word {
+    display: none;
+  }
+
+  .workspace-header .workspace-page-tab {
+    min-width: 30px;
+    padding-inline: 8px;
+  }
+
+  .workspace-header .breadcrumb-separator,
+  .workspace-header .workspace-secondary-title {
+    display: none;
+  }
+
   /* The status dot stays; its word and the 상세 label are the cheapest pixels to give back. */
   .workspace-header .active-status {
     font-size: 0;
     gap: 0;
   }
 
-  .workspace-header .command-button span {
+  .workspace-header .command-button:not(.layout-compact-button) span {
     display: none;
   }
 }
@@ -7852,11 +7981,42 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
     display: none;
   }
 
-  /* The word goes before the number: a tab keeps its number and waiting dot, and the names live
-     on in its tooltip. */
-  .workspace-header .workspace-page-word {
+  .workspace-header {
+    gap: 4px;
+    padding-left: 10px;
+  }
+
+  .workspace-header .workspace-actions {
+    gap: 1px;
+  }
+
+  .workspace-header .workspace-heading {
+    gap: 8px;
+  }
+
+  .workspace-header .launcher-row,
+  .workspace-header .workspace-refresh {
     display: none;
   }
+
+  .workspace-header .launcher-menu-anchor {
+    display: block;
+  }
+
+  .workspace-header .launcher-menu-button {
+    width: auto;
+    padding-inline: 7px;
+    gap: 5px;
+  }
+
+  .workspace-header .launcher-menu-button span {
+    display: inline;
+  }
+
+  .workspace-header .layout-compact-current {
+    display: none;
+  }
+
 }
 
 @media (max-width: 680px) {

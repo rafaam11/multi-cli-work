@@ -61,6 +61,27 @@ async function restoreDefaultWindowSize(): Promise<void> {
     .toMatchObject(DEFAULT_WINDOW);
 }
 
+/** Selects a layout through whichever form the centre column currently has room to show. */
+async function chooseLayout(label: string): Promise<void> {
+  const radio = page.getByRole("radiogroup", { name: "레이아웃 선택" }).getByRole("radio", { name: label, exact: true });
+  if (await radio.isVisible()) {
+    await radio.click();
+    return;
+  }
+  const trigger = page.getByRole("button", { name: /배치 메뉴 열기, 현재/ });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+  await page.getByRole("menu", { name: "배치 선택" }).getByRole("menuitemradio", { name: label, exact: true }).click();
+}
+
+async function expectCurrentLayout(label: string): Promise<void> {
+  const radio = page.getByRole("radiogroup", { name: "레이아웃 선택" }).getByRole("radio", { name: label, exact: true });
+  if (await radio.isVisible()) {
+    await expect(radio).toHaveAttribute("aria-checked", "true");
+    return;
+  }
+  await expect(page.getByRole("button", { name: `배치 메뉴 열기, 현재 ${label}` })).toBeVisible();
+}
+
 async function attachScreenshot(name: string): Promise<void> {
   const screenshotPath = test.info().outputPath(`${name}.png`);
   await page.screenshot({ path: screenshotPath });
@@ -381,11 +402,18 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await openFolder();
 
     // A folder opened before it has a single session: the start page stands in for the grid, and the
-    // layout row stays put so the arrangement can be chosen before the first session exists.
+    // layout control stays put so the arrangement can be chosen before the first session exists.
+    // Its full row folds to the current-layout button from the centre column's width, not the window.
     const startPage = page.getByRole("region", { name: "Sample Project 시작" });
     await expect(startPage.getByRole("heading", { name: "Sample Project에서 시작" })).toBeVisible();
-    await expect(page.locator(".layout-bar")).toBeVisible();
-    await expect(page.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeVisible();
+    await expect(page.locator(".layout-picker")).toBeVisible();
+    const headerWidth = await page.locator(".workspace-header").evaluate((element) => element.getBoundingClientRect().width);
+    if (headerWidth <= 820) {
+      await expect(page.getByRole("button", { name: /배치 메뉴 열기, 현재/ })).toBeVisible();
+      await expect(page.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeHidden();
+    } else {
+      await expect(page.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeVisible();
+    }
     await expect(startPage.getByText(/첫 세션은 .+ 배치로 열립니다/)).toBeVisible();
     await expect(startPage.locator(".git-branch")).toHaveText("main");
     await attachScreenshot("folder-start");
@@ -836,8 +864,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     const live = await page.evaluate(async ({ projectId, kind }) => window.multiCliWork.terminals.create({ projectId, kind, cols: 80, rows: 24, background: true, name: "Layout keepalive" }), { projectId: PROJECT_ID, kind: SHELL_ID });
     expect(live.pid).not.toBeNull();
     const before = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map(session => ({ id: session.id, pid: session.pid })));
-    const layout = page.getByRole("radiogroup", { name: "레이아웃 선택" });
-    await layout.getByRole("radio", { name: "2열", exact: true }).click();
+    await chooseLayout("2열");
     await page.getByRole("tab", { name: "기록", exact: true }).click();
     await page.getByRole("button", { name: "저장 배치", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "저장 배치", exact: true });
@@ -846,12 +873,12 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(dialog.getByRole("button", { name: /E2E review layout.*패널 상태 복원/ })).toBeVisible();
     await attachScreenshot("saved-layout-dialog");
     await dialog.getByRole("button", { name: "닫기", exact: true }).click();
-    await layout.getByRole("radio", { name: "자동", exact: true }).click();
+    await chooseLayout("자동");
     await page.getByRole("tab", { name: "파일", exact: true }).click();
     await page.getByRole("button", { name: "저장 배치", exact: true }).click();
     await dialog.getByRole("button", { name: /E2E review layout.*패널 상태 복원/ }).click();
     await expect(dialog).toBeHidden();
-    await expect(layout.getByRole("radio", { name: "2열", exact: true })).toHaveAttribute("aria-checked", "true");
+    await expectCurrentLayout("2열");
     await expect(page.getByRole("tab", { name: "기록", exact: true })).toHaveAttribute("aria-selected", "true");
     const after = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map(session => ({ id: session.id, pid: session.pid })));
     expect(after).toEqual(before);
@@ -860,7 +887,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(dialog.getByRole("button", { name: /E2E review layout.*패널 상태 복원/ })).toBeHidden();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await layout.getByRole("radio", { name: "자동", exact: true }).click();
+    await chooseLayout("자동");
     await page.getByRole("tab", { name: "파일", exact: true }).click();
     await page.evaluate(async id => window.multiCliWork.terminals.remove(id), live.id);
   });
@@ -1339,7 +1366,6 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.mouse.click(titleBox.x + titleBox.width - 4, titleBox.y + titleBox.height / 2);
     await expect(page.locator(".workspace-title")).toHaveText("작업공간");
 
-    const layoutBar = page.locator(".layout-bar");
     const hiddenRow = page.getByRole("button", { name: /숨김 열기/ });
 
     // The session panel replaces 작업공간: a row opens that shelf and focuses the chosen pane. The
@@ -1350,7 +1376,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     // The layout is what says how many panes a page holds. Down to one, and the second session is
     // not gone — it is on page two, still running, still a row in the tree.
-    await layoutBar.getByRole("radio", { name: "1열" }).click();
+    await chooseLayout("1열");
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "cols:1");
     await expect(page.locator(".grid-pane")).toHaveCount(1);
     await expect(pane(SHELL_LABEL)).toBeVisible();
@@ -1402,7 +1428,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // Back to the folder, which kept both panes and its own untouched automatic layout.
     await openFolder();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "cols:1-1");
-    await layoutBar.getByRole("radio", { name: "자동" }).click();
+    await chooseLayout("자동");
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
     await expect(pane(SHELL_LABEL)).toBeVisible();
     await expect(pane("Echo Agent")).toBeVisible();
@@ -1424,7 +1450,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     // — which is what actually decides how many panes a page holds — is pinned to one as well.
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "3");
     await soloPane(`${SHELL_LABEL} 2`);
-    await page.locator(".layout-bar").getByRole("radio", { name: "1열" }).click();
+    await chooseLayout("1열");
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "1");
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
@@ -1551,7 +1577,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
         `<!doctype html><html><body style="background:${color};font:24px sans-serif"><h1>${name}</h1><p>Independent preview</p></body></html>`, "utf8");
     }
     await openFolder();
-    await page.locator(".layout-bar").getByRole("radio", { name: "2열", exact: true }).click();
+    await chooseLayout("2열");
     const occupied = page.locator(".grid-pane");
     while (await occupied.count()) {
       await occupied.first().getByRole("button", { name: "슬롯 비우기", exact: true }).click();
@@ -1627,54 +1653,117 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   });
 
   /**
-   * The header used to be wider than its column: the launcher row was crushed to one icon, and a
-   * focused, half-covered launcher scrolled the whole workspace under the sidebar. Everything in the
-   * header now fits at the default window with both sidebars open.
+   * The centre column, not the window, decides when controls fold. Long names and a data-defined
+   * agent must remain reachable with both sidebars open, without a control taking the title's width.
    */
-  test("keeps every launcher reachable and the grid clear of the sidebar", async () => {
+  test("keeps the project title visible and header controls separate at compact workspace widths", async () => {
     await restoreDefaultWindowSize();
+    const shell = page.locator(".app-shell");
+    const titleBar = page.locator(".title-bar");
+    if (await shell.evaluate((element) => element.classList.contains("sidebar-collapsed"))) {
+      await titleBar.getByRole("menuitem", { name: "보기" }).click();
+      await page.getByRole("menu", { name: "보기" }).getByRole("menuitem", { name: "왼쪽 사이드바 펼치기" }).click();
+    }
+    if (await shell.evaluate((element) => element.classList.contains("right-sidebar-collapsed"))) {
+      await titleBar.getByRole("menuitem", { name: "보기" }).click();
+      await page.getByRole("menu", { name: "보기" }).getByRole("menuitem", { name: "오른쪽 사이드바 펼치기" }).click();
+    }
+    await expect(shell).not.toHaveClass(/sidebar-collapsed/);
+    await expect(shell).not.toHaveClass(/right-sidebar-collapsed/);
+
     await openFolder();
+    const longName = "Sample Project with a very long name that must stay visible";
+    await page.evaluate(({ projectId, displayName }) => window.multiCliWork.projects.update(projectId, { displayName }), {
+      projectId: PROJECT_ID,
+      displayName: longName,
+    });
+    await page.reload();
+    await openFolder(longName);
+    await expect(page.locator(".workspace-primary-title")).toHaveText(longName);
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
     await expect(page.locator(".grid-pane").first()).toBeVisible();
 
-    const geometry = await page.evaluate(() => {
-      const grid = document.querySelector(".workspace-grid")!.getBoundingClientRect();
-      const sidebar = document.querySelector(".project-sidebar")!.getBoundingClientRect();
-      const workspace = document.querySelector<HTMLElement>(".terminal-workspace")!;
-      const launchers = document.querySelector<HTMLElement>(".launcher-row")!;
-      return {
-        gridLeft: grid.left,
-        sidebarRight: sidebar.right,
-        workspaceScroll: workspace.scrollLeft,
-        launcherOverflow: launchers.scrollWidth - launchers.clientWidth,
-        // Every control in the row, in order, including each layout tile: none may draw over the next.
-        overlaps: (() => {
-          const controls = [
-            ...document.querySelectorAll<HTMLElement>(".workspace-actions .layout-option"),
-            ...[...document.querySelectorAll<HTMLElement>(".workspace-actions > *")].filter(
-              (element) => !element.classList.contains("layout-bar"),
-            ),
-          ]
-            .map((element) => ({ name: element.getAttribute("aria-label") ?? element.className, rect: element.getBoundingClientRect() }))
-            .filter(({ rect }) => rect.width > 0)
-            .sort((a, b) => a.rect.left - b.rect.left);
-          return controls
+    const scenarios = [
+      { width: 1280, height: 820, left: 300, right: 320, compactLaunchers: false },
+      { width: 900, height: 600, left: 230, right: 250, compactLaunchers: true },
+    ];
+    for (const scenario of scenarios) {
+      await page.setViewportSize({ width: scenario.width, height: scenario.height });
+      await shell.evaluate((element, widths) => {
+        const target = element as HTMLElement;
+        target.style.setProperty("--sidebar-width", `${widths.left}px`);
+        target.style.setProperty("--right-sidebar-width", `${widths.right}px`);
+      }, scenario);
+
+      const layoutTrigger = page.getByRole("button", { name: /배치 메뉴 열기, 현재/ });
+      await expect(layoutTrigger).toBeVisible();
+      if (scenario.compactLaunchers) {
+        const launcherTrigger = page.getByRole("button", { name: "새 세션 메뉴 열기" });
+        await expect(launcherTrigger).toBeVisible();
+        await launcherTrigger.click();
+        await expect(page.getByRole("menu", { name: "새 세션" }).getByRole("menuitem", { name: "Echo Agent 시작" })).toBeVisible();
+        await expect(page.getByRole("menu", { name: "새 세션" }).getByRole("menuitem", { name: "최근 폴더에서 시작" })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(launcherTrigger).toBeFocused();
+        const [headerBox, launcherBox] = await Promise.all([
+          page.locator(".workspace-header").boundingBox(),
+          launcherTrigger.boundingBox(),
+        ]);
+        if (!headerBox || !launcherBox) throw new Error("Compact header controls have no bounds");
+        expect(launcherBox.x).toBeGreaterThanOrEqual(headerBox.x - 0.5);
+        expect(launcherBox.x + launcherBox.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 0.5);
+      } else {
+        await expect(page.getByRole("button", { name: "새 Echo Agent 세션" })).toBeVisible();
+      }
+
+      const geometry = await page.evaluate(() => {
+        const grid = document.querySelector(".workspace-grid")!.getBoundingClientRect();
+        const sidebar = document.querySelector(".project-sidebar")!.getBoundingClientRect();
+        const header = document.querySelector(".workspace-header")!.getBoundingClientRect();
+        const title = document.querySelector(".workspace-primary-title")!.getBoundingClientRect();
+        const workspace = document.querySelector<HTMLElement>(".terminal-workspace")!;
+        const controls = [...document.querySelectorAll<HTMLButtonElement>(".workspace-actions button")]
+          .map((element) => ({ name: element.getAttribute("aria-label") ?? element.textContent ?? "button", rect: element.getBoundingClientRect() }))
+          .filter(({ rect }) => rect.width > 0 && rect.height > 0)
+          .sort((a, b) => a.rect.left - b.rect.left);
+        return {
+          gridLeft: grid.left,
+          sidebarRight: sidebar.right,
+          workspaceScroll: workspace.scrollLeft,
+          titleWidth: title.width,
+          titleInsideHeader: title.left >= header.left - 0.5 && title.right <= header.right + 0.5,
+          overlaps: controls
             .slice(1)
             .filter((control, index) => controls[index].rect.right > control.rect.left + 0.5)
-            .map((control, index) => `${controls[index].name} > ${control.name}`);
-        })(),
-      };
+            .map((control, index) => `${controls[index].name} > ${control.name}`),
+        };
+      });
+      expect(geometry.gridLeft).toBeGreaterThanOrEqual(geometry.sidebarRight);
+      expect(geometry.workspaceScroll).toBe(0);
+      expect(geometry.titleWidth).toBeGreaterThan(32);
+      expect(geometry.titleInsideHeader).toBe(true);
+      expect(geometry.overlaps).toEqual([]);
+      await attachScreenshot(`workspace-header-${scenario.width}x${scenario.height}`);
+    }
+
+    await page.evaluate(({ projectId }) => window.multiCliWork.projects.update(projectId, { displayName: "Sample Project" }), {
+      projectId: PROJECT_ID,
     });
-    expect(geometry.gridLeft).toBeGreaterThanOrEqual(geometry.sidebarRight);
-    expect(geometry.workspaceScroll).toBe(0);
-    expect(geometry.launcherOverflow).toBeLessThanOrEqual(1);
-    expect(geometry.overlaps).toEqual([]);
+    await shell.evaluate((element) => {
+      const target = element as HTMLElement;
+      target.style.removeProperty("--sidebar-width");
+      target.style.removeProperty("--right-sidebar-width");
+    });
+    await page.reload();
+    await restoreDefaultWindowSize();
+    await openFolder();
+    await expect(page.locator(".workspace-primary-title")).toHaveText("Sample Project");
   });
 
   test("finds a line that has scrolled far out of view with Ctrl+F", async () => {
     // Its own fresh shell: whatever earlier tests left on screen may have exited.
     await openFolder();
-    await page.locator(".layout-bar").getByRole("radio", { name: "자동" }).click();
+    await chooseLayout("자동");
     const before = await page.locator(".grid-pane").count();
     await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
     await expect(page.locator(".grid-pane")).toHaveCount(before + 1);

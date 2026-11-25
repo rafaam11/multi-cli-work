@@ -100,6 +100,19 @@ describe("WorkspaceHeader", () => {
     expect(props.layout?.onSelect).toHaveBeenCalledWith("cols:1-1");
   });
 
+  it("keeps the project name ahead of the session name and exposes full titles", () => {
+    const longName = "Atlas 프로젝트의 아주 긴 표시 이름";
+    renderHeader({
+      selectedProject: { id: "p1", rootPath: "C:\\work\\atlas", displayName: longName } as SharedProject,
+      selectedSession: session,
+      selectedSessionLabel: "긴 세션 이름",
+    });
+    expect(screen.getByText(longName)).toHaveClass("workspace-primary-title");
+    expect(screen.getByText(longName)).toHaveAttribute("title", longName);
+    expect(screen.getByText("긴 세션 이름")).toHaveClass("workspace-secondary-title");
+    expect(screen.getByText("긴 세션 이름")).toHaveAttribute("title", "긴 세션 이름");
+  });
+
   /** A shelf holds panes from several folders, so it has no folder controls — but it has a grid. */
   it("keeps the picker on a shelf, where every other control steps aside", () => {
     renderHeader({ workspace: { kind: "active", paneCount: 2, folderCount: 2 } });
@@ -214,5 +227,35 @@ describe("WorkspaceHeader", () => {
 
     rerender(<WorkspaceHeader {...props} layout={null} />);
     expect(screen.queryByRole("button", { name: "최근 폴더에서 새 세션" })).toBeNull();
+  });
+
+  it("keeps agents and recent folders in the compact new-session menu on fixed layouts", () => {
+    const { props } = renderHeader({
+      layout: { layoutId: "cols:1-1", paneCount: 2, onSelect: vi.fn() },
+      selectedProject: { id: "p1", rootPath: "C:\\work\\atlas", displayName: "Atlas" } as SharedProject,
+      selectedSession: session,
+      selectedSessionLabel: "Echo Agent",
+      agents,
+    });
+    const trigger = screen.getByRole("button", { name: "새 세션 메뉴 열기" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu", { name: "새 세션" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Codex 시작" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "PowerShell 시작" }));
+    expect(props.onStartSession).toHaveBeenCalledWith("powershell");
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "최근 폴더에서 시작" }));
+    expect(props.onRequestNewSession).toHaveBeenCalledWith({ x: expect.any(Number), y: expect.any(Number) });
+  });
+
+  it("returns focus to the compact new-session button when Escape closes its menu", () => {
+    renderHeader({ layout: { layoutId: "cols:1", paneCount: 1, onSelect: vi.fn() } });
+    const trigger = screen.getByRole("button", { name: "새 세션 메뉴 열기" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "새 세션" })).toBeNull();
+    expect(trigger).toHaveFocus();
   });
 });

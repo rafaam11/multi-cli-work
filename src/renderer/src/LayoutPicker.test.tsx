@@ -108,6 +108,25 @@ describe("LayoutPicker", () => {
     expect(props.onSelect).toHaveBeenCalledWith("cols:1-1-1");
   });
 
+  it("offers the current layout from the compact menu and restores focus on Escape", () => {
+    renderPicker({ layoutId: "cols:1-1-1" });
+    const trigger = screen.getByRole("button", { name: "배치 메뉴 열기, 현재 3열" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu", { name: "배치 선택" })).toBeTruthy();
+    expect(screen.getByRole("menuitemradio", { name: "3열" })).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "배치 선택" })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("selects automatic and fixed layouts from the compact menu", () => {
+    const { props } = renderPicker();
+    fireEvent.click(screen.getByRole("button", { name: "배치 메뉴 열기, 현재 자동" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "4열" }));
+    expect(props.onSelect).toHaveBeenCalledWith("cols:1-1-1-1");
+  });
+
   it("says where the panes that no longer fit go", () => {
     renderPicker();
     expect(screen.getByRole("radio", { name: "4열" }).getAttribute("title")).toContain(

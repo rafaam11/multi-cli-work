@@ -2,13 +2,14 @@ import type { AgentView } from "@shared/agent-types";
 import type { SessionAttention, TerminalSessionView } from "@shared/api-types";
 import type { SharedProject } from "@shared/project-types";
 import type { TerminalKind } from "@shared/terminal-types";
-import { EyeOff, LayoutGrid, MonitorDot, PanelsTopLeft, Plus, RefreshCw } from "lucide-react";
+import { ChevronDown, Clock3, EyeOff, LayoutGrid, MonitorDot, PanelsTopLeft, Plus, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { AgentIcon, agentAccentClass } from "./brand-icons";
 import { isAutoLayout } from "./grid-layouts";
 import { LayoutPicker } from "./LayoutPicker";
 import { newSessionLabel, projectName, statusLabels } from "./session-labels";
 import { SHELF_TEXT, type ShelfKind } from "./shelves";
+import { useHeaderMenu } from "./use-header-menu";
 
 interface WorkspaceHeaderProps {
   /** Set when a shelf is on screen rather than a folder; the folder controls step aside for it. */
@@ -58,6 +59,94 @@ interface WorkspaceHeaderProps {
    * arrangement closes every gap — so on that layout this is the only way in to the list.
    */
   onRequestNewSession(anchor: { x: number; y: number }): void;
+}
+
+function CompactLauncherMenu({
+  agents,
+  canLaunch,
+  launchDisabledReason,
+  launchTargetLabel,
+  pendingAction,
+  includeRecent,
+  onStartSession,
+  onRequestNewSession,
+}: Pick<WorkspaceHeaderProps, "agents" | "pendingAction" | "onStartSession" | "onRequestNewSession"> & {
+  canLaunch: boolean;
+  launchDisabledReason: string | null;
+  launchTargetLabel: string | null;
+  includeRecent: boolean;
+}) {
+  const menu = useHeaderMenu();
+  return (
+    <div className="launcher-menu-anchor">
+      <button
+        ref={menu.triggerRef}
+        className="launcher-button launcher-menu-button"
+        type="button"
+        aria-label="새 세션 메뉴 열기"
+        aria-haspopup="menu"
+        aria-expanded={menu.open}
+        onClick={() => menu.setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            menu.setOpen(true);
+          }
+        }}
+      >
+        <Plus size={15} aria-hidden="true" />
+        <span>새 세션</span>
+        <ChevronDown size={12} aria-hidden="true" />
+      </button>
+      {menu.open ? (
+        <div ref={menu.menuRef} className="provider-menu header-compact-menu launcher-menu" role="menu" aria-label="새 세션">
+          {agents.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              role="menuitem"
+              disabled={!canLaunch || !agent.available}
+              aria-label={`${agent.label} 시작`}
+              title={
+                !agent.available
+                  ? `${agent.label} 미설치`
+                  : (launchDisabledReason ??
+                    (launchTargetLabel
+                      ? `${launchTargetLabel}와 같은 경로에서 ${agent.label} 시작`
+                      : newSessionLabel(agent)))
+              }
+              onClick={() => {
+                menu.close(true);
+                onStartSession(agent.id);
+              }}
+            >
+              <AgentIcon agent={agent} size={15} className={agent.available ? agentAccentClass(agent) : undefined} />
+              <span>{agent.label}</span>
+              {!agent.available ? <span className="provider-unavailable">미설치</span> : null}
+            </button>
+          ))}
+          {includeRecent ? (
+            <>
+              {agents.length > 0 ? <span className="compact-menu-divider" aria-hidden="true" /> : null}
+              <button
+                type="button"
+                role="menuitem"
+                disabled={pendingAction}
+                onClick={() => {
+                  const rect = menu.triggerRef.current?.getBoundingClientRect();
+                  menu.close(true);
+                  if (rect) onRequestNewSession({ x: rect.left, y: rect.bottom + 4 });
+                }}
+              >
+                <Clock3 size={15} aria-hidden="true" />
+                <span>최근 폴더에서 시작</span>
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -134,11 +223,11 @@ export function WorkspaceHeader({
           )}
           <div className="workspace-copy">
             <span className="workspace-title">
-              {title}
-              {!workspace && selectedSession ? (
+              <span className="workspace-primary-title" title={title}>{title}</span>
+              {!workspace && selectedSession && selectedSessionLabel ? (
                 <>
                   <span className="breadcrumb-separator">/</span>
-                  {selectedSessionLabel}
+                  <span className="workspace-secondary-title" title={selectedSessionLabel}>{selectedSessionLabel}</span>
                 </>
               ) : null}
             </span>
@@ -187,7 +276,7 @@ export function WorkspaceHeader({
         ) : null}
         {refreshAll ? (
           <button
-            className="icon-button"
+            className="icon-button workspace-refresh"
             type="button"
             onClick={refreshAll.onRefresh}
             disabled={refreshAll.busy || refreshAll.count === 0}
@@ -270,6 +359,18 @@ export function WorkspaceHeader({
               </button>
             ) : null}
           </div>
+        ) : null}
+        {showsAgentLaunchers || layout !== null ? (
+          <CompactLauncherMenu
+            agents={showsAgentLaunchers ? agents : []}
+            canLaunch={canLaunch}
+            launchDisabledReason={launchDisabledReason}
+            launchTargetLabel={launchTargetLabel}
+            pendingAction={pendingAction}
+            includeRecent={layout !== null}
+            onStartSession={onStartSession}
+            onRequestNewSession={onRequestNewSession}
+          />
         ) : null}
       </div>
     </header>
