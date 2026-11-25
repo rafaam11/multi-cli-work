@@ -2,6 +2,7 @@ import { _electron as electron, expect, test } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { startAgentSession } from "./workspace-header-helpers";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -54,7 +55,7 @@ process.stdin.resume();
       await window.multiCliWork.workbench.setDefaultLaunchProfile("codex", "probe");
     });
     await page.getByRole("button", { name: "Codex Chips 폴더 선택" }).click();
-    await page.getByRole("button", { name: "새 Codex 세션", exact: true }).first().click();
+    await startAgentSession(page, "Codex");
     await expect.poll(() => page.evaluate(async () => (await window.multiCliWork.terminals.list()).length)).toBe(1);
     const session = await page.evaluate(async () => (await window.multiCliWork.terminals.list())[0]);
     await expect.poll(() => page.evaluate(async (id) => (await window.multiCliWork.terminals.attach(id)).replay, session.id)).toContain("HOOKS_READY");

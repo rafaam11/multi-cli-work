@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { selectWorkspaceLayout, startAgentSession } from "./workspace-header-helpers";
 
 /**
  * 진단용: 호스트 메인 창과 원격 창을 같은 상태로 두고 양쪽 스크린숏을 남긴다.
@@ -108,8 +109,7 @@ test.describe.serial("Remote window visuals", () => {
   test("captures host and remote side by side", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    const newShell = page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first();
-    await newShell.click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect.poll(() => page.evaluate(() => window.multiCliWork.remote.status().then((status) => status.state))).toBe("listening");
     const settings = JSON.parse(await fs.readFile(path.join(tempRoot, "user-data", "settings.json"), "utf8"));
     const pairing = await page.evaluate(() => window.multiCliWork.remote.issuePairingCode());
@@ -129,20 +129,20 @@ test.describe.serial("Remote window visuals", () => {
     };
 
     await shot("01-one-session");
-    await newShell.click();
-    await newShell.click();
+    await startAgentSession(page, SHELL_LABEL);
+    await startAgentSession(page, SHELL_LABEL);
     await expect(page.locator(".grid-pane")).toHaveCount(3);
     await shot("02-three-auto");
 
-    await page.locator(".layout-bar").getByRole("radio", { name: "2열", exact: true }).click();
+    await selectWorkspaceLayout(page, "2열");
     await shot("03-three-2col");
 
-    await newShell.click();
-    await newShell.click();
-    await page.locator(".layout-bar").getByRole("radio", { name: "자동" }).click();
+    await startAgentSession(page, SHELL_LABEL);
+    await startAgentSession(page, SHELL_LABEL);
+    await selectWorkspaceLayout(page, "자동");
     await shot("04-five-auto");
 
-    await page.locator(".layout-bar").getByRole("radio", { name: "3열", exact: true }).click();
+    await selectWorkspaceLayout(page, "3열");
     await page.locator(".grid-pane").first().getByRole("button", { name: "열 세로분할" }).click();
     await shot("05-split");
 
@@ -150,7 +150,7 @@ test.describe.serial("Remote window visuals", () => {
     await shot("06-zoom");
     await page.locator(".grid-pane").first().getByRole("button", { name: "확대 해제" }).click();
 
-    await page.locator(".layout-bar").getByRole("radio", { name: "6열", exact: true }).click().catch(() => undefined);
+    await selectWorkspaceLayout(page, "6열").catch(() => undefined);
     await shot("07-empty-slots");
 
     await remote.setViewportSize({ width: 1000, height: 700 });

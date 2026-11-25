@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { expectAgentLauncherAvailable, startAgentSession } from "./workspace-header-helpers";
 
 const execFileAsync = promisify(execFile);
 
@@ -408,7 +409,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(startPage.getByRole("heading", { name: "Sample Project에서 시작" })).toBeVisible();
     await expect(page.locator(".layout-picker")).toBeVisible();
     const headerWidth = await page.locator(".workspace-header").evaluate((element) => element.getBoundingClientRect().width);
-    if (headerWidth <= 820) {
+    if (headerWidth <= 920) {
       await expect(page.getByRole("button", { name: /배치 메뉴 열기, 현재/ })).toBeVisible();
       await expect(page.getByRole("radiogroup", { name: "레이아웃 선택" })).toBeHidden();
     } else {
@@ -418,10 +419,10 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(startPage.locator(".git-branch")).toHaveText("main");
     await attachScreenshot("folder-start");
 
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect(startPage).toBeHidden();
     // The launchers stay exposed after the folder has a session.
-    await expect(page.getByRole("button", { name: "새 Claude Code 세션" })).toBeVisible();
+    await expectAgentLauncherAvailable(page, "Claude Code");
 
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
@@ -563,7 +564,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
   test("pastes each Ctrl+V shortcut exactly once from Electron's native clipboard", async () => {
     await openFolder();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     // The new session joins the folder's grid, and this test drives a single PTY — solo it.
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-slots", "2");
     await soloPane(`${SHELL_LABEL} 2`);
@@ -632,7 +633,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
 
     await openFolder();
     if ((await page.locator(".session-row").count()) === 0) {
-      await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+      await startAgentSession(page, SHELL_LABEL);
       const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
       await terminal.click();
       await page.keyboard.type("exit");
@@ -954,7 +955,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   test("@smoke opens the terminal's own menu on a right-click", async () => {
     await openFolder();
     const known = await page.evaluate(async () => (await window.multiCliWork.terminals.list()).map((session) => session.id));
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     try {
       const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` }).last().locator(".terminal-host");
       await expect(terminal).toBeVisible();
@@ -1001,9 +1002,9 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
    */
   test("@smoke runs an agent the user added in agents.json", async () => {
     await openFolder();
-    await expect(page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` })).toBeVisible();
+    await expectAgentLauncherAvailable(page, SHELL_LABEL);
 
-    await page.getByRole("button", { name: "새 Echo Agent 세션" }).click();
+    await startAgentSession(page, "Echo Agent");
 
     const terminal = page.getByRole("region", { name: "echo-agent 터미널" });
     await expect(terminal).toBeVisible();
@@ -1076,7 +1077,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       page.getByRole("region", { name: "워크트리" }).getByRole("button", { name: "feature/e2e (보는 중)" }),
     ).toBeVisible();
     // A session started here runs in the worktree directory.
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(terminal).toBeVisible();
     await terminal.click();
@@ -1181,7 +1182,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await expect(row).toBeVisible();
     await expect(originalRow).toBeHidden();
     await row.click();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     const terminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await terminal.click();
     await page.keyboard.type(shellCommand(
@@ -1444,7 +1445,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
   test("@smoke keeps terminal scrollback intact after leaving the session and coming back", async () => {
     await page.setViewportSize({ width: 1400, height: 900 });
     await openFolder();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     // The replay is measured in columns, so this one keeps the full width to itself. Emptying the
     // other slots is not enough: a folder view refills itself every time it is opened, so the layout
     // — which is what actually decides how many panes a page holds — is pinned to one as well.
@@ -1680,7 +1681,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await page.reload();
     await openFolder(longName);
     await expect(page.locator(".workspace-primary-title")).toHaveText(longName);
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect(page.locator(".grid-pane").first()).toBeVisible();
 
     const scenarios = [
@@ -1765,7 +1766,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await openFolder();
     await chooseLayout("자동");
     const before = await page.locator(".grid-pane").count();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
     const terminal = page.locator(".grid-pane").last().getByRole("region", { name: `${SHELL_ID} 터미널` });
     await terminal.click();
@@ -1799,7 +1800,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     try {
       await openFolder();
       const before = await page.locator(".grid-pane").count();
-      await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+      await startAgentSession(page, SHELL_LABEL);
       await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
       const terminal = page.locator(".grid-pane").last().getByRole("region", { name: `${SHELL_ID} 터미널` });
       await terminal.click();
@@ -1839,7 +1840,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     await fs.writeFile(changed, "first line\nsecond line\n", "utf8");
     await openFolder();
     const before = await page.locator(".grid-pane").count();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
     // Pinned by name: the diff opens as a pane of its own and becomes the last one.
     const shellLabel = (await page.locator(".grid-pane").last().getAttribute("aria-label"))!;
@@ -1879,7 +1880,7 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
     test.setTimeout(120_000);
     await openFolder();
     const before = await page.locator(".grid-pane").count();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect(page.locator(".grid-pane")).toHaveCount(before + 1);
     const shellLabel = (await page.locator(".grid-pane").last().getAttribute("aria-label"))!;
     const header = pane(shellLabel).locator(".pane-header");

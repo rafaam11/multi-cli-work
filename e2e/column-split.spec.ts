@@ -2,6 +2,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { selectWorkspaceLayout } from "./workspace-header-helpers";
 
 /**
  * What a split column does to the rest of the grid, read off the screen rather than the state.
@@ -300,6 +301,6 @@ test("merging a column with an empty top row keeps its only pane", async () => {
 test("choosing a tile with no split drops the holes the split left behind", async () => {
   await launch({ folder: view("cols:2-1-1", "a", null, "b", "c") });
   await openFolder();
-  await page.locator(".layout-bar").getByRole("radio", { name: "3열", exact: true }).click();
+  await selectWorkspaceLayout(page, "3열");
   await expectShape("a|b|c", "tile-after-split");
 });

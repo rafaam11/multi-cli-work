@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { startAgentSession } from "./workspace-header-helpers";
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const NOW = "2026-07-11T12:00:00.000Z";
@@ -131,7 +132,7 @@ process.stdin.on("data", (data) => {
   test("pairs a phone, lists the session, and types into it", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect(page.getByRole("region", { name: `${SHELL_ID} 터미널` })).toBeVisible();
 
     await expect
@@ -246,7 +247,7 @@ process.stdin.on("data", (data) => {
     }
 
     // ☰ 서랍으로 다른 세션에 바로 옮겨 가고, 뒤로가기는 PC 목록이 아니라 세션 목록으로 간다.
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     await phone.getByRole("button", { name: "세션 사이드바 열기" }).click();
     const drawer = phone.getByRole("dialog", { name: "프로젝트와 경로별 세션" });
     const otherSession = drawer.locator(".m-group-row:not([aria-current])");

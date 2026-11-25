@@ -5,6 +5,7 @@ import path from "node:path";
 import net from "node:net";
 import WebSocket from "ws";
 import { sizeMarker } from "../src/shared/terminal-replay";
+import { selectWorkspaceLayout } from "./workspace-header-helpers";
 
 const PROJECT = "11111111-1111-4111-8111-111111111111";
 const SAVED = "22222222-2222-4222-8222-222222222222";
@@ -200,7 +201,7 @@ test("keeps a live TUI intact through resizing, zoom, reattach, paste and phone-
     projectId, kind: "replay-fixture", cols: 120, rows: 40, name: "Peer",
   }), PROJECT);
   await page.getByRole("button", { name: "Peer 세션 열기", exact: true }).click();
-  await page.locator(".layout-bar").getByRole("radio", { name: "2열", exact: true }).click();
+  await selectWorkspaceLayout(page, "2열");
   const assertFrame = async () => {
     await expect.poll(async () => {
       const screen = (await lines("Live")).map(line => line.replace(/\u00a0/g, " "));

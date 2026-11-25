@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { startAgentSession } from "./workspace-header-helpers";
 
 /** 원격 창 터미널에서 마우스로 끌어 고른 여러 줄이 Ctrl+C로 통째로 복사되는지. */
 const execFileAsync = promisify(execFile);
@@ -102,7 +103,7 @@ test.describe.serial("Remote window copy", () => {
   test("copies a multi-line mouse selection with Ctrl+C", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect.poll(() => page.evaluate(() => window.multiCliWork.remote.status().then((status) => status.state))).toBe("listening");
     const settings = JSON.parse(await fs.readFile(path.join(tempRoot, "user-data", "settings.json"), "utf8"));
     const pairing = await page.evaluate(() => window.multiCliWork.remote.issuePairingCode());
@@ -146,7 +147,7 @@ test.describe.serial("Remote window copy", () => {
     await copied(first);
 
     // 포커스가 다른 칸에 있을 때 — 줄여 그린 칸에서 바로 끌어 고른다.
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).first().click();
+    await startAgentSession(page, SHELL_LABEL);
     await expect(terminals).toHaveCount(2);
     await terminals.nth(1).click();
     await expect(remote.locator(".m-pane-focused").getByRole("region", { name: /터미널$/ })).toHaveCount(1);

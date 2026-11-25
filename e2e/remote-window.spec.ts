@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { selectWorkspaceLayout, startAgentSession } from "./workspace-header-helpers";
 
 const execFileAsync = promisify(execFile);
 
@@ -130,7 +131,7 @@ test.describe.serial("Remote PC window", () => {
   test("registers a host, works in its session from a remote window, and loses it on revoke", async () => {
     await expect(page.getByRole("heading", { name: "멀티 터미널 작업기" })).toBeVisible();
     await page.getByRole("button", { name: "Sample Project 폴더 선택" }).click();
-    await page.getByRole("button", { name: `새 ${SHELL_LABEL} 세션` }).click();
+    await startAgentSession(page, SHELL_LABEL);
     const hostTerminal = page.getByRole("region", { name: `${SHELL_ID} 터미널` });
     await expect(hostTerminal).toBeVisible();
 
@@ -330,7 +331,7 @@ test.describe.serial("Remote PC window", () => {
     const remoteLayout = mirrorView.getByRole("radiogroup", { name: "레이아웃 선택" });
     await remoteLayout.getByRole("radio", { name: "1열", exact: true }).click();
     await expect(page.locator(".workspace-grid")).toHaveAttribute("data-layout", "cols:1");
-    await page.locator(".layout-bar").getByRole("radio", { name: "2열", exact: true }).click();
+    await selectWorkspaceLayout(page, "2열");
     await expect(remoteLayout.getByRole("radio", { name: "2열", exact: true })).toHaveAttribute("aria-checked", "true");
 
     // 트리에서 워크트리 행을 누르면 호스트가 그 워크트리로 옮겨 가고, 폴더 행을 누르면 폴더로 돌아온다.

@@ -7937,7 +7937,10 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
 }
 
 
-@container (max-width: 820px) {
+/* Leave enough room for refresh, status, detail and data-defined agent launchers beside the picker.
+   A widened pair of sidebars can leave an 821–920px centre column even on a large window; keeping
+   the seven preview tiles there lets their overflow cover the controls that follow them. */
+@container (max-width: 920px) {
   .workspace-header .layout-picker > .layout-bar {
     display: none;
   }
