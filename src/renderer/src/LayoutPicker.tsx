@@ -114,7 +114,7 @@ export function LayoutPicker({ layoutId, paneCount, onSelect }: LayoutPickerProp
           }}
         >
           <LayoutPreview layout={compactLayout} />
-          <span>배치</span>
+          <span className="layout-compact-word">배치</span>
           <span className="layout-compact-current">{compactLabel}</span>
           <ChevronDown size={12} aria-hidden="true" />
         </button>

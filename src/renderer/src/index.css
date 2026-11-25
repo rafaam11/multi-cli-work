@@ -4550,24 +4550,29 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   opacity: 0.5;
 }
 
+/* The header is the query container its compact rules read, and a container query only reaches
+   what is inside the container. So the left inset and the space before the controls are margins on
+   the two children, where those rules can narrow them, not padding and gap on the header. */
 .workspace-header {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 0 12px 0 16px;
+  padding: 0 12px 0 0;
   border-bottom: 1px solid var(--line);
   background: var(--header-bg);
   container-type: inline-size;
 }
 
+/* The name takes whatever the controls leave and never less than 140px: a zero basis keeps it at
+   that floor when the row is short, so the shortfall goes to the controls, not past the header. */
 .workspace-heading {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 140px;
   align-items: center;
   gap: 16px;
+  margin-left: 16px;
 }
 
 /* Keep the tabs next to the name; spare width belongs between this group and the controls. */
@@ -4632,12 +4637,15 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
   color: var(--line-strong);
 }
 
+/* Shrinkable so that a long launcher row scrolls inside the header instead of pushing the controls
+   after it out of the column; the buttons outside that row keep their width. */
 .workspace-actions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
   align-items: center;
   gap: 3px;
+  margin-left: 16px;
 }
 
 .active-status {
@@ -7984,17 +7992,14 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
     display: none;
   }
 
-  .workspace-header {
-    gap: 4px;
-    padding-left: 10px;
-  }
-
   .workspace-header .workspace-actions {
     gap: 1px;
+    margin-left: 4px;
   }
 
   .workspace-header .workspace-heading {
     gap: 8px;
+    margin-left: 10px;
   }
 
   .workspace-header .launcher-row,
@@ -8020,6 +8025,16 @@ button.native-graph-ref:hover, button.native-graph-ref:focus-visible { border-co
     display: none;
   }
 
+}
+
+/* With the words, the four controls need ≈246px beside the 140px name, which a 412px column holds
+   with under 6px to spare, and a Windows runner draws the words wider than a desktop does. Below
+   460px the words go and the icons stay, named by their tooltips and accessible names. */
+@container (max-width: 460px) {
+  .workspace-header .layout-compact-word,
+  .workspace-header .launcher-menu-button span {
+    display: none;
+  }
 }
 
 @media (max-width: 680px) {

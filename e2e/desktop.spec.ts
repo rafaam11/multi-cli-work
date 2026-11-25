@@ -1769,12 +1769,31 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
           .map((element) => ({ name: element.getAttribute("aria-label") ?? element.textContent ?? "button", rect: element.getBoundingClientRect() }))
           .filter(({ rect }) => rect.width > 0 && rect.height > 0)
           .sort((a, b) => a.rect.left - b.rect.left);
+        // The launcher row may scroll its own buttons out of view, so it is bounded as one box; every
+        // other control must sit whole inside the header and be what a click at its far edge hits —
+        // the workspace clips what overflows it, and the right sidebar covers it.
+        const bounded = [
+          ...[...document.querySelectorAll<HTMLElement>(".workspace-actions button")].filter((element) => !element.closest(".launcher-row")),
+          ...document.querySelectorAll<HTMLElement>(".workspace-actions .launcher-row"),
+        ]
+          .map((element) => ({ element, name: element.getAttribute("aria-label") ?? element.className, rect: element.getBoundingClientRect() }))
+          .filter(({ rect }) => rect.width > 0 && rect.height > 0);
         return {
           gridLeft: grid.left,
           sidebarRight: sidebar.right,
           workspaceScroll: workspace.scrollLeft,
           titleWidth: title.width,
           titleInsideHeader: title.left >= header.left - 0.5 && title.right <= header.right + 0.5,
+          controlsOutsideHeader: bounded
+            .filter(({ rect }) => rect.left < header.left - 0.5 || rect.right > header.right + 0.5)
+            .map(({ name }) => name),
+          controlsCoveredAtEdge: bounded
+            .filter(({ element }) => element.tagName === "BUTTON")
+            .filter(({ element, rect }) => {
+              const hit = document.elementFromPoint(rect.right - 2, rect.top + rect.height / 2);
+              return !hit || !element.contains(hit);
+            })
+            .map(({ name }) => name),
           overlaps: controls
             .slice(1)
             .filter((control, index) => controls[index].rect.right > control.rect.left + 0.5)
@@ -1787,6 +1806,8 @@ else { process.stderr.write("unsupported fake gh command: " + args.join(" ")); p
       expect(geometry.titleWidth, headerGeometry).toBeGreaterThan(32);
       expect(geometry.titleInsideHeader, headerGeometry).toBe(true);
       expect(geometry.overlaps, headerGeometry).toEqual([]);
+      expect(geometry.controlsOutsideHeader, headerGeometry).toEqual([]);
+      expect(geometry.controlsCoveredAtEdge, headerGeometry).toEqual([]);
       await attachScreenshot(`workspace-header-${scenario.width}x${scenario.height}`);
     }
 

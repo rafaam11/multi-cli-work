@@ -86,6 +86,8 @@ function CompactLauncherMenu({
         aria-label="새 세션 메뉴 열기"
         aria-haspopup="menu"
         aria-expanded={menu.open}
+        // The narrowest header drops the word and keeps the icon, so the word moves here.
+        title="새 세션"
         onClick={() => menu.setOpen((value) => !value)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") {
